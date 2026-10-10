@@ -15,6 +15,14 @@ Routing: **toolkit → bash → PowerShell 7**.
 
 Currently supports **Windows x64** only. Linux and Mac support will follow once the Rust tools are added for those platforms (bash functionality will not be provided on Linux or Mac). Target host DSH `0.2.0-rc.2`.
 
+## Codex adapter (experimental)
+
+This repository now includes `codex-plugin/`, which exposes FastCtx to Codex as a local stdio MCP server.
+
+The default surface is `glob`, `grep`, `inspect_local_file` and `replace`. Setting `DSH_OPS_ENABLE_SHELL=1` and providing a bash executable adds `run`, `run_background` and the `job_*` tools.
+
+See [codex-plugin/README.md](codex-plugin/README.md) for setup and [docs/codex-adaptation.md](docs/codex-adaptation.md) for the design.
+
 ## Install, update and remove
 
 ### Official plugin marketplace

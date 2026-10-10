@@ -1,0 +1,43 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "dsh-ops-codex",
+  "version": "0.1.0",
+  "description": "Codex adapter for dsh-ops FastCtx file, search, and background tools on Windows.",
+  "author": {
+    "name": "ArbeiterKlassen"
+  },
+  "homepage": "https://github.com/ArbeiterKlassen/dsh-ops",
+  "repository": "https://github.com/ArbeiterKlassen/dsh-ops",
+  "license": "MIT AND Apache-2.0",
+  "keywords": [
+    "codex",
+    "dsh-ops",
+    "fastctx",
+    "files",
+    "search"
+  ],
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/setup/SKILL.md",
+      "interface": {
+        "displayName": "dsh-ops for Codex",
+        "shortDescription": "Fast local file, search, and background tools",
+        "longDescription": "Adapts the dsh-ops FastCtx runtime to Codex through a local stdio MCP server. File tools work without bash. Shell and background tools require an explicit opt-in and a bash executable.",
+        "developerName": "ArbeiterKlassen",
+        "category": "Productivity",
+        "capabilities": [
+          "Read files",
+          "Search files",
+          "Batch replace",
+          "Background jobs"
+        ],
+        "websiteURL": "https://github.com/ArbeiterKlassen/dsh-ops",
+        "defaultPrompt": [
+          "Search this repository with dsh-ops.",
+          "Inspect these large files with dsh-ops.",
+          "Set up the dsh-ops Codex runtime."
+        ]
+      }
+    }
+  }
+}

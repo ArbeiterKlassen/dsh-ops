@@ -1,0 +1,19 @@
+# Direct MCP-server configuration for Codex.
+# Use this when you do not want to install the plugin from a marketplace.
+
+[mcp_servers.dsh_ops]
+command = "node"
+args = ["./codex-plugin/scripts/start-fastctx.mjs"]
+cwd = "."
+startup_timeout_sec = 60
+tool_timeout_sec = 300
+default_tools_approval_mode = "prompt"
+enabled_tools = ["glob", "grep", "inspect_local_file", "replace"]
+
+[mcp_servers.dsh_ops.tools.replace]
+approval_mode = "approve"
+
+# To enable FastCtx shell and background tools:
+# 1. Set DSH_OPS_ENABLE_SHELL=1 in the environment that starts Codex.
+# 2. Optionally set DSH_OPS_BASH_PATH to a trusted bash executable.
+# 3. Add run, run_background, job_output, job_list, and job_kill to enabled_tools.

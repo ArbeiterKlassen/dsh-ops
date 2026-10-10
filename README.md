@@ -17,6 +17,14 @@
 
 仅支持 **Windows x64**，后续补充 Rust 工具后会支持 Linux 和 Mac（Linux 和 Mac 下不提供 bash 功能）。目标宿主 DSH `0.2.0-rc.2`。有问题可以在eac交流群 1083832019 找风雪问。
 
+## Codex 适配（实验）
+
+本仓库新增了一个 Codex 插件目录 `codex-plugin/`，把 FastCtx 作为本地 stdio MCP server 暴露给 Codex。
+
+默认只发布 `glob`、`grep`、`inspect_local_file` 和 `replace` 四个文件工具。设置 `DSH_OPS_ENABLE_SHELL=1` 并且能找到 bash 后，才会额外发布 `run`、`run_background` 和三个 `job_*` 工具。
+
+安装与验证方式见 [codex-plugin/README.md](codex-plugin/README.md)，设计说明见 [docs/codex-adaptation.md](docs/codex-adaptation.md)。
+
 ## 安装、更新、卸载
 
 ### 官方插件市场

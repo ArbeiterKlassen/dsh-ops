@@ -1,0 +1,26 @@
+{
+  "name": "dsh-ops-codex",
+  "version": "0.1.0",
+  "description": "Codex adapter for dsh-ops FastCtx file, search, and background tools on Windows.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "onboardingSkill": "./skills/setup/SKILL.md",
+  "interface": {
+    "displayName": "dsh-ops for Codex",
+    "shortDescription": "Fast local file, search, and background tools",
+    "longDescription": "Adapts the dsh-ops FastCtx runtime to Codex through a local stdio MCP server. File tools work without bash. Shell and background tools require an explicit opt-in and a bash executable.",
+    "developerName": "ArbeiterKlassen",
+    "category": "Productivity",
+    "capabilities": [
+      "Read files",
+      "Search files",
+      "Batch replace",
+      "Background jobs"
+    ],
+    "defaultPrompt": [
+      "Search this repository with dsh-ops.",
+      "Inspect these large files with dsh-ops.",
+      "Set up the dsh-ops Codex runtime."
+    ]
+  }
+}

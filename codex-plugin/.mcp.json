@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "dsh-ops": {
+      "command": "node",
+      "args": [
+        "./scripts/start-fastctx.mjs"
+      ]
+    }
+  }
+}
