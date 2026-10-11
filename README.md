@@ -47,7 +47,7 @@ dsh plugin --profile dsh-tui add dsh-ops
 
 **更新**：重新运行相同的 `npx --yes dsh-ops@latest install --profile ...`，或用官方 CLI `add dsh-ops@latest`。按应用提示重载；替换已加载代码时重启应用。
 
-当前版本 `0.2.8` 在 0.2.7 长脚本稳定性修复基础上，增加随包 bash 载荷缺失时的可读 `ENOENT` 诊断，不会静默切换到未授权系统 bash。Electron `workspace-write` 下的 `0xC0000142` 属于 DSH 宿主 Windows ACL runner 问题，不由本插件的 subprocess API 控制；本版本不宣称修复该宿主问题。三个二进制依赖均固定为 `0.2.1`，本次不重新发布 npm 载荷。
+当前版本 `0.2.9` 是纯 bug 修复版：PATH 回退时跳过 Windows WSL 启动器、在 spawn 前拒绝 `ops_bash` 未声明参数，并且不再通过 remount 持久化一次性旧 shell 回退迁移，避免配置重载期间拖慢 Desktop。没有新增 feat、组件、配置键或运行时能力。三个二进制依赖仍固定为 `0.2.1`，本次不重新发布 npm 载荷。
 
 **卸载与查看状态**：
 

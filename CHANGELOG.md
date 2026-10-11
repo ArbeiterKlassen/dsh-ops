@@ -5,15 +5,15 @@ All notable changes to this package are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — Unknown-argument guard for `ops_bash`
+## 0.2.9 — Bug fixes
 
-Issue #10: `ops_bash` declared `additionalProperties: false` but never enforced it. Arguments reached `execute` verbatim and reading the known fields with `args?.name` dropped an undeclared key in silence, so the call reported success while ignoring what the caller asked for.
+Bug-fix-only release for issues reported against 0.2.8 and the 0.2.6/DSH 0.2.0-rc.2 combination:
 
-- Refuse any argument the `ops_bash` schema does not declare, naming the unknown keys and the accepted ones. The guard runs before the spawn, so nothing is started.
-- Name `run_in_background` in the tool description as unsupported, and point at the host `pwsh` tool's own `run_in_background` for long-lived processes. This is the key that matters: the host's `bash` and `pwsh` tools both accept it, so a model that expects a job id previously got a foreground call occupying the whole `timeoutMs` (up to `MAX_BASH_TIMEOUT_MS`) instead.
-- Pin the enforced argument list against `parameters.properties` so the two cannot drift apart.
+- Skip the Windows `%SystemRoot%\\System32\\bash.exe` WSL distribution launcher during system PATH fallback, so an explicitly enabled fallback selects a real Git for Windows/MSYS bash instead of silently moving commands into WSL. (#12)
+- Enforce `ops_bash`'s closed argument schema at runtime and reject undeclared keys such as `run_in_background` before spawning. (#10)
+- Persist the one-time legacy shell-fallback migration without calling `Entry.update()` or remounting the plugin. This avoids competing with Desktop profile reloads when configuration is edited, while preserving the safe runtime value and the raw loader row. (B站评论区报告)
 
-Why a runtime guard and not only prompt guidance: 0.2.3 added `ops_* arguments are strict: pass only declared fields.` to the routing section, and the model that hit this still passed `run_in_background` — the reminder was present in that session's prompt. The prompt stays, but it cannot be the only line of defence.
+No new tools, components, configuration keys, or runtime capabilities are included. The three Windows payload dependencies remain pinned to `0.2.1`.
 
 ## [0.2.6] — Owned MCP client lifecycle
 

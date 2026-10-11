@@ -117,18 +117,22 @@ await test('real component mount migrates before publication and preserves manua
       effective.push(resolveConfig(updatedConfig(raw)).allowSystemShellFallback)
       applyComponent(inner, raw, 'shell')
     } }, entry.options.config)
-    await waitFor(() => snapshots.length === 1 && effective.length >= 2, { timeoutMs: 5000 })
-    assert.deepEqual(effective, [false, false])
+    await waitFor(() => snapshots.length === 1 && effective.length >= 1, { timeoutMs: 5000 })
+    assert.deepEqual(effective, [false])
     assert.equal(snapshots[0].allowSystemShellFallback, false)
     assert.equal(snapshots[0].configUpdateVersion, 1)
-    // Both runtime setup and scoped publication still work after the migration remount.
+    // The component remains mounted and scoped tools remain available after
+    // migration; the fix removes the redundant remount, not the mount itself.
     const agent = { id: 'migrated-agent', session: { header: { cwd: process.cwd() } } }
     await ctx.plugin({ inject: ['tools'], apply(inner) { agent.ctx = createScope(inner, agent).ctx } })
     await ctx.serial('agent/created', { agent, source: 'startup' })
     await waitFor(() => scopedToolNames(ctx, agent).includes('ops_bash'), { timeoutMs: 5000 })
-    fiber.update({ ...entry.options.config, allowSystemShellFallback: true }, true)
-    await waitFor(() => effective.length === 3, { timeoutMs: 5000 })
+    // A later ordinary profile edit still follows the host's normal update path.
+    await entry.update({ config: { ...entry.options.config, allowSystemShellFallback: true } })
+    await waitFor(() => effective.length === 2, { timeoutMs: 5000 })
     assert.equal(effective.at(-1), true)
+    assert.equal(resolveConfig(fiber.config).allowSystemShellFallback, true)
+    // Migration itself does not trigger a second mount or another disk write.
     assert.equal(snapshots.length, 1)
   } finally { await shutdown(ctx) }
 })

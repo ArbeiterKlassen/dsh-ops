@@ -197,27 +197,27 @@ await test('a Windows deployment finds the well-known Git for Windows install fo
   })
 })
 
-await test('the System32 WSL launcher is never used as bash', async () => {
+await test('the System32 WSL launcher is skipped even when it is first on PATH', async () => {
   await withTempDir('shells-wsl', async (dir) => {
     const systemRoot = path.join(dir, 'Windows')
-    makeExecutable(path.join(systemRoot, 'System32', 'bash.exe'))
+    const launcher = makeExecutable(path.join(systemRoot, 'System32', 'bash.exe'))
+    const gitBash = makeExecutable(path.join(dir, 'Program Files', 'Git', 'bin', 'bash.exe'))
     const resolved = resolveShells(config({ allowSystemShellFallback: true }), {
       bundleRoot: path.join(dir, 'plugin'),
-      env: { DSH_HOME: TEST_HOME, PATH: '', SystemRoot: systemRoot, ProgramFiles: path.join(dir, 'none') },
+      // Use the Windows separator because this resolves a Windows target even
+      // when the suite is run on another platform.
+      env: {
+        DSH_HOME: TEST_HOME,
+        PATH: path.dirname(launcher),
+        SystemRoot: systemRoot,
+        ProgramFiles: path.join(dir, 'Program Files'),
+      },
       platform: 'win32',
       arch: 'x64',
     })
-    // The invariant is that the WSL launcher is never chosen, not that no bash
-    // exists: a host with msys64 or a Git for Windows in Program Files has a
-    // legitimate bash, and a case that forbade one would only pass on the machine
-    // it was written on (which is what the first CI run of this repository
-    // caught).
-    assert.notEqual(resolved.bash.file, path.join(systemRoot, 'System32', 'bash.exe'))
-    if (resolved.bash.available) {
-      assert.ok(!resolved.bash.file.startsWith(systemRoot), resolved.bash.file)
-    } else {
-      assert.equal(resolved.bash.source, 'missing')
-    }
+    assert.notEqual(resolved.bash.file, launcher)
+    assert.equal(resolved.bash.file, gitBash)
+    assert.equal(resolved.bash.source, 'well-known')
   })
 })
 

@@ -45,7 +45,7 @@ The ordinary DSH CLI cannot manage the reserved `desktop` profile; do not confus
 
 **Update**: repeat the same `npx --yes dsh-ops@latest install --profile ...` command, or use the official CLI's `add dsh-ops@latest`. Reload as requested by the application; restart it when replacing already-loaded code.
 
-The current version, `0.2.8`, builds on the 0.2.7 long-script stability fix and adds a readable `ENOENT` diagnostic when the bundled bash payload is missing. It does not silently switch to an unauthorized system bash. The Electron `workspace-write` `0xC0000142` failure belongs to the DSH host's Windows ACL runner and is outside this plugin's subprocess API; this release does not claim to repair that host issue. All three binary dependencies remain pinned to `0.2.1`, and npm payloads are not republished.
+The current version, `0.2.9`, is a bug-fix release. It skips the Windows WSL launcher during PATH fallback, rejects undeclared `ops_bash` arguments before spawn, and persists the one-time legacy shell-fallback migration without remounting the plugin during a profile reload. It does not add features or new runtime capability. The three Windows payload dependencies remain pinned to `0.2.1`, and npm payloads are not republished.
 
 **Remove and check status**:
 

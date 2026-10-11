@@ -3,7 +3,19 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
-## 0.2.8 Missing bash payload diagnostics
+## 0.2.9 Bug fixes
+
+This release contains only bug fixes. It skips the Windows WSL launcher during
+PATH fallback (#12), rejects undeclared `ops_bash` arguments such as
+`run_in_background` before spawn (#10), and writes the one-time legacy shell
+fallback migration directly through the owning loader tree instead of invoking
+`Entry.update()`. The last change prevents a migration from remounting dsh-ops
+while Desktop is already reloading a profile row, addressing the reported
+configuration-edit slowdown with dsh-ops 0.2.6 and DSH 0.2.0-rc.2.
+
+No feature, component, configuration key, or runtime capability was added. The
+three Windows payload dependencies remain pinned to 0.2.1.
+
 
 Issue #9 showed that a host package-manager prune can leave the bash payload declared in the profile lockfile but absent on disk. `ops_bash` now converts a spawn-time `ENOENT` into a concise actionable result instead of exposing a raw process exception. It does not silently fall back to an unapproved system shell.
 
@@ -42,15 +54,15 @@ not a claim of completed desktop/web upgrade or a ten-minute idle timing test.
 
 ## 0.2.5 Stable safety and verification
 
-The stable main package is `dsh-ops@0.2.8`; it deliberately excludes the
+The stable main package is `dsh-ops@0.2.9`; it deliberately excludes the
 context-compaction beta branch. Main-package patches and runtime payloads have
 independent versions. The exact dependency mapping is:
 
 | Main package | Payload dependency (unchanged) | Upstream runtime |
 | --- | --- | --- |
-| `dsh-ops@0.2.8` | `@dsh-ops/fastctx-win32-x64@0.2.1` | FastCtx 0.2.6, upstream revision `ccaa157790d02328a60786eb94ee5ad698995a5f`; built from `dd348254281bf5eea6c4d9d07c49d82c565666f4` |
-| `dsh-ops@0.2.8` | `@dsh-ops/bash-win32-x64@0.2.1` | PortableGit `v2.56.0.windows.2` (2.56.0.2), bash 5.3.15 |
-| `dsh-ops@0.2.8` | `@dsh-ops/pwsh-win32-x64@0.2.1` | PowerShell 7.6.6 |
+| `dsh-ops@0.2.9` | `@dsh-ops/fastctx-win32-x64@0.2.1` | FastCtx 0.2.6, upstream revision `ccaa157790d02328a60786eb94ee5ad698995a5f`; built from `dd348254281bf5eea6c4d9d07c49d82c565666f4` |
+| `dsh-ops@0.2.9` | `@dsh-ops/bash-win32-x64@0.2.1` | PortableGit `v2.56.0.windows.2` (2.56.0.2), bash 5.3.15 |
+| `dsh-ops@0.2.9` | `@dsh-ops/pwsh-win32-x64@0.2.1` | PowerShell 7.6.6 |
 
 The same payload mapping applies to main-package versions 0.2.2–0.2.5.
 Each payload includes `provenance.json` with its executable SHA-256 and upstream
