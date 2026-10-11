@@ -15,7 +15,7 @@
 
 执行顺序：**工具包 → bash → PowerShell 7**。
 
-仅支持 **Windows x64**，后续补充 Rust 工具后会支持 Linux 和 Mac（Linux 和 Mac 下不提供 bash 功能）。目标宿主 DSH `0.2.0-rc.2`。有问题可以在eac交流群 1083832019 找风雪问。
+仅支持 **Windows x64**，后续补充 Rust 工具后会支持 Linux 和 Mac（Linux 和 Mac 下不提供 bash 功能）。目标宿主 DSH `0.2.0-rc.2`。
 
 ## 安装、更新、卸载
 
