@@ -894,6 +894,32 @@ await test('ops_bash requires exactly one command input', async () => {
   })
 })
 
+await test('ops_bash accepts empty optional input placeholders without discarding real inputs', async () => {
+  for (const placeholder of ['', '   ', null, undefined]) {
+    for (const script of [false, true]) {
+      const { service, specs, settle } = fakeSubprocess({ stdout: 'ok\n' })
+      settle()
+      const definition = bashToolDefinition({ file: 'bash', source: 'config', subprocess: service })
+      const args = script ? { command: placeholder, script_path: 'test.sh' }
+        : { command: 'echo ok', script_path: placeholder }
+      const value = await definition.execute(args)
+      assert.equal(value.error, undefined)
+      assert.deepEqual(specs[0].argv, script ? ['bash', 'test.sh'] : ['bash', '-c', 'echo ok'])
+    }
+  }
+  const { service, specs, settle } = fakeSubprocess()
+  settle()
+  const definition = bashToolDefinition({ file: 'bash', source: 'config', subprocess: service })
+  for (const args of [
+    { command: 'echo ok', script_path: '/dev/null' },
+    { command: 'echo ok', script_path: 123 },
+    { command: false, script_path: 'test.sh' },
+    { command: '', script_path: '' },
+    { command: null, script_path: null },
+  ]) await assert.rejects(() => definition.execute(args), /invalid/)
+  assert.equal(specs.length, 0)
+})
+
 await test('ops_bash rejects a missing command and a bad timeout before spawning', async () => {
   await withTempDir('shells-args', async (dir) => {
     const bash = makeExecutable(path.join(dir, 'bash'))
