@@ -58,6 +58,42 @@ Replace `desktop` with `web` or `tui` as appropriate. You can also uninstall in 
 
 Legacy explicitly provisioned `<DSH_HOME>/dsh-ops/` files must be cleaned separately with `npx --yes dsh-ops@latest uninstall --yes`. Persistent `~/.fastctx/` state is kept by default; add `--purge-fastctx` explicitly if needed. Disabling the background component waits for in-flight calls, then attempts to terminate only its own jobs remembered on the current connection; failures produce warnings. Old jobs whose ownership was lost after disconnect, and permission downgrades alone, do not guarantee termination; handle your own jobs first.
 
+## Known issues
+
+**A missing `bash-win32-x64` under `node_modules/@dsh-ops/` is not a broken installation.** The three payloads are exact-versioned **optional dependencies** (`optionalDependencies`): if your registry has not synced that platform package at the pinned version, the package manager **skips it silently** — the install still exits 0 and prints no warning that names the missing payload.
+
+Measured on 2026-10-12: on `registry.npmmirror.com`, `@dsh-ops/bash-win32-x64` reports `dist-tags.latest = 0.0.0-stage` with `versions` holding only `0.0.0-stage`; the official `registry.npmjs.org` reports `0.2.1`. `npm view @dsh-ops/bash-win32-x64 version` through the mirror therefore prints a misleading old version — do not use it to decide whether the payload is available. This section expires by itself once the mirror catches up; below is how to verify and how to work around it.
+
+**Preferred remedy**: `provision-shells` bypasses the registry, fetches the pinned asset from the upstream GitHub Release, checks its sha256, unpacks it and writes a `.provisioned.json` receipt.
+
+```console
+npx --yes dsh-ops@latest provision-shells --bash
+```
+
+Behind a proxy (`HTTPS_PROXY` is handed to curl explicitly as `--proxy` and is inherited through the environment as well):
+
+```console
+:: cmd
+set HTTPS_PROXY=http://127.0.0.1:7890
+npx --yes dsh-ops@latest provision-shells --bash
+```
+
+```console
+# PowerShell
+$env:HTTPS_PROXY = 'http://127.0.0.1:7890'
+npx --yes dsh-ops@latest provision-shells --bash
+```
+
+**To check the result, run the profile's own copy**: `ladder` reports the bundled rung of **the copy that runs it**, so `npx … ladder` inspects the npx cache copy and its answer has nothing to do with your profile.
+
+```console
+node "%USERPROFILE%\.dsh\profiles\<profile>\node_modules\dsh-ops\bin\dsh-ops.mjs" ladder
+```
+
+The provisioned copy lives in `<DSH_HOME>/dsh-ops/shells` (shared across profiles, so one provision covers every profile on the machine) and outranks the bundled copy when the shells are resolved; `ladder` reports `source: provisioned`.
+
+**Do not** work around a missing payload with `allowSystemShellFallback: true`: that lowers the security posture (it uses a system bash with no pinned digest), and the one-time startup configuration migration sets it back to `false`.
+
 ## Components and prompts
 
 The official marketplace displays three independently toggled components. On first installation, the first two are enabled by default:

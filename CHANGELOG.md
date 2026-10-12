@@ -5,6 +5,18 @@ All notable changes to this package are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Actionable diagnostics for a missing bash payload
+
+Issue #20 reported that a profile installed from a registry which does not carry the platform payload package is told only to "repair the profile installation" — advice that cannot repair a package the registry never had. #16 asked for the same case to reach the README. Both are addressed below; no release is cut here.
+
+- Give a platform-package miss a machine-readable cause (`no-manifest` / `not-declared` / `not-installed` / `incomplete-tree`) and render the remedy from that cause instead of matching on the detail text, so a wording change cannot silently route the answer to the wrong branch.
+- A missing payload now names the registry as the likely reason and points at `dsh-ops provision-shells --bash` — which bypasses the registry, fetches the pinned upstream release, verifies its sha256 and writes a receipt — rather than the `repair the profile installation` wording. (#20)
+- A corrupt payload tree keeps its repair wording and offers the same command as the alternative, so the two shapes stay distinguishable and each names an action that fits it.
+- Split the spawn-time `ENOENT` result by `source` (`bundled` / `provisioned` / `config` / `path`), each naming the action that actually applies, instead of one sentence for all of them.
+- Document the mirror case in all three READMEs: the measured mirror readings and date, the conditional wording, the cmd and PowerShell proxy forms, the profile-side `ladder` check, and the explicit rejection of `allowSystemShellFallback: true` as a workaround. (#20, Refs #16)
+
+No version bump and no `package.json` change. No new tool, component, configuration key or runtime capability; the three Windows payload dependencies are untouched.
+
 ## 0.2.9 — Bug fixes
 
 Bug-fix-only release for issues reported against 0.2.8 and the 0.2.6/DSH 0.2.0-rc.2 combination:
