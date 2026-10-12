@@ -14,8 +14,11 @@
 > [!IMPORTANT]
 > main的代码已经是0.3.0的结构，由于 0.3.0 开始把fastctx工具替换为自己实现的dsh原生工具，可能有奇怪bug——不过从源码构建的小伙伴应该不惧怕bug吧！
 > 0.3.0的ptc模式在 `固定总行数 结构和复杂度 超燃生成mc` 测试中取得了：
+> 
 > 97% token减免（对比windows原装标准模式）
+> 
 > 50% token减免（对比windows原装ptc模式）
+> 
 > 的成绩
 
 <img width="1603" height="1028" alt="247c1326cca5b66e60d330c3f32150e2" src="https://github.com/user-attachments/assets/7c9ba485-5323-42a2-b5a8-6dcda07f91c4" />
