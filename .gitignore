@@ -1,3 +1,7 @@
+# Native worker build output and local audit stores
+native/target/
+.dsh-ops/
+
 # Dependencies
 node_modules/
 

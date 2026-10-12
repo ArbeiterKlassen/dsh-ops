@@ -13,7 +13,7 @@ Reduce the tokens, time and model attention wasted on repeated PowerShell errors
 
 Routing: **toolkit → bash → PowerShell 7**.
 
-Currently supports **Windows x64** only. Linux and Mac support will follow once the Rust tools are added for those platforms (bash functionality will not be provided on Linux or Mac). Target host DSH `0.2.0-rc.2`.
+Legacy components remain **Windows x64**. The new opt-in **0.3.0 PTC component** uses independent native Rust for Windows, macOS and Linux (x64/arm64 package eligibility); Linux x64 and macOS arm64 compile-checks pass, with on-platform runtime/sandbox acceptance still pending. Target host DSH `0.2.0-rc.2`. See [Native PTC](docs/native-ptc.md).
 
 ## Install, update and remove
 
@@ -45,7 +45,7 @@ The ordinary DSH CLI cannot manage the reserved `desktop` profile; do not confus
 
 **Update**: repeat the same `npx --yes dsh-ops@latest install --profile ...` command, or use the official CLI's `add dsh-ops@latest`. Reload as requested by the application; restart it when replacing already-loaded code.
 
-The current version, `0.2.9`, is a bug-fix release. It skips the Windows WSL launcher during PATH fallback, rejects undeclared `ops_bash` arguments before spawn, and persists the one-time legacy shell-fallback migration without remounting the plugin during a profile reload. It does not add features or new runtime capability. The three Windows payload dependencies remain pinned to `0.2.1`, and npm payloads are not republished.
+The local `0.3.0` development version adds independent native Rust PTC enhancement: `ops_batch` and `ops_result`, DSH-native confinement, durable per-item recovery, bounded references and compact projection. Legacy Windows payloads remain pinned to `0.2.1`; this is not a published release or a complete FastCtx migration. Build and opt-in instructions: [Native PTC](docs/native-ptc.md).
 
 **Remove and check status**:
 
@@ -60,13 +60,14 @@ Legacy explicitly provisioned `<DSH_HOME>/dsh-ops/` files must be cleaned separa
 
 ## Components and prompts
 
-The official marketplace displays three independently toggled components. On first installation, the first two are enabled by default:
+The bundle declares four independently toggled components. On first installation, the first two legacy components are enabled by default; PTC is opt-in and requires a native worker build:
 
 | Component | Description | Default | Published tools |
 | --- | --- | --- | --- |
 | `dsh-ops-bash & powershell 7` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
 | `dsh-ops-file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Four file tools |
 | `dsh-ops-background` | Managed background tasks for scientific simulations, model training and other long-running processes | Off | Start, read output, list and terminate background jobs |
+| `dsh-ops-ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
 
 “Prefer bash as the terminal” means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. When the shell component is on, the official configuration lifecycle temporarily sets the PowerShell 7 path for `pwsh-sandbox`; when off, it restores the executor's latest original configuration without writing profile configuration. Switching executor configuration does not cancel already-running host commands.
 

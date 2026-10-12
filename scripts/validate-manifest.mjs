@@ -29,6 +29,8 @@ import {
   publicToolName,
   renderToolingPolicy,
 } from '../lib/policy.js'
+import { resolvePtcConfig } from '../lib/ptc/index.js'
+import { PTC_TOOLS, definition } from '../lib/ptc/contract.js'
 import { DEFAULT_SERVER_NAME, resolveConfig } from '../lib/config.js'
 
 /** The repository root (`scripts/`'s parent). */
@@ -223,13 +225,13 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
     const rows = Array.isArray(document)
       ? document.flatMap((entry) => (Array.isArray(entry?.insert) ? entry.insert : []))
       : []
-    check(rows.length === 3, 'the bundle declares exactly three components')
-    for (const component of ['shell', 'file', 'background']) {
+    check(rows.length === 4, 'the bundle declares exactly four components')
+    for (const component of ['shell', 'file', 'background', 'ptc']) {
       const row = rows.find(candidate => candidate?.name === `${pkg.name}/${component}`)
       check(row?.id === `${pkg.name}-${component}`, `the ${component} component has a stable row id`)
       if (!row) continue
-      check((row.disabled === true) === (component === 'background'), `${component} has its documented enablement default`)
-      try { resolveConfig(row.config); check(true, `${component} config is valid`) }
+      check((row.disabled === true) === ['background', 'ptc'].includes(component), `${component} has its documented enablement default`)
+      try { (component === 'ptc' ? resolvePtcConfig : resolveConfig)(row.config); check(true, `${component} config is valid`) }
       catch (error) { check(false, `${component} config is valid`, String(error?.message ?? error)) }
     }
   }
@@ -475,7 +477,15 @@ if (display !== undefined) {
 }
 
 /** Payload the published package must carry, as `files` entries or paths they cover. */
+const ptc = manifestRaw.contributes?.['x-components']?.find(c => c.id === 'dsh-ops-ptc')
+check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === false, 'native PTC component is opt-in')
+check(JSON.stringify(ptc?.tools) === JSON.stringify(PTC_TOOLS.map(publicToolName)), 'PTC declaration matches the generated tool contract')
+check(PTC_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
+check(['win32', 'darwin', 'linux'].every(p => pkg.os.includes(p) && ptc?.platforms?.includes(p)), 'PTC package supports all native platform families')
 const REQUIRED_ENTRIES = [
+  'native/Cargo.toml',
+  'native/Cargo.lock',
+  'native/src',
   'lib',
   'bin',
   'cordis.patch.yml',

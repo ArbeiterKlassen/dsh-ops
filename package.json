@@ -1,6 +1,6 @@
 {
   "name": "dsh-ops",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "private": true,
   "publishConfig": {
     "access": "public"
@@ -14,10 +14,13 @@
     "url": "https://github.com/T-Auto/dsh-ops/issues"
   },
   "os": [
-    "win32"
+    "win32",
+    "darwin",
+    "linux"
   ],
   "cpu": [
-    "x64"
+    "x64",
+    "arm64"
   ],
   "description": "Provides bash, PowerShell 7, and a suite of high-performance tools written in Rust for Windows DSH to enhance token efficiency",
   "icon": "./icon.png",
@@ -55,7 +58,10 @@
       "default": "./lib/components/background/index.js"
     },
     "./background/package.json": "./lib/components/background/package.json",
-    "./background/locale/*.json": "./lib/components/background/locale/*.json"
+    "./background/locale/*.json": "./lib/components/background/locale/*.json",
+    "./ptc": { "default": "./lib/components/ptc/index.js" },
+    "./ptc/package.json": "./lib/components/ptc/package.json",
+    "./ptc/locale/*.json": "./lib/components/ptc/locale/*.json"
   },
   "bin": {
     "dsh-ops": "bin/dsh-ops.mjs"
@@ -80,6 +86,9 @@
     "README.zh.md",
     "PROVENANCE.md",
     "CHANGELOG.md",
+    "native/Cargo.toml",
+    "native/Cargo.lock",
+    "native/src",
     "vendor/fastctx/Cargo.toml",
     "vendor/fastctx/Cargo.lock",
     "vendor/fastctx/build.rs",
@@ -94,6 +103,8 @@
   ],
   "scripts": {
     "status": "node bin/dsh-ops.mjs status",
+    "build:ptc": "node bin/dsh-ops.mjs build-ptc",
+    "test:ptc": "node test/run.mjs ptc",
     "build:rust": "node bin/dsh-ops.mjs build",
     "provision": "node bin/dsh-ops.mjs provision",
     "validate:manifest": "node scripts/validate-manifest.mjs",

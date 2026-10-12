@@ -3,6 +3,35 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
+## 0.3.0 Native PTC development
+
+The independent MIT Rust core in `native/` is original dsh-ops code. It uses
+cap-std/cap-fs-ext handle-relative filesystem operations, serde, SHA-256, UUIDs
+and fs2 workspace locking. No FastCtx source was modified or linked by this
+component; legacy components and all applicable notices remain intact.
+
+Host contract source (DSH 0.2.0-rc.2):
+
+- `packages/core/tools/src/index.ts`: `register`, `presentAs`, scoped SDK/wire
+  presentation and `tools/change`; the component never invokes private modeFor.
+- `packages/core/system-prompt/src/index.ts`: public `assemble({scope})`, sections
+  and wire tools distinguish pure PTC from native/hybrid.
+- `packages/sandbox/{sandbox,sandbox-policy}/src/index.ts`: per-session policy,
+  exact argv confinement, full/partial enforcement and runner diagnostics.
+- `packages/subprocess/subprocess/src/types.ts`: bounded stdin/collected stdout,
+  credential scrub and managed-range cancellation.
+- `packages/jobs/jobs/src/{index,types}.ts`: optional host-owned foreground job
+  admission, progress, wait, cancellation and collected-record removal.
+
+Windows x64 release worker build and three isolated PTC scenarios run with real
+Rust/Cordis/tool/prompt services; confinement and optional jobs are simulated.
+Linux x64 (`x86_64-unknown-linux-gnu`) and macOS arm64 (`aarch64-apple-darwin`)
+`cargo check --locked` pass from the Windows toolchain. These are compile checks,
+not linking/runtime/real sandbox acceptance. Other platform/architecture pairs,
+real process sandbox denial and live Desktop/PTC execution remain release gates.
+No npm publish, GitHub push, or claimed model-token/turn benchmark took place.
+Details, budgets and security limitations: [Native PTC](docs/native-ptc.md).
+
 ## 0.2.9 Bug fixes
 
 This release contains only bug fixes. It skips the Windows WSL launcher during

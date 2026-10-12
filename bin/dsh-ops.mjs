@@ -90,6 +90,7 @@ Usage:
                                   Report target-profile installation (tui maps to dsh-tui)
   dsh-ops resolve                 Print the FastCtx executable the plugin will host
   dsh-ops status                  Resolve, probe, and list the MCP tools it publishes
+  dsh-ops build-ptc              Build the independent native Rust PTC worker (all platforms)
   dsh-ops build [--force]         Build the vendored FastCtx source with cargo (release)
   dsh-ops provision [--force]     Build if needed, then install into the managed runtime dir
   dsh-ops uninstall [--yes] [--purge-fastctx]
@@ -1172,6 +1173,12 @@ async function main() {
       return commandStatus()
     case 'ladder':
       return commandLadder({ json: values.json === true, configFile: values.config })
+    case 'build-ptc': {
+      const cargo = findCargo()
+      console.log(`toolchain: ${cargo.version}`)
+      const result = await cargoBuild({ cargo, sourceDir: path.join(PACKAGE_ROOT, 'native'), onLine: line => console.log(line) })
+      return result.code
+    }
     case 'build':
       return commandBuild(values.force === true)
     case 'provision':

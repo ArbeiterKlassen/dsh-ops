@@ -3,7 +3,7 @@
   "manifestVersion": "0.15",
   "id": "dsh-ops.fastctx",
   "name": "dsh-ops",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "license": "MIT AND Apache-2.0",
   "facets": {
     "host": {
@@ -23,7 +23,7 @@
     {
       "name": "dsh-ops.process.spawn",
       "scope": "subprocess",
-      "reason": "Start the FastCtx MCP server and the command execution it owns."
+      "reason": "Start legacy FastCtx/shells, or the independent PTC worker through DSH subprocess and confinement."
     },
     {
       "name": "dsh-ops.fs.read",
@@ -33,7 +33,7 @@
     {
       "name": "dsh-ops.fs.write",
       "scope": "dsh-home",
-      "reason": "Install the provisioned runtime into <DSH_HOME>/dsh-ops/bin and record its receipt."
+      "reason": "Install runtime receipts; the PTC component journals bounded audit/results under the session workspace/.dsh-ops, enforced by per-call DSH file policy."
     }
   ],
   "contributes": {
@@ -95,6 +95,16 @@
       }
     ],
     "x-components": [
+      {
+        "id": "dsh-ops-ptc",
+        "entry": "dsh-ops/ptc",
+        "defaultEnabled": false,
+        "platforms": ["win32", "darwin", "linux"],
+        "presentation": "PTC-only",
+        "runtime": "independent native Rust; no FastCtx dependency",
+        "tools": ["ops_batch", "ops_result"],
+        "permissions": "Per-call DSH sandboxPolicy; workspace-write requires full sandbox.confine enforcement; subprocess owns cancellation and credential scrub"
+      },
       {
         "id": "dsh-ops-shell",
         "entry": "dsh-ops/shell",
