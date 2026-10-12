@@ -4,6 +4,41 @@ Issues: [#3](https://github.com/T-Auto/dsh-ops/issues/3), [#8](https://github.co
 This component is independent of FastCtx. Existing file/shell/background components
 remain unchanged backends; this is not a claim that their migration is complete.
 
+## Runtime-bearing installation and original DSH permission linkage
+
+Published packages must carry `runtime/<platform>-<arch>/dsh-ops-worker[.exe]`
+plus checksum/version provenance for all six supported platform/architecture pairs.
+The release assembler refuses an incomplete matrix; `bin/native-runtime.mjs`
+stages native builds, and runtime discovery checks the installed target's receipt.
+No postinstall download, ACL modification or hand-written binaryPath is required.
+Source users run `npm run build:ptc` once; it builds and stages their native target
+without requiring a profile override. Explicit binary selections remain authoritative.
+The six-target release matrix is implemented but has not been run/published here;
+this checkout currently contains a staged Windows x64 worker only.
+
+Permission corrections supersede the original v1 notes below:
+
+- Normal modes use the original per-call `sandboxPolicy` and `sandbox.confine`.
+  Both `full` and `partial` enforcement are accepted and accurately reported,
+  exactly as DSH does; Windows ACL is intentionally reported as partial.
+- `read-only` can page existing references through an existing read-only shared
+  lock without creating directories, records or lockfiles. Other actions are denied.
+- Optional absolute `root` selects the operation/data root, not the permission
+  root. `workspace-write` always confines with the original session workspace.
+  `danger-full-access` uses no confinement and allows roots outside the workspace.
+- No extra plugin permission system, chmod/ACL repair, self-escalation or automatic
+  full-access fallback. No-follow/protection/no-overwrite are operation semantics,
+  not another sandbox. Full access does not remove those integrity checks.
+- Acceptance now includes original installed DSH sandbox-local and subprocess-local
+  providers: real confined copy, read-only page, external-root denial and unrestricted
+  external-root remove in disposable fixtures. These run on Windows x64 and pass.
+  No user-workspace permissions were changed by the test.
+
+An original `run_code` failure at `grantWrite(workspace)` happens before any SDK
+call. A plugin cannot repair that by registering tools differently; npm packaging
+cannot confer missing Windows security-descriptor rights. That host failure remains
+a host prerequisite/blocker, not a reason to weaken the plugin's confinement.
+
 ## Build and enable
 
 ```console
@@ -18,11 +53,11 @@ session toolchain before building; do not add multi-version toolchains to global
 
 Enable the opt-in `dsh-ops/ptc` bundle row. Its only config keys are `required`
 (default false) and an optional absolute `binaryPath`. `DSH_OPS_WORKER_BIN` can
-select a build; otherwise the component uses `native/target/release/dsh-ops-worker`
-(`.exe` on Windows). A missing worker warns and publishes nothing; `required: true`
-rejects activation. Published npm source packages need a local build or an explicit
-operator-provided worker. Prebuilt macOS/Linux/Windows payload distribution is not
-implemented in this delivery.
+select a build; otherwise the component uses `runtime/<platform>-<arch>/dsh-ops-worker[.exe]` before `native/target/release`.
+Published packages include runtime bytes; source checkouts stage them by building. A missing worker warns and publishes nothing; `required: true`
+rejects activation. No install-time compilation or download is used.
+Release assembler requires every advertised target; prebuilt payloads have not
+been published during this development session.
 
 The session must already use DSH's **PTC-only** presentation. The component does
 not force presentation, replace the registry, or create a REPL. It recognizes the
@@ -50,8 +85,8 @@ console.log({status: result.status, done: result.done, failed: result.failed,
   unknown: result.unknown, detailsRef: result.detailsRef});
 ```
 
-Workspace root comes only from `sandboxPolicy.resolve({session})`, not model
-arguments. Paths are **root-relative forward-slash paths** on all platforms,
+Workspace authority comes only from `sandboxPolicy.resolve({session})`.
+Optional model `root` selects an absolute operation root, not new authority. Paths are **root-relative forward-slash paths** on all platforms,
 including Windows (Unicode/spaces supported); absolute paths, `..`, device/stream
 names and ambiguous Windows spellings are rejected rather than shell-escaped.
 Destination parent directories must already exist. No overwrite, cyclic moves,
@@ -96,12 +131,13 @@ silent empty page. Complete data stays accessible through subsequent pages.
 
 Every invocation requires a calling session identity, DSH `sandboxPolicy`,
 `systemPrompt`, `tools` and `subprocess`. In `workspace-write`, exact native argv
-is wrapped through **`sandbox.confine`** and only `enforcement: full` is accepted.
-Missing/partial/broken confinement fails closed. There is no unconfined fallback.
+is wrapped through **`sandbox.confine`**. The original host's enforcement level
+(`full` or `partial`, including Windows ACL partial) is accepted and reported.
+Missing/broken confinement fails closed. There is no unconfined fallback.
 `danger-full-access` intentionally bypasses confinement as the host policy defines,
-but operations still stay root-relative. Policy is resolved again after async
-sandbox preparation. `read-only` is denied even for page: the current store opens
-an exclusive writable lock; it never secretly writes around read-only policy.
+and permits explicit roots outside the workspace. Policy is resolved again after
+async sandbox preparation. `read-only` supports existing result pages through a
+read-only shared lock and denies mutations or new records.
 Approval/escalation stays with DSH; the component does not self-grant permissions.
 
 DSH subprocess owns credential scrub, process termination and cancellation. Native
@@ -157,7 +193,8 @@ paths and can double-count hardlinks; they are not physical reclaimed space.
 
 ## Verification and remaining release gates
 
-One isolated `test/ptc.test.mjs` contains three compact scenarios, separate from
+One isolated `test/ptc.test.mjs` contains three compact scenarios plus a native
+host-provider acceptance block, separate from
 all `native/src` and `lib/ptc` business code:
 
 1. Mixed temp workspace: protected main, link cleanup, readonly Git file,
@@ -169,7 +206,8 @@ all `native/src` and `lib/ptc` business code:
    SDK publication, native/hybrid isolation, authority denial, interruption facts
    and unload. The simulated provider is **not** evidence of OS sandbox isolation.
 
-Windows x64: release build, clippy `-D warnings`, and full `npm run verify` executed.
+Windows x64: release build, clippy `-D warnings`, full `npm run verify` and original
+DSH process sandbox acceptance executed.
 macOS/Linux: `cargo check --locked` passes for Linux x64
 (`x86_64-unknown-linux-gnu`) and macOS arm64 (`aarch64-apple-darwin`), using the
 Windows Rust toolchain's target standard libraries. These checks compile the

@@ -97,6 +97,8 @@ pub type Result<T> = std::result::Result<T, Failure>;
 pub struct Request {
     pub root: String,
     #[serde(default)]
+    pub read_only: bool,
+    #[serde(default)]
     pub root_identity: String,
     pub scope: String,
     pub tool: String,

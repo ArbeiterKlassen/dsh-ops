@@ -29,6 +29,17 @@ Linux x64 (`x86_64-unknown-linux-gnu`) and macOS arm64 (`aarch64-apple-darwin`)
 `cargo check --locked` pass from the Windows toolchain. These are compile checks,
 not linking/runtime/real sandbox acceptance. Other platform/architecture pairs,
 real process sandbox denial and live Desktop/PTC execution remain release gates.
+Real Windows x64 DSH sandbox-local/subprocess-local acceptance was subsequently
+added and passed: workspace-write copy, read-only result page without storage
+writes, denied outside-root mutation, and unconfined full-access outside-root
+mutation. This corrects the initial full-only enforcement gate: original Windows
+ACL reports partial and is now accepted with that exact fact returned.
+
+Runtime discovery now resolves packaged `runtime/<platform>-<arch>` bytes with
+version/checksum receipts before source fallback. Source builds stage their runtime
+automatically. Release assembly requires six native target builds and rejects
+incomplete packages; the release matrix has not been run or published here.
+
 No npm publish, GitHub push, or claimed model-token/turn benchmark took place.
 Details, budgets and security limitations: [Native PTC](docs/native-ptc.md).
 

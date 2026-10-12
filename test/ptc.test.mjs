@@ -12,6 +12,9 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import * as ptc from '../lib/ptc/index.js'
 import { definition } from '../lib/ptc/contract.js'
+import { resolveWorker } from '../lib/ptc/runtime.js'
+import Sandbox from '@deepseek-ai/dsh-sandbox-local'
+import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import { invoke } from '../lib/ptc/worker.js'
 const file = process.env.DSH_OPS_WORKER_BIN ?? path.resolve('native/target/release', process.platform === 'win32' ? 'dsh-ops-worker.exe' : 'dsh-ops-worker')
 assert.ok(fs.existsSync(file), 'Build the independent worker with npm run build:ptc; this suite never silently skips.')
@@ -163,12 +166,13 @@ try {
       if (name === 'sandbox') return {confine:async argv=>({argv,enforcement:'partial'})}
       return ctx.get(name)
     } }
-    assert.equal((await invoke(partialSandboxCtx,file,'batch',{action:'run',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure},new AbortController().signal)).error.code,'SANDBOX_UNAVAILABLE')
+    const partial = await invoke(partialSandboxCtx,file,'batch',{action:'plan',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure},new AbortController().signal)
+    assert.equal(partial.status,'planned'); assert.equal(partial.sandbox.enforcement,'partial')
     const monitored = await def.execute({action:'plan',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure,signal:new AbortController().signal})
     assert.equal(monitored.status,'planned'); assert.equal(hostJobs.size,0); assert.ok(jobNumber >= 1)
     const aborted = new AbortController(); aborted.abort()
     assert.equal((await invoke(ctx,file,'batch',{action:'run',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure},aborted.signal)).error.effectState,'none')
-    assert.equal(calls.length, before+1)
+    assert.equal(calls.length, before+2)
     const abortDuringWork = new AbortController()
     const interruptedCtx = { get(name) {
       if (name === 'sandboxPolicy') return { resolve: () => ({mode:'danger-full-access',workspaceRoot:dir}) }
@@ -194,4 +198,48 @@ try {
     assert.ok(ctx.get('tools').get('foreign')); assert.equal(Object.hasOwn(ctx.get('tools'),'register'),false)
     console.log('ok: real DSH scopes/SDK, native+hybrid isolation, fail-closed authority and unload')
   } finally { for (const child of handles) child.kill(); await ctx.fiber.dispose() }
+
+  // Native sandbox acceptance: original DSH providers, not mocks. No changes to
+  // a user's workspace permissions; only the provider-owned temporary fixture.
+  // Installed-package resolution is tested without source/build fallback.
+  const isolatedPackage = path.join(dir,'runtime-package')
+  fs.mkdirSync(isolatedPackage)
+  fs.copyFileSync('package.json',path.join(isolatedPackage,'package.json'))
+  const runtimeDir = path.resolve('runtime',`${process.platform}-${process.arch}`)
+  fs.cpSync(runtimeDir,path.join(isolatedPackage,'runtime',`${process.platform}-${process.arch}`),{recursive:true})
+  assert.ok(resolveWorker({}, {packageRoot:isolatedPackage}).startsWith(isolatedPackage))
+  console.log('ok: installed runtime resolves without binaryPath or source build tree')
+  const real = new Context(); real.logger.level = 0
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(),'ops-outside-'))
+  const external = path.join(outside,'protected.txt'); fs.writeFileSync(external,'keep')
+  try {
+    await real.plugin(Subprocess)
+    await real.plugin(Sandbox, {})
+    const agent = { session: {id:'real-ptc',mode:'workspace-write',header:{cwd:dir}} }
+    await real.plugin(inner => { inner.provide('sandboxPolicy',{resolve:({session})=>({mode:session.mode,workspaceRoot:dir,sessionId:session.id})}) })
+    write('real-source','native')
+    const call = (tool,args) => invoke(real,file,tool,args,{agent},new AbortController().signal)
+    const copied = await call('batch',{action:'run',operations:[{op:'copy',path:'real-source',to:'real-copy'}]})
+    assert.equal(copied.status,'completed',JSON.stringify(copied))
+    agent.session.mode='read-only'
+    const beforeStore = fs.readdirSync(path.join(dir,'.dsh-ops')).sort()
+    const readonlyPage = await call('result',{action:'page',id:copied.detailsRef})
+    assert.equal(readonlyPage.items[0].state,'completed',JSON.stringify(readonlyPage))
+    assert.deepEqual(fs.readdirSync(path.join(dir,'.dsh-ops')).sort(),beforeStore)
+    agent.session.mode='workspace-write'
+    const denied=await call('batch',{root:outside,action:'run',operations:[{op:'remove',path:'protected.txt'}]})
+    assert.equal(denied.status,'error',JSON.stringify(denied)); assert.ok(fs.existsSync(external))
+    agent.session.mode='danger-full-access'
+    const unrestricted=await call('batch',{root:outside,action:'run',operations:[{op:'remove',path:'protected.txt'}]})
+    assert.equal(unrestricted.status,'completed',JSON.stringify(unrestricted)); assert.equal(fs.existsSync(external),false)
+    assert.equal(unrestricted.sandbox.enforcement,undefined)
+    assert.equal(path.basename(resolveWorker({}, {packageRoot:path.resolve('.')})), path.basename(file))
+    assert.throws(() => resolveWorker({binaryPath:path.join(dir,'missing-worker.exe')}), /unavailable/)
+    const staged = path.join(dir,'installed-package'); fs.mkdirSync(staged)
+    fs.copyFileSync('package.json',path.join(staged,'package.json'))
+    const runtime = path.dirname(resolveWorker({}, {packageRoot:path.resolve('.')}))
+    fs.cpSync(runtime,path.join(staged,'runtime',`${process.platform}-${process.arch}`),{recursive:true})
+    assert.ok(resolveWorker({}, {packageRoot:staged}).startsWith(staged))
+    console.log('ok: original DSH native sandbox, readonly pages, outside-root denial and full-access outside-root execution')
+  } finally { await real.fiber.dispose(); fs.rmSync(outside,{recursive:true,force:true}) }
 } finally { fs.rmSync(dir, { recursive: true, force: true }) }

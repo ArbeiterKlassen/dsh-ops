@@ -1177,7 +1177,10 @@ async function main() {
       const cargo = findCargo()
       console.log(`toolchain: ${cargo.version}`)
       const result = await cargoBuild({ cargo, sourceDir: path.join(PACKAGE_ROOT, 'native'), onLine: line => console.log(line) })
-      return result.code
+      if (result.code !== 0) return result.code
+      const staged = spawnSync(process.execPath, [path.join(PACKAGE_ROOT, 'bin/native-runtime.mjs'), 'stage', '--platform', `${process.platform}-${process.arch}`], { stdio: 'inherit', windowsHide: true })
+      if (staged.error) throw staged.error
+      return staged.status ?? 1
     }
     case 'build':
       return commandBuild(values.force === true)

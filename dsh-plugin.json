@@ -103,7 +103,7 @@
         "presentation": "PTC-only",
         "runtime": "independent native Rust; no FastCtx dependency",
         "tools": ["ops_batch", "ops_result"],
-        "permissions": "Per-call DSH sandboxPolicy; workspace-write requires full sandbox.confine enforcement; subprocess owns cancellation and credential scrub"
+        "permissions": "Per-call original DSH sandboxPolicy and sandbox.confine (host full/partial enforcement reported); full access bypasses confinement and permits explicit operation roots; subprocess owns cancellation and credential scrub"
       },
       {
         "id": "dsh-ops-shell",

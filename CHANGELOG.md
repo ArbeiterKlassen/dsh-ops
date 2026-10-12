@@ -10,11 +10,14 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Add opt-in `dsh-ops/ptc`: two structured capabilities, `ops_batch` and `ops_result`, with no FastCtx or shell dependency.
 - Share independent safe Rust core for preflighted copy/move/remove, content verification, protected/no-follow paths, write-ahead per-item manifests and conservative resume.
 - Add scoped expiring result references, byte/quantity-bounded pages, field/equality projection and operation-reference consumption without widening authority.
-- Execute through DSH policy + full native process confinement + subprocess cancellation; standard/native and hybrid/both scopes receive no PTC-only definitions.
+- Follow original DSH enforcement levels (including Windows partial ACL confinement), enable no-write read-only reference pages, and allow explicit external roots under danger-full-access without confinement.
+- Stage checksum-verified native runtime binaries automatically after source builds; package runtime targets directly and block release assembly without the full six-target matrix. No install-time downloads or ACL repairs.
+- Extend the existing PTC simulation suite with original DSH sandbox/subprocess provider acceptance: workspace copy, read-only page, outside-write denial and full-access outside-root operation.
+- Execute through DSH policy + native process confinement + subprocess cancellation; standard/native and hybrid/both scopes receive no PTC-only definitions.
 - Keep business code separate from one three-scenario simulation suite using the real Rust worker and real Cordis/tools/prompt registration.
 - Target native Windows/macOS/Linux; Windows runtime acceptance and Linux/macOS compile checks are recorded separately from pending on-platform sandbox tests. Legacy payloads remain unchanged.
 - Keep each component icon inside its exported manifest directory; fix the PTC Plugin Manager metadata error caused by the parent-relative icon path, with coverage in the existing manifest suite.
-- Build with `npm run build:ptc`; source delivery, not a published prebuilt payload release. See `docs/native-ptc.md` for limits and provenance.
+- Build with `npm run build:ptc`; runtime-bearing packaging is prepared but the multi-platform release is not yet published. See `docs/native-ptc.md` for limits and provenance.
 
 ## [Unreleased] — Optional bash input placeholders
 

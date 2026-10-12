@@ -1304,6 +1304,9 @@ function printInjection(context) {
  * @returns {Promise<object>} the publish directory facts.
  */
 async function stepPublishDir(context, assembled) {
+  // Release packages must contain every advertised native target. A one-host
+  // source build is sufficient for local use, never for a cross-platform release.
+  run(process.execPath, [path.join(REPO_ROOT, 'bin/native-runtime.mjs'), 'check'])
   const manifest = mainManifest()
   const directory = path.join(context.dist, 'publish', `${manifest.name}-${manifest.version}`)
   if (fs.existsSync(directory)) fs.rmSync(directory, { recursive: true, force: true })

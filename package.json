@@ -59,7 +59,9 @@
     },
     "./background/package.json": "./lib/components/background/package.json",
     "./background/locale/*.json": "./lib/components/background/locale/*.json",
-    "./ptc": { "default": "./lib/components/ptc/index.js" },
+    "./ptc": {
+      "default": "./lib/components/ptc/index.js"
+    },
     "./ptc/package.json": "./lib/components/ptc/package.json",
     "./ptc/locale/*.json": "./lib/components/ptc/locale/*.json"
   },
@@ -86,6 +88,7 @@
     "README.zh.md",
     "PROVENANCE.md",
     "CHANGELOG.md",
+    "runtime",
     "native/Cargo.toml",
     "native/Cargo.lock",
     "native/src",
@@ -104,6 +107,8 @@
   "scripts": {
     "status": "node bin/dsh-ops.mjs status",
     "build:ptc": "node bin/dsh-ops.mjs build-ptc",
+    "stage:ptc": "node bin/native-runtime.mjs stage",
+    "check:ptc-runtime": "node bin/native-runtime.mjs check",
     "test:ptc": "node test/run.mjs ptc",
     "build:rust": "node bin/dsh-ops.mjs build",
     "provision": "node bin/dsh-ops.mjs provision",
@@ -124,14 +129,16 @@
     }
   },
   "optionalDependencies": {
-    "@dsh-ops/fastctx-win32-x64": "0.2.1",
     "@dsh-ops/bash-win32-x64": "0.2.1",
+    "@dsh-ops/fastctx-win32-x64": "0.2.1",
     "@dsh-ops/pwsh-win32-x64": "0.2.1"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-sandbox-local": "0.2.0-rc.2",
     "@deepseek-ai/dsh-scope": "0.2.0-rc.2",
     "@deepseek-ai/dsh-subprocess": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-subprocess-local": "0.2.0-rc.2",
     "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
     "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
     "@dsh-std/manifest": "0.1.1-rc.3",

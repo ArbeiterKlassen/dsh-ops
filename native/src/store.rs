@@ -15,24 +15,36 @@ const MAX_FILES: usize = 4096;
 pub struct Store {
     pub dir: Dir,
     _lock: std::fs::File,
+    read_only: bool,
 }
 impl Store {
-    pub fn open(root: &Dir) -> Result<Self> {
-        match root.create_dir(STORE) {
-            Ok(()) => (),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
-            Err(e) => return Err(e.into()),
+    pub fn open(root: &Dir, read_only: bool) -> Result<Self> {
+        if !read_only {
+            match root.create_dir(STORE) {
+                Ok(()) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
+                Err(e) => return Err(e.into()),
+            }
         }
         let dir = root.open_dir_nofollow(STORE)?;
         let mut opts = OpenOptions::new();
         opts.read(true)
-            .write(true)
-            .create(true)
+            .write(!read_only)
+            .create(!read_only)
             .follow(FollowSymlinks::No);
         let lock = dir.open_with("lock", &opts)?.into_std();
-        lock.try_lock_exclusive()
+        let locked = if read_only {
+            FileExt::try_lock_shared(&lock)
+        } else {
+            FileExt::try_lock_exclusive(&lock)
+        };
+        locked
             .map_err(|_| Failure::new("JOB_BUSY", "Another operation owns this workspace store"))?;
-        Ok(Self { dir, _lock: lock })
+        Ok(Self {
+            dir,
+            _lock: lock,
+            read_only,
+        })
     }
     pub fn validate_id(id: &str) -> Result<()> {
         if id.len() != 38
@@ -74,6 +86,9 @@ impl Store {
         Ok(serde_json::from_slice(&bytes)?)
     }
     pub fn save<T: Serialize>(&self, id: &str, value: &T) -> Result<()> {
+        if self.read_only {
+            return Err(Failure::new("POLICY_DENIED", "Read-only result store"));
+        }
         Self::validate_id(id)?;
         let bytes = serde_json::to_vec(value)?;
         if bytes.len() > MAX_RECORD {
@@ -135,6 +150,9 @@ impl Store {
         Ok(())
     }
     pub fn release(&self, id: &str) -> Result<()> {
+        if self.read_only {
+            return Err(Failure::new("POLICY_DENIED", "Read-only result store"));
+        }
         Self::validate_id(id)?;
         if !id.starts_with("r-") {
             return Err(Failure::new(

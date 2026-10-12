@@ -1,4 +1,5 @@
 # Native worker build output and local audit stores
+runtime/
 native/target/
 .dsh-ops/
 
