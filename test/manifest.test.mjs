@@ -63,12 +63,19 @@ await test('every declared tool is one the policy actually names', () => {
     levels: { fastctx: true, bash: true, pwsh: true },
   })
 
-  // Index 0 is the hosted FastCtx namespace: exactly the FastCtx tools.
+  // Index 0 is the native file namespace. FastCtx is deliberately confined
+  // to the disabled background component at index 1.
   const hosted = namespaces[0]
   assert.deepEqual(
     [...hosted.tools].sort(),
-    [...FILE_TOOLS, ...BACKGROUND_TOOLS].sort(),
-    'the hosted namespace declares every FastCtx tool and nothing else',
+    [...FILE_TOOLS].sort(),
+    'the native namespace declares exactly the four file tools',
+  )
+  assert.equal(hosted.transport, 'in-process')
+  assert.deepEqual(
+    [...namespaces[1].tools].sort(),
+    [...BACKGROUND_TOOLS].sort(),
+    'the optional FastCtx namespace is background-only',
   )
   for (const tool of hosted.tools) {
     assert.ok(policy.includes(publicToolName(tool)), `the policy never names ${publicToolName(tool)}`)
@@ -78,8 +85,8 @@ await test('every declared tool is one the policy actually names', () => {
   // names are checked against `IN_PROCESS_TOOLS` and against the policy, never
   // against the FastCtx list. Vacuously true while no such entry exists, so the
   // suite is green before and after that entry lands.
-  for (const [offset, entry] of namespaces.slice(1).entries()) {
-    const index = offset + 1
+  for (const [offset, entry] of namespaces.slice(2).entries()) {
+    const index = offset + 2
     assert.ok(
       Array.isArray(entry.tools) && entry.tools.length > 0,
       `the namespace at index ${index} must declare its tools`,
@@ -104,7 +111,7 @@ await test('the declared namespace documents the upstream names and the public p
   const namespace = raw.contributes['x-tool-namespaces'][0]
   // `serverName` stays the bridge's own namespace: it is what the bridge
   // reserves and what this plugin intercepts, not what the model sees.
-  assert.equal(namespace.serverName, 'fastctx')
+  assert.equal(namespace.serverName, 'dsh-ops')
   assert.equal(namespace.publicPrefix, TOOL_PREFIX)
   for (const tool of namespace.tools) {
     assert.ok(publicToolName(tool).startsWith(namespace.publicPrefix))

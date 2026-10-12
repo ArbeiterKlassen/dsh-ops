@@ -39,7 +39,20 @@ call. A plugin cannot repair that by registering tools differently; npm packagin
 cannot confer missing Windows security-descriptor rights. That host failure remains
 a host prerequisite/blocker, not a reason to weaken the plugin's confinement.
 
-## Build and enable
+## Native file component and release scope
+
+The file component is now independent of FastCtx. The shipped native worker is
+currently validated on Windows x64; the six-platform runtime matrix and
+Linux/macOS on-platform sandbox acceptance remain release gates. Do not publish
+or describe a complete cross-platform release until every advertised runtime
+has a provenance receipt and its real DSH composition checks pass.
+
+In `workspace-write`, `ops_batch`/`ops_result` mutations and new audit records
+remain intentionally denied because their durable records are outside the
+session workspace. Existing read-only pages are permitted only when the host
+and worker can open the existing store without creating files. This is a DSH
+policy boundary, not a plugin fallback condition.
+
 
 ```console
 npm run build:ptc
@@ -67,7 +80,26 @@ Standard/native and hybrid/both scopes expose neither tool nor extra prompt.
 The host generates SDK declarations from the same tool schemas; no duplicate guide
 or dynamic plan IDs are added to the system prefix.
 
-### Legacy FastCtx file-tool contract
+### Native file-tool contract
+
+The migrated `ops_glob`, `ops_grep`, `ops_inspect_local_file` and `ops_replace`
+capabilities use one `path` resolved against the current DSH session cwd. `.`
+means that cwd. In `workspace-write`, DSH rejects paths outside its workspace;
+explicit external absolute paths require `danger-full-access`.
+
+`ops_glob.pattern` and `ops_grep.glob` are arrays of include/exclude patterns;
+`!` entries exclude matches. `ops_grep.pattern` and `ops_replace.pattern` are
+single strings. Directory traversal skips symlink/junction/reparse entries,
+hidden entries, `.git`, `.dsh-ops`, `node_modules`, `target` and `.venv` without
+turning skipped children into a whole-operation failure. Root access failures
+return `ACCESS_DENIED`; outside-workspace failures return `POLICY_DENIED` with
+the active workspace root in the message. Results are bounded and UTF-8-first.
+
+The native schemas deliberately do not expose `root`, `workspace`, `cwd`, or
+`file_path` aliases. `ops_bash` accepts the host-compatible optional
+`description` field but remains foreground-only; it does not accept
+`run_in_background` or create job IDs.
+
 
 The legacy `ops_glob`, `ops_grep`, `ops_inspect_local_file` and `ops_replace`
 interfaces are not the new Rust PTC core. Their relative-path base is FastCtx's

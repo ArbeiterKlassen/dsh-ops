@@ -1,4 +1,33 @@
-# dsh-ops
+## Native file component
+
+`dsh-ops-file` now uses the plugin-owned Rust worker, not FastCtx. It publishes
+`ops_inspect_local_file`, `ops_glob`, `ops_grep`, and `ops_replace` through the
+normal DSH tool registration scope. The worker receives one host-resolved path
+per call; relative paths are resolved against `session.header.cwd` by the host.
+There is no `root`, `workspace`, `cwd`, or `file_path` alias in the native file
+schemas.
+
+The worker is UTF-8 first and bounded. It rejects symlink/junction/reparse
+traversal, hidden files and `.git` traversal, uses Rust regex for grep, and
+performs replacement with a preflight count, hard replacement limit, content
+revision check, temporary-file write, fsync, and atomic replacement. `dryRun`
+never writes. A read-only DSH session can inspect/search but cannot replace.
+All process execution still goes through `sandboxPolicy`, `sandbox.confine`,
+and `subprocess.spawn`; missing host services fail closed. FastCtx remains only
+behind the disabled background component.
+
+Build and stage the current Windows worker from the source checkout:
+
+```console
+RUSTUP_TOOLCHAIN=1.97.1 cargo build --release --locked --manifest-path native/Cargo.toml
+node bin/native-runtime.mjs stage --platform win32-x64 --input native/target/release
+node bin/native-runtime.mjs check --platform win32-x64
+```
+
+The six-platform runtime matrix and on-platform Linux/macOS sandbox acceptance
+remain release gates; a Windows build and the real DSH composition suite are
+covered locally. No FastCtx file-tool fallback exists.
+
 
 [中文](README.md) | **English**
 
@@ -71,7 +100,7 @@ The bundle declares four independently toggled components. On first installation
 
 “Prefer bash as the terminal” means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. When the shell component is on, the official configuration lifecycle temporarily sets the PowerShell 7 path for `pwsh-sandbox`; when off, it restores the executor's latest original configuration without writing profile configuration. Switching executor configuration does not cancel already-running host commands.
 
-Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws retrieval guidance; background OFF withdraws background tools and owned-job guidance. File and background share one plugin-owned FastCtx connection; disabling one does not stop the other. Only five tools are added by default; the duplicate foreground `ops_run` is not published. These changes reduce fixed declaration costs. The Minimal preset overrides additional system sections; PTC mode calls the underlying tools through the SDK with unchanged permission gates.
+Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws native file guidance; background OFF withdraws background tools and owned-job guidance. The file component uses its independent Rust worker; FastCtx is retained only by the disabled background component. Four native file tools and `ops_bash` are added by default; duplicate foreground `ops_run` is not published. These changes reduce fixed declaration costs. The Minimal preset overrides additional system sections; PTC mode calls the underlying tools through the SDK with unchanged permission gates.
 
 ## Configuration and tools
 
@@ -114,7 +143,7 @@ config:
 | `ops_job_output` / `ops_job_list` / `ops_job_kill` | Read, list and stop jobs started by the current session | Yes |
 | Host `pwsh` | Windows-native operations using bundled PowerShell 7 | Host policy |
 
-¹ **File tools are not the host filesystem sandbox.** They do not use DSH's restricted file backend; in particular, `ops_replace` has no workspace confinement. Do not treat the tools provided by this plugin as a security solution for untrusted restricted environments.
+¹ **File tools use the DSH-native sandbox/subprocess boundary.** The host owns session-cwd resolution, policy lookup, exact worker-argv confinement, cancellation and result mapping; the Rust core additionally rejects links/reparse/special objects and enforces budgets and CAS integrity.
 
 ## Long scripts and JSON stability
 

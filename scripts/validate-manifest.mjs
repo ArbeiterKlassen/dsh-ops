@@ -241,26 +241,34 @@ const namespaces = Array.isArray(manifestRaw.contributes?.['x-tool-namespaces'])
   ? manifestRaw.contributes['x-tool-namespaces']
   : []
 const hostedNamespace = namespaces[0]
+const backgroundNamespace = namespaces[1]
 if (hostedNamespace === undefined) {
   check(false, 'contributes.x-tool-namespaces declares the hosted tool namespace')
 } else {
   const declared = [...hostedNamespace.tools]
-  const expected = [...FILE_TOOLS, ...BACKGROUND_TOOLS]
+  const expected = [...FILE_TOOLS]
   check(
     declared.length === expected.length && expected.every((toolName) => declared.includes(toolName)),
-    'the declared tool namespace matches lib/policy.js',
-    `manifest ${declared.join(',')} vs policy ${expected.join(',')}`,
+    'the native file namespace matches lib/file/contract.js',
+    `manifest ${declared.join(',')} vs contract ${expected.join(',')}`,
   )
-  const serverName = DEFAULT_SERVER_NAME
   check(
-    hostedNamespace.serverName === serverName,
-    `the declared namespace uses the default serverName (${serverName})`,
+    hostedNamespace.serverName === 'dsh-ops',
+    'the native file namespace uses dsh-ops as its owner',
     `got ${JSON.stringify(hostedNamespace.serverName)}`,
   )
   check(
-    hostedNamespace.transport === 'stdio',
-    'the declared namespace transport is stdio',
+    hostedNamespace.transport === 'in-process',
+    'the native file namespace is in-process',
     `got ${JSON.stringify(hostedNamespace.transport)}`,
+  )
+  check(
+    Array.isArray(backgroundNamespace?.tools)
+      && backgroundNamespace.serverName === 'fastctx'
+      && backgroundNamespace.tools.length === BACKGROUND_TOOLS.length
+      && BACKGROUND_TOOLS.every((toolName) => backgroundNamespace.tools.includes(toolName)),
+    'the optional FastCtx namespace is background-only',
+    `manifest ${JSON.stringify(backgroundNamespace?.tools)} vs background ${BACKGROUND_TOOLS.join(',')}`,
   )
   check(
     hostedNamespace.publicPrefix === TOOL_PREFIX,
@@ -287,18 +295,17 @@ check(
   'the tools this plugin registers itself are named by the tooling policy',
   `policy never names ${IN_PROCESS_TOOLS.filter((name) => !equippedPolicy.includes(publicToolName(name))).map(publicToolName).join(', ')}`,
 )
-namespaces.slice(1).forEach((entry, offset) => {
-  const index = offset + 1
+for (const [index, entry] of namespaces.slice(2).entries()) {
   const declared = Array.isArray(entry?.tools) ? entry.tools : []
   const identified = declared.filter((toolName) => typeof toolName === 'string'
     && IN_PROCESS_TOOLS.includes(toolName)
     && equippedPolicy.includes(publicToolName(toolName)))
   check(
     declared.length > 0 && identified.length === declared.length,
-    `every tool of the namespace at index ${index} is published under ${TOOL_PREFIX} by this plugin itself`,
+    `every tool of the namespace at index ${index + 2} is published under ${TOOL_PREFIX} by this plugin itself`,
     `declared ${JSON.stringify(entry?.tools)} vs in-process ${IN_PROCESS_TOOLS.map(publicToolName).join(', ') || '(none)'}`,
   )
-})
+}
 
 const sections = manifestRaw.contributes?.['x-prompt-sections'] ?? []
 const sectionNames = sections.map((section) => section.name)

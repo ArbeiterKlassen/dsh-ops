@@ -3,12 +3,29 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
-## 0.3.0 Native PTC development
+## 0.3.0 Native file component
+
+The file component is no longer a FastCtx client. `native/src/file.rs` implements
+bounded inspect, glob, grep and replace; `native/src/file_path.rs` implements
+absolute host-resolved path validation and component-by-component no-follow
+checks. The host adapter in `lib/file/` obtains the authoritative DSH session
+cwd and sandbox policy, confines the exact worker argv, forwards cancellation,
+and maps worker JSON into the DSH structured output contract.
+
+The Windows x64 worker was built with the managed Rust `1.97.1` toolchain and
+staged under `runtime/win32-x64` with a version/target/executable/SHA-256 receipt.
+`cargo check`, `cargo build --release --locked`, `cargo clippy --all-targets
+-D warnings`, manifest validation, and all ten local JavaScript suites pass.
+The six-target release matrix and Linux/macOS runtime and sandbox acceptance are
+not claimed. FastCtx source/vendor remains unchanged and is retained only for
+the explicitly disabled background component.
+
 
 The independent MIT Rust core in `native/` is original dsh-ops code. It uses
-cap-std/cap-fs-ext handle-relative filesystem operations, serde, SHA-256, UUIDs
-and fs2 workspace locking. No FastCtx source was modified or linked by this
-component; legacy components and all applicable notices remain intact.
+cap-std/cap-fs-ext handle-relative filesystem operations, serde, SHA-256, UUIDs,
+regex and fs2 workspace locking. No FastCtx source was modified or linked by the
+file component; legacy FastCtx remains only behind the disabled background
+component and all applicable notices remain intact.
 
 Host contract source (DSH 0.2.0-rc.2):
 

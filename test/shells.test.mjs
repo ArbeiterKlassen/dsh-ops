@@ -1092,7 +1092,7 @@ await test('the manifest declares the plugin\'s own shell tools as their own nam
   const namespaces = manifest.contributes['x-tool-namespaces']
   // Unconditional: the manifest describes the capability, not this deployment's
   // switch state, so `bash` is declared even while a profile ships no bash.
-  assert.deepEqual(namespaces[1], {
+  assert.deepEqual(namespaces[2], {
     serverName: 'dsh-ops',
     transport: 'in-process',
     source: "the plugin's bash layer via host subprocess",
@@ -1101,7 +1101,7 @@ await test('the manifest declares the plugin\'s own shell tools as their own nam
     shellPermission: 'shell component enabled AND publishBashTool AND per-session sandboxPolicy danger-full-access',
   })
   // The declared name is the name the tool actually registers under.
-  assert.equal(BASH_TOOL_NAME, `${namespaces[1].publicPrefix}${namespaces[1].tools[0]}`)
+  assert.equal(BASH_TOOL_NAME, `${namespaces[2].publicPrefix}${namespaces[2].tools[0]}`)
 })
 
 await test('the bundle patch declares independent components, with no persistent pwsh override', () => {

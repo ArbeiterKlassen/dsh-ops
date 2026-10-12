@@ -1,4 +1,29 @@
-# dsh-ops
+## 原生文件组件
+
+`dsh-ops-file` 现在使用插件自有 Rust worker，不再启动或调用 FastCtx。它通过
+标准 DSH 注册作用域发布 `ops_inspect_local_file`、`ops_glob`、`ops_grep` 和
+`ops_replace`。每次调用只有一个由宿主解析后的 `path`；相对路径相对于
+`session.header.cwd`，native schema 不再暴露 `root`、`workspace`、`cwd` 或
+`file_path` 别名。
+
+worker 以 UTF-8 和有界结果为第一版契约，拒绝 symlink/junction/reparse 遍历，
+不遍历隐藏文件和 `.git`，grep 使用 Rust regex。replace 先预检匹配数量，执行前
+再次校验内容 revision，受 `maxReplacements` 硬上限保护，并使用临时文件、fsync
+和原子替换；`dryRun` 不产生写入。read-only 会话可以读取和搜索，但拒绝 replace。
+进程始终通过 `sandboxPolicy`、`sandbox.confine` 和 `subprocess.spawn`，服务缺失时
+失败关闭。FastCtx 仅保留在默认关闭的 background 组件后端。
+
+当前 Windows worker 构建和暂存：
+
+```console
+RUSTUP_TOOLCHAIN=1.97.1 cargo build --release --locked --manifest-path native/Cargo.toml
+node bin/native-runtime.mjs stage --platform win32-x64 --input native/target/release
+node bin/native-runtime.mjs check --platform win32-x64
+```
+
+六平台 runtime 矩阵与 Linux/macOS 实机沙箱验收仍是发布门禁；本地已覆盖 Windows
+构建和真实 DSH 组合测试。不存在 native 失败后回退 FastCtx 文件工具的路径。
+
 
 **中文** | [English](README.en.md)
 
@@ -71,7 +96,7 @@ Bundle 声明四个独立组件，默认开启前两个旧组件；PTC 显式启
 
 “默认终端改为 bash”指模型提示优先使用 `ops_bash`，**不修改系统默认终端、PATH 或宿主原有 shell 工具名称**。Shell 组件开时，通过官方配置生命周期临时指定 `pwsh-sandbox` 的 PowerShell 7 路径；关时按执行器最新原配置恢复，不写 profile 配置。执行器配置切换不代表取消已在运行的宿主命令。
 
-提示词注册为独立运行时段，**不写 AGENTS.md**：Shell 关就撤销 bash/pwsh 路由；文件关就撤销检索说明；后台关就不发布后台工具及自有 job 指导。文件与后台共享一个插件拥有的 FastCtx 连接，关闭其中一个不关闭另一个。默认仅新增五个工具，不发布重复前台 `ops_run`。这些改变减少固定声明成本。极简预设会覆盖附加 system sections；PTC 模式经 SDK 调用底层工具，权限门不变。
+提示词注册为独立运行时段，**不写 AGENTS.md**：Shell 关就撤销 bash/pwsh 路由；文件关就撤销原生文件说明；后台关就不发布后台工具及自有 job 指导。文件组件使用独立 Rust worker；FastCtx 仅由默认关闭的 background 组件保留。默认新增四个原生文件工具和 `ops_bash`，不发布重复前台 `ops_run`。这些改变减少固定声明成本。极简预设会覆盖附加 system sections；PTC 模式经 SDK 调用底层工具，权限门不变。
 
 ## 配置方式与工具列表
 
@@ -114,7 +139,7 @@ config:
 | `ops_job_output` / `ops_job_list` / `ops_job_kill` | 查看、列出、停止当前会话启动的任务 | 是 |
 | 宿主 `pwsh` | 使用随包 PowerShell 7 的 Windows 原生操作 | 沿用宿主策略 |
 
-¹ **文件工具不是宿主文件系统沙箱。** 它们未接入 DSH 的受限文件后端，尤其 `ops_replace` 没有 workspace confinement。不要把该插件提供的部分工具视为不可信受任限环境的安全方案。
+¹ **文件工具使用 DSH 原生 sandbox/subprocess 边界。** host 负责 session cwd、策略解析、精确 worker argv 的 confinement、取消和结果映射；Rust core 仍额外拒绝 link/reparse/special object，并执行预算和 CAS 完整性保护。
 
 ## 长脚本与 JSON 稳定性
 

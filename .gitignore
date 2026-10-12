@@ -1,3 +1,6 @@
+# Local release artifacts and credentials
+dist/
+
 # Native worker build output and local audit stores
 runtime/
 native/target/

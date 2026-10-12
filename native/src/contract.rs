@@ -78,7 +78,7 @@ impl From<std::io::Error> for Failure {
     fn from(e: std::io::Error) -> Self {
         let code = match e.kind() {
             std::io::ErrorKind::NotFound => "NOT_FOUND",
-            std::io::ErrorKind::PermissionDenied => "POLICY_DENIED",
+            std::io::ErrorKind::PermissionDenied => "ACCESS_DENIED",
             std::io::ErrorKind::AlreadyExists => "REVISION_CONFLICT",
             _ => "IO_ERROR",
         };

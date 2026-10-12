@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 mod batch;
 pub mod contract;
+mod file;
+mod file_path;
 mod paths;
 mod results;
 mod store;
@@ -19,7 +21,6 @@ pub fn dispatch(request: Request) -> Result<Value> {
         ));
     }
     let root = std::fs::canonicalize(&request.root)?;
-    // Normalize once; persistent jobs bind both this root identity and the calling scope.
     let mut request = Request {
         root: root
             .to_str()
@@ -27,6 +28,13 @@ pub fn dispatch(request: Request) -> Result<Value> {
             .into(),
         ..request
     };
+    // File reads/searches do not create or consult the durable audit store.
+    // This is important for read-only sessions and keeps observation separate
+    // from mutation audit records.
+    if matches!(request.tool.as_str(), "inspect_local_file" | "glob" | "grep" | "replace") {
+        request.root_identity = String::new();
+        return file::dispatch(&request);
+    }
     let dir = Dir::open_ambient_dir(root, ambient_authority())?;
     use cap_fs_ext::MetadataExt;
     let metadata = dir.dir_metadata()?;
