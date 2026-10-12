@@ -67,7 +67,54 @@ Standard/native and hybrid/both scopes expose neither tool nor extra prompt.
 The host generates SDK declarations from the same tool schemas; no duplicate guide
 or dynamic plan IDs are added to the system prefix.
 
-## Two entrances
+### Legacy FastCtx file-tool contract
+
+The legacy `ops_glob`, `ops_grep`, `ops_inspect_local_file` and `ops_replace`
+interfaces are not the new Rust PTC core. Their relative-path base is FastCtx's
+own session cwd, which can be the Desktop profile directory rather than DSH's
+agent workspace. For deterministic comparisons, pass absolute paths. Do not pass
+`path: "."` as a workspace shorthand; the legacy server may reject it or resolve
+it against the wrong cwd.
+
+Their important fields are:
+
+- `ops_glob`: `pattern: string[]`, optional absolute `path`;
+- `ops_grep`: required regex `pattern`, optional absolute `path`, optional `glob`;
+- `ops_inspect_local_file`: exactly one of `file_path` or `files`, with optional
+  `offset`, `limit`, `pages`, `encoding`, `view`;
+- `ops_replace`: required `path`, `pattern` and `replacement`, plus its optional
+  replacement controls.
+
+Malformed arguments from these legacy MCP tools can be raised as `ToolCallError`
+instead of becoming a value. In PTC code, wrap every legacy call independently:
+
+```ts
+const safeLegacy = async (name, args) => {
+  try { return { ok: true, value: await tools[name](args) } }
+  catch (error) { return { ok: false, name, error: String(error) } }
+};
+```
+
+`ops_batch` and `ops_result` use the new canonical structured error value instead;
+they do not make legacy schemas uniform. For filesystem modifications in the
+new PTC workflow, prefer `ops_batch` or host native edit/write, not legacy
+`ops_replace`.
+
+## Plan and execution semantics
+
+`ops_batch({ action: "plan", operations })` performs preflight, persists a
+no-effect manifest and returns a `detailsRef`/job id. It does **not** convert into
+an executable `run` request. Execute that exact planned manifest with:
+
+```ts
+await tools.ops_batch({ action: "resume", id: plan.id });
+```
+
+`action: "run"` is a separate immediate path and requires the operations again;
+`run` without operations and an id is intentionally rejected. A plan is therefore
+`plan → resume`, not `plan → run`. This preserves the observed revision and
+protection set instead of silently replacing the plan with new input.
+
 
 ### `ops_batch`
 

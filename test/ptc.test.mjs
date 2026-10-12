@@ -46,6 +46,7 @@ try {
   assert.equal(request('batch', { action: 'run', protect: ['main'], operations: [{ op: 'remove', path: 'main' }] }).error.code, 'POLICY_DENIED')
   assert.equal(request('batch', { action: 'run', operations: [{ op: 'move', path: 'source', to: 'source/nested' }] }).error.code, 'POLICY_DENIED')
   const plan = request('batch', { action: 'plan', operations: [{ op: 'remove', path: 'source/a' }] })
+  assert.equal(request('batch', { action: 'run', id: plan.id }).error.code, 'INVALID_ARGUMENT')
   write('source/a', 'changed after observation')
   assert.equal(request('batch', { action: 'resume', id: plan.id }).failed, 1); assert.ok(exists('source/a'))
   const page = request('result', { action: 'page', id: run.id })
