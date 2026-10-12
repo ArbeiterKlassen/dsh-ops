@@ -13,6 +13,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Execute through DSH policy + full native process confinement + subprocess cancellation; standard/native and hybrid/both scopes receive no PTC-only definitions.
 - Keep business code separate from one three-scenario simulation suite using the real Rust worker and real Cordis/tools/prompt registration.
 - Target native Windows/macOS/Linux; Windows runtime acceptance and Linux/macOS compile checks are recorded separately from pending on-platform sandbox tests. Legacy payloads remain unchanged.
+- Keep each component icon inside its exported manifest directory; fix the PTC Plugin Manager metadata error caused by the parent-relative icon path, with coverage in the existing manifest suite.
 - Build with `npm run build:ptc`; source delivery, not a published prebuilt payload release. See `docs/native-ptc.md` for limits and provenance.
 
 ## [Unreleased] — Optional bash input placeholders

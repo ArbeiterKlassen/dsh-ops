@@ -156,9 +156,16 @@ await test('the card icon is a self-contained PNG with bounded dimensions', () =
 
 await test('the icon and all component entries are shipped in the package whitelist', () => {
   assert.ok(pkg.files.includes('icon.png'))
-  for (const component of ['shell', 'file', 'background']) {
-    assert.ok(fs.existsSync(path.join(PACKAGE_ROOT, 'lib', 'components', component, 'index.js')))
+  for (const component of ['shell', 'file', 'background', 'ptc']) {
+    const directory = path.join(PACKAGE_ROOT, 'lib', 'components', component)
+    assert.ok(fs.existsSync(path.join(directory, 'index.js')))
     assert.ok(pkg.exports[`./${component}`])
+    const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8'))
+    assert.equal(path.isAbsolute(manifest.icon), false)
+    const iconFile = fs.realpathSync(path.resolve(directory, manifest.icon))
+    const relative = path.relative(fs.realpathSync(directory), iconFile)
+    assert.ok(relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative), `${component}: icon must stay inside its manifest directory`)
+    assert.ok(fs.statSync(iconFile).isFile() && fs.statSync(iconFile).size <= 256 * 1024)
   }
 })
 
