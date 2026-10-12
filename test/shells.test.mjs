@@ -15,11 +15,14 @@
  * must never fail to activate because of one.
  */
 
+import * as urlHelpers from 'node:url'
 import fs from 'node:fs'
 import path from 'node:path'
+import { mountBundledPwsh } from '../lib/session-pwsh.js'
 import { parseDocument } from 'yaml'
 import { resolveConfig } from '../lib/config.js'
 import {
+  BASH_ARGUMENTS,
   BASH_TOOL_NAME,
   DEFAULT_BASH_TIMEOUT_MS,
   ENV_OVERRIDES,
@@ -28,6 +31,7 @@ import {
   PWSH_LAYOUT_ORDER,
   SHELL_UPSTREAM_PINS,
   bashToolDefinition,
+  bashToolDescription,
   bundledShell,
   bundledShellPath,
   provisionedShell,
@@ -159,7 +163,7 @@ await test('with no bundled copy, PATH is searched before the well-known locatio
     // own PowerShell 7, which is what the host's row is pointed at.
     makeExecutable(path.join(onPathDir, process.platform === 'win32' ? 'pwsh.exe' : 'pwsh'))
 
-    const resolved = resolveShells(config(), {
+    const resolved = resolveShells(config({ allowSystemShellFallback: true }), {
       bundleRoot: dir,
       env: { DSH_HOME: TEST_HOME, PATH: onlyPath(onPathDir) },
       platform: process.platform,
@@ -179,7 +183,7 @@ await test('a Windows deployment finds the well-known Git for Windows install fo
     // A system PowerShell 7 install is not the plugin's own pwsh either.
     makeExecutable(path.join(programFiles, 'PowerShell', '7', 'pwsh.exe'))
 
-    const resolved = resolveShells(config(), {
+    const resolved = resolveShells(config({ allowSystemShellFallback: true }), {
       bundleRoot: path.join(dir, 'plugin'),
       env: { DSH_HOME: TEST_HOME, PATH: '', ProgramFiles: programFiles },
       platform: 'win32',
@@ -193,27 +197,27 @@ await test('a Windows deployment finds the well-known Git for Windows install fo
   })
 })
 
-await test('the System32 WSL launcher is never used as bash', async () => {
+await test('the System32 WSL launcher is skipped even when it is first on PATH', async () => {
   await withTempDir('shells-wsl', async (dir) => {
     const systemRoot = path.join(dir, 'Windows')
-    makeExecutable(path.join(systemRoot, 'System32', 'bash.exe'))
-    const resolved = resolveShells(config(), {
+    const launcher = makeExecutable(path.join(systemRoot, 'System32', 'bash.exe'))
+    const gitBash = makeExecutable(path.join(dir, 'Program Files', 'Git', 'bin', 'bash.exe'))
+    const resolved = resolveShells(config({ allowSystemShellFallback: true }), {
       bundleRoot: path.join(dir, 'plugin'),
-      env: { DSH_HOME: TEST_HOME, PATH: '', SystemRoot: systemRoot, ProgramFiles: path.join(dir, 'none') },
+      // Use the Windows separator because this resolves a Windows target even
+      // when the suite is run on another platform.
+      env: {
+        DSH_HOME: TEST_HOME,
+        PATH: path.dirname(launcher),
+        SystemRoot: systemRoot,
+        ProgramFiles: path.join(dir, 'Program Files'),
+      },
       platform: 'win32',
       arch: 'x64',
     })
-    // The invariant is that the WSL launcher is never chosen, not that no bash
-    // exists: a host with msys64 or a Git for Windows in Program Files has a
-    // legitimate bash, and a case that forbade one would only pass on the machine
-    // it was written on (which is what the first CI run of this repository
-    // caught).
-    assert.notEqual(resolved.bash.file, path.join(systemRoot, 'System32', 'bash.exe'))
-    if (resolved.bash.available) {
-      assert.ok(!resolved.bash.file.startsWith(systemRoot), resolved.bash.file)
-    } else {
-      assert.equal(resolved.bash.source, 'missing')
-    }
+    assert.notEqual(resolved.bash.file, launcher)
+    assert.equal(resolved.bash.file, gitBash)
+    assert.equal(resolved.bash.source, 'well-known')
   })
 })
 
@@ -661,7 +665,7 @@ await test('an available bash registers ops_bash, and the disposer removes it', 
     assert.equal(registrations.length, 1)
     assert.deepEqual([...live.keys()], [BASH_TOOL_NAME])
     assert.equal(registrations[0].name, BASH_TOOL_NAME)
-    assert.ok(registrations[0].parameters.command.required)
+    assert.ok(registrations[0].parameters.properties.script_path)
     assert.equal(typeof registrations[0].execute, 'function')
     assert.equal(typeof registrations[0].output.render, 'function')
 
@@ -846,6 +850,76 @@ await test('ops_bash forwards the terminal overrides and no credential-shaped na
   })
 })
 
+await test('ops_bash executes a script_path without embedding its contents in argv', async () => {
+  await withTempDir('shells-script-path', async (dir) => {
+    const bash = makeExecutable(path.join(dir, 'bash'))
+    const script = path.join(dir, 'long-script.sh')
+    makeExecutable(script)
+    const { service, specs, settle } = fakeSubprocess()
+    const definition = bashToolDefinition({ file: bash, source: 'config', subprocess: service })
+    const running = definition.execute({ script_path: script, workdir: 'D:\\work' }, { signal: new AbortController().signal })
+    settle()
+    await running
+
+    assert.deepEqual(specs[0].argv, [bash, script])
+    assert.equal(specs[0].cwd, 'D:\\work')
+    assert.equal(specs[0].stdio.stdin, 'ignore')
+  })
+})
+
+await test('ops_bash turns a missing executable into a concise retryable result', async () => {
+  const spawnError = Object.assign(new Error('spawn missing bash'), { code: 'ENOENT' })
+  const service = { spawn() { throw spawnError } }
+  const definition = bashToolDefinition({ file: 'C:\\missing\\bash.exe', source: 'bundled', subprocess: service })
+  const value = await definition.execute({ command: 'echo hi' }, { signal: new AbortController().signal })
+
+  assert.equal(value.error, 'bash executable is unavailable (ENOENT): C:\\missing\\bash.exe. The bundled bash payload may be missing; repair the profile installation and retry.')
+  assert.equal(value.timedOut, false)
+  assert.deepEqual(value.stdout, { text: '', truncated: false })
+  assert.deepEqual(value.stderr, { text: '', truncated: false })
+  assert.match(definition.output.render({}, value)[0].text, /repair the profile installation and retry/)
+})
+
+await test('ops_bash requires exactly one command input', async () => {
+  await withTempDir('shells-inputs', async (dir) => {
+    const bash = makeExecutable(path.join(dir, 'bash'))
+    const { service, specs } = fakeSubprocess()
+    const definition = bashToolDefinition({ file: bash, source: 'config', subprocess: service })
+    const exec = { signal: new AbortController().signal }
+
+    await assert.rejects(() => definition.execute({}, exec), /exactly one of command or script_path/)
+    await assert.rejects(() => definition.execute({ command: 'echo ok', script_path: 'x.sh' }, exec), /exactly one of command or script_path/)
+    await assert.rejects(() => definition.execute({ script_path: '   ' }, exec), /invalid script_path/)
+    assert.equal(specs.length, 0)
+  })
+})
+
+await test('ops_bash accepts empty optional input placeholders without discarding real inputs', async () => {
+  for (const placeholder of ['', '   ', null, undefined]) {
+    for (const script of [false, true]) {
+      const { service, specs, settle } = fakeSubprocess({ stdout: 'ok\n' })
+      settle()
+      const definition = bashToolDefinition({ file: 'bash', source: 'config', subprocess: service })
+      const args = script ? { command: placeholder, script_path: 'test.sh' }
+        : { command: 'echo ok', script_path: placeholder }
+      const value = await definition.execute(args)
+      assert.equal(value.error, undefined)
+      assert.deepEqual(specs[0].argv, script ? ['bash', 'test.sh'] : ['bash', '-c', 'echo ok'])
+    }
+  }
+  const { service, specs, settle } = fakeSubprocess()
+  settle()
+  const definition = bashToolDefinition({ file: 'bash', source: 'config', subprocess: service })
+  for (const args of [
+    { command: 'echo ok', script_path: '/dev/null' },
+    { command: 'echo ok', script_path: 123 },
+    { command: false, script_path: 'test.sh' },
+    { command: '', script_path: '' },
+    { command: null, script_path: null },
+  ]) await assert.rejects(() => definition.execute(args), /invalid/)
+  assert.equal(specs.length, 0)
+})
+
 await test('ops_bash rejects a missing command and a bad timeout before spawning', async () => {
   await withTempDir('shells-args', async (dir) => {
     const bash = makeExecutable(path.join(dir, 'bash'))
@@ -853,7 +927,7 @@ await test('ops_bash rejects a missing command and a bad timeout before spawning
     const definition = bashToolDefinition({ file: bash, source: 'config', subprocess: service })
     const exec = { signal: new AbortController().signal }
 
-    await assert.rejects(() => definition.execute({}, exec), /invalid command/)
+    await assert.rejects(() => definition.execute({}, exec), /exactly one of command or script_path/)
     await assert.rejects(() => definition.execute({ command: '   ' }, exec), /invalid command/)
     await assert.rejects(() => definition.execute({ command: 'ls', timeoutMs: 0 }, exec), /invalid timeoutMs/)
     await assert.rejects(
@@ -863,6 +937,86 @@ await test('ops_bash rejects a missing command and a bad timeout before spawning
     await assert.rejects(() => definition.execute({ command: 'ls', graceMs: -1 }, exec), /invalid graceMs/)
     assert.equal(specs.length, 0)
   })
+})
+
+await test('ops_bash refuses an argument its schema does not declare', async () => {
+  // The host validates a `defineTool` body's arguments before it runs, but
+  // `ctx.tools.register` — the path this plugin uses to avoid an
+  // `@deepseek-ai/*` value import — validates only `output.schema`. Arguments
+  // therefore reach `execute` verbatim, and reading known fields with `args?.x`
+  // drops an undeclared key silently. `run_in_background` is the case that
+  // hurts: the host's own bash/pwsh tools accept it, so a model that expects a
+  // job id gets a foreground call that occupies the whole `timeoutMs`.
+  await withTempDir('shells-unknown-args', async (dir) => {
+    const bash = makeExecutable(path.join(dir, 'bash'))
+    const { service, specs, settle } = fakeSubprocess()
+    // Settle up front: if the guard were missing, the call would otherwise hang
+    // on this fake forever and the suite would die of an unsettled await instead
+    // of reporting which assertion failed.
+    settle()
+    const definition = bashToolDefinition({ file: bash, source: 'config', subprocess: service })
+    const exec = { signal: new AbortController().signal }
+
+    await assert.rejects(
+      () => definition.execute({ command: 'node server.js', run_in_background: true }, exec),
+      /unknown key "run_in_background"/,
+    )
+    // The refusal names what IS accepted, so a retry does not need a second guess.
+    await assert.rejects(
+      () => definition.execute({ command: 'ls', run_in_background: true }, exec),
+      new RegExp(BASH_ARGUMENTS.join(', ')),
+    )
+    // Several unknown keys are reported together, in argument order.
+    await assert.rejects(
+      () => definition.execute({ command: 'ls', bogus: 1, other: 2 }, exec),
+      /unknown keys "bogus", "other"/,
+    )
+    // A non-object body is refused for the same reason, not coerced.
+    await assert.rejects(() => definition.execute([], exec), /expected an object/)
+    // Nothing reached the subprocess service: the guard runs before the spawn.
+    assert.equal(specs.length, 0)
+
+    // Every declared argument still passes, and each reaches the spawn spec.
+    const { service: ok, specs: okSpecs, settle: settleOk } = fakeSubprocess({ stdout: 'ok\n' })
+    const passing = bashToolDefinition({ file: bash, source: 'config', subprocess: ok })
+    const running = passing.execute(
+      { command: 'echo hi', workdir: dir, timeoutMs: 5_000, graceMs: 250 },
+      { signal: new AbortController().signal },
+    )
+    settleOk()
+    await running
+    assert.equal(okSpecs.length, 1)
+    assert.equal(okSpecs[0].cwd, dir)
+    assert.equal(okSpecs[0].graceMs, 250)
+  })
+})
+
+await test('the ops_bash argument guard and its schema cannot drift apart', async () => {
+  // `BASH_ARGUMENTS` is what `execute` enforces; `parameters.properties` is what
+  // the model is told. A name in one but not the other would either refuse a
+  // documented argument or silently accept an undeclared one.
+  await withTempDir('shells-args-drift', async (dir) => {
+    const bash = makeExecutable(path.join(dir, 'bash'))
+    const { service } = fakeSubprocess()
+    const definition = bashToolDefinition({ file: bash, source: 'config', subprocess: service })
+
+    assert.deepEqual(Object.keys(definition.parameters.properties), [...BASH_ARGUMENTS])
+    assert.equal(definition.parameters.additionalProperties, false)
+    // Neither input is `required`: exactly one of command/script_path must be
+    // present, which a JSON Schema `required` list cannot express. The guard
+    // deliberately does not add a required-check the schema does not state.
+    assert.equal(Object.hasOwn(definition.parameters, 'required'), false)
+  })
+})
+
+await test('the ops_bash description says the tool has no background mode', async () => {
+  // The prompt is the reliable correction channel: a model that has learned
+  // "shell tools can run in the background" from the host's pwsh tool must be
+  // told otherwise where it will read it.
+  const description = bashToolDescription()
+  assert.match(description, /Foreground only/)
+  assert.match(description, /no run_in_background/)
+  assert.match(description, /pwsh/)
 })
 
 // A definition whose subprocess service is missing cannot exist in a real
@@ -907,9 +1061,7 @@ function patchEntries() {
  * @returns {string} the expression body.
  */
 function pwshOverrideExpression() {
-  const value = patchEntries().find((entry) => entry.id === 'pwsh-sandbox').config.pwshPath
-  if (typeof value !== 'string') throw new Error('cordis.patch.yml carries no !!js pwshPath expression')
-  return value
+  return 'runtime-overlay'
 }
 
 /**
@@ -919,10 +1071,20 @@ function pwshOverrideExpression() {
  * @returns {unknown} the expression's value.
  */
 function evaluateLoaderExpression(expr, ctx) {
-  // vendor/loader/src/config/utils.ts:5-9 evaluates `!!js` as
-  // `with (ctx) { return eval(expr) }`.
-  // eslint-disable-next-line no-new-func
-  return new Function('ctx', 'expr', 'with (ctx) { return eval(expr) }')(ctx, expr)
+  // Exercise the real runtime overlay against a loader fixture instead of the
+  // removed YAML expression. The resolver and the component share this input.
+  if (expr !== 'runtime-overlay') return undefined
+  if (!ctx.baseUrl) return undefined
+  const { fileURLToPath } = urlHelpers
+  const bundleRoot = fs.realpathSync(path.join(fileURLToPath(ctx.baseUrl), 'node_modules', 'dsh-ops'))
+  const shells = resolveShells(config(), { bundleRoot })
+  let hook
+  let result
+  const entry = { options: { id: 'pwsh-sandbox', name: '@deepseek-ai/dsh-pwsh-sandbox', config: {} },
+    fiber: { state: 2, update() { result = hook.call({ entry }, {}, () => ({})).pwshPath } } }
+  mountBundledPwsh({ inject(_deps, body) { body({ get() { return { entries: () => [entry] } },
+    on(_event, body) { hook = body; return () => {} }, effect() {} }) } }, shells)
+  return result
 }
 
 await test('the manifest declares the plugin\'s own shell tools as their own namespace', () => {
@@ -930,43 +1092,32 @@ await test('the manifest declares the plugin\'s own shell tools as their own nam
   const namespaces = manifest.contributes['x-tool-namespaces']
   // Unconditional: the manifest describes the capability, not this deployment's
   // switch state, so `bash` is declared even while a profile ships no bash.
-  assert.deepEqual(namespaces[1], {
+  assert.deepEqual(namespaces[2], {
     serverName: 'dsh-ops',
     transport: 'in-process',
-    source: "the plugin's own shell tools",
+    source: "the plugin's bash layer via host subprocess",
     publicPrefix: 'ops_',
     tools: ['bash'],
+    shellPermission: 'shell component enabled AND publishBashTool AND per-session sandboxPolicy danger-full-access',
   })
   // The declared name is the name the tool actually registers under.
-  assert.equal(BASH_TOOL_NAME, `${namespaces[1].publicPrefix}${namespaces[1].tools[0]}`)
+  assert.equal(BASH_TOOL_NAME, `${namespaces[2].publicPrefix}${namespaces[2].tools[0]}`)
 })
 
-await test('the bundle patch parses and the L3 override targets pwsh-sandbox alone', () => {
+await test('the bundle patch declares independent components, with no persistent pwsh override', () => {
   const entries = patchEntries()
-  assert.ok(Array.isArray(entries))
-  const ids = entries.map((entry) => entry.id ?? '(insert)')
-  assert.deepEqual(ids, ['(insert)', 'pwsh-sandbox'])
-
-  const override = entries.find((entry) => entry.id === 'pwsh-sandbox')
-  assert.deepEqual(Object.keys(override).sort(), ['config', 'id'])
-  // Whole-object replacement: this patch writes `config` and nothing else, and
-  // the base row declares no config at all (audited in the patch comment), so
-  // there is no non-default field to restate.
-  assert.deepEqual(Object.keys(override.config), ['pwshPath'])
-
-  const expr = pwshOverrideExpression()
-  assert.equal(override.config.pwshPath, expr)
-  // A `!!js` body that does not compile fails the loader at that row.
-  assert.doesNotThrow(() => new Function('ctx', 'expr', 'with (ctx) { return eval(expr) }'))
-  assert.doesNotThrow(() => evaluateLoaderExpression('typeof (' + expr + ')', { baseUrl: undefined }))
+  assert.equal(entries.length, 1)
+  assert.deepEqual(entries[0].insert.map(row => row.id), ['dsh-ops-shell', 'dsh-ops-file', 'dsh-ops-background', 'dsh-ops-ptc'])
+  assert.equal(entries[0].insert[2].disabled, true)
+  assert.equal(entries[0].insert[3].disabled, true)
 })
 
 await test('the shipped dsh-ops row states the documented shell defaults', () => {
-  const row = patchEntries()[0].insert.find((candidate) => candidate.name === 'dsh-ops')
+  const row = patchEntries()[0].insert.find((candidate) => candidate.id === 'dsh-ops-shell')
   const resolved = resolveConfig(row.config)
   assert.equal(resolved.bashPath, undefined)
   assert.equal(resolved.publishBashTool, true)
-  assert.equal(resolved.allowSystemShellFallback, true)
+  assert.equal(resolved.allowSystemShellFallback, false)
 })
 
 await test('the L3 override is inert while the plugin carries no pwsh', async () => {
@@ -1006,7 +1157,7 @@ await test('the L3 override stays Windows-gated, whatever the plugin carries', a
 
 await test('L3 reports unavailable without a bundled pwsh, and says what the last rung is', async () => {
   await withTempDir('shells-pwsh-absent', async (dir) => {
-    const fallback = resolveShells(config(), {
+    const fallback = resolveShells(config({ allowSystemShellFallback: true }), {
       bundleRoot: path.join(dir, 'plugin'),
       env: { DSH_HOME: TEST_HOME, PATH: '' },
       platform: 'linux',
@@ -1153,6 +1304,49 @@ await test('the L3 override is Windows-gated like the row it targets', () => {
   if (process.platform !== 'win32') {
     assert.equal(evaluateLoaderExpression(expr, { baseUrl: undefined, ctx: {} }), undefined)
   }
+})
+
+await test('system discovery is opt-in even when PATH and well-known installs exist', async () => {
+  await withTempDir('shells-default-confined', dir => {
+    const system = makeExecutable(path.join(dir, 'bin', process.platform === 'win32' ? 'bash.exe' : 'bash'))
+    const programFiles = path.join(dir, 'Program Files')
+    makeExecutable(path.join(programFiles, 'Git', 'bin', 'bash.exe'))
+    const options = { bundleRoot: path.join(dir, 'plugin'), env: { DSH_HOME: TEST_HOME, PATH: path.dirname(system), ProgramFiles: programFiles } }
+    for (const raw of [resolveConfig({}), {}, undefined]) {
+      const result = resolveShells(raw, options).bash
+      assert.equal(result.available, false)
+      assert.equal(result.source, 'disabled')
+      assert.equal(result.file, undefined)
+    }
+    assert.equal(resolveShells(config({ allowSystemShellFallback: true }), options).bash.file, system)
+    assert.equal(resolveShells(config({ bashPath: system }), options).bash.source, 'config')
+  })
+})
+
+await test('runtime pwsh overlay targets only the owning row and restores latest raw config without saving', () => {
+  let hook, cleanup
+  const updates = []
+  const target = { options: { id: 'pwsh-sandbox', name: '@deepseek-ai/dsh-pwsh-sandbox', config: { pwshPath: 'original', retained: true } } }
+  target.fiber = { state: 2, update(raw, noSave) {
+    updates.push({ config: hook ? hook.call({ entry: target }, raw, () => ({ ...raw })) : { ...raw }, noSave })
+  } }
+  const foreign = { options: { id: 'pwsh-sandbox', name: 'foreign-executor', config: {} }, fiber: { state: 2, update() { throw new Error('foreign update') } } }
+  const fixture = { inject(_deps, body) { body({
+    get() { return { entries: () => [target, foreign] } },
+    on(_name, callback) { hook = callback; return () => { hook = undefined } },
+    effect(callback) { cleanup = callback() },
+  }) } }
+  const original = target.options.config
+  mountBundledPwsh(fixture, { pwsh: { available: true, file: 'approved-pwsh' } })
+  if (process.platform !== 'win32') { assert.equal(hook, undefined); return }
+  assert.deepEqual(updates[0], { config: { pwshPath: 'approved-pwsh', retained: true }, noSave: true })
+  assert.equal(target.options.config, original)
+  assert.deepEqual(hook.call({ entry: foreign }, {}, () => ({ pwshPath: 'foreign' })), { pwshPath: 'foreign' })
+  target.options.config = { pwshPath: 'new-owner-choice', retained: false }
+  cleanup()
+  assert.deepEqual(updates[1], { config: target.options.config, noSave: true })
+  cleanup()
+  assert.equal(updates.length, 2, 'cleanup is idempotent')
 })
 
 report('shells')

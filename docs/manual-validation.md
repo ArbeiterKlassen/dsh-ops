@@ -1,6 +1,14 @@
 # dsh-ops 手动验收清单
 
-本轮按风雪要求：不补/改回归测试，不加 CI，不运行旧套件。本清单是操作者步骤，不是自动化门禁。替换源码后先重启 DSH。
+0.2.5 已恢复 `npm run verify` 自动门禁：安装 devDependencies 后运行 `DSH_OPS_REQUIRE_RUNTIME=1 npm run verify`（PowerShell 用 `$env:DSH_OPS_REQUIRE_RUNTIME='1'; npm run verify`）。以下清单是另行人工验收，不等于这些操作都已执行。0.2.4 时“不补/改测试、不运行旧套件”的要求与记录仅属历史，现已被此次修复替代。替换已加载源码后按宿主要求重载/重启。
+
+## 系统 shell 回退与载荷
+
+- 默认 `allowSystemShellFallback=false`；临时隔离测试中缺少随包/provisioned bash、但 PATH/常见目录有 bash 时，插件不执行该系统副本，后台工具也不通过 FastCtx 自动探测绕过。
+- `true` 是显式信任系统 bash 的选择；`bashPath` 是另一种显式选择。首次启动把无迁移标记的旧 `true` 改成 `false` 并通过 loader 写回 `configUpdateVersion: 1`；确认之后手动改回 `true`、重启/HMR 仍保留。未启用的后台行首次启用才迁移。更新配置修改区见 README 与 `lib/config-updates.js`。
+- 此开关不控制宿主工具；`shellPolicy=deny-host-shell` 才拒绝宿主 pwsh/bash/pwsh_persistent，即使没有 ops 命令组也生效。它也不是文件系统沙箱。
+- 主包 0.2.5 固定复用三个 0.2.1 载荷；逐个核对 `provenance.json` 与真实二进制哈希。对应表见 PROVENANCE；registry tarball 校验和见 release-0.2.1 文档。
+- issue #4 的外部贡献者报告：DSH 0.2.0-rc.2 desktop / Windows x64 的 0.2.4 真实 profile 安装及无需重启热加载成功。属于外部观测，不冒充维护者本机 0.2.5 的端到端验收。
 
 ## 工具发布与提示词
 
@@ -41,6 +49,13 @@
 - 大全局 job 存储扫描不完整时必须报告 Partial，不冒充完整；原工具结果的 Complete/Partial 续页提示不能丢。
 - 关闭后台组件/卸载：等待已发调用，再尝试终止当前组件已知的自有 ID；不能杀别的会话或组件任务。清理失败有告警。断线后已丢归属的任务不保证终止。
 - 重连后不认领旧 ID；操作者可通过上游工具清理持久 job。权限降级不自动杀已运行任务，须操作者管理。
+
+## 进程生命周期（0.2.6）
+
+- 同一宿主文件/后台组件共用连接；关一个组件连接仍能响应，最后一个释放后其 `serve` PID 消失。
+- 连续短命 CLI/宿主调用后不新增残留 `serve`；正常退出和强杀宿主都核验，测试只追踪自有 PID。
+- `FASTCTX_NO_PARENT_WATCH=1` 即使从宿主环境继承也不能关闭插件客户端的所有者监控。
+- 不把 `runtime-host` 的死父 PID 误判为泄漏，不批量杀它；约十分钟空闲回收是上游设计。旧版本遗留进程不由新版自动清理。
 
 ## 生命周期与边界
 

@@ -29,6 +29,8 @@ import {
   publicToolName,
   renderToolingPolicy,
 } from '../lib/policy.js'
+import { resolvePtcConfig } from '../lib/ptc/index.js'
+import { PTC_TOOLS, definition } from '../lib/ptc/contract.js'
 import { DEFAULT_SERVER_NAME, resolveConfig } from '../lib/config.js'
 
 /** The repository root (`scripts/`'s parent). */
@@ -223,13 +225,13 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
     const rows = Array.isArray(document)
       ? document.flatMap((entry) => (Array.isArray(entry?.insert) ? entry.insert : []))
       : []
-    check(rows.length === 3, 'the bundle declares exactly three components')
-    for (const component of ['shell', 'file', 'background']) {
+    check(rows.length === 4, 'the bundle declares exactly four components')
+    for (const component of ['shell', 'file', 'background', 'ptc']) {
       const row = rows.find(candidate => candidate?.name === `${pkg.name}/${component}`)
       check(row?.id === `${pkg.name}-${component}`, `the ${component} component has a stable row id`)
       if (!row) continue
-      check((row.disabled === true) === (component === 'background'), `${component} has its documented enablement default`)
-      try { resolveConfig(row.config); check(true, `${component} config is valid`) }
+      check((row.disabled === true) === ['background', 'ptc'].includes(component), `${component} has its documented enablement default`)
+      try { (component === 'ptc' ? resolvePtcConfig : resolveConfig)(row.config); check(true, `${component} config is valid`) }
       catch (error) { check(false, `${component} config is valid`, String(error?.message ?? error)) }
     }
   }
@@ -239,26 +241,34 @@ const namespaces = Array.isArray(manifestRaw.contributes?.['x-tool-namespaces'])
   ? manifestRaw.contributes['x-tool-namespaces']
   : []
 const hostedNamespace = namespaces[0]
+const backgroundNamespace = namespaces[1]
 if (hostedNamespace === undefined) {
   check(false, 'contributes.x-tool-namespaces declares the hosted tool namespace')
 } else {
   const declared = [...hostedNamespace.tools]
-  const expected = [...FILE_TOOLS, ...BACKGROUND_TOOLS]
+  const expected = [...FILE_TOOLS]
   check(
     declared.length === expected.length && expected.every((toolName) => declared.includes(toolName)),
-    'the declared tool namespace matches lib/policy.js',
-    `manifest ${declared.join(',')} vs policy ${expected.join(',')}`,
+    'the native file namespace matches lib/file/contract.js',
+    `manifest ${declared.join(',')} vs contract ${expected.join(',')}`,
   )
-  const serverName = DEFAULT_SERVER_NAME
   check(
-    hostedNamespace.serverName === serverName,
-    `the declared namespace uses the default serverName (${serverName})`,
+    hostedNamespace.serverName === 'dsh-ops',
+    'the native file namespace uses dsh-ops as its owner',
     `got ${JSON.stringify(hostedNamespace.serverName)}`,
   )
   check(
-    hostedNamespace.transport === 'stdio',
-    'the declared namespace transport is stdio',
+    hostedNamespace.transport === 'in-process',
+    'the native file namespace is in-process',
     `got ${JSON.stringify(hostedNamespace.transport)}`,
+  )
+  check(
+    Array.isArray(backgroundNamespace?.tools)
+      && backgroundNamespace.serverName === 'fastctx'
+      && backgroundNamespace.tools.length === BACKGROUND_TOOLS.length
+      && BACKGROUND_TOOLS.every((toolName) => backgroundNamespace.tools.includes(toolName)),
+    'the optional FastCtx namespace is background-only',
+    `manifest ${JSON.stringify(backgroundNamespace?.tools)} vs background ${BACKGROUND_TOOLS.join(',')}`,
   )
   check(
     hostedNamespace.publicPrefix === TOOL_PREFIX,
@@ -285,18 +295,17 @@ check(
   'the tools this plugin registers itself are named by the tooling policy',
   `policy never names ${IN_PROCESS_TOOLS.filter((name) => !equippedPolicy.includes(publicToolName(name))).map(publicToolName).join(', ')}`,
 )
-namespaces.slice(1).forEach((entry, offset) => {
-  const index = offset + 1
+for (const [index, entry] of namespaces.slice(2).entries()) {
   const declared = Array.isArray(entry?.tools) ? entry.tools : []
   const identified = declared.filter((toolName) => typeof toolName === 'string'
     && IN_PROCESS_TOOLS.includes(toolName)
     && equippedPolicy.includes(publicToolName(toolName)))
   check(
     declared.length > 0 && identified.length === declared.length,
-    `every tool of the namespace at index ${index} is published under ${TOOL_PREFIX} by this plugin itself`,
+    `every tool of the namespace at index ${index + 2} is published under ${TOOL_PREFIX} by this plugin itself`,
     `declared ${JSON.stringify(entry?.tools)} vs in-process ${IN_PROCESS_TOOLS.map(publicToolName).join(', ') || '(none)'}`,
   )
-})
+}
 
 const sections = manifestRaw.contributes?.['x-prompt-sections'] ?? []
 const sectionNames = sections.map((section) => section.name)
@@ -342,8 +351,8 @@ if (display !== undefined) {
   const icon = typeof display.icon === 'string' ? display.icon : undefined
   const iconPath = icon === undefined ? undefined : icon.replace(/^\.\//u, '')
   check(
-    icon !== undefined && !path.isAbsolute(icon) && path.extname(icon).toLowerCase() === '.svg',
-    'the declared icon is a package-relative SVG',
+    icon !== undefined && !path.isAbsolute(icon) && ['.svg', '.png'].includes(path.extname(icon).toLowerCase()),
+    'the declared icon is a package-relative SVG or PNG',
     `got ${JSON.stringify(display.icon)}`,
   )
 
@@ -366,7 +375,14 @@ if (display !== undefined) {
       'the declared icon stays inside the package directory',
       `resolves to ${withinPackage}`,
     )
-    if (iconStat?.isFile() === true) {
+    if (iconStat?.isFile() === true && path.extname(iconFile).toLowerCase() === '.png') {
+      const png = fs.readFileSync(iconFile)
+      check(png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        && png.length >= 33 && png.toString('ascii', 12, 16) === 'IHDR'
+        && png.readUInt32BE(16) > 0 && png.readUInt32BE(20) > 0,
+      'the declared PNG has a valid signature and nonzero dimensions')
+    }
+    if (iconStat?.isFile() === true && path.extname(iconFile).toLowerCase() === '.svg') {
       const svg = fs.readFileSync(iconFile, 'utf8')
       // A card icon is inlined as a data URL and rendered on both light and dark
       // surfaces: it must carry its own monochrome ink and reach nothing outside
@@ -468,7 +484,15 @@ if (display !== undefined) {
 }
 
 /** Payload the published package must carry, as `files` entries or paths they cover. */
+const ptc = manifestRaw.contributes?.['x-components']?.find(c => c.id === 'dsh-ops-ptc')
+check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === false, 'native PTC component is opt-in')
+check(JSON.stringify(ptc?.tools) === JSON.stringify(PTC_TOOLS.map(publicToolName)), 'PTC declaration matches the generated tool contract')
+check(PTC_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
+check(['win32', 'darwin', 'linux'].every(p => pkg.os.includes(p) && ptc?.platforms?.includes(p)), 'PTC package supports all native platform families')
 const REQUIRED_ENTRIES = [
+  'native/Cargo.toml',
+  'native/Cargo.lock',
+  'native/src',
   'lib',
   'bin',
   'cordis.patch.yml',

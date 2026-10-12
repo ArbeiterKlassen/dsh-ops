@@ -3,6 +3,155 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
+## 0.3.0 Native file component
+
+The file component is no longer a FastCtx client. `native/src/file.rs` implements
+bounded inspect, glob, grep and replace; `native/src/file_path.rs` implements
+absolute host-resolved path validation and component-by-component no-follow
+checks. The host adapter in `lib/file/` obtains the authoritative DSH session
+cwd and sandbox policy, confines the exact worker argv, forwards cancellation,
+and maps worker JSON into the DSH structured output contract.
+
+The Windows x64 worker was built with the managed Rust `1.97.1` toolchain and
+staged under `runtime/win32-x64` with a version/target/executable/SHA-256 receipt.
+`cargo check`, `cargo build --release --locked`, `cargo clippy --all-targets
+-D warnings`, manifest validation, and all ten local JavaScript suites pass.
+The six-target release matrix and Linux/macOS runtime and sandbox acceptance are
+not claimed. FastCtx source/vendor remains unchanged and is retained only for
+the explicitly disabled background component.
+
+
+The independent MIT Rust core in `native/` is original dsh-ops code. It uses
+cap-std/cap-fs-ext handle-relative filesystem operations, serde, SHA-256, UUIDs,
+regex and fs2 workspace locking. No FastCtx source was modified or linked by the
+file component; legacy FastCtx remains only behind the disabled background
+component and all applicable notices remain intact.
+
+Host contract source (DSH 0.2.0-rc.2):
+
+- `packages/core/tools/src/index.ts`: `register`, `presentAs`, scoped SDK/wire
+  presentation and `tools/change`; the component never invokes private modeFor.
+- `packages/core/system-prompt/src/index.ts`: public `assemble({scope})`, sections
+  and wire tools distinguish pure PTC from native/hybrid.
+- `packages/sandbox/{sandbox,sandbox-policy}/src/index.ts`: per-session policy,
+  exact argv confinement, full/partial enforcement and runner diagnostics.
+- `packages/subprocess/subprocess/src/types.ts`: bounded stdin/collected stdout,
+  credential scrub and managed-range cancellation.
+- `packages/jobs/jobs/src/{index,types}.ts`: optional host-owned foreground job
+  admission, progress, wait, cancellation and collected-record removal.
+
+Windows x64 release worker build and three isolated PTC scenarios run with real
+Rust/Cordis/tool/prompt services; confinement and optional jobs are simulated.
+Linux x64 (`x86_64-unknown-linux-gnu`) and macOS arm64 (`aarch64-apple-darwin`)
+`cargo check --locked` pass from the Windows toolchain. These are compile checks,
+not linking/runtime/real sandbox acceptance. Other platform/architecture pairs,
+real process sandbox denial and live Desktop/PTC execution remain release gates.
+Real Windows x64 DSH sandbox-local/subprocess-local acceptance was subsequently
+added and passed: workspace-write copy, read-only result page without storage
+writes, denied outside-root mutation, and unconfined full-access outside-root
+mutation. This corrects the initial full-only enforcement gate: original Windows
+ACL reports partial and is now accepted with that exact fact returned.
+
+Runtime discovery now resolves packaged `runtime/<platform>-<arch>` bytes with
+version/checksum receipts before source fallback. Source builds stage their runtime
+automatically. Release assembly requires six native target builds and rejects
+incomplete packages; the release matrix has not been run or published here.
+
+No npm publish, GitHub push, or claimed model-token/turn benchmark took place.
+Details, budgets and security limitations: [Native PTC](docs/native-ptc.md).
+
+## 0.2.9 Bug fixes
+
+This release contains only bug fixes. It skips the Windows WSL launcher during
+PATH fallback (#12), rejects undeclared `ops_bash` arguments such as
+`run_in_background` before spawn (#10), and writes the one-time legacy shell
+fallback migration directly through the owning loader tree instead of invoking
+`Entry.update()`. The last change prevents a migration from remounting dsh-ops
+while Desktop is already reloading a profile row, addressing the reported
+configuration-edit slowdown with dsh-ops 0.2.6 and DSH 0.2.0-rc.2.
+
+No feature, component, configuration key, or runtime capability was added. The
+three Windows payload dependencies remain pinned to 0.2.1.
+
+
+Issue #9 showed that a host package-manager prune can leave the bash payload declared in the profile lockfile but absent on disk. `ops_bash` now converts a spawn-time `ENOENT` into a concise actionable result instead of exposing a raw process exception. It does not silently fall back to an unapproved system shell.
+
+The Electron `workspace-write` `0xC0000142` ACL-runner failure is a DSH host sandbox issue outside this plugin's subprocess API. This release documents that boundary and does not claim to repair the host's Windows ACL runner.
+
+
+
+## 0.2.7 Long-script tool-call stability
+
+Issue #7 showed that putting long heredoc-heavy scripts into one JSON `command` string can increase malformed tool-call risk and waste an entire model turn. This release adds `ops_bash.script_path`, keeps short commands on `command`, and updates the runtime guidance and documentation to steer long scripts through the file path.
+
+The main package version was `0.2.7`; the three Windows payload dependencies remained pinned to `0.2.1` and were not republished.
+
+## 0.2.6 Owned client lifecycle
+
+Issue #1's latest controlled reproduction corrects the early orphan hypothesis:
+`runtime-host` is a deliberately detached per-user singleton reused by clients;
+its normal idle timeout is ten minutes. A dead-parent PID alone does not prove
+it leaked. Leaked `serve` clients keep it active, so this release targets only
+clients the plugin owns, not shared runtime-host or durable job supervisors.
+
+`lib/handshake.js` tracks exact clients for Node's synchronous exit hook, forces
+`FASTCTX_NO_PARENT_WATCH=0` on spawned proxies, rejects pending requests on close,
+shares one closing promise, closes lost reply transports, and bounds shutdown
+escalation. The existing Rust watcher checks PID plus process creation identity
+(`src/process_identity.rs:251`, `src/runtime/session.rs:477`); no Rust files or
+0.2.1 payloads were changed. Shared client leases still close only at zero owners.
+Existing clients launched by older versions are not automatically swept or adopted.
+
+Windows x64 / Node 24.18.0 acceptance against the published FastCtx payload:
+50 manifest checks, 9 suites, 132 checks, no skips. The lifecycle suite covers
+pending-call cancellation, concurrent close, reply EOF, real stdin EOF, final
+lease release, repeated explicit owner exit and forced owner termination with
+an inherited no-parent-watch escape hatch. This is isolated process evidence,
+not a claim of completed desktop/web upgrade or a ten-minute idle timing test.
+
+## 0.2.5 Stable safety and verification
+
+The stable main package is `dsh-ops@0.2.9`; it deliberately excludes the
+context-compaction beta branch. Main-package patches and runtime payloads have
+independent versions. The exact dependency mapping is:
+
+| Main package | Payload dependency (unchanged) | Upstream runtime |
+| --- | --- | --- |
+| `dsh-ops@0.2.9` | `@dsh-ops/fastctx-win32-x64@0.2.1` | FastCtx 0.2.6, upstream revision `ccaa157790d02328a60786eb94ee5ad698995a5f`; built from `dd348254281bf5eea6c4d9d07c49d82c565666f4` |
+| `dsh-ops@0.2.9` | `@dsh-ops/bash-win32-x64@0.2.1` | PortableGit `v2.56.0.windows.2` (2.56.0.2), bash 5.3.15 |
+| `dsh-ops@0.2.9` | `@dsh-ops/pwsh-win32-x64@0.2.1` | PowerShell 7.6.6 |
+
+The same payload mapping applies to main-package versions 0.2.2–0.2.5.
+Each payload includes `provenance.json` with its executable SHA-256 and upstream
+identity; published tarball checksums are in [docs/release-0.2.1.md](docs/release-0.2.1.md).
+No payload was rebuilt for 0.2.5. GitHub v0.2.1/0.2.3/0.2.4 Releases are notes-only;
+they do not claim attached tarballs or SHA256SUMS. The assets table below is historical
+v0.2.0 distribution evidence, not a current-release asset promise.
+
+System bash fallback is now opt-in (`allowSystemShellFallback: false` in both
+code and bundle defaults). FastCtx receives the plugin-resolved executor, or a
+disabled sentinel when none exists; background commands are not published in the
+latter case. Shared runtime identity includes the executor choice. Explicit
+`bashPath`, legacy provisioned copies and packaged payloads remain operator-controlled
+inputs; this does not make host shell tools or file tools a sandbox.
+On first activation, `lib/config-updates.js` disables legacy explicit `true`
+before resolution and submits the owning raw loader row for persistence with
+`configUpdateVersion: 1`. Subsequent manual opt-ins are retained. Disabled rows
+migrate when activated; no-loader mounts warn and use the safe value in memory.
+Include.write schedules asynchronous IO, so later disk failures are reported by
+the loader rather than claimed as confirmed persistence by the plugin.
+Loader APIs were read at `vendor/loader/src/config/entry.ts:116`,
+`vendor/include/src/index.ts:365` in DSH 0.2.0-rc.2; tests cover raw-node preservation,
+per-row markers, retries, cancellation and real Cordis remount/publication.
+
+The 0.2.5 automated acceptance on Windows x64 / Node 24.18.0 used
+`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify`: 50 manifest checks, 8 suites,
+125 checks, no skips. Integration covers real registry scopes, file calls/error
+results, component prompt/unload, dynamic session command authority, inherited
+restrictions, shared leases and reconnect. The packaged 0.2.1 FastCtx executable
+is used for final release acceptance. No live desktop upgrade or model request
+is claimed by these automated tests.
+
 ## 0.2.4 Component lifecycle
 
 Three exported subpath plugins replace the single bundle row: shell/file on by
@@ -91,7 +240,7 @@ This pass changes only plugin presentation, registration, and result projection;
 - Host timeout metadata requires work quiescence; the current MCP transport removes pending waits but cannot prove server cancellation. No host `timeoutMs` promise is added.
 - Job launch ID is parsed only from FastCtx's successful terminal marker (`vendor/fastctx/src/shell/jobs/mod.rs:232-278`); global durable lists at `:1053-1250` are projected to session-owned IDs. Footer grammar/placement comes from `vendor/fastctx/src/background_status.rs`.
 - Baseline at pre-change plugin HEAD `dee3c57`, runtime FastCtx 0.2.6, is recorded in `docs/schema-baseline.json`. `scripts/measure-schemas.mjs` measures compact name/description/parameters JSON, not use frequency or actual billing.
-- Per operator instruction: no regression tests or CI added, no existing suite updated or run. Syntax checks and schema-list measurements are not runtime acceptance. See `docs/manual-validation.md`.
+- Historical slimming pass only: the operator requested no regression/CI additions or suite runs then. This limitation is superseded by the 0.2.5 acceptance record above; `npm run verify` is again the current gate. See `docs/manual-validation.md` for separate manual checks.
 - Residual boundaries: file tools remain outside the host filesystem sandbox; shell-mode gating does not confine `ops_replace`. Approval and sandbox state are separate; no new approval escalation is implemented. Reconnect loses job ownership and does not prove durable jobs terminated.
 
 ## Two bodies of work
@@ -123,7 +272,7 @@ install brings".
 | `@dsh-ops/fastctx-win32-x64@0.2.0` | **a payload we build**: this fork's FastCtx, `bin/fastctx.exe` |
 | `@dsh-ops/bash-win32-x64@0.2.0` | **a pin only**: upstream URL, release, version, byte count, and SHA-256. No binaries |
 | `@dsh-ops/pwsh-win32-x64@0.2.0` | **a pin only**: the same for PowerShell 7. No binaries |
-| `SHA256SUMS` (release asset) | the digests of those four tarballs, attached to the tag's GitHub Release beside them |
+| `SHA256SUMS` (historical v0.2.0 release asset) | the four v0.2.0 tarball digests; later notes-only Releases do not attach this asset. Published 0.2.1 payload checksums are in `docs/release-0.2.1.md`. |
 
 ### What this distribution does not ship
 
@@ -449,11 +598,11 @@ injection scopes that do not declare `tools`; the `ctx.tools` property proxy is
 topology-sensitive and answered `undefined` there. The mount suite caught this — the
 section rendered empty next to nine registered tools.
 
-## Verification record
+## Historical verification record (0.2.0, `441b095`)
 
-On Windows x64 with Node 24.18.0, at the commit that carries this record. The
-totals are the output of that run; what has to keep holding is what the suites
-assert, not the count:
+This record was introduced by commit `441b095`; it describes that implementation,
+not main after the later component and PNG changes. For current acceptance use
+`npm run verify` and the 0.2.5 record above. Historical Windows x64 / Node 24.18.0 output:
 
 ```console
 node scripts/validate-manifest.mjs   # all 47 checks passed

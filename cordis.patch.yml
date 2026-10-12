@@ -1,5 +1,5 @@
-# Three independent market components; no unconditional host executor override.
-# Shell and file are enabled by default. Background is explicitly opt-in.
+# Four independent components. PTC is opt-in, scoped to pure PTC sessions.
+# Legacy shell and file stay enabled; neither is required by the PTC component.
 - insert:
     - id: dsh-ops-shell
       name: dsh-ops/shell
@@ -7,7 +7,7 @@
         promptPolicy: true
         publishBashTool: true
         shellPolicy: advise
-        allowSystemShellFallback: true
+        allowSystemShellFallback: false
     - id: dsh-ops-file
       name: dsh-ops/file
       config:
@@ -23,3 +23,8 @@
         enableShellTools: true
         required: false
         toolCallTimeoutMs: 300000
+    - id: dsh-ops-ptc
+      name: dsh-ops/ptc
+      disabled: true
+      config:
+        required: false
