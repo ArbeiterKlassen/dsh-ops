@@ -73,7 +73,7 @@ Bundle 声明四个组件，分别启停，首次安装默认开启前两个旧�
 
 “默认终端改为 bash”指模型提示优先使用 `ops_bash`，**不修改系统默认终端、PATH 或宿主原有 shell 工具名称**。Shell 组件开时，通过官方配置生命周期临时指定 `pwsh-sandbox` 的 PowerShell 7 路径；关时按执行器最新原配置恢复，不写 profile 配置。执行器配置切换不代表取消已在运行的宿主命令。
 
-提示词注册为独立运行时段，**不写 AGENTS.md**：Shell 关就撤销 bash/pwsh 路由；文件关就撤销检索说明；后台关就不发布后台工具及自有 job 指导。文件与后台共享一个插件拥有的 FastCtx 连接，关闭其中一个不关闭另一个。默认仅新增五个工具，不发布重复前台 `ops_run`。这些改变减少固定声明成本。极简预设会覆盖附加 system sections；PTC 模式经 SDK 调用底层工具，权限门不变。
+提示词注册为独立运行时段，**不写 AGENTS.md**：Shell 关就撤销 bash/pwsh 路由；文件关就撤销原生文件说明；后台关就不发布后台工具及自有 job 指导。文件组件使用独立 Rust worker；FastCtx 仅由默认关闭的 background 组件保留。默认新增四个原生文件工具和 `ops_bash`，不发布重复前台 `ops_run`。这些改变减少固定声明成本。极简预设会覆盖附加 system sections；PTC 模式经 SDK 调用底层工具，权限门不变。
 
 ## 配置方式与工具列表
 
@@ -116,7 +116,7 @@ config:
 | `ops_job_output` / `ops_job_list` / `ops_job_kill` | 查看、列出、停止当前会话启动的任务 | 是 |
 | 宿主 `pwsh` | 使用随包 PowerShell 7 的 Windows 原生操作 | 沿用宿主策略 |
 
-¹ **文件工具不是宿主文件系统沙箱。** 它们未接入 DSH 的受限文件后端，尤其 `ops_replace` 没有 workspace confinement。不要把该插件提供的部分工具视为不可信受任限环境的安全方案。
+¹ **文件工具使用 DSH 原生 sandbox/subprocess 边界。** host 负责 session cwd、策略解析、精确 worker argv 的 confinement、取消和结果映射；Rust core 仍额外拒绝 link/reparse/special object，并执行预算和 CAS 完整性保护。`workspace-write` 只允许当前 workspace root 内的路径；外部绝对路径需要 `danger-full-access`。
 
 ## 长脚本与 JSON 稳定性
 

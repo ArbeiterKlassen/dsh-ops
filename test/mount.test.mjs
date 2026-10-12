@@ -33,8 +33,8 @@ async function fileMount(ctx, config = {}) {
   }))
   return mountPlugin({ ctx, config: { toolCallTimeoutMs: 5000, ...config }, expectTools: EXPECTED.length })
 }
-async function agentForCall(ctx, cwd) {
-  const result = { id: 'file-call', session: { id: 'file-call', mode: 'danger-full-access', header: { cwd } } }
+async function agentForCall(ctx, cwd, mode = 'danger-full-access') {
+  const result = { id: 'file-call', session: { id: 'file-call', mode, header: { cwd } } }
   const { createScope } = await import('@deepseek-ai/dsh-scope')
   result.ctx = createScope(ctx, result).ctx
   return result
@@ -110,6 +110,26 @@ await test('real FastCtx calls return data and propagate server errors promptly'
       assert.equal(result.value.items[0], path.join(dir, 'alpha.txt'))
       const missing = await callTool(ctx, publicToolName('inspect_local_file'), { path: path.join(dir, 'missing.txt') }, undefined, agent)
       assert.equal(missing.value.error.code, 'NOT_FOUND')
+    })
+  } finally { await shutdown(ctx) }
+})
+await test('native file paths resolve from session cwd and enforce workspace-write boundaries', async () => {
+  const { ctx } = await bootHost()
+  try {
+    await fileMount(ctx)
+    await withTempDir('native-paths', async dir => {
+      fs.writeFileSync(path.join(dir, 'cwd.txt'), 'cwd\n')
+      const workspace = await agentForCall(ctx, dir, 'workspace-write')
+      const relative = await callTool(ctx, publicToolName('glob'), { pattern: ['cwd.txt'], path: '.' }, undefined, workspace)
+      assert.equal(relative.value.status, 'completed')
+      assert.deepEqual(relative.value.items, [path.join(dir, 'cwd.txt')])
+      const outside = path.join(path.dirname(dir), 'outside-native.txt')
+      fs.writeFileSync(outside, 'outside\n')
+      try {
+        const denied = await callTool(ctx, publicToolName('inspect_local_file'), { path: outside }, undefined, workspace)
+        assert.equal(denied.value.error.code, 'POLICY_DENIED')
+        assert.ok(denied.value.error.message.includes(dir))
+      } finally { fs.rmSync(outside, { force: true }) }
     })
   } finally { await shutdown(ctx) }
 })

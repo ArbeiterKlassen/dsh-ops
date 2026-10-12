@@ -139,7 +139,7 @@ config:
 | `ops_job_output` / `ops_job_list` / `ops_job_kill` | 查看、列出、停止当前会话启动的任务 | 是 |
 | 宿主 `pwsh` | 使用随包 PowerShell 7 的 Windows 原生操作 | 沿用宿主策略 |
 
-¹ **文件工具使用 DSH 原生 sandbox/subprocess 边界。** host 负责 session cwd、策略解析、精确 worker argv 的 confinement、取消和结果映射；Rust core 仍额外拒绝 link/reparse/special object，并执行预算和 CAS 完整性保护。
+¹ **文件工具使用 DSH 原生 sandbox/subprocess 边界。** host 负责 session cwd、策略解析、精确 worker argv 的 confinement、取消和结果映射；Rust core 仍额外拒绝 link/reparse/special object，并执行预算和 CAS 完整性保护。`workspace-write` 只允许当前 workspace root 内的路径；外部绝对路径需要 `danger-full-access`。
 
 ## 长脚本与 JSON 稳定性
 

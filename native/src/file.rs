@@ -113,18 +113,37 @@ fn host_link_or_reparse(path: &Path) -> bool {
     if metadata.file_attributes() & 0x400 != 0 { return true; }
     false
 }
-fn walk(root: &Path) -> Result<Vec<PathBuf>> {
+struct WalkResult {
+    files: Vec<PathBuf>,
+    truncated: bool,
+}
+
+fn walk(root: &Path) -> Result<WalkResult> {
     let target = crate::file_path::checked(root.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?)?;
     let directory = target.parent.open_dir_nofollow(&target.name)?;
-    let mut output = Vec::new();
-    visit_dir(root, root, directory, 0, &mut output)?;
-    Ok(output)
+    let mut files = Vec::new();
+    let mut truncated = false;
+    visit_dir(root, root, directory, 0, &mut files, &mut truncated)?;
+    Ok(WalkResult { files, truncated })
 }
-fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: usize, output: &mut Vec<PathBuf>) -> Result<()> {
-    if depth > MAX_DEPTH || output.len() >= MAX_ENTRIES { return Ok(()); }
-    let mut names: Vec<String> = directory.entries()?.map(|entry| {
-        entry?.file_name().into_string().map_err(|_| Failure::new("POLICY_DENIED", "Non-UTF8 directory entry"))
-    }).collect::<Result<_>>()?;
+fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: usize, output: &mut Vec<PathBuf>, truncated: &mut bool) -> Result<()> {
+    if depth > MAX_DEPTH || output.len() >= MAX_ENTRIES {
+        *truncated = true;
+        return Ok(());
+    }
+    let mut names = Vec::new();
+    // A directory can change while it is being read. A broken child directory
+    // is skipped, while failure to enumerate the requested root remains visible.
+    let entries = match directory.entries() {
+        Ok(entries) => entries,
+        Err(error) if depth == 0 => return Err(error.into()),
+        Err(_) => return Ok(()),
+    };
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
+        let Ok(name) = entry.file_name().into_string() else { continue };
+        names.push(name);
+    }
     names.sort();
     for name in names {
         if crate::file_path::validate_name(&name).is_err() || name == ".git" { continue; }
@@ -136,10 +155,15 @@ fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: us
         let child = display.join(&name);
         if host_link_or_reparse(&child) { continue; }
         if hidden(&child, root) || matches!(name.as_str(), ".git" | ".dsh-ops" | "node_modules" | "target" | ".venv") { continue; }
-        if metadata.is_file() { output.push(child); continue; }
-        if metadata.is_dir()
-            && let Ok(child_dir) = directory.open_dir_nofollow(&name) {
-            visit_dir(root, &child, child_dir, depth + 1, output)?;
+        if metadata.is_file() {
+            if output.len() >= MAX_ENTRIES { *truncated = true; return Ok(()); }
+            output.push(child);
+            continue;
+        }
+        if metadata.is_dir() {
+            let Ok(child_dir) = directory.open_dir_nofollow(&name) else { continue };
+            visit_dir(root, &child, child_dir, depth + 1, output, truncated)?;
+            if *truncated && output.len() >= MAX_ENTRIES { return Ok(()); }
         }
     }
     Ok(())
@@ -152,10 +176,18 @@ fn matches_any(root: &Path, file: &Path, patterns: &[String]) -> bool {
     let excluded = patterns.iter().filter_map(|p| p.strip_prefix('!')).any(|p| glob_match(p, &name));
     included && !excluded
 }
-fn files_for(path: &str, patterns: &[String]) -> Result<Vec<(PathBuf, PathBuf)>> {
+fn files_for(path: &str, patterns: &[String]) -> Result<WalkResult> {
     let root = target(path, false)?;
-    let files = if root.is_file() { vec![root.clone()] } else { walk(&root)? };
-    Ok(files.into_iter().filter(|f| root.is_file() || matches_any(&root, f, patterns)).map(|f| (root.clone(), f)).collect())
+    if root.is_file() {
+        return Ok(WalkResult { files: vec![root.clone()], truncated: false });
+    }
+    let walked = walk(&root)?;
+    Ok(WalkResult {
+        files: walked.files.into_iter()
+            .filter(|f| matches_any(&root, f, patterns))
+            .collect(),
+        truncated: walked.truncated,
+    })
 }
 fn glob_match(pattern: &str, value: &str) -> bool {
     let p: Vec<_> = pattern.trim_start_matches("./").split('/').collect();
@@ -193,8 +225,8 @@ fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 fn modified(path: &Path) -> u64 { fs::symlink_metadata(path).ok().map_or(0, |m| m.len()) }
-fn result(items: Vec<Value>, total: usize, offset: usize, matched: usize) -> Value {
-    let returned = items.len(); json!({"status":"completed","phase":"verify","changed":0,"matched":matched,"skipped":offset,"failed":0,"complete":offset + returned >= total,"omitted":total.saturating_sub(offset + returned),"items":items,"total":total,"nextOffset":offset + returned})
+fn result(items: Vec<Value>, total: usize, offset: usize, matched: usize, truncated: bool) -> Value {
+    let returned = items.len(); json!({"status":"completed","phase":"verify","changed":0,"matched":matched,"skipped":offset,"failed":0,"complete":!truncated && offset + returned >= total,"truncated":truncated,"omitted":total.saturating_sub(offset + returned),"items":items,"total":total,"nextOffset":offset + returned})
 }
 
 fn inspect(request: &Request) -> Result<Value> {
@@ -212,38 +244,39 @@ fn inspect(request: &Request) -> Result<Value> {
     if args.view != "text" { return Err(Failure::new("INVALID_ARGUMENT", "view must be text or hex")); }
     let text = String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "file is not valid UTF-8"))?;
     let lines: Vec<_> = text.lines().enumerate().skip(args.offset.saturating_sub(1)).take(args.limit).map(|(i, line)| json!({"path":path,"line":i+1,"text":line})).collect();
-    Ok(result(lines, text.lines().count(), args.offset.saturating_sub(1), text.lines().count()))
+    Ok(result(lines, text.lines().count(), args.offset.saturating_sub(1), text.lines().count(), false))
 }
 fn glob(request: &Request) -> Result<Value> {
     let args: GlobArgs = serde_json::from_value(request.args.clone())?;
     if args.pattern.is_empty() || args.pattern.iter().all(|p| p.starts_with('!')) { return Err(Failure::new("INVALID_ARGUMENT", "pattern requires a positive glob")); }
     let root = target(&args.path, false)?; if !root.is_dir() { return Err(Failure::new("INVALID_ARGUMENT", "glob path must be a directory")); }
-    let mut files: Vec<_> = walk(&root)?.into_iter().filter(|f| matches_any(&root, f, &args.pattern)).collect();
+    let walked = walk(&root)?;
+    let mut files: Vec<_> = walked.files.into_iter().filter(|f| matches_any(&root, f, &args.pattern)).collect();
     if args.sort == "modified" { files.sort_by_key(|f| std::cmp::Reverse(modified(f))); } else if !args.sort.is_empty() && args.sort != "path" { return Err(Failure::new("INVALID_ARGUMENT", "sort must be path or modified")); }
     let output_mode = if args.output_mode.is_empty() { "paths" } else { args.output_mode.as_str() };
     if output_mode != "paths" && output_mode != "details" { return Err(Failure::new("INVALID_ARGUMENT", "outputMode must be paths or details")); }
     let total = files.len(); let selected: Vec<_> = files.into_iter().skip(args.offset).take(args.limit).map(|f| if output_mode == "paths" { json!(f) } else { let modified_at = modified(&f); json!({"path":f,"bytes":fs::symlink_metadata(&f).map(|m|m.len()).unwrap_or(0),"modified":modified_at}) }).collect();
-    Ok(result(selected, total, args.offset, total))
+    Ok(result(selected, total, args.offset, total, walked.truncated))
 }
 fn grep(request: &Request) -> Result<Value> {
     let args: GrepArgs = serde_json::from_value(request.args.clone())?;
     if args.pattern.is_empty() || args.limit == 0 || args.limit > 10_000 { return Err(Failure::new("INVALID_ARGUMENT", "pattern and bounded limit are required")); }
     if args.before_context > 32 || args.after_context > 32 { return Err(Failure::new("INVALID_ARGUMENT", "context is limited to 32 lines")); }
     let regex = RegexBuilder::new(&args.pattern).case_insensitive(args.case_insensitive).multi_line(args.multiline).build().map_err(|e| Failure::new("INVALID_ARGUMENT", e))?;
-    let files = files_for(&args.path, &args.glob)?; let mut matches = Vec::new(); let mut file_count = 0; let mut match_count = 0;
-    for (_root, file) in files { let bytes = match read_bytes(&file) { Ok(bytes) => bytes, Err(_) => continue }; if bytes.len() as u64 > MAX_FILE_BYTES { continue; } let text = match String::from_utf8(bytes) { Ok(v) => v, Err(_) => continue }; let lines: Vec<_> = text.lines().collect(); let mut line_hits = Vec::new(); for (i, line) in lines.iter().enumerate() { if regex.is_match(line) { line_hits.push(i); } } if line_hits.is_empty() { continue; } file_count += 1; match_count += line_hits.len();
+    let walked = files_for(&args.path, &args.glob)?; let mut matches = Vec::new(); let mut file_count = 0; let mut match_count = 0;
+    for file in walked.files { let bytes = match read_bytes(&file) { Ok(bytes) => bytes, Err(_) => continue }; if bytes.len() as u64 > MAX_FILE_BYTES { continue; } let text = match String::from_utf8(bytes) { Ok(v) => v, Err(_) => continue }; let lines: Vec<_> = text.lines().collect(); let mut line_hits = Vec::new(); for (i, line) in lines.iter().enumerate() { if regex.is_match(line) { line_hits.push(i); } } if line_hits.is_empty() { continue; } file_count += 1; match_count += line_hits.len();
         match args.output_mode.as_str() { "files_with_matches" => matches.push(json!({"path":file})), "count" => matches.push(json!({"path":file,"count":line_hits.len()})), _ => { for i in line_hits { let start=i.saturating_sub(args.before_context); let end=(i+args.after_context+1).min(lines.len()); matches.push(json!({"path":file,"line":if args.line_numbers {i+1} else {0},"text":lines[start..end].join("\n")})); } } }
-        if matches.len() >= args.offset + args.limit { break; }
+        if args.output_mode != "summary" && matches.len() >= args.offset + args.limit { break; }
     }
-    if args.output_mode == "summary" { return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":match_count,"skipped":0,"failed":0,"complete":true,"omitted":0,"files":file_count,"matches":match_count})); }
-    let total=matches.len(); Ok(result(matches.into_iter().skip(args.offset).take(args.limit).collect(), total, args.offset, match_count))
+    if args.output_mode == "summary" { return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":match_count,"skipped":0,"failed":0,"complete":!walked.truncated,"truncated":walked.truncated,"omitted":0,"files":file_count,"matches":match_count})); }
+    let total=matches.len(); Ok(result(matches.into_iter().skip(args.offset).take(args.limit).collect(), total, args.offset, match_count, walked.truncated))
 }
 fn replace(request: &Request) -> Result<Value> {
     if request.read_only { return Err(Failure::new("POLICY_DENIED", "replace is unavailable in read-only mode")); }
     let args: ReplaceArgs = serde_json::from_value(request.args.clone())?;
     if args.pattern.is_empty() || args.max_replacements == 0 || args.max_replacements > 100_000 { return Err(Failure::new("INVALID_ARGUMENT", "pattern and maxReplacements are required")); }
-    let files = files_for(&args.path, &args.glob)?; let mut plans = Vec::new(); let mut total = 0usize;
-    for (_, file) in files { let bytes=read_bytes(&file)?; let text=String::from_utf8(bytes.clone()).map_err(|_| Failure::new("INVALID_ARGUMENT", "replace only supports UTF-8 files"))?; let count=text.match_indices(&args.pattern).count(); if count>0 { total += count; plans.push((file, bytes, text, count)); } }
+    let walked = files_for(&args.path, &args.glob)?; let mut plans = Vec::new(); let mut total = 0usize;
+    for file in walked.files { let bytes=read_bytes(&file)?; let text=String::from_utf8(bytes.clone()).map_err(|_| Failure::new("INVALID_ARGUMENT", "replace only supports UTF-8 files"))?; let count=text.match_indices(&args.pattern).count(); if count>0 { total += count; plans.push((file, bytes, text, count)); } }
     if total > args.max_replacements { return Err(Failure::new("OUTPUT_LIMIT", "maxReplacements exceeded; no files were changed")); }
     let mut items=Vec::new(); for (file, original, text, count) in plans { let revision=hash_file(&file)?; let next=text.replace(&args.pattern,&args.replacement); items.push(json!({"path":file,"replacements":count,"revision":revision,"bytesBefore":original.len(),"bytesAfter":next.len()})); }
     if args.dry_run { return Ok(json!({"status":"completed","phase":"observe","changed":0,"matched":total,"skipped":0,"failed":0,"complete":true,"omitted":0,"dryRun":true,"items":items})); }

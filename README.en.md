@@ -143,7 +143,7 @@ config:
 | `ops_job_output` / `ops_job_list` / `ops_job_kill` | Read, list and stop jobs started by the current session | Yes |
 | Host `pwsh` | Windows-native operations using bundled PowerShell 7 | Host policy |
 
-¹ **File tools use the DSH-native sandbox/subprocess boundary.** The host owns session-cwd resolution, policy lookup, exact worker-argv confinement, cancellation and result mapping; the Rust core additionally rejects links/reparse/special objects and enforces budgets and CAS integrity.
+¹ **File tools use the DSH-native sandbox/subprocess boundary.** The host owns session-cwd resolution, policy lookup, exact worker-argv confinement, cancellation and result mapping; the Rust core additionally rejects links/reparse/special objects and enforces budgets and CAS integrity. `workspace-write` permits paths only inside the active workspace root; external absolute paths require `danger-full-access`.
 
 ## Long scripts and JSON stability
 
