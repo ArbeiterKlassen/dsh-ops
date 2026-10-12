@@ -6,12 +6,17 @@
 
 > tips：本项目的 ops 是广义 operations （运行操作）的缩写，代指本插件处于dsh和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
 
-在现阶段，本插件的三个主要功能：
+本插件的主要功能：
 
-- 提供独立 **bash 5.3.15** 并优先使用bash，让你的AI不再和PowerShell打架
-- 独立 **PowerShell 7.6.6**，用于必要的 Windows 原生操作，沿用宿主 `pwsh` 工具。PowerShell 7 比自带的 PowerShell 5 也有不少优化
-- 一些 Rust 编写的性能更好的，更快的读取、查找、替换工具，加速任务运行，减少不必要的输入输出。由于部分工具不经过 DSH 的受限终端后端，命令与后台任务工具只在**完全权限**时启用。
-- 未来会加入一系轻量短输出的好用的rust工具，致力于优化token效率，均可开关和单独配置
+- 提供独立 **bash 5.3.15** 和 独立 **PowerShell 7.6.6** ，优先使用bash，必要时回退pwsh7，让你的AI不再和PowerShell打架——不改变系统path路径和终端指向，环境变量安全
+- 一些 Rust 编写的性能更好的，更快的读取、查找、替换工具，渐进式纰漏以减少系统prompt的工具定义占用，加速任务运行，减少不必要的输入输出，减少报错率来减少运行过程中的token浪费，以及提供和原版dsh一样的沙箱和权限机制。
+
+> [!IMPORTANT]
+> main的代码已经是0.3.0的结构，由于 0.3.0 开始把fastctx工具替换为自己实现的dsh原生工具，可能有奇怪bug——不过从源码构建的小伙伴应该不惧怕bug吧！
+> 0.3.0的ptc模式在 `固定总行数 结构和复杂度 超燃生成mc` 测试中取得了：
+> 97% token减免（对比windows原装标准模式）
+> 50% token减免（对比windows原装ptc模式）
+> 的成绩
 
 <img width="1603" height="1028" alt="247c1326cca5b66e60d330c3f32150e2" src="https://github.com/user-attachments/assets/7c9ba485-5323-42a2-b5a8-6dcda07f91c4" />
 
