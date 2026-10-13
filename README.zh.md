@@ -99,13 +99,13 @@ npx --yes dsh-ops@latest provision-shells --bash
 
 ```console
 :: cmd
-set HTTPS_PROXY=http://127.0.0.1:7890
+set HTTPS_PROXY=http://127.0.0.1:<clash-port>
 npx --yes dsh-ops@latest provision-shells --bash
 ```
 
 ```console
 # PowerShell
-$env:HTTPS_PROXY = 'http://127.0.0.1:7890'
+$env:HTTPS_PROXY = 'http://127.0.0.1:<clash-port>'
 npx --yes dsh-ops@latest provision-shells --bash
 ```
 
