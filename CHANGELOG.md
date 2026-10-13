@@ -38,6 +38,10 @@ No version bump and no `package.json` change. No new tool, component, configurat
 - Keep each component icon inside its exported manifest directory; fix the PTC Plugin Manager metadata error caused by the parent-relative icon path, with coverage in the existing manifest suite.
 - Build with `npm run build:ptc`; runtime-bearing packaging is prepared but the multi-platform release is not yet published. See `docs/native-ptc.md` for limits and provenance.
 
+## [Unreleased] — Background job argument strictness
+
+- Check the background tools' arguments (`ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) against FastCtx's own published schema before the owned-job check, so a mistyped or missing `job_id` is reported as `invalid arguments: unknown key "id"` or `missing required field "job_id"` instead of "This job was not started by this session on the current connection." The ownership check itself is unchanged and still decides every call whose arguments are well formed; no argument error reaches the server. Covered by `test/jobs-args.test.mjs`. (#14)
+
 ## [Unreleased] — Optional bash input placeholders
 
 - Treat empty/whitespace/null command and script_path values as absent, so adapters that fill optional inputs do not block a valid command or script. Keep rejecting two non-empty inputs and unknown argument keys before spawn.
