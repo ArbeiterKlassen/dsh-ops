@@ -83,6 +83,42 @@ npx --yes dsh-ops@latest uninstall --profile desktop
 
 旧版显式 provision 的 `<DSH_HOME>/dsh-ops/` 文件需单独清理：`npx --yes dsh-ops@latest uninstall --yes`。默认不删 `~/.fastctx/` 持久状态；需要时显式加 `--purge-fastctx`。关闭后台组件会等待已发出的调用，然后尝试终止该组件当前连接记住的自有任务；失败会告警。断线丢失归属的旧任务及单纯降权不保证终止，先处理自己的任务。
 
+## 已知问题
+
+**`node_modules/@dsh-ops/` 下没有 `bash-win32-x64` 不是安装损坏。** 三个载荷都是精确钉版的**可选依赖**（`optionalDependencies`）：若你的 registry 未同步该平台包的对应版本，包管理器会**静默跳过**它——安装仍以退出码 0 结束，且不打印任何指向缺包的警告。
+
+实测（2026-10-12）：`registry.npmmirror.com` 上 `@dsh-ops/bash-win32-x64` 的 `dist-tags.latest = 0.0.0-stage`、`versions` 只有 `0.0.0-stage`；官方源 `registry.npmjs.org` 为 `0.2.1`。走镜像的 `npm view @dsh-ops/bash-win32-x64 version` 因此会打印误导性的旧版本号，不能拿来判断载荷是否可用。镜像补齐后本节自然过期，下面是自证与兜底的办法。
+
+**首选兜底**：`provision-shells` 绕过 registry，直接取上游 GitHub Release 的钉版资产，校验 sha256 后解包，并写 `.provisioned.json` receipt。
+
+```console
+npx --yes dsh-ops@latest provision-shells --bash
+```
+
+需要代理时（`HTTPS_PROXY` 会被显式交给 curl 的 `--proxy`，同时随环境继承）：
+
+```console
+:: cmd
+set HTTPS_PROXY=http://127.0.0.1:<clash-port>
+npx --yes dsh-ops@latest provision-shells --bash
+```
+
+```console
+# PowerShell
+$env:HTTPS_PROXY = 'http://127.0.0.1:<clash-port>'
+npx --yes dsh-ops@latest provision-shells --bash
+```
+
+**核对**请跑 profile 自己那份副本：`ladder` 只报告**执行它的那份包**的随包梯级，`npx … ladder` 检查的是 npx 缓存副本，结论与你的 profile 无关。
+
+```console
+node "%USERPROFILE%\.dsh\profiles\<profile>\node_modules\dsh-ops\bin\dsh-ops.mjs" ladder
+```
+
+provisioned 副本在 `<DSH_HOME>/dsh-ops/shells`（跨 profile 共享，provision 一次对同机所有 profile 生效），解析时优先于随包副本，`ladder` 会给出 `source: provisioned`。
+
+**不要**用 `allowSystemShellFallback: true` 绕过：那是安全姿态降级（改用未固定摘要的系统 bash），且首次升级启动的配置迁移会把它改回 `false`。
+
 ## 组件开关与提示词
 
 Bundle 声明四个独立组件，默认开启前两个旧组件；PTC 显式启用并提供原生 worker：
