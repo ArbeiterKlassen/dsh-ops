@@ -13,7 +13,10 @@ await test('file guidance names exactly the available file tools', () => {
   assert.match(text, /^# Repository file tools/)
   for (const name of files) assert.ok(text.includes(name))
   for (const name of [BASH_TOOL, ...background, 'ops_run', 'PowerShell 7']) assert.equal(text.includes(name), false)
-  assert.match(text, /correct the arguments and retry; do not switch to a shell workaround/)
+  assert.match(text, /Every file tool has one `path`/)
+  assert.equal(text.includes('Legacy ops_* file paths are absolute'), false)
+  assert.equal(text.includes('FastCtx’s own session cwd'), false)
+  assert.match(text, /do not switch to a shell workaround/)
   assert.match(text, /pass only declared fields/)
 })
 await test('partial tool availability never advertises missing tools', () => {

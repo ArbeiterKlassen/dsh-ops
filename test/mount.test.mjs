@@ -9,6 +9,8 @@ import { assert, report, skipSuite, test, waitFor, withTempDir } from './lib/har
 import { bootHost, callTool, mountPlugin, mountScopedToolPlugin, preExecute, publicToolNames,
   registryHasOwnRegister, registryNames, renderSections, resolveRuntime, scopedToolNames,
   shutdown, tryResolveRuntime } from './lib/host.mjs'
+import Sandbox from '@deepseek-ai/dsh-sandbox-local'
+import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 const EXPECTED = FILE_TOOLS.map(publicToolName).sort()
 const FILE_SECTION = `${TOOLING_SECTION}:file`
 const SHELL_SECTION = `${TOOLING_SECTION}:shell`
@@ -24,7 +26,18 @@ function foreignTool(name) {
     output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({}) }
 }
 async function fileMount(ctx, config = {}) {
+  if (!ctx.get('subprocess')) await ctx.plugin(Subprocess)
+  if (!ctx.get('sandbox')) await ctx.plugin(Sandbox, {})
+  if (!ctx.get('sandboxPolicy')) await ctx.plugin(inner => inner.provide('sandboxPolicy', {
+    resolve: ({ session }) => ({ mode: session.mode, workspaceRoot: session.header.cwd, sessionId: session.id }),
+  }))
   return mountPlugin({ ctx, config: { toolCallTimeoutMs: 5000, ...config }, expectTools: EXPECTED.length })
+}
+async function agentForCall(ctx, cwd, mode = 'danger-full-access') {
+  const result = { id: 'file-call', session: { id: 'file-call', mode, header: { cwd } } }
+  const { createScope } = await import('@deepseek-ai/dsh-scope')
+  result.ctx = createScope(ctx, result).ctx
+  return result
 }
 async function component(ctx, name, config = {}) {
   return ctx.plugin({ name: `fixture-${name}`, apply(inner) { return applyComponent(inner, { toolCallTimeoutMs: 5000, ...config }, name) } })
@@ -91,10 +104,32 @@ await test('real FastCtx calls return data and propagate server errors promptly'
     await fileMount(ctx)
     await withTempDir('glob', async dir => {
       fs.writeFileSync(path.join(dir, 'alpha.txt'), 'alpha\n')
-      const result = await callTool(ctx, publicToolName('glob'), { pattern: ['*.txt'], path: dir })
+      const agent = await agentForCall(ctx, dir)
+      const result = await callTool(ctx, publicToolName('glob'), { pattern: ['*.txt'], path: dir }, undefined, agent)
       assert.match(result.text, /alpha\.txt/)
-      assert.equal(result.value.content[0].type, 'text')
-      await assert.rejects(() => callTool(ctx, publicToolName('inspect_local_file'), { file_path: path.join(dir, 'missing.txt') }), /missing\.txt/)
+      assert.equal(result.value.items[0], path.join(dir, 'alpha.txt'))
+      const missing = await callTool(ctx, publicToolName('inspect_local_file'), { path: path.join(dir, 'missing.txt') }, undefined, agent)
+      assert.equal(missing.value.error.code, 'NOT_FOUND')
+    })
+  } finally { await shutdown(ctx) }
+})
+await test('native file paths resolve from session cwd and enforce workspace-write boundaries', async () => {
+  const { ctx } = await bootHost()
+  try {
+    await fileMount(ctx)
+    await withTempDir('native-paths', async dir => {
+      fs.writeFileSync(path.join(dir, 'cwd.txt'), 'cwd\n')
+      const workspace = await agentForCall(ctx, dir, 'workspace-write')
+      const relative = await callTool(ctx, publicToolName('glob'), { pattern: ['cwd.txt'], path: '.' }, undefined, workspace)
+      assert.equal(relative.value.status, 'completed')
+      assert.deepEqual(relative.value.items, [path.join(dir, 'cwd.txt')])
+      const outside = path.join(path.dirname(dir), 'outside-native.txt')
+      fs.writeFileSync(outside, 'outside\n')
+      try {
+        const denied = await callTool(ctx, publicToolName('inspect_local_file'), { path: outside }, undefined, workspace)
+        assert.equal(denied.value.error.code, 'POLICY_DENIED')
+        assert.ok(denied.value.error.message.includes(dir))
+      } finally { fs.rmSync(outside, { force: true }) }
     })
   } finally { await shutdown(ctx) }
 })

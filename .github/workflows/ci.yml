@@ -27,7 +27,9 @@ name: CI
 #
 #   DSH_OPS_FASTCTX_BIN=<path to the fastctx executable> DSH_OPS_REQUIRE_RUNTIME=1 npm run verify
 #
-# A green hermetic run is not evidence about the runtime, and the hermetic job
+# PTC acceptance always builds the small independent worker; it never substitutes
+# for the separate FastCtx integration evidence. This remains manual-only.
+# A green hermetic run is not evidence about the FastCtx runtime, and the hermetic job
 # ends by asserting that it really did skip the suite rather than quietly lose
 # it.
 # Automatic gates paused by the maintainer; existing suites remain opt-in.
@@ -60,6 +62,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Set up native Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+        with:
+          toolchain: 1.97.1
+          cache: false
+
+      - name: Build the independent PTC worker (FastCtx remains absent)
+        run: npm run build:ptc
 
       - name: Run the gate
         run: npm run verify
@@ -120,6 +131,9 @@ jobs:
 
       - name: Build the vendored FastCtx runtime
         run: cargo build --release --locked --manifest-path vendor/fastctx/Cargo.toml
+
+      - name: Build the independent PTC worker
+        run: npm run build:ptc
 
       - name: Run the gate (a skipped suite fails here)
         run: npm run verify

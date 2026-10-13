@@ -28,7 +28,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  native-ptc:
+    name: Build native PTC (${{ matrix.platform }}-${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, platform: win32, arch: x64, target: x86_64-pc-windows-msvc }
+          - { runner: windows-latest, platform: win32, arch: arm64, target: aarch64-pc-windows-msvc }
+          - { runner: ubuntu-latest, platform: linux, arch: x64, target: x86_64-unknown-linux-gnu }
+          - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64, target: aarch64-unknown-linux-gnu }
+          - { runner: macos-15-intel, platform: darwin, arch: x64, target: x86_64-apple-darwin }
+          - { runner: macos-latest, platform: darwin, arch: arm64, target: aarch64-apple-darwin }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24.18.0'
+      - uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+        with:
+          toolchain: 1.97.1
+          target: ${{ matrix.target }}
+          cache: false
+      - name: Build original Rust runtime
+        run: cargo build --release --locked --manifest-path native/Cargo.toml --target ${{ matrix.target }}
+      - name: Stage native runtime and provenance
+        run: node bin/native-runtime.mjs stage --platform ${{ matrix.platform }}-${{ matrix.arch }} --input native/target/${{ matrix.target }}/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ptc-${{ matrix.platform }}-${{ matrix.arch }}
+          path: runtime/
+          if-no-files-found: error
+
   release:
+    needs: native-ptc
     name: Build and publish the release
     env:
       # The build writes tarballs, checksums, and the publish directory here, and
@@ -76,6 +110,15 @@ jobs:
           if ("v$version" -ne $env:GITHUB_REF_NAME) {
             throw "tag $env:GITHUB_REF_NAME does not match the package version v$version"
           }
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ptc-*
+          path: runtime
+          merge-multiple: true
+
+      - name: Verify all native PTC runtime targets
+        run: npm run check:ptc-runtime
 
       - name: Build the platform packages and the publish directory
         run: node scripts/build-platform-packages.mjs --dist "$env:DIST"

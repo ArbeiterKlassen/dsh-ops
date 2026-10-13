@@ -1,4 +1,33 @@
-# dsh-ops
+## Native file component
+
+`dsh-ops-file` now uses the plugin-owned Rust worker, not FastCtx. It publishes
+`ops_inspect_local_file`, `ops_glob`, `ops_grep`, and `ops_replace` through the
+normal DSH tool registration scope. The worker receives one host-resolved path
+per call; relative paths are resolved against `session.header.cwd` by the host.
+There is no `root`, `workspace`, `cwd`, or `file_path` alias in the native file
+schemas.
+
+The worker is UTF-8 first and bounded. It rejects symlink/junction/reparse
+traversal, hidden files and `.git` traversal, uses Rust regex for grep, and
+performs replacement with a preflight count, hard replacement limit, content
+revision check, temporary-file write, fsync, and atomic replacement. `dryRun`
+never writes. A read-only DSH session can inspect/search but cannot replace.
+All process execution still goes through `sandboxPolicy`, `sandbox.confine`,
+and `subprocess.spawn`; missing host services fail closed. FastCtx remains only
+behind the disabled background component.
+
+Build and stage the current Windows worker from the source checkout:
+
+```console
+RUSTUP_TOOLCHAIN=1.97.1 cargo build --release --locked --manifest-path native/Cargo.toml
+node bin/native-runtime.mjs stage --platform win32-x64 --input native/target/release
+node bin/native-runtime.mjs check --platform win32-x64
+```
+
+The six-platform runtime matrix and on-platform Linux/macOS sandbox acceptance
+remain release gates; a Windows build and the real DSH composition suite are
+covered locally. No FastCtx file-tool fallback exists.
+
 
 [中文](README.md) | **English**
 
@@ -13,7 +42,7 @@ Reduce the tokens, time and model attention wasted on repeated PowerShell errors
 
 Routing: **toolkit → bash → PowerShell 7**.
 
-Currently supports **Windows x64** only. Linux and Mac support will follow once the Rust tools are added for those platforms (bash functionality will not be provided on Linux or Mac). Target host DSH `0.2.0-rc.2`.
+Legacy components remain **Windows x64**. The new opt-in **0.3.0 PTC component** uses independent native Rust for Windows, macOS and Linux (x64/arm64 package eligibility); Linux x64 and macOS arm64 compile-checks pass, with on-platform runtime/sandbox acceptance still pending. Target host DSH `0.2.0-rc.2`. See [Native PTC](docs/native-ptc.md).
 
 ## Install, update and remove
 
@@ -45,7 +74,7 @@ The ordinary DSH CLI cannot manage the reserved `desktop` profile; do not confus
 
 **Update**: repeat the same `npx --yes dsh-ops@latest install --profile ...` command, or use the official CLI's `add dsh-ops@latest`. Reload as requested by the application; restart it when replacing already-loaded code.
 
-The current version, `0.2.9`, is a bug-fix release. It skips the Windows WSL launcher during PATH fallback, rejects undeclared `ops_bash` arguments before spawn, and persists the one-time legacy shell-fallback migration without remounting the plugin during a profile reload. It does not add features or new runtime capability. The three Windows payload dependencies remain pinned to `0.2.1`, and npm payloads are not republished.
+The local `0.3.0` development version adds independent native Rust PTC enhancement: `ops_batch` and `ops_result`, DSH-native confinement, durable per-item recovery, bounded references and compact projection. Legacy Windows payloads remain pinned to `0.2.1`; this is not a published release or a complete FastCtx migration. Build and opt-in instructions: [Native PTC](docs/native-ptc.md).
 
 **Remove and check status**:
 
@@ -96,17 +125,18 @@ The provisioned copy lives in `<DSH_HOME>/dsh-ops/shells` (shared across profile
 
 ## Components and prompts
 
-The official marketplace displays three independently toggled components. On first installation, the first two are enabled by default:
+The bundle declares four independently toggled components. On first installation, the first two legacy components are enabled by default; PTC is opt-in and requires a native worker build:
 
 | Component | Description | Default | Published tools |
 | --- | --- | --- | --- |
 | `dsh-ops-bash & powershell 7` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
 | `dsh-ops-file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Four file tools |
 | `dsh-ops-background` | Managed background tasks for scientific simulations, model training and other long-running processes | Off | Start, read output, list and terminate background jobs |
+| `dsh-ops-ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
 
 “Prefer bash as the terminal” means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. When the shell component is on, the official configuration lifecycle temporarily sets the PowerShell 7 path for `pwsh-sandbox`; when off, it restores the executor's latest original configuration without writing profile configuration. Switching executor configuration does not cancel already-running host commands.
 
-Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws retrieval guidance; background OFF withdraws background tools and owned-job guidance. File and background share one plugin-owned FastCtx connection; disabling one does not stop the other. Only five tools are added by default; the duplicate foreground `ops_run` is not published. These changes reduce fixed declaration costs. The Minimal preset overrides additional system sections; PTC mode calls the underlying tools through the SDK with unchanged permission gates.
+Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws native file guidance; background OFF withdraws background tools and owned-job guidance. The file component uses its independent Rust worker; FastCtx is retained only by the disabled background component. Four native file tools and `ops_bash` are added by default; duplicate foreground `ops_run` is not published. These changes reduce fixed declaration costs. The Minimal preset overrides additional system sections; PTC mode calls the underlying tools through the SDK with unchanged permission gates.
 
 ## Configuration and tools
 
@@ -149,7 +179,7 @@ config:
 | `ops_job_output` / `ops_job_list` / `ops_job_kill` | Read, list and stop jobs started by the current session | Yes |
 | Host `pwsh` | Windows-native operations using bundled PowerShell 7 | Host policy |
 
-¹ **File tools are not the host filesystem sandbox.** They do not use DSH's restricted file backend; in particular, `ops_replace` has no workspace confinement. Do not treat the tools provided by this plugin as a security solution for untrusted restricted environments.
+¹ **File tools use the DSH-native sandbox/subprocess boundary.** The host owns session-cwd resolution, policy lookup, exact worker-argv confinement, cancellation and result mapping; the Rust core additionally rejects links/reparse/special objects and enforces budgets and CAS integrity. `workspace-write` permits paths only inside the active workspace root; external absolute paths require `danger-full-access`.
 
 ## Long scripts and JSON stability
 

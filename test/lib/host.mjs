@@ -262,10 +262,10 @@ export async function renderSections(ctx, agent) {
  * @param {AbortSignal} [signal] - the caller's signal.
  * @returns {Promise<{value: unknown, text: string, content: {type: string, text?: string}[]}>} the outcome.
  */
-export async function callTool(ctx, name, args, signal = new AbortController().signal) {
+export async function callTool(ctx, name, args, signal = new AbortController().signal, agent) {
   const definition = ctx.get('tools').get(name)
   if (definition === undefined) throw new Error(`tool "${name}" is not registered`)
-  const value = await definition.execute(args, { callId: 'test', name, arguments: args, signal })
+  const value = await definition.execute(args, { callId: 'test', name, arguments: args, signal, agent: agent ?? { session: { id: 'file-call', header: { cwd: process.cwd() } } } })
   const content = definition.output.render(args, value)
   return {
     value,

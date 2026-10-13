@@ -1020,6 +1020,32 @@ await test('ops_bash requires exactly one command input', async () => {
   })
 })
 
+await test('ops_bash accepts empty optional input placeholders without discarding real inputs', async () => {
+  for (const placeholder of ['', '   ', null, undefined]) {
+    for (const script of [false, true]) {
+      const { service, specs, settle } = fakeSubprocess({ stdout: 'ok\n' })
+      settle()
+      const definition = bashToolDefinition({ file: 'bash', source: 'config', subprocess: service })
+      const args = script ? { command: placeholder, script_path: 'test.sh' }
+        : { command: 'echo ok', script_path: placeholder }
+      const value = await definition.execute(args)
+      assert.equal(value.error, undefined)
+      assert.deepEqual(specs[0].argv, script ? ['bash', 'test.sh'] : ['bash', '-c', 'echo ok'])
+    }
+  }
+  const { service, specs, settle } = fakeSubprocess()
+  settle()
+  const definition = bashToolDefinition({ file: 'bash', source: 'config', subprocess: service })
+  for (const args of [
+    { command: 'echo ok', script_path: '/dev/null' },
+    { command: 'echo ok', script_path: 123 },
+    { command: false, script_path: 'test.sh' },
+    { command: '', script_path: '' },
+    { command: null, script_path: null },
+  ]) await assert.rejects(() => definition.execute(args), /invalid/)
+  assert.equal(specs.length, 0)
+})
+
 await test('ops_bash rejects a missing command and a bad timeout before spawning', async () => {
   await withTempDir('shells-args', async (dir) => {
     const bash = makeExecutable(path.join(dir, 'bash'))
@@ -1192,7 +1218,7 @@ await test('the manifest declares the plugin\'s own shell tools as their own nam
   const namespaces = manifest.contributes['x-tool-namespaces']
   // Unconditional: the manifest describes the capability, not this deployment's
   // switch state, so `bash` is declared even while a profile ships no bash.
-  assert.deepEqual(namespaces[1], {
+  assert.deepEqual(namespaces[2], {
     serverName: 'dsh-ops',
     transport: 'in-process',
     source: "the plugin's bash layer via host subprocess",
@@ -1201,14 +1227,15 @@ await test('the manifest declares the plugin\'s own shell tools as their own nam
     shellPermission: 'shell component enabled AND publishBashTool AND per-session sandboxPolicy danger-full-access',
   })
   // The declared name is the name the tool actually registers under.
-  assert.equal(BASH_TOOL_NAME, `${namespaces[1].publicPrefix}${namespaces[1].tools[0]}`)
+  assert.equal(BASH_TOOL_NAME, `${namespaces[2].publicPrefix}${namespaces[2].tools[0]}`)
 })
 
 await test('the bundle patch declares independent components, with no persistent pwsh override', () => {
   const entries = patchEntries()
   assert.equal(entries.length, 1)
-  assert.deepEqual(entries[0].insert.map(row => row.id), ['dsh-ops-shell', 'dsh-ops-file', 'dsh-ops-background'])
+  assert.deepEqual(entries[0].insert.map(row => row.id), ['dsh-ops-shell', 'dsh-ops-file', 'dsh-ops-background', 'dsh-ops-ptc'])
   assert.equal(entries[0].insert[2].disabled, true)
+  assert.equal(entries[0].insert[3].disabled, true)
 })
 
 await test('the shipped dsh-ops row states the documented shell defaults', () => {

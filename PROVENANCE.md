@@ -3,6 +3,63 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
+## 0.3.0 Native file component
+
+The file component is no longer a FastCtx client. `native/src/file.rs` implements
+bounded inspect, glob, grep and replace; `native/src/file_path.rs` implements
+absolute host-resolved path validation and component-by-component no-follow
+checks. The host adapter in `lib/file/` obtains the authoritative DSH session
+cwd and sandbox policy, confines the exact worker argv, forwards cancellation,
+and maps worker JSON into the DSH structured output contract.
+
+The Windows x64 worker was built with the managed Rust `1.97.1` toolchain and
+staged under `runtime/win32-x64` with a version/target/executable/SHA-256 receipt.
+`cargo check`, `cargo build --release --locked`, `cargo clippy --all-targets
+-D warnings`, manifest validation, and all ten local JavaScript suites pass.
+The six-target release matrix and Linux/macOS runtime and sandbox acceptance are
+not claimed. FastCtx source/vendor remains unchanged and is retained only for
+the explicitly disabled background component.
+
+
+The independent MIT Rust core in `native/` is original dsh-ops code. It uses
+cap-std/cap-fs-ext handle-relative filesystem operations, serde, SHA-256, UUIDs,
+regex and fs2 workspace locking. No FastCtx source was modified or linked by the
+file component; legacy FastCtx remains only behind the disabled background
+component and all applicable notices remain intact.
+
+Host contract source (DSH 0.2.0-rc.2):
+
+- `packages/core/tools/src/index.ts`: `register`, `presentAs`, scoped SDK/wire
+  presentation and `tools/change`; the component never invokes private modeFor.
+- `packages/core/system-prompt/src/index.ts`: public `assemble({scope})`, sections
+  and wire tools distinguish pure PTC from native/hybrid.
+- `packages/sandbox/{sandbox,sandbox-policy}/src/index.ts`: per-session policy,
+  exact argv confinement, full/partial enforcement and runner diagnostics.
+- `packages/subprocess/subprocess/src/types.ts`: bounded stdin/collected stdout,
+  credential scrub and managed-range cancellation.
+- `packages/jobs/jobs/src/{index,types}.ts`: optional host-owned foreground job
+  admission, progress, wait, cancellation and collected-record removal.
+
+Windows x64 release worker build and three isolated PTC scenarios run with real
+Rust/Cordis/tool/prompt services; confinement and optional jobs are simulated.
+Linux x64 (`x86_64-unknown-linux-gnu`) and macOS arm64 (`aarch64-apple-darwin`)
+`cargo check --locked` pass from the Windows toolchain. These are compile checks,
+not linking/runtime/real sandbox acceptance. Other platform/architecture pairs,
+real process sandbox denial and live Desktop/PTC execution remain release gates.
+Real Windows x64 DSH sandbox-local/subprocess-local acceptance was subsequently
+added and passed: workspace-write copy, read-only result page without storage
+writes, denied outside-root mutation, and unconfined full-access outside-root
+mutation. This corrects the initial full-only enforcement gate: original Windows
+ACL reports partial and is now accepted with that exact fact returned.
+
+Runtime discovery now resolves packaged `runtime/<platform>-<arch>` bytes with
+version/checksum receipts before source fallback. Source builds stage their runtime
+automatically. Release assembly requires six native target builds and rejects
+incomplete packages; the release matrix has not been run or published here.
+
+No npm publish, GitHub push, or claimed model-token/turn benchmark took place.
+Details, budgets and security limitations: [Native PTC](docs/native-ptc.md).
+
 ## 0.2.9 Bug fixes
 
 This release contains only bug fixes. It skips the Windows WSL launcher during

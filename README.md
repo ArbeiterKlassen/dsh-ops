@@ -6,18 +6,26 @@
 
 > tips：本项目的 ops 是广义 operations （运行操作）的缩写，代指本插件处于dsh和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
 
-在现阶段，本插件的三个主要功能：
+本插件的主要功能：
 
-- 提供独立 **bash 5.3.15** 并优先使用bash，让你的AI不再和PowerShell打架
-- 独立 **PowerShell 7.6.6**，用于必要的 Windows 原生操作，沿用宿主 `pwsh` 工具。PowerShell 7 比自带的 PowerShell 5 也有不少优化
-- 一些 Rust 编写的性能更好的，更快的读取、查找、替换工具，加速任务运行，减少不必要的输入输出。由于部分工具不经过 DSH 的受限终端后端，命令与后台任务工具只在**完全权限**时启用。
-- 未来会加入一系轻量短输出的好用的rust工具，致力于优化token效率，均可开关和单独配置
+- 提供独立 **bash 5.3.15** 和 独立 **PowerShell 7.6.6** ，优先使用bash，必要时回退pwsh7，让你的AI不再和PowerShell打架——不改变系统path路径和终端指向，环境变量安全（仅windows）
+- 一些 Rust 编写的性能更好的，更快的读取、查找、替换工具，渐进式纰漏以减少系统prompt的工具定义占用，加速任务运行，减少不必要的输入输出，减少报错率来减少运行过程中的token浪费，以及提供和原版dsh一样的沙箱和权限机制。（windows、linux、mac三平台）
+
+> [!IMPORTANT]
+> main的代码已经是0.3.0的结构，由于 0.3.0 开始把fastctx工具替换为自己实现的dsh原生工具，可能有奇怪bug——不过从源码构建的小伙伴应该不惧怕bug吧！
+> 0.3.0的ptc模式在 `dv4.1f官方渠道 high推理努力 固定总行数，代码结构和复杂度和实现的功能 超燃生成mc！` 三次测试取平均值测试中取得了：
+> 
+> 97% token减免（开启ops插件的ptc专用工具 对比 windows原装标准模式）
+> 
+> 65% token减免（开启ops插件的ptc专用工具 对比 linux 原装ptc模式）
+> 
+> 的成绩
 
 <img width="1603" height="1028" alt="247c1326cca5b66e60d330c3f32150e2" src="https://github.com/user-attachments/assets/7c9ba485-5323-42a2-b5a8-6dcda07f91c4" />
 
 执行顺序：**工具包 → bash → PowerShell 7**。
 
-仅支持 **Windows x64**，后续补充 Rust 工具后会支持 Linux 和 Mac（Linux 和 Mac 下不提供 bash 功能）。目标宿主 DSH `0.2.0-rc.2`。
+旧组件仍面向 **Windows x64**。新增的 **0.3.0 PTC 增强组件**以独立原生 Rust 面向 Windows、macOS、Linux（包允许 x64/arm64），不依赖 FastCtx 或 shell。Linux x64、macOS arm64 编译检查已通过，平台实机运行／沙箱验收仍待完成。目标宿主 DSH `0.2.0-rc.2`。见 [PTC 设计与使用](docs/native-ptc.md)。
 
 ## 安装、更新、卸载
 
@@ -49,7 +57,7 @@ dsh plugin --profile dsh-tui add dsh-ops
 
 **更新**：重新运行相同的 `npx --yes dsh-ops@latest install --profile ...`，或用官方 CLI `add dsh-ops@latest`。按应用提示重载；替换已加载代码时重启应用。
 
-当前版本 `0.2.9` 是纯 bug 修复版：PATH 回退时跳过 Windows WSL 启动器、在 spawn 前拒绝 `ops_bash` 未声明参数，并且不再通过 remount 持久化一次性旧 shell 回退迁移，避免配置重载期间拖慢 Desktop。没有新增 feat、组件、配置键或运行时能力。三个二进制依赖仍固定为 `0.2.1`，本次不重新发布 npm 载荷。
+本地 `0.3.0` 开发版新增独立原生 Rust PTC 组件：`ops_batch` 安全批处理、`ops_result` 有界引用／投影，适配 DSH 原生权限、沙箱、取消，提供逐项持久清单与保守恢复。旧 Windows 二进制依赖仍固定 `0.2.1`，不代表完成全部 FastCtx 迁移或已对外发布。新组件须构建并显式启用，见 [使用说明](docs/native-ptc.md)。
 
 **卸载与查看状态**：
 
@@ -100,17 +108,18 @@ provisioned 副本在 `<DSH_HOME>/dsh-ops/shells`（跨 profile 共享，provisi
 
 ## 组件开关与提示词
 
-官方市场显示三个组件，分别启停，首次安装默认开启前两个：
+Bundle 声明四个组件，分别启停，首次安装默认开启前两个旧组件；PTC 增强须显式启用并提供原生 worker：
 
 | 组件 | 介绍 | 默认 | 发布的工具 |
 | --- | --- | --- | --- |
 | `dsh-ops-bash & powershell 7` | 将默认终端改为bash，以及bash覆盖不到时提供powershell7 | 开 | `ops_bash`；宿主 `pwsh` 使用随包 PowerShell 7 |
 | `dsh-ops-file` | 更快、更高性能、输出更精简更省token的rust文件检索 | 开 | 四个文件工具 |
 | `dsh-ops-background` | 为科研仿真、模型训练及其他长进程后台任务提供托管 | 关 | 启动、输出、列出、终止后台任务 |
+| `dsh-ops-ptc` | 独立 Rust 安全批处理和有界结果引用，仅纯 PTC 会话加载 | 关 | `ops_batch`、`ops_result` |
 
 “默认终端改为 bash”指模型提示优先使用 `ops_bash`，**不修改系统默认终端、PATH 或宿主原有 shell 工具名称**。Shell 组件开时，通过官方配置生命周期临时指定 `pwsh-sandbox` 的 PowerShell 7 路径；关时按执行器最新原配置恢复，不写 profile 配置。执行器配置切换不代表取消已在运行的宿主命令。
 
-提示词注册为独立运行时段，**不写 AGENTS.md**：Shell 关就撤销 bash/pwsh 路由；文件关就撤销检索说明；后台关就不发布后台工具及自有 job 指导。文件与后台共享一个插件拥有的 FastCtx 连接，关闭其中一个不关闭另一个。默认仅新增五个工具，不发布重复前台 `ops_run`。这些改变减少固定声明成本。极简预设会覆盖附加 system sections；PTC 模式经 SDK 调用底层工具，权限门不变。
+提示词注册为独立运行时段，**不写 AGENTS.md**：Shell 关就撤销 bash/pwsh 路由；文件关就撤销原生文件说明；后台关就不发布后台工具及自有 job 指导。文件组件使用独立 Rust worker；FastCtx 仅由默认关闭的 background 组件保留。默认新增四个原生文件工具和 `ops_bash`，不发布重复前台 `ops_run`。这些改变减少固定声明成本。极简预设会覆盖附加 system sections；PTC 模式经 SDK 调用底层工具，权限门不变。
 
 ## 配置方式与工具列表
 
@@ -153,7 +162,7 @@ config:
 | `ops_job_output` / `ops_job_list` / `ops_job_kill` | 查看、列出、停止当前会话启动的任务 | 是 |
 | 宿主 `pwsh` | 使用随包 PowerShell 7 的 Windows 原生操作 | 沿用宿主策略 |
 
-¹ **文件工具不是宿主文件系统沙箱。** 它们未接入 DSH 的受限文件后端，尤其 `ops_replace` 没有 workspace confinement。不要把该插件提供的部分工具视为不可信受任限环境的安全方案。
+¹ **文件工具使用 DSH 原生 sandbox/subprocess 边界。** host 负责 session cwd、策略解析、精确 worker argv 的 confinement、取消和结果映射；Rust core 仍额外拒绝 link/reparse/special object，并执行预算和 CAS 完整性保护。`workspace-write` 只允许当前 workspace root 内的路径；外部绝对路径需要 `danger-full-access`。
 
 ## 长脚本与 JSON 稳定性
 
