@@ -8,24 +8,15 @@
 
 本插件的主要功能：
 
-- 提供独立 **bash 5.3.15** 和 独立 **PowerShell 7.6.6** ，优先使用bash，必要时回退pwsh7，让你的AI不再和PowerShell打架——不改变系统path路径和终端指向，环境变量安全（仅windows）
-- 一些 Rust 编写的性能更好的，更快的读取、查找、替换工具，渐进式纰漏以减少系统prompt的工具定义占用，加速任务运行，减少不必要的输入输出，减少报错率来减少运行过程中的token浪费，以及提供与 DSH 对齐的权限机制。本次 **0.3.0 发布仅支持 Windows x64**；Linux/macOS/ARM64 不在发布范围。
+- （全平台）一些可以极大改善AI报错循环、强迫思考不交付、注意力涣散的易用工具，使用rust编写，性能更好，渐进式纰漏以减少系统prompt的工具定义占用，加速任务运行，减少不必要的输入输出，减少报错率来减少运行过程中的token浪费，以及提供与 DSH 对齐的权限机制。当前npm版本仅发布windows，但源码已支持跨平台。在自用benchmark中获得了
+  - 97% token减免（开启ops插件的ptc专用工具 对比 windows原装标准模式）
+  - 65% token减免（开启ops插件的ptc专用工具 对比 linux 原装ptc模式）
+  
+  的成绩并改善了在dsh运行的ai的智力表现
+- （仅windows）提供独立 **bash 5.3.15** 和 独立 **PowerShell 7.6.6** ，优先使用bash，必要时回退pwsh7，让你的AI不再和PowerShell打架——不改变系统path路径和终端指向，环境变量安全
 
-> [!IMPORTANT]
-> **0.3.0 正式发布范围：Windows x64。** 文件工具已迁移为独立 Rust 实现；PTC 批处理与有界引用须显式启用。下述 token 数据是特定任务的用户测试，不是通用性能保证。
-> 0.3.0的ptc模式在 `dv4.1f官方渠道 high推理努力 固定总行数，代码结构和复杂度和实现的功能 超燃生成mc！` 三次测试取平均值测试中取得了：
-> 
-> 97% token减免（开启ops插件的ptc专用工具 对比 windows原装标准模式）
-> 
-> 65% token减免（开启ops插件的ptc专用工具 对比 linux 原装ptc模式）
-> 
-> 的成绩
 
-<img width="1603" height="1028" alt="247c1326cca5b66e60d330c3f32150e2" src="https://github.com/user-attachments/assets/7c9ba485-5323-42a2-b5a8-6dcda07f91c4" />
 
-执行顺序：**工具包 → bash → PowerShell 7**。
-
-**0.3.0 仅支持 Windows x64**，目标宿主 DSH `0.2.0-rc.2`。独立 Rust 文件/PTC worker 和 Bash IPC 代理均随包携带，无需用户编译。Linux/macOS/ARM64 属于后续工作，不在本版兼容承诺内。见 [PTC 设计与使用](docs/native-ptc.md)。
 
 ## 安装、更新、卸载
 
