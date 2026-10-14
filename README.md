@@ -9,10 +9,10 @@
 本插件的主要功能：
 
 - 提供独立 **bash 5.3.15** 和 独立 **PowerShell 7.6.6** ，优先使用bash，必要时回退pwsh7，让你的AI不再和PowerShell打架——不改变系统path路径和终端指向，环境变量安全（仅windows）
-- 一些 Rust 编写的性能更好的，更快的读取、查找、替换工具，渐进式纰漏以减少系统prompt的工具定义占用，加速任务运行，减少不必要的输入输出，减少报错率来减少运行过程中的token浪费，以及提供和原版dsh一样的沙箱和权限机制。（windows、linux、mac三平台）
+- 一些 Rust 编写的性能更好的，更快的读取、查找、替换工具，渐进式纰漏以减少系统prompt的工具定义占用，加速任务运行，减少不必要的输入输出，减少报错率来减少运行过程中的token浪费，以及提供与 DSH 对齐的权限机制。本次 **0.3.0 发布仅支持 Windows x64**；Linux/macOS/ARM64 不在发布范围。
 
 > [!IMPORTANT]
-> main的代码已经是0.3.0的结构，由于 0.3.0 开始把fastctx工具替换为自己实现的dsh原生工具，可能有奇怪bug——不过从源码构建的小伙伴应该不惧怕bug吧！
+> **0.3.0 正式发布范围：Windows x64。** 文件工具已迁移为独立 Rust 实现；PTC 批处理与有界引用须显式启用。下述 token 数据是特定任务的用户测试，不是通用性能保证。
 > 0.3.0的ptc模式在 `dv4.1f官方渠道 high推理努力 固定总行数，代码结构和复杂度和实现的功能 超燃生成mc！` 三次测试取平均值测试中取得了：
 > 
 > 97% token减免（开启ops插件的ptc专用工具 对比 windows原装标准模式）
@@ -25,7 +25,7 @@
 
 执行顺序：**工具包 → bash → PowerShell 7**。
 
-旧组件仍面向 **Windows x64**。新增的 **0.3.0 PTC 增强组件**以独立原生 Rust 面向 Windows、macOS、Linux（包允许 x64/arm64），不依赖 FastCtx 或 shell。Linux x64、macOS arm64 编译检查已通过，平台实机运行／沙箱验收仍待完成。目标宿主 DSH `0.2.0-rc.2`。见 [PTC 设计与使用](docs/native-ptc.md)。
+**0.3.0 仅支持 Windows x64**，目标宿主 DSH `0.2.0-rc.2`。独立 Rust 文件/PTC worker 和 Bash IPC 代理均随包携带，无需用户编译。Linux/macOS/ARM64 属于后续工作，不在本版兼容承诺内。见 [PTC 设计与使用](docs/native-ptc.md)。
 
 ## 安装、更新、卸载
 
@@ -57,7 +57,7 @@ dsh plugin --profile dsh-tui add dsh-ops
 
 **更新**：重新运行相同的 `npx --yes dsh-ops@latest install --profile ...`，或用官方 CLI `add dsh-ops@latest`。按应用提示重载；替换已加载代码时重启应用。
 
-本地 `0.3.0` 开发版新增独立原生 Rust PTC 组件：`ops_batch` 安全批处理、`ops_result` 有界引用／投影，适配 DSH 原生权限、沙箱、取消，提供逐项持久清单与保守恢复。旧 Windows 二进制依赖仍固定 `0.2.1`，不代表完成全部 FastCtx 迁移或已对外发布。新组件须构建并显式启用，见 [使用说明](docs/native-ptc.md)。
+`0.3.0` 新增独立原生 Rust PTC 组件：`ops_batch` 安全批处理、`ops_result` 有界引用／投影，适配 DSH 权限、沙箱、取消，提供逐项持久清单与保守恢复。三个 Windows 载荷依赖仍固定 `0.2.1`，无需重复发布。PTC 组件默认关闭，须显式启用；发布包已含 Windows x64 worker，见 [使用说明](docs/native-ptc.md)。
 
 **卸载与查看状态**：
 
@@ -142,7 +142,7 @@ config:
 ```
 
 - `enableShellTools`：后台组件的部署开关，开启仍须会话 `danger-full-access` 才发布四个后台工具；文件组件不发布命令工具。
-- `publishBashTool`：是否发布 `ops_bash`，同样要求完全权限和宿主 subprocess 服务。
+- `publishBashTool`：是否发布 `ops_bash`；读取会话最新 DSH 权限，受限模式必须通过宿主 sandbox，完全权限使用宿主 subprocess。Windows x64 的匹配 MSYS 载荷使用校验后的私有 IPC 兼容副本，不修改原包或全局 Git；本地纯 PTC 的 command/script_path/管道及读写权限验收通过。
 - `promptPolicy`：是否注入该组件的运行时说明；可用 `extraGuidance` 追加指导。
 - `toolCallTimeoutMs`：FastCtx RPC 等待超时，不代表服务端工作已终止。
 - `required`：运行时不可用时是否拒绝激活。
@@ -157,12 +157,12 @@ config:
 | `ops_grep` | Rust 正则搜索、多文件过滤、计数/摘要 | 无命令权限门¹ |
 | `ops_glob` | 多模式找路径，支持排除 | 无命令权限门¹ |
 | `ops_replace` | 跨文件批量替换；精确编辑仍用宿主 edit | 无命令权限门¹ |
-| `ops_bash` | 优先的通用 bash 命令执行器；短命令用 `command`，长脚本用 `script_path` | 是 |
+| `ops_bash` | 优先的通用 bash 命令执行器；短命令用 `command`，长脚本用 `script_path` | 受限模式经 DSH 沙箱；Windows x64 使用匹配的私有 IPC 副本 |
 | `ops_run_background` | 启动后台任务 | 是 |
 | `ops_job_output` / `ops_job_list` / `ops_job_kill` | 查看、列出、停止当前会话启动的任务 | 是 |
 | 宿主 `pwsh` | 使用随包 PowerShell 7 的 Windows 原生操作 | 沿用宿主策略 |
 
-¹ **文件工具使用 DSH 原生 sandbox/subprocess 边界。** host 负责 session cwd、策略解析、精确 worker argv 的 confinement、取消和结果映射；Rust core 仍额外拒绝 link/reparse/special object，并执行预算和 CAS 完整性保护。`workspace-write` 只允许当前 workspace root 内的路径；外部绝对路径需要 `danger-full-access`。
+¹ **固定文件操作采用 DSH fs-sandbox 同类的可信操作权限检查，通过宿主 subprocess 执行固定 Rust worker，不执行模型代码。** 所有模式允许 OS 可读路径的读取；仅可查看拒绝替换；工作区内修改允许 workspace 与 DSH 临时区域内的替换；完全权限不加写入范围限制。Rust 仍拒绝 link/reparse/special object 并保留预算/CAS。任意代码（Bash、run_code）仍需宿主 OS 沙箱，无失败降级。Windows 工作区启动前仅为当前用户拥有的根目录准备目录自身 WRITE_OWNER，备份 DACL；不递归或改所有者。拒绝返回明确的用户授权原因，执行基础设施故障另行分类。
 
 ## 长脚本与 JSON 稳定性
 

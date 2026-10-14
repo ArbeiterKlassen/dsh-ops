@@ -1224,7 +1224,7 @@ await test('the manifest declares the plugin\'s own shell tools as their own nam
     source: "the plugin's bash layer via host subprocess",
     publicPrefix: 'ops_',
     tools: ['bash'],
-    shellPermission: 'shell component enabled AND publishBashTool AND per-session sandboxPolicy danger-full-access',
+    shellPermission: 'shell component enabled AND publishBashTool AND authoritative per-session DSH policy; restricted modes require host confinement',
   })
   // The declared name is the name the tool actually registers under.
   assert.equal(BASH_TOOL_NAME, `${namespaces[2].publicPrefix}${namespaces[2].tools[0]}`)

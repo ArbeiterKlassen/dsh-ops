@@ -10,8 +10,7 @@ worker 以 UTF-8 和有界结果为第一版契约，拒绝 symlink/junction/rep
 不遍历隐藏文件和 `.git`，grep 使用 Rust regex。replace 先预检匹配数量，执行前
 再次校验内容 revision，受 `maxReplacements` 硬上限保护，并使用临时文件、fsync
 和原子替换；`dryRun` 不产生写入。read-only 会话可以读取和搜索，但拒绝 replace。
-进程始终通过 `sandboxPolicy`、`sandbox.confine` 和 `subprocess.spawn`，服务缺失时
-失败关闭。FastCtx 仅保留在默认关闭的 background 组件后端。
+固定文件操作经 `sandboxPolicy` 的可信操作权限检查和 `subprocess.spawn`，不执行模型代码；任意 Bash/PTC 代码继续经 `sandbox.confine`，无失败后裸执行回退。FastCtx 仅保留在默认关闭的 background 组件后端。
 
 当前 Windows worker 构建和暂存：
 
@@ -21,8 +20,7 @@ node bin/native-runtime.mjs stage --platform win32-x64 --input native/target/rel
 node bin/native-runtime.mjs check --platform win32-x64
 ```
 
-六平台 runtime 矩阵与 Linux/macOS 实机沙箱验收仍是发布门禁；本地已覆盖 Windows
-构建和真实 DSH 组合测试。不存在 native 失败后回退 FastCtx 文件工具的路径。
+**0.3.0 本次仅发布 Windows x64**；worker 和 Bash IPC 代理随包提供。其它平台/架构未交付，不在兼容承诺内。不存在 native 失败后回退 FastCtx 文件工具的路径。
 
 
 **中文** | [English](README.en.md)
@@ -31,14 +29,14 @@ node bin/native-runtime.mjs check --platform win32-x64
 
 - 提供独立 **bash 5.3.15** 并优先使用bash，让你的AI不再和PowerShell打架
 - 独立 **PowerShell 7.6.6**，用于必要的 Windows 原生操作，沿用宿主 `pwsh` 工具。PowerShell 7 比自带的 PowerShell 5 也有不少优化
-- 一些 Rust 编写的性能更好的，更快的读取、查找、替换工具，加速任务运行，减少不必要的输入输出。由于部分工具不经过 DSH 的受限终端后端，命令与后台任务工具只在**完全权限**时启用。
+- 一些 Rust 编写的性能更好的、更快的读取、查找、替换工具。固定文件操作遵循 DSH 文件权限；Bash 在受限模式走宿主沙箱；默认关闭的 FastCtx 后台组件仍仅限完全权限。Windows x64 匹配载荷的受限 Bash 采用可校验私有 IPC 副本；纯 PTC 的 command/script_path/管道及权限切换验收已本地通过，GUI 重启后仍需确认。
 - 未来会加入一系列docx，pdf处理轻量化的好用的rust工具，均可开关，不占用上下文
 
 <img width="1603" height="1028" alt="247c1326cca5b66e60d330c3f32150e2" src="https://github.com/user-attachments/assets/7c9ba485-5323-42a2-b5a8-6dcda07f91c4" />
 
 执行顺序：**工具包 → bash → PowerShell 7**。
 
-旧组件仍面向 **Windows x64**。新增 **0.3.0 PTC 组件**以独立原生 Rust 面向 Windows、macOS、Linux，不依赖 FastCtx 或 shell。Linux x64、macOS arm64 编译检查已通过，平台实机运行／沙箱验收仍待完成。目标宿主 DSH `0.2.0-rc.2`。见 [PTC 设计与使用](docs/native-ptc.md)。
+**0.3.0 仅支持 Windows x64**，目标宿主 DSH `0.2.0-rc.2`。原生 Rust 文件/PTC worker 随包携带；PTC 默认关闭，须显式启用。Linux/macOS/ARM64 留待后续版本。见 [PTC 设计与使用](docs/native-ptc.md)。
 
 ## 安装、更新、卸载
 
@@ -70,7 +68,7 @@ dsh plugin --profile dsh-tui add dsh-ops
 
 **更新**：重新运行相同的 `npx --yes dsh-ops@latest install --profile ...`，或用官方 CLI `add dsh-ops@latest`。按应用提示重载；替换已加载代码时重启应用。
 
-本地 `0.3.0` 开发版新增独立原生 Rust PTC 增强：`ops_batch`、`ops_result`，原生权限／沙箱适配、逐项审计与恢复、有界引用与投影。旧 Windows 载荷仍固定 `0.2.1`；并非全部 FastCtx 迁移或已发布版本。新组件构建及启用见 [docs/native-ptc.md](docs/native-ptc.md)，历史版本映射见 [PROVENANCE.md](PROVENANCE.md)。
+`0.3.0` 新增独立原生 Rust PTC 增强：`ops_batch`、`ops_result`，权限／沙箱适配、逐项审计与恢复、有界引用与投影。三个 Windows 载荷依赖仍固定 `0.2.1`，无需重复发布。PTC 组件须显式启用，发布包已含 worker。见 [docs/native-ptc.md](docs/native-ptc.md) 和 [PROVENANCE.md](PROVENANCE.md)。
 
 **卸载与查看状态**：
 
@@ -155,7 +153,7 @@ config:
 ```
 
 - `enableShellTools`：后台组件的部署开关，开启仍须会话 `danger-full-access` 才发布四个后台工具；文件组件不发布命令工具。
-- `publishBashTool`：是否发布 `ops_bash`，同样要求完全权限和宿主 subprocess 服务。
+- `publishBashTool`：是否发布 `ops_bash`；读取最新会话权限，受限模式需宿主 sandbox，完全权限使用宿主 subprocess。
 - `promptPolicy`：是否注入该组件的运行时说明；可用 `extraGuidance` 追加指导。
 - `toolCallTimeoutMs`：FastCtx RPC 等待超时，不代表服务端工作已终止。
 - `required`：运行时不可用时是否拒绝激活。
@@ -170,12 +168,12 @@ config:
 | `ops_grep` | Rust 正则搜索、多文件过滤、计数/摘要 | 无命令权限门¹ |
 | `ops_glob` | 多模式找路径，支持排除 | 无命令权限门¹ |
 | `ops_replace` | 跨文件批量替换；精确编辑仍用宿主 edit | 无命令权限门¹ |
-| `ops_bash` | 优先的通用 bash 命令执行器；短命令用 `command`，长脚本用 `script_path` | 是 |
+| `ops_bash` | 优先的通用 bash 命令执行器；短命令用 `command`，长脚本用 `script_path` | 受限模式经 DSH 沙箱；Windows x64 使用匹配的私有 IPC 副本 |
 | `ops_run_background` | 启动后台任务 | 是 |
 | `ops_job_output` / `ops_job_list` / `ops_job_kill` | 查看、列出、停止当前会话启动的任务 | 是 |
 | 宿主 `pwsh` | 使用随包 PowerShell 7 的 Windows 原生操作 | 沿用宿主策略 |
 
-¹ **文件工具使用 DSH 原生 sandbox/subprocess 边界。** host 负责 session cwd、策略解析、精确 worker argv 的 confinement、取消和结果映射；Rust core 仍额外拒绝 link/reparse/special object，并执行预算和 CAS 完整性保护。`workspace-write` 只允许当前 workspace root 内的路径；外部绝对路径需要 `danger-full-access`。
+¹ **固定文件操作遵循 DSH fs-sandbox 同类的可信操作权限检查，不执行模型代码。** 所有模式允许 OS 可读路径的读取；read-only 拒绝替换，workspace-write 允许工作区和 DSH 临时区域内替换，full-access 不额外限制写路径。通过宿主 subprocess 执行固定 Rust worker，保留无链接遍历、预算及 CAS；Bash/run_code 仍通过 OS 沙箱，绝不在失败后裸执行。Windows 启动前只为当前用户拥有的工作区根准备目录自身 WRITE_OWNER 并备份 DACL，不递归、不改所有者。
 
 ## 长脚本与 JSON 稳定性
 
