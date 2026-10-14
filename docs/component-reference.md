@@ -1,0 +1,181 @@
+# Component reference
+
+What each of the four components publishes, with parameters and permission requirements.
+
+---
+
+## Components at a glance
+
+| Row `name` | Description | Default | Published tools |
+| --- | --- | --- | --- |
+| `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
+| `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Four file tools |
+| `dsh-ops/background` | Managed background tasks for scientific simulations, model training and other long-running processes | Off | Start, read output, list and terminate background jobs |
+| `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
+
+---
+
+## Tool summary
+
+| Tool | Purpose | Full-access requirement |
+| --- | --- | --- |
+| `ops_inspect_local_file` | Batch text ranges, encoding, PDF text and hex | No command permission gate¹ |
+| `ops_grep` | Rust regex search, multiple file filters, counts/summaries | No command permission gate¹ |
+| `ops_glob` | Multiple path patterns with exclusions | No command permission gate¹ |
+| `ops_replace` | Mechanical cross-file replacement; use host edit for precise changes | No command permission gate¹ |
+| `ops_bash` | Preferred general bash command executor; `command` for short commands, `script_path` for long scripts | Confined in restricted modes; matched Windows x64 private IPC runtime |
+| `ops_run` | Bounded bash command result (full access only) | Yes |
+| `ops_run_background` | Start background jobs | Yes |
+| `ops_job_output` / `ops_job_list` / `ops_job_kill` | Read, list and stop jobs started by the current session | Yes |
+| `ops_batch` | Preflight and execute copy / move / remove with audit and recovery | See the PTC notes |
+| `ops_result` | Bounded result references: put, page, release | See the PTC notes |
+| Host `pwsh` | Windows-native operations using bundled PowerShell 7 | Host policy |
+
+¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes; read-only rejects replacement, workspace-write permits writes under the workspace and DSH temporary areas, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes.
+
+---
+
+## `dsh-ops/file` — file tools
+
+All four resolve relative paths against the DSH session cwd, accept a single `path`, and expose no `root`, `workspace`, `cwd` or `file_path` alias. All are UTF-8 first with bounded output; glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
+
+### `ops_inspect_local_file`
+
+Read bounded UTF-8 text lines, or a hex view of one path. Directories are rejected — use `ops_glob` or `ops_grep` instead.
+
+| Parameter | Type | Notes |
+| --- | --- | --- |
+| `path` | string | Resolved against the DSH session cwd |
+| `offset` | integer ≥ 1 | First line |
+| `limit` | integer 1–10000 | Maximum lines returned |
+| `encoding` | `utf-8` | Encoding |
+| `view` | `text` \| `hex` | View mode |
+
+### `ops_glob`
+
+Find regular files below `path` using explicit include/exclude patterns.
+
+| Parameter | Type | Notes |
+| --- | --- | --- |
+| `path` | string | Search root |
+| `pattern` | string[] (required, ≥1) | Glob patterns |
+| `outputMode` | `paths` \| `details` | Output shape |
+| `sort` | `path` \| `modified` | Ordering |
+| `offset` | integer | Paging start |
+| `limit` | integer 1–10000 | Maximum entries |
+
+### `ops_grep`
+
+Search UTF-8 files below `path` with Rust regex, bounded output, paging and optional line context.
+
+| Parameter | Type | Notes |
+| --- | --- | --- |
+| `pattern` | string (required) | Rust regex |
+| `path` | string | Search root |
+| `glob` | string[] | Restrict files |
+| `outputMode` | `files_with_matches` \| `content` \| `count` \| `summary` | Output shape |
+| `caseInsensitive` | boolean | Ignore case |
+| `lineNumbers` | boolean | Show line numbers |
+| `beforeContext` / `afterContext` | integer ≤ 32 | Context lines |
+| `multiline` | boolean | Multi-line matching |
+| `offset` / `limit` | integer 1–10000 | Paging |
+
+### `ops_replace`
+
+Perform a deterministic UTF-8 replacement under `path`. `dryRun` observes only; writes use revision checks and atomic replacement. Read-only sessions are rejected.
+
+| Parameter | Type | Notes |
+| --- | --- | --- |
+| `pattern` | string (required) | Match pattern |
+| `replacement` | string (required) | Replacement text |
+| `path` | string | Operation root |
+| `glob` | string[] | Restrict files |
+| `maxReplacements` | integer 1–100000 | Hard replacement limit |
+| `dryRun` | boolean | Never writes |
+
+---
+
+## `dsh-ops/ptc` — native batches and result references
+
+Loaded only in pure PTC sessions, off by default.
+
+### `ops_batch`
+
+Preflight and verify copy / move / remove.
+
+| Parameter | Type | Notes |
+| --- | --- | --- |
+| `action` | `plan` \| `run` \| `resume` (required) | Action |
+| `root` | string | Defaults to session cwd; an absolute root follows DSH permissions |
+| `operations` | array, ≤512 items | Each item: `op` (`copy`/`move`/`remove`) + `path` + `to` |
+| `operationsRef` | string | Reference a stored operation list |
+| `protect` | string[], ≤128 items | Protected paths |
+| `id` | string | The existing plan for `resume` |
+
+> `action=plan` requires `operations` and creates a no-effect audit plan; execute that exact plan with `action=resume` plus `id` (**do not change it to `run`**). `action=run` requires `operations` and executes immediately. Operations use relative `/` paths, with no overwrite or link traversal. Page `detailsRef` with `ops_result`.
+
+### `ops_result`
+
+Bounded session-owned result references: put object rows, page with top-level `equals`/`fields` and quantity/byte budgets, release results. 24h expiry. Job audits are read-only. References are observations, never authority.
+
+| Parameter | Type | Notes |
+| --- | --- | --- |
+| `action` | `put` \| `page` \| `release` (required) | Action |
+| `items` | object array, ≤10000 items | Rows for `put` |
+| `root` / `id` | string | Operation root and result id |
+| `offset` | integer ≥ 0 | Paging start |
+| `limit` | integer 1–512 | Rows per page |
+| `maxBytes` | integer 512–65536 | Byte budget per page |
+| `fields` | string[], ≤32 items | Projected fields |
+| `equals` | object | Top-level filter |
+
+---
+
+## `dsh-ops/background` — background jobs
+
+Off by default. Once enabled, session `danger-full-access` is still required to publish the tools.
+
+| Tool | Purpose |
+| --- | --- |
+| `ops_run_background` | Start a background job |
+| `ops_job_output` | Read job output |
+| `ops_job_list` | List jobs |
+| `ops_job_kill` | Stop a job |
+
+Background command layers follow authoritative per-session permission; `ops_run` (a bounded foreground result) is also provided by this component and published in full access only.
+
+---
+
+## `dsh-ops/shell` — terminal and shells
+
+Routing: **toolkit → bash → PowerShell 7**.
+
+- `ops_bash`: the preferred general command executor. Use `command` for short commands and `script_path` for long scripts.
+- Host `pwsh`: Windows-native operations, using bundled PowerShell 7.
+
+"Prefer bash as the terminal" means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. When the shell component is on, the official configuration lifecycle temporarily sets the PowerShell 7 path for `pwsh-sandbox`; when off, it restores the executor's latest original configuration without writing profile configuration. Switching executor configuration does not cancel already-running host commands.
+
+The routing table the model sees is rendered by the plugin from what it actually published:
+
+```
+# Shell routing: bash → PowerShell 7
+
+| Task | Tool |
+| --- | --- |
+| Text / multiple ranges / encoding / PDF text / hex | ops_inspect_local_file |
+| Images | read_image (host) |
+| Search contents | ops_grep |
+| Find paths | ops_glob |
+| Batch replacement; use host edit for precise edits | ops_replace |
+| General commands / builds / git / pipelines / scripts — preferred command executor | ops_bash |
+| Windows-native cmdlets / registry / services only | pwsh (bundled PowerShell 7 via host) |
+```
+
+---
+
+## See also
+
+- [Configuration reference](configuration-reference.md) — keys and owning components
+- [Usage](usage.md) — install, update, remove, CLI
+- [Troubleshooting](troubleshooting.md) — errors and diagnosis
+- [Native PTC](native-ptc.md) — the PTC design and build
