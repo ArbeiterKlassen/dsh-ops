@@ -9,6 +9,8 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 
 **0.3.0 仅支持 Windows x64**，目标宿主 DSH `0.2.0-rc.2`。原生 Rust 文件/PTC worker 随包携带；PTC 默认关闭，须显式启用。Linux/macOS/ARM64 留待后续版本。见 [PTC 设计与使用](docs/native-ptc.md)。
 
+有问题可以加qq群：1127808570
+
 ---
 
 ## 核心特性
@@ -16,6 +18,7 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 - （全平台）使用 Rust 编写的一组工具，用于改善 AI 报错循环、强迫思考不交付、注意力涣散的问题，并以渐进式披露减少系统 prompt 的工具定义占用：加速任务运行，减少不必要的输入输出，减少报错率，以及提供与 DSH 对齐的权限机制。
 
   在自用 benchmark 中获得了
+
 
   - 97% token 减免（开启 ops 插件的 PTC 专用工具 对比 Windows 原装标准模式）
   - 65% token 减免（开启 ops 插件的 PTC 专用工具 对比 Linux 原装 PTC 模式）
@@ -29,8 +32,6 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 - 未来会加入一系列 docx、pdf 处理轻量化的好用 Rust 工具，均可开关，不占用上下文。
 
 <img width="1603" height="1028" alt="247c1326cca5b66e60d330c3f32150e2" src="https://github.com/user-attachments/assets/7c9ba485-5323-42a2-b5a8-6dcda07f91c4" />
-
-> 配图由作者自行更换或删除。
 
 执行顺序：**工具包 → bash → PowerShell 7**。
 
