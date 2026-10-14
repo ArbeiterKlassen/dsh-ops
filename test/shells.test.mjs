@@ -927,11 +927,14 @@ await test('ops_bash forwards the terminal overrides and no credential-shaped na
     await running
 
     const env = specs[0].env
-    assert.deepEqual(Object.keys(env).sort(), ['GIT_PAGER', 'NO_COLOR', 'PAGER', 'TERM'])
+    assert.deepEqual(Object.keys(env).sort(), ['GIT_PAGER', 'LC_MESSAGES', 'NO_COLOR', 'PAGER', 'TERM'])
     assert.equal(env.NO_COLOR, '1')
     assert.equal(env.TERM, 'dumb')
     assert.equal(env.PAGER, 'cat')
     assert.equal(env.GIT_PAGER, 'cat')
+    // Message catalogs are pinned so the host's English `denialSignatures` still
+    // match a localized libc; `LC_ALL=C` would break UTF-8 I/O instead.
+    assert.equal(env.LC_MESSAGES, 'C')
     for (const name of Object.keys(env)) {
       assert.equal(/KEY|PASSWORD|SECRET|TOKEN/i.test(name), false, `${name} looks like a credential`)
       assert.equal(name.toUpperCase().startsWith('DSH_'), false, `${name} is a harness fact`)
