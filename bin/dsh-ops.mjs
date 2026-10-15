@@ -994,6 +994,15 @@ function provisionShell(pin, { force, dryRun }) {
  * @returns {number} the exit code: 0 when every selected shell is in place, 1 otherwise.
  */
 function commandProvisionShells({ kinds, force, dryRun, pinFile }) {
+  // The pinned payload is the Windows one: a Windows host carries no POSIX shell, so this
+  // distribution provisions and digest-checks one there. A POSIX host already has its
+  // distribution's own bash, so there is nothing to install — say that instead of failing on an
+  // empty pin table (report: the shell component's POSIX rung).
+  if (process.platform !== 'win32') {
+    console.error(`dsh-ops provisions shells on Windows only; this host (${process.platform}-${process.arch}) already has its own bash,`
+      + " and the shell component resolves it (PATH, then /bin/bash, /usr/bin/bash, /usr/local/bin/bash). Use config.bashPath to pin an explicit executable instead.")
+    return 1
+  }
   let pins
   try {
     pins = pinTable(pinFile)

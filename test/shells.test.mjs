@@ -73,8 +73,20 @@ function stageProvisioned(home, kind, version) {
  * @param {'bash'|'pwsh'} kind - which rung.
  * @returns {string} the package name.
  */
-function platformPackageName(kind) {
-  return `@dsh-ops/${kind}-${process.platform}-${process.arch}`
+/**
+ * The platform package one rung is carried by.
+ *
+ * `platform`/`arch` are parameters rather than `process.platform`: the suite runs on both hosts, and
+ * the cases that describe the **Windows** pinned payload (its package layout, the missing-package
+ * advice, the `allowSystemShellFallback` gate) must exercise that payload wherever the suite runs.
+ * A case that means "this host" passes the host's values explicitly.
+ * @param {'bash'|'pwsh'} kind - which rung.
+ * @param {string} [platform] - the target platform.
+ * @param {string} [arch] - the target architecture.
+ * @returns {string} the package name.
+ */
+function platformPackageName(kind, platform = process.platform, arch = process.arch) {
+  return `@dsh-ops/${kind}-${platform}-${arch}`
 }
 
 /**
@@ -225,14 +237,15 @@ await test('the System32 WSL launcher is skipped even when it is first on PATH',
 
 await test('a bundled shell is not a system shell, so it survives allowSystemShellFallback:false', async () => {
   await withTempDir('shells-nofallback', async (dir) => {
+    // The Windows payload: there the bundled copy is what `allowSystemShellFallback` guards.
     const bundled = makeExecutable(bundledShellPath({
-      kind: 'bash', bundleRoot: dir, platform: process.platform, arch: process.arch,
+      kind: 'bash', bundleRoot: dir, platform: 'win32', arch: 'x64',
     }))
     const withBundle = resolveShells(config({ allowSystemShellFallback: false }), {
       bundleRoot: dir,
       env: { DSH_HOME: TEST_HOME, PATH: onlyPath(makeExecutable(path.join(dir, 'onpath', 'bash'))) },
-      platform: process.platform,
-      arch: process.arch,
+      platform: 'win32',
+      arch: 'x64',
     })
     assert.equal(withBundle.bash.available, true)
     assert.equal(withBundle.bash.source, 'bundled')
@@ -241,8 +254,8 @@ await test('a bundled shell is not a system shell, so it survives allowSystemShe
     const withoutBundle = resolveShells(config({ allowSystemShellFallback: false }), {
       bundleRoot: path.join(dir, 'no-plugin'),
       env: { DSH_HOME: TEST_HOME, PATH: onlyPath(path.dirname(bundled)) },
-      platform: process.platform,
-      arch: process.arch,
+      platform: 'win32',
+      arch: 'x64',
     })
     assert.equal(withoutBundle.bash.available, false)
     assert.equal(withoutBundle.bash.source, 'disabled')
@@ -284,18 +297,19 @@ await test('bundledShellPath names the platform package layout phase C will ship
  * @param {{install: boolean, binary: boolean}} shape - how the package is present.
  * @returns {string} the plugin root.
  */
-function stagePlatformPackage(root, kind, { install, binary }) {
+function stagePlatformPackage(root, kind, { install, binary, platform = process.platform, arch = process.arch }) {
+  const name = platformPackageName(kind, platform, arch)
   fs.mkdirSync(root, { recursive: true })
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
     name: 'dsh-ops',
     version: '0.1.0',
-    optionalDependencies: { [platformPackageName(kind)]: '0.1.0' },
+    optionalDependencies: { [name]: '0.1.0' },
   }))
   if (!install) return root
-  const packageDir = path.join(root, 'node_modules', ...platformPackageName(kind).split('/'))
+  const packageDir = path.join(root, 'node_modules', ...name.split('/'))
   fs.mkdirSync(packageDir, { recursive: true })
   fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({
-    name: platformPackageName(kind), version: '0.1.0',
+    name, version: '0.1.0',
   }))
   if (binary) {
     makeExecutable(path.join(packageDir, 'bin', kind === 'bash' ? 'bash.exe' : 'pwsh.exe'))
@@ -354,12 +368,12 @@ await test('a plugin with no manifest reports the package as not installed, and 
 
 await test('the package-missing reason reaches the rung it belongs to', async () => {
   await withTempDir('shells-package-detail', async (dir) => {
-    const root = stagePlatformPackage(path.join(dir, 'plugin'), 'bash', { install: true, binary: false })
+    const root = stagePlatformPackage(path.join(dir, 'plugin'), 'bash', { install: true, binary: false, platform: 'win32', arch: 'x64' })
     const resolved = resolveShells(config({ allowSystemShellFallback: false }), {
       bundleRoot: root,
       env: { DSH_HOME: TEST_HOME, PATH: '' },
-      platform: process.platform,
-      arch: process.arch,
+      platform: 'win32',
+      arch: 'x64',
     })
     assert.equal(resolved.bash.available, false)
     assert.equal(resolved.bash.source, 'disabled')
@@ -380,10 +394,10 @@ await test('a package the registry never carried and a broken tree get different
    * @returns {string} the rung's detail.
    */
   const detailFor = (dir, shape) => resolveShells(config({ allowSystemShellFallback: false }), {
-    bundleRoot: stagePlatformPackage(path.join(dir, 'plugin'), 'bash', shape),
+    bundleRoot: stagePlatformPackage(path.join(dir, 'plugin'), 'bash', { ...shape, platform: 'win32', arch: 'x64' }),
     env: { DSH_HOME: TEST_HOME, PATH: '' },
-    platform: process.platform,
-    arch: process.arch,
+    platform: 'win32',
+    arch: 'x64',
   }).bash.detail
 
   let missing
@@ -618,10 +632,17 @@ await test('resolveShells never throws, whatever it is handed', () => {
     assert.equal(typeof resolved.bash.source, 'string')
     assert.equal(typeof resolved.pwsh.source, 'string')
   }
-  // The option bag is a test seam, not a contract: a hostile one must not throw either.
-  const resolved = resolveShells(config(), { bundleRoot: '/nonexistent', env: { DSH_HOME: TEST_HOME }, platform: 'plan9', arch: 'x64' })
-  assert.equal(resolved.bash.available, false)
-  assert.equal(resolved.pwsh.available, false)
+  // The option bag is a test seam, not a contract: a hostile one must not throw either. Resolution
+  // follows the TARGET platform, so an unknown one takes the POSIX rung — what must hold is that a
+  // definite answer comes back.
+  const hostile = resolveShells(config(), { bundleRoot: '/nonexistent', env: { DSH_HOME: TEST_HOME }, platform: 'plan9', arch: 'x64' })
+  assert.equal(typeof hostile.bash.available, 'boolean')
+  assert.equal(typeof hostile.pwsh.available, 'boolean')
+  // Windows is the platform where "no pinned payload" is the answer: nothing to fall back to, and
+  // the flag that would allow it is off.
+  const windows = resolveShells(config(), { bundleRoot: '/nonexistent', env: { DSH_HOME: TEST_HOME }, platform: 'win32', arch: 'x64' })
+  assert.equal(windows.bash.available, false)
+  assert.equal(windows.pwsh.available, false)
 })
 
 await test('resolveShells leaves process.env and the working directory untouched', () => {
@@ -681,10 +702,12 @@ await test('a missing bash publishes nothing and warns instead of failing', asyn
     const { ctx, live, registrations } = fakeRegistry()
     ctx.logger = { warn: (message) => warnings.push(message) }
     const publish = config({ allowSystemShellFallback: false })
+    // The wording this case pins is the pinned-Windows-payload remedy (`provision-shells`), so the
+    // platform is Windows; a POSIX host resolves its own bash and has no such rung.
     const shells = resolveShells(publish, {
       bundleRoot: path.join(dir, 'plugin'),
       env: { DSH_HOME: TEST_HOME, PATH: '' },
-      platform: 'linux',
+      platform: 'win32',
       arch: 'x64',
     })
     const dispose = publishShellTools(ctx, publish, shells)
@@ -1525,20 +1548,43 @@ await test('the L3 override is Windows-gated like the row it targets', () => {
   }
 })
 
-await test('system discovery is opt-in even when PATH and well-known installs exist', async () => {
+await test('system discovery is opt-in on Windows and is the rung on a POSIX host', async () => {
   await withTempDir('shells-default-confined', dir => {
-    const system = makeExecutable(path.join(dir, 'bin', process.platform === 'win32' ? 'bash.exe' : 'bash'))
+    // Both spellings exist, so the case asserts the same facts on either host.
+    const system = makeExecutable(path.join(dir, 'bin', 'bash'))
+    const systemExe = makeExecutable(path.join(dir, 'bin', 'bash.exe'))
     const programFiles = path.join(dir, 'Program Files')
-    makeExecutable(path.join(programFiles, 'Git', 'bin', 'bash.exe'))
-    const options = { bundleRoot: path.join(dir, 'plugin'), env: { DSH_HOME: TEST_HOME, PATH: path.dirname(system), ProgramFiles: programFiles } }
+    const wellKnown = makeExecutable(path.join(programFiles, 'Git', 'bin', 'bash.exe'))
+    const base = { bundleRoot: path.join(dir, 'plugin'), env: { DSH_HOME: TEST_HOME, PATH: path.join(dir, 'bin'), ProgramFiles: programFiles } }
+    const host = process.platform
+    // Windows: with no pinned payload and the flag off, PATH and the well-known install are both
+    // visible and both deliberately not taken — `allowSystemShellFallback` is the gate on reaching
+    // past the pinned copy, and there is none.
     for (const raw of [resolveConfig({}), {}, undefined]) {
-      const result = resolveShells(raw, options).bash
-      assert.equal(result.available, false)
+      const result = resolveShells(raw, { ...base, platform: 'win32', arch: 'x64' }).bash
+      assert.equal(result.available, false, JSON.stringify(result))
       assert.equal(result.source, 'disabled')
       assert.equal(result.file, undefined)
     }
-    assert.equal(resolveShells(config({ allowSystemShellFallback: true }), options).bash.file, system)
-    assert.equal(resolveShells(config({ bashPath: system }), options).bash.source, 'config')
+    // Windows with the flag ON: PATH answers first, and the well-known install answers when PATH
+    // does not — the same two rungs the POSIX host uses, reached through the gate instead.
+    const winFallback = resolveShells(config({ allowSystemShellFallback: true }), { ...base, platform: 'win32', arch: 'x64' }).bash
+    assert.equal(winFallback.source, 'path')
+    assert.equal(winFallback.file, systemExe)
+    const winWellKnown = resolveShells(config({ allowSystemShellFallback: true }), {
+      ...base, platform: 'win32', arch: 'x64', env: { ...base.env, PATH: '/nonexistent-bin' },
+    }).bash
+    assert.equal(winWellKnown.source, 'well-known', JSON.stringify(winWellKnown))
+    assert.equal(winWellKnown.file, wellKnown)
+    // POSIX: the machine's own bash IS the rung, so the same config resolves it with no flag — and
+    // `config.bashPath` still outranks discovery.
+    const linux = resolveShells(config({}), { ...base, platform: 'linux', arch: 'x64' }).bash
+    assert.equal(linux.available, true, JSON.stringify(linux))
+    assert.equal(linux.source, 'path')
+    assert.equal(linux.file, system)
+    const posixWellKnown = resolveShells(config({}), { ...base, platform: 'linux', arch: 'x64', env: { ...base.env, PATH: '/nonexistent-bin' } }).bash
+    assert.equal(posixWellKnown.source, 'well-known', JSON.stringify(posixWellKnown))
+    assert.equal(resolveShells(config({ bashPath: system }), { ...base, platform: host, arch: process.arch }).bash.source, 'config')
   })
 })
 

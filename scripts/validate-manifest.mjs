@@ -491,6 +491,14 @@ check(PTC_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object')
 check(JSON.stringify(pkg.os) === '["win32","linux"]' && JSON.stringify(pkg.cpu) === '["x64"]' &&
   JSON.stringify(ptc?.platforms) === '["win32","linux"]' && JSON.stringify(ptc?.architectures) === '["x64"]',
   '0.3.1 package and PTC declarations support Windows x64 and Linux x64')
+/** Every component states the platforms it really serves, so a Linux claim cannot ride along. */
+const platformClaims = id => manifestRaw.contributes?.['x-components']?.find(c => c.id === id)?.platforms
+check(JSON.stringify(platformClaims('dsh-ops-shell')) === '["win32","linux"]',
+  'the shell component declares both platforms: on POSIX it resolves the host distribution bash')
+check(JSON.stringify(platformClaims('dsh-ops-file')) === '["win32","linux"]',
+  'the file component declares both platforms it ships a native worker for')
+check(JSON.stringify(platformClaims('dsh-ops-background')) === '["win32"]',
+  'the background component stays Windows-only: it executes through the pinned bash IPC proxies')
 const REQUIRED_ENTRIES = [
   'native/Cargo.toml',
   'native/Cargo.lock',

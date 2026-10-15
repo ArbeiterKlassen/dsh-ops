@@ -118,17 +118,20 @@
       {
         "id": "dsh-ops-shell",
         "entry": "dsh-ops/shell",
-        "defaultEnabled": true
+        "defaultEnabled": true,
+        "platforms": ["win32", "linux"]
       },
       {
         "id": "dsh-ops-file",
         "entry": "dsh-ops/file",
-        "defaultEnabled": true
+        "defaultEnabled": true,
+        "platforms": ["win32", "linux"]
       },
       {
         "id": "dsh-ops-background",
         "entry": "dsh-ops/background",
-        "defaultEnabled": false
+        "defaultEnabled": false,
+        "platforms": ["win32"]
       }
     ]
   },
