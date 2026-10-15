@@ -399,16 +399,23 @@ const ACL_XATTR: &str = "system.posix_acl_access";
 /// dropped outright — the replacement was more permissive than what it replaced,
 /// which is the one direction a file tool must never drift in silently.
 ///
+/// Capture and restore are judged separately. A *capture* that cannot be completed
+/// — the attribute list, the ACL, or any single value — aborts the call before
+/// anything is published: a value that was never read cannot be put back, so the
+/// tool would be guessing at what it is about to destroy. Only a *restore* failure
+/// is downgraded to a warning, and only for the attributes listed as best-effort
+/// below.
+///
 /// Policy, by severity:
 ///
 /// - The mode is **not optional**. If it cannot be reapplied the call fails and
 ///   nothing is published; guessing at permissions widens access.
 /// - A POSIX ACL is not optional either. A file that had one and comes back
 ///   without it has lost entries, and losing a *deny* entry is a widening change.
-/// - The owner and the remaining extended attributes are best-effort and are
-///   reported in `metadataWarnings`; they cannot be used as a substitute for the
-///   two above, and a caller can act on a warning in a way it cannot act on a
-///   silent change.
+/// - On restore, the owner and the remaining extended attributes are best-effort
+///   and are reported in `metadataWarnings`; they cannot be used as a substitute
+///   for the two above, and a caller can act on a warning in a way it cannot act on
+///   a silent change.
 #[cfg(unix)]
 struct PreservedMetadata { mode: u32, uid: u32, gid: u32, acl: Option<Vec<u8>>, xattrs: Vec<(String, Vec<u8>)> }
 
