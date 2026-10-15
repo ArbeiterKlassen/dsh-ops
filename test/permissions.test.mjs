@@ -5,7 +5,7 @@ import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import { assert, test, report, withTempDir } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
-import { prepareWorkspace, mountWorkspacePreparation } from '../lib/workspace-preparation.js'
+import { prepareWorkspace, mountWorkspacePreparation, runPreparation } from '../lib/workspace-preparation.js'
 import { invoke as fileCall } from '../lib/file/worker.js'
 import { invoke as ptcCall } from '../lib/ptc/worker.js'
 import { resolveWorker } from '../lib/ptc/runtime.js'
@@ -35,6 +35,43 @@ await test('preparation coalesces one trusted workspace and retries only failed 
     assert.equal(calls,1)
   })
 })
+await test('preparation failures always say why, including a timeout (#43)', async () => {
+  const node=code=>({executable:process.execPath,args:['-e',code]})
+  const failure=async options=>{ try { await runPreparation('C:\\ws',options); return '' } catch(error) { return error.message } }
+  const timeout=await failure({...node('setTimeout(()=>{},60000)'),timeoutMs:200})
+  assert.match(timeout,/timed out after 200 ms preparing C:\\ws; the workspace ACL state is unknown/)
+  assert.match(timeout,/acl-backups/)
+  assert.notEqual(timeout.split('): ')[1]?.trim() ?? '','')
+  assert.match(await failure(node('process.exit(3)')),/exited with code 3 after \d+ ms preparing C:\\ws: \(no output\)$/)
+  assert.match(await failure(node('process.stderr.write("Get-Acl failed\\n");process.exit(1)')),/exited with code 1 .*: Get-Acl failed$/)
+  assert.match(await failure(node('process.stdout.write("half done");process.exit(1)')),/: half done$/)
+  assert.match(await failure({executable:path.join(process.cwd(),'missing-powershell.exe'),args:[]}),/could not start .*missing-powershell\.exe/)
+  await runPreparation('C:\\ws',node('process.stdout.write("prepared")'))
+})
+await test('real preparation writes only the root DACL, never descendants (#43)', async () => {
+  if(process.platform!=='win32')return
+  await withTempDir('prepare-root-only',async root => {
+    for(let d=0;d<10;d++) { const dir=path.join(root,`d${d}`,'deep'); fs.mkdirSync(dir,{recursive:true}); for(let f=0;f<30;f++) fs.writeFileSync(path.join(dir,`f${f}.txt`),'x') }
+    const quoted=root.replaceAll("'","''")
+    ps(`$p='${quoted}'; $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $a=[Security.AccessControl.DirectorySecurity]::new(); $a.SetOwner($sid); $a.SetAccessRuleProtection($true,$false); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Modify','ContainerInherit,ObjectInherit','None','Allow')); Set-Acl -LiteralPath $p -AclObject $a`)
+    const sddl=target=>ps(`(Get-Acl -LiteralPath '${target.replaceAll("'","''")}').GetSecurityDescriptorSddlForm('Access')`)
+    const deep=path.join(root,'d9','deep','f29.txt'), deepDir=path.join(root,'d9','deep')
+    const before={root:sddl(root),deep:sddl(deep),deepDir:sddl(deepDir)}
+    const backups=path.join(process.env.DSH_HOME,'dsh-ops','acl-backups')
+    const receipts=()=>fs.existsSync(backups) ? fs.readdirSync(backups).length : 0
+    const initial=receipts()
+    await runPreparation(root)
+    const after=sddl(root)
+    assert.ok(after.startsWith(before.root.slice(0,before.root.indexOf('('))),`DACL control flags kept: ${before.root} -> ${after}`)
+    assert.ok(after.startsWith(before.root),`existing ACEs kept in order: ${after}`)
+    const rights=ps(`(Get-Acl -LiteralPath '${quoted}').Access | ForEach-Object { $_.FileSystemRights.ToString() }`)
+    assert.match(rights,/TakeOwnership/)
+    assert.doesNotMatch(rights,/FullControl/)
+    assert.equal(sddl(deep),before.deep,'a deep file keeps its exact ACL')
+    assert.equal(sddl(deepDir),before.deepDir,'a deep directory keeps its exact ACL')
+    assert.equal(receipts(),initial+1,'one backup receipt per cold preparation')
+    await runPreparation(root)
+    assert.equal(receipts(),initial+1,'the warm path writes no new receipt')
 await test('ops reads and writes reach the host read-before-edit table (#17)', async () => {
   await withTempDir('fs-observed',async root => {
     fs.writeFileSync(path.join(root,'a.txt'),'alpha\nbeta\n')

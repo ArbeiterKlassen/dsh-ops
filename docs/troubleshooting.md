@@ -97,6 +97,14 @@ No. Fixed file operations follow a trusted-operation policy fence matching DSH f
 
 Once the `dsh-ops/background` component is enabled, session `danger-full-access` is still required to publish the four background tools.
 
+### `DSH workspace preparation failed (not a user permission denial)`
+
+Before the first restricted `run_code` / `pwsh` / `bash` / `ops_bash` call in a workspace-write session, dsh-ops gives the workspace root a directory-only `WRITE_OWNER` ACE, which the host sandbox needs. The original DACL is backed up to `<DSH_HOME>/dsh-ops/acl-backups/` first. Later calls take a fast `ready` path.
+
+- The root DACL is written through its own handle, without Windows' inheritance walk, so the cost no longer grows with the number of files (measured: 18.7 s → 4.3 s for 50,000 files; about 3.9 s for 10 files, mostly PowerShell startup). Earlier versions walked the whole tree and hit a 10 s limit on large workspaces, with nothing after the colon. (#43)
+- `timed out after 120000 ms …`: a 120 s safety net was hit. The ACL state is unknown, so compare the root DACL with the newest receipt in `acl-backups` before retrying.
+- `exited with code N …: <text>`: the text is the script's own error (for example a workspace not owned by the current user, a reparse point in its ancestry, or an explicit deny of `WRITE_OWNER`).
+
 ### Host shells are being refused
 
 `shellPolicy: deny-host-shell` refuses the host shells in `deniedHostTools` (default `[pwsh, bash, pwsh_persistent]`). The policy is independent of `allowSystemShellFallback`. It also disables third-layer pwsh; enable cautiously.
