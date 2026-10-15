@@ -272,7 +272,13 @@ try {
     fs.copyFileSync('package.json',path.join(noReceipt,'package.json'))
     fs.copyFileSync(path.join(runtime,path.basename(file)),path.join(noReceiptTarget,path.basename(file)))
     fs.chmodSync(path.join(noReceiptTarget,path.basename(file)),0o755)
-    assert.throws(() => resolveWorker({}, {packageRoot:noReceipt}), /provenance receipt at .*could not be read/)
+    // The receipt error names the artifact *inside the package* and reports only the error code:
+    // it must stay actionable without disclosing the operator's install path (#30).
+    assert.throws(() => resolveWorker({}, {packageRoot:noReceipt}), error => {
+      assert.match(error.message, /provenance receipt at runtime\/[^/]+\/provenance\.json could not be read \(ENOENT\)/)
+      assert.ok(!error.message.includes(noReceipt), `the message leaked the install path: ${error.message}`)
+      return true
+    })
 
     // An unavailable runtime must say what was tried, so it is debuggable without
     // reading the resolver.
