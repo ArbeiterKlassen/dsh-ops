@@ -25,10 +25,11 @@
  * portable; the 32 MiB fixture from the report is deliberately not ported — see
  * the runtime budget note in the porting report.
  *
- * Intentional omissions: the `limit`-bounds-lines-not-bytes defect (report L4,
- * including the 32 MiB fixture and the OUTPUT_LIMIT cliff) and the default
- * `maxReplacements` abort (L3). Both are open defects, not boundaries; the
- * fixtures that proved them were removed with them.
+ * Intentional omission: the default `maxReplacements` abort (L3), an open defect
+ * rather than a boundary; the fixture that proved it was removed with it. The
+ * `limit`-bounds-lines-not-bytes defect (L4) used to be omitted here too and is
+ * now fixed and covered by `test/output-budget.test.mjs`; the long-line case at
+ * the end of this suite asserts both sides of the new byte boundary.
  *
  * @module dsh-ops/test/linux-args
  */
@@ -216,15 +217,27 @@ await test('bounded hostile input stays bounded: a huge grep pattern and a 128 K
     assert.equal(enormous.timedOut, false, 'an oversized request must not hang the worker')
     assert.ok(enormous.body !== null || enormous.exitCode !== null || enormous.stdinError !== undefined)
 
-    // One line of 128 KiB is inside the host's output budget, so it must come
-    // back whole. `limit` bounds the number of lines returned; the byte cliff
-    // beyond this size is report L4 and is not asserted here.
+    // The response budget (report L4) sits at 96 KiB, so the boundary has two
+    // sides and both are asserted: inside it a long line still comes back whole,
+    // beyond it the line is cut and the envelope says so rather than the read
+    // failing with an unknown effect. `limit` bounds the number of lines;
+    // `test/output-budget.test.mjs` owns the byte accounting itself.
+    const fit = path.join(workspace, 'fits.txt')
+    fs.writeFileSync(fit, `${'y'.repeat(64 * 1024)}\n`)
+    const whole = envelopeOf(await callTool('inspect_local_file', { path: fit, limit: 1 }, { root: workspace, timeoutMs: 20_000 }), assert)
+    assert.equal(whole.status, 'completed')
+    assert.equal(whole.truncated, false)
+    assert.equal(whole.items[0].text.length, 64 * 1024)
+
     const long = path.join(workspace, 'longline.txt')
     fs.writeFileSync(long, `${'x'.repeat(128 * 1024)}\n`)
     const read = envelopeOf(await callTool('inspect_local_file', { path: long, limit: 1 }, { root: workspace, timeoutMs: 20_000 }), assert)
     assert.equal(read.status, 'completed')
     assert.equal(read.items.length, 1)
-    assert.equal(read.items[0].text.length, 128 * 1024)
+    assert.equal(read.truncated, true)
+    assert.equal(read.items[0].truncatedInLine, true)
+    assert.equal(read.items[0].bytesTotal, 128 * 1024)
+    assert.ok(read.items[0].text.length < 128 * 1024)
   })
 })
 

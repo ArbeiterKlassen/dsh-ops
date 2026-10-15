@@ -154,19 +154,20 @@ see so the diagnostic fix can be checked against it.
 
 ## W3 — the seven new boundary suites on Windows x64
 
-`test/run.mjs` auto-discovers `test/*.test.mjs`. Seven new suites were added
+`test/run.mjs` auto-discovers `test/*.test.mjs`. Eight new suites were added
 (`test/lib/boundary.mjs` is a shared helper, not a suite). They were written so
 that a Windows run never reports a Linux-only check as passed and never fails for
 a Linux-only reason — but that reasoning is untested on a real Windows host.
 
 ```powershell
-npm run verify            # expect: 21 suite(s) passed, 0 failed
+npm run verify            # expect: 22 suite(s) passed, 0 failed
 npm run validate:manifest # expect: all 58 checks passed
 ```
 
 | Suite | Expected on win32 |
 | --- | --- |
 | `inspect-hex.test.mjs` | Runs fully (byte slicing, platform-neutral) |
+| `output-budget.test.mjs` | Runs fully (byte accounting, platform-neutral) |
 | `linux-args.test.mjs` | Runs fully (platform-neutral) |
 | `linux-protocol.test.mjs` | Runs fully (platform-neutral) |
 | `linux-scope.test.mjs` | Runs fully (platform-neutral; the staged-worker digest case returns early when `runtime/` carries only the other platform) |

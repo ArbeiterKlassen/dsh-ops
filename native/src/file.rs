@@ -15,6 +15,17 @@ use std::os::windows::fs::MetadataExt as WindowsMetadataExt;
 const MAX_ENTRIES: usize = 100_000;
 const MAX_DEPTH: usize = 128;
 const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
+/// Ceiling for one worker response. The host collects worker stdout with
+/// `maxBytes: 128 * 1024` and turns a lossy read into `OUTPUT_LIMIT` plus
+/// `effectState: "unknown"`, so a response that overflows is reported to the model
+/// as an operation whose effect cannot be known — for a pure read, that is both
+/// false and useless. Staying under the host cap is what keeps a read honest.
+/// The budget is spent on the *serialized* items rather than the payload, because
+/// escaping is the multiplier: one NUL byte costs six as `\u0000`, which is how a
+/// 32 MiB file once produced 200 MB of stdout.
+const MAX_OUTPUT_BYTES: usize = 96 * 1024;
+/// Non-item fields of the envelope, counted against the same ceiling.
+const ENVELOPE_OVERHEAD: usize = 512;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -225,8 +236,58 @@ fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 fn modified(path: &Path) -> u64 { fs::symlink_metadata(path).ok().map_or(0, |m| m.len()) }
-fn result(items: Vec<Value>, total: usize, offset: usize, matched: usize, truncated: bool) -> Value {
-    let returned = items.len(); json!({"status":"completed","phase":"verify","changed":0,"matched":matched,"skipped":offset,"failed":0,"complete":!truncated && offset + returned >= total,"truncated":truncated,"omitted":total.saturating_sub(offset + returned),"items":items,"total":total,"nextOffset":offset + returned})
+/// What one character costs in serde_json's encoding.
+fn encoded_cost(character: char) -> usize {
+    match character {
+        '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
+        c if (c as u32) < 0x20 => 6,
+        c => c.len_utf8(),
+    }
+}
+/// The longest prefix of `text` whose encoding fits `budget` bytes, cut on a
+/// character boundary so the result is still valid UTF-8.
+fn truncate_to_encoded(text: &str, budget: usize) -> (String, bool) {
+    let mut kept = String::new(); let mut used = 0usize;
+    for character in text.chars() { let cost = encoded_cost(character); if used + cost > budget { return (kept, true); } used += cost; kept.push(character); }
+    (kept, false)
+}
+/// `offset` is how many units were skipped, counted from zero the way `glob` and
+/// `grep` count their own `offset`. `next_base` is the value a caller must pass
+/// back to resume, which is its own paging base rather than the skipped count:
+/// `inspect` declares a 1-based `offset` (like its hex rows), so deriving the
+/// next page from the skipped count re-read the last returned line on every page.
+fn result(items: Vec<Value>, total: usize, offset: usize, next_base: usize, matched: usize, truncated: bool) -> Value {
+    // Spend the response budget on the serialized items. Returning more than the
+    // host will collect is not a bigger answer, it is a failed read: the host
+    // truncates stdout, reports OUTPUT_LIMIT and declares the effect unknown, so
+    // the caller loses the content and is told something may have changed.
+    let budget = MAX_OUTPUT_BYTES.saturating_sub(ENVELOPE_OVERHEAD);
+    let mut kept: Vec<Value> = Vec::new(); let mut used = 0usize; let mut stopped = false;
+    for item in items {
+        let size = serde_json::to_string(&item).map_or(0, |encoded| encoded.len()) + 1;
+        if used + size <= budget { used += size; kept.push(item); continue; }
+        // This item does not fit whole. Keep a bounded prefix of its text rather
+        // than returning nothing at all, so a file holding one long line still
+        // answers with its beginning; every remaining item is omitted and counted
+        // as such. Reading past the cut is the hex view's job, which pages by
+        // 16-byte rows.
+        let whole = item.get("text").and_then(Value::as_str);
+        let room = budget.saturating_sub(used).saturating_sub(96);
+        let prefix = whole.map(|text| truncate_to_encoded(text, room));
+        if let Some((text, cut)) = prefix {
+            if !text.is_empty() {
+                let mut trimmed = item.clone();
+                trimmed["text"] = Value::String(text);
+                trimmed["bytesTotal"] = json!(whole.map_or(0, |text| text.len()));
+                trimmed["truncatedInLine"] = json!(cut);
+                kept.push(trimmed);
+            }
+        }
+        stopped = true;
+        break;
+    }
+    let returned = kept.len(); let cut = truncated || stopped;
+    json!({"status":"completed","phase":"verify","changed":0,"matched":matched,"skipped":offset,"failed":0,"complete":!cut && offset + returned >= total,"truncated":cut,"omitted":total.saturating_sub(offset + returned),"items":kept,"total":total,"nextOffset":next_base + returned})
 }
 
 fn inspect(request: &Request) -> Result<Value> {
@@ -251,7 +312,7 @@ fn inspect(request: &Request) -> Result<Value> {
     if args.view != "text" { return Err(Failure::new("INVALID_ARGUMENT", "view must be text or hex")); }
     let text = String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "file is not valid UTF-8"))?;
     let lines: Vec<_> = text.lines().enumerate().skip(args.offset.saturating_sub(1)).take(args.limit).map(|(i, line)| json!({"path":path,"line":i+1,"text":line})).collect();
-    Ok(result(lines, text.lines().count(), args.offset.saturating_sub(1), text.lines().count(), false))
+    Ok(result(lines, text.lines().count(), args.offset.saturating_sub(1), args.offset, text.lines().count(), false))
 }
 fn glob(request: &Request) -> Result<Value> {
     let args: GlobArgs = serde_json::from_value(request.args.clone())?;
@@ -263,7 +324,7 @@ fn glob(request: &Request) -> Result<Value> {
     let output_mode = if args.output_mode.is_empty() { "paths" } else { args.output_mode.as_str() };
     if output_mode != "paths" && output_mode != "details" { return Err(Failure::new("INVALID_ARGUMENT", "outputMode must be paths or details")); }
     let total = files.len(); let selected: Vec<_> = files.into_iter().skip(args.offset).take(args.limit).map(|f| if output_mode == "paths" { json!(f) } else { let modified_at = modified(&f); json!({"path":f,"bytes":fs::symlink_metadata(&f).map(|m|m.len()).unwrap_or(0),"modified":modified_at}) }).collect();
-    Ok(result(selected, total, args.offset, total, walked.truncated))
+    Ok(result(selected, total, args.offset, args.offset, total, walked.truncated))
 }
 fn grep(request: &Request) -> Result<Value> {
     let args: GrepArgs = serde_json::from_value(request.args.clone())?;
@@ -276,7 +337,7 @@ fn grep(request: &Request) -> Result<Value> {
         if args.output_mode != "summary" && matches.len() >= args.offset + args.limit { break; }
     }
     if args.output_mode == "summary" { return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":match_count,"skipped":0,"failed":0,"complete":!walked.truncated,"truncated":walked.truncated,"omitted":0,"files":file_count,"matches":match_count})); }
-    let total=matches.len(); Ok(result(matches.into_iter().skip(args.offset).take(args.limit).collect(), total, args.offset, match_count, walked.truncated))
+    let total=matches.len(); Ok(result(matches.into_iter().skip(args.offset).take(args.limit).collect(), total, args.offset, args.offset, match_count, walked.truncated))
 }
 fn replace(request: &Request) -> Result<Value> {
     if request.read_only { return Err(Failure::new("POLICY_DENIED", "replace is unavailable in read-only mode")); }

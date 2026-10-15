@@ -25,9 +25,10 @@
  * budget, Node cannot materialise a lone 0xff byte on win32, and win32 rejects
  * NUL in a path before the worker sees it.
  *
- * Intentional omissions: the hex-view offset defect (report L2) and the
- * `limit`-bounds-lines defect (L4). They are documented defects, not
- * boundaries; see the section on open defects in the porting report.
+ * Intentional omission: none of the defects this suite once skipped are open.
+ * The hex-view offset defect (report L2) is fixed and covered by
+ * `test/inspect-hex.test.mjs`, and `limit`-bounds-lines (L4) by
+ * `test/output-budget.test.mjs`.
  *
  * @module dsh-ops/test/linux-paths
  */
