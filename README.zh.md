@@ -1,201 +1,118 @@
-## 原生文件组件
+# dsh-ops
 
-`dsh-ops-file` 现在使用插件自有 Rust worker，不再启动或调用 FastCtx。它通过
-标准 DSH 注册作用域发布 `ops_inspect_local_file`、`ops_glob`、`ops_grep` 和
-`ops_replace`。每次调用只有一个由宿主解析后的 `path`；相对路径相对于
-`session.header.cwd`，native schema 不再暴露 `root`、`workspace`、`cwd` 或
-`file_path` 别名。
+[English](README.en.md) | **中文**
 
-worker 以 UTF-8 和有界结果为第一版契约，拒绝 symlink/junction/reparse 遍历，
-不遍历隐藏文件和 `.git`，grep 使用 Rust regex。replace 先预检匹配数量，执行前
-再次校验内容 revision，受 `maxReplacements` 硬上限保护，并使用临时文件、fsync
-和原子替换；`dryRun` 不产生写入。read-only 会话可以读取和搜索，但拒绝 replace。
-固定文件操作经 `sandboxPolicy` 的可信操作权限检查和 `subprocess.spawn`，不执行模型代码；任意 Bash/PTC 代码继续经 `sandbox.confine`，无失败后裸执行回退。FastCtx 仅保留在默认关闭的 background 组件后端。
+Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Rust 重写文件检索与批处理，
+减少反复踩 PowerShell 报错所浪费的 token、时间和模型注意力。
 
-当前 Windows worker 构建和暂存：
-
-```console
-RUSTUP_TOOLCHAIN=1.97.1 cargo build --release --locked --manifest-path native/Cargo.toml
-node bin/native-runtime.mjs stage --platform win32-x64 --input native/target/release
-node bin/native-runtime.mjs check --platform win32-x64
-```
-
-**0.3.0 本次仅发布 Windows x64**；worker 和 Bash IPC 代理随包提供。其它平台/架构未交付，不在兼容承诺内。不存在 native 失败后回退 FastCtx 文件工具的路径。
-
-
-**中文** | [English](README.en.md)
-
-解决 Windows 下 DSH 反复使用 PowerShell 报错造成的 token、时间和模型注意力浪费。本插件的三个主要功能：
-
-- 提供独立 **bash 5.3.15** 并优先使用bash，让你的AI不再和PowerShell打架
-- 独立 **PowerShell 7.6.6**，用于必要的 Windows 原生操作，沿用宿主 `pwsh` 工具。PowerShell 7 比自带的 PowerShell 5 也有不少优化
-- 一些 Rust 编写的性能更好的、更快的读取、查找、替换工具。固定文件操作遵循 DSH 文件权限；Bash 在受限模式走宿主沙箱；默认关闭的 FastCtx 后台组件仍仅限完全权限。Windows x64 匹配载荷的受限 Bash 采用可校验私有 IPC 副本；纯 PTC 的 command/script_path/管道及权限切换验收已本地通过，GUI 重启后仍需确认。
-- 未来会加入一系列docx，pdf处理轻量化的好用的rust工具，均可开关，不占用上下文
-
-<img width="1603" height="1028" alt="247c1326cca5b66e60d330c3f32150e2" src="https://github.com/user-attachments/assets/7c9ba485-5323-42a2-b5a8-6dcda07f91c4" />
-
-执行顺序：**工具包 → bash → PowerShell 7**。
+> tips：本项目的 ops 是广义 operations（运行操作）的缩写，代指本插件处于 dsh 和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
 
 **0.3.0 仅支持 Windows x64**，目标宿主 DSH `0.2.0-rc.2`。原生 Rust 文件/PTC worker 随包携带；PTC 默认关闭，须显式启用。Linux/macOS/ARM64 留待后续版本。见 [PTC 设计与使用](docs/native-ptc.md)。
 
-## 安装、更新、卸载
+---
 
-### 官方插件市场
+## 核心特性
 
-在目标 DSH 应用的插件市场中输入 npm 包名 **`dsh-ops`**，安装后选择启用。安装归属于当前运行的 profile，桌面端为 `desktop`。发布包依赖完整 FastCtx、bash 和 PowerShell 7 载荷；不使用安装脚本下载，不改系统 PATH。
+- （全平台）使用 Rust 编写的一组工具，用于改善 AI 报错循环、强迫思考不交付、注意力涣散的问题，并以渐进式披露减少系统 prompt 的工具定义占用：加速任务运行，减少不必要的输入输出，减少报错率，以及提供与 DSH 对齐的权限机制。
 
-### npm 一键安装
+  在自用 benchmark 中获得了
+
+  - 97% token 减免（开启 ops 插件的 PTC 专用工具 对比 Windows 原装标准模式）
+  - 65% token 减免（开启 ops 插件的 PTC 专用工具 对比 Linux 原装 PTC 模式）
+
+  的成绩，并改善了在 DSH 运行的 AI 的智力表现。
+
+- （仅 Windows）提供独立 **bash 5.3.15** 和独立 **PowerShell 7.6.6**：优先使用 bash，必要时回退 pwsh 7，让你的 AI 不再和 PowerShell 打架 —— **不修改系统默认终端、PATH 或宿主原有 shell 工具名称**，环境变量安全。
+
+- 独立的 Rust 原生文件工具与安全批处理（**默认关闭**，须显式启用），见 [组件参考](docs/组件参考.md)。
+
+- 未来会加入一系列 docx、pdf 处理轻量化的好用 Rust 工具，均可开关，不占用上下文。
+
+<img width="1603" height="1028" alt="247c1326cca5b66e60d330c3f32150e2" src="https://github.com/user-attachments/assets/7c9ba485-5323-42a2-b5a8-6dcda07f91c4" />
+
+> 配图由作者自行更换或删除。
+
+执行顺序：**工具包 → bash → PowerShell 7**。
+
+---
+
+## 快速开始
+
+### 前置条件
+
+- **Node.js `^22.19 || >=24`**（`package.json` 的 `engines` 要求）
+- Windows x64
+- 目标 DSH 应用已初始化
+
+### 安装
+
+**方式一：官方插件市场（推荐）**
+
+在目标 DSH 应用的插件市场中输入 npm 包名 **`dsh-ops`**，安装后选择启用。安装归属于当前运行的 profile，桌面端为 `desktop`。
+
+**方式二：npm 一键安装**
 
 ```console
 npx --yes dsh-ops@latest install --profile desktop
-npx --yes dsh-ops@latest install --profile web
-npx --yes dsh-ops@latest install --profile tui
 ```
 
-必须显式选择目标 profile；`tui` 映射到 **dsh-TUI 产品的 `dsh-tui` profile**，不是旧的 `tui` 目录。请先初始化目标应用。该入口委托官方 DSH CLI 安装，不另写一套 profile 锁与回滚逻辑。
+必须显式选择目标 profile；`tui` 映射到 **dsh-TUI 产品的 `dsh-tui` profile**，不是旧的 `tui` 目录。请先初始化目标应用。
 
-桌面端必须使用桌面应用自带的 CLI；默认探测 `%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`。安装在其它位置时加 `--dsh-cli "<安装目录>\resources\runtime\cli\bin\dsh.cmd"`。Web/TUI 需要可用的 DSH CLI，可同样显式指定。
+桌面端必须使用桌面应用自带的 CLI；默认探测 `%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`。安装在其它位置时加 `--dsh-cli "<安装目录>\resources\runtime\cli\bin\dsh.cmd"`。
 
-也可以直接使用官方命令：
+> ⚠️ **`node_modules/@dsh-ops/` 下没有 `bash-win32-x64` 不是安装损坏。** 三个载荷都是精确钉版的**可选依赖**（`optionalDependencies`）：若你的 registry 未同步该平台包的对应版本，包管理器会**静默跳过**它——安装仍以退出码 0 结束，且不打印任何指向缺包的警告。
 
-```console
-dsh plugin --profile web add dsh-ops
-dsh plugin --profile dsh-tui add dsh-ops
-"<桌面安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add dsh-ops
-```
+> **不要**用 `allowSystemShellFallback: true` 绕过：那是安全姿态降级（改用未固定摘要的系统 bash），且首次升级启动的配置迁移会把它改回 `false`。
 
-普通 DSH CLI 不能管理保留的 `desktop` profile；不要把它与桌面自带入口混淆。
+> **`bashPath` 仅在 `danger-full-access` 下生效**：只读/工作区内修改模式只运行固定摘要的随包或 provision 的 bash，自带 Git for Windows 会按设计返回 `EXECUTOR_UNAVAILABLE`，不要靠它绕过受限模式问题。见 [配置参考](docs/配置参考.md)。
 
-**更新**：重新运行相同的 `npx --yes dsh-ops@latest install --profile ...`，或用官方 CLI `add dsh-ops@latest`。按应用提示重载；替换已加载代码时重启应用。
+> 普通 DSH CLI 不能管理保留的 `desktop` profile；不要把它与桌面自带入口混淆。
 
-`0.3.0` 新增独立原生 Rust PTC 增强：`ops_batch`、`ops_result`，权限／沙箱适配、逐项审计与恢复、有界引用与投影。三个 Windows 载荷依赖仍固定 `0.2.1`，无需重复发布。PTC 组件须显式启用，发布包已含 worker。见 [docs/native-ptc.md](docs/native-ptc.md) 和 [PROVENANCE.md](PROVENANCE.md)。
+详情与兜底办法见 [常见问题](docs/常见问题.md)。
 
-**卸载与查看状态**：
+### 卸载与查看状态
 
 ```console
 npx --yes dsh-ops@latest status --profile desktop
 npx --yes dsh-ops@latest uninstall --profile desktop
 ```
 
-把 `desktop` 换成 `web` 或 `tui` 即可。也可在市场卸载，或执行官方 `dsh plugin --profile ... remove dsh-ops`。二进制随 profile 的插件依赖管理；卸载移除依赖引用，不误删系统 shell、其它 profile 的副本或包管理器共享缓存。
+把 `desktop` 换成 `web` 或 `tui` 即可。
 
-旧版显式 provision 的 `<DSH_HOME>/dsh-ops/` 文件需单独清理：`npx --yes dsh-ops@latest uninstall --yes`。默认不删 `~/.fastctx/` 持久状态；需要时显式加 `--purge-fastctx`。关闭后台组件会等待已发出的调用，然后尝试终止该组件当前连接记住的自有任务；失败会告警。断线丢失归属的旧任务及单纯降权不保证终止，先处理自己的任务。
+---
 
-## 已知问题
+## 组件
 
-**`node_modules/@dsh-ops/` 下没有 `bash-win32-x64` 不是安装损坏。** 三个载荷都是精确钉版的**可选依赖**（`optionalDependencies`）：若你的 registry 未同步该平台包的对应版本，包管理器会**静默跳过**它——安装仍以退出码 0 结束，且不打印任何指向缺包的警告。
-
-实测（2026-10-12）：`registry.npmmirror.com` 上 `@dsh-ops/bash-win32-x64` 的 `dist-tags.latest = 0.0.0-stage`、`versions` 只有 `0.0.0-stage`；官方源 `registry.npmjs.org` 为 `0.2.1`。走镜像的 `npm view @dsh-ops/bash-win32-x64 version` 因此会打印误导性的旧版本号，不能拿来判断载荷是否可用。镜像补齐后本节自然过期，下面是自证与兜底的办法。
-
-**首选兜底**：`provision-shells` 绕过 registry，直接取上游 GitHub Release 的钉版资产，校验 sha256 后解包，并写 `.provisioned.json` receipt。
-
-```console
-npx --yes dsh-ops@latest provision-shells --bash
-```
-
-需要代理时（`HTTPS_PROXY` 会被显式交给 curl 的 `--proxy`，同时随环境继承）：
-
-```console
-:: cmd
-set HTTPS_PROXY=http://127.0.0.1:<clash-port>
-npx --yes dsh-ops@latest provision-shells --bash
-```
-
-```console
-# PowerShell
-$env:HTTPS_PROXY = 'http://127.0.0.1:<clash-port>'
-npx --yes dsh-ops@latest provision-shells --bash
-```
-
-**核对**请跑 profile 自己那份副本：`ladder` 只报告**执行它的那份包**的随包梯级，`npx … ladder` 检查的是 npx 缓存副本，结论与你的 profile 无关。
-
-```console
-node "%USERPROFILE%\.dsh\profiles\<profile>\node_modules\dsh-ops\bin\dsh-ops.mjs" ladder
-```
-
-provisioned 副本在 `<DSH_HOME>/dsh-ops/shells`（跨 profile 共享，provision 一次对同机所有 profile 生效），解析时优先于随包副本，`ladder` 会给出 `source: provisioned`。
-
-**不要**用 `allowSystemShellFallback: true` 绕过：那是安全姿态降级（改用未固定摘要的系统 bash），且首次升级启动的配置迁移会把它改回 `false`。
-
-## 组件开关与提示词
-
-Bundle 声明四个独立组件，默认开启前两个旧组件；PTC 显式启用并提供原生 worker：
+Bundle 声明四个组件，分别启停，首次安装默认开启前两个：
 
 | 组件 | 介绍 | 默认 | 发布的工具 |
 | --- | --- | --- | --- |
-| `dsh-ops-bash & powershell 7` | 将默认终端改为bash，以及bash覆盖不到时提供powershell7 | 开 | `ops_bash`；宿主 `pwsh` 使用随包 PowerShell 7 |
-| `dsh-ops-file` | 更快、更高性能、输出更精简更省token的rust文件检索 | 开 | 四个文件工具 |
-| `dsh-ops-background` | 为科研仿真、模型训练及其他长进程后台任务提供托管 | 关 | 启动、输出、列出、终止后台任务 |
-| `dsh-ops-ptc` | 独立 Rust 安全批处理与有界结果引用，仅纯 PTC 会话加载 | 关 | `ops_batch`、`ops_result` |
+| `dsh-ops/shell` | 将默认终端改为 bash，以及 bash 覆盖不到时提供 PowerShell 7 | 开 | `ops_bash`；宿主 `pwsh` 使用随包 PowerShell 7 |
+| `dsh-ops/file` | 更快、更高性能、输出更精简更省 token 的 Rust 文件检索 | 开 | 四个文件工具 |
+| `dsh-ops/background` | 为科研仿真、模型训练及其他长进程后台任务提供托管 | 关 | 启动、输出、列出、终止后台任务 |
+| `dsh-ops/ptc` | 独立 Rust 安全批处理和有界结果引用，仅纯 PTC 会话加载 | 关 | `ops_batch`、`ops_result` |
 
-“默认终端改为 bash”指模型提示优先使用 `ops_bash`，**不修改系统默认终端、PATH 或宿主原有 shell 工具名称**。Shell 组件开时，通过官方配置生命周期临时指定 `pwsh-sandbox` 的 PowerShell 7 路径；关时按执行器最新原配置恢复，不写 profile 配置。执行器配置切换不代表取消已在运行的宿主命令。
+“默认终端改为 bash”指模型提示优先使用 `ops_bash`，**不修改系统默认终端、PATH 或宿主原有 shell 工具名称**。
 
-提示词注册为独立运行时段，**不写 AGENTS.md**：Shell 关就撤销 bash/pwsh 路由；文件关就撤销原生文件说明；后台关就不发布后台工具及自有 job 指导。文件组件使用独立 Rust worker；FastCtx 仅由默认关闭的 background 组件保留。默认新增四个原生文件工具和 `ops_bash`，不发布重复前台 `ops_run`。这些改变减少固定声明成本。极简预设会覆盖附加 system sections；PTC 模式经 SDK 调用底层工具，权限门不变。
+工具的完整参数、配置项与权限要求见 [组件参考](docs/组件参考.md) 与 [配置参考](docs/配置参考.md)。
 
-## 配置方式与工具列表
+> 配置迁移的完成标记：完成后重启/热加载不再覆盖；你之后主动改回 `true` 会被保留。不要删除迁移标记，否则会重新自检。
 
-在 DSH 的配置编辑器中找到对应的 `dsh-ops/shell`、`dsh-ops/file` 或 `dsh-ops/background` 行，调整 `config` 后保存；未知配置键会点名报错。也可直接在市场切换组件。主要配置：
+---
 
-```yaml
-config:
-  # background component only; its market row is disabled by default
-  enableShellTools: true
-  publishBashTool: true
-  promptPolicy: true
-  toolCallTimeoutMs: 300000
-  required: false
-  shellPolicy: advise
-  allowSystemShellFallback: false
-  # Managed update metadata; do not remove after the first startup self-check
-  # configUpdateVersion: 1
-  # binaryPath: 'C:\tools\fastctx.exe'
-  # bashPath: 'C:\tools\bash.exe'
-```
+## 详细文档
 
-- `enableShellTools`：后台组件的部署开关，开启仍须会话 `danger-full-access` 才发布四个后台工具；文件组件不发布命令工具。
-- `publishBashTool`：是否发布 `ops_bash`；读取最新会话权限，受限模式需宿主 sandbox，完全权限使用宿主 subprocess。
-- `promptPolicy`：是否注入该组件的运行时说明；可用 `extraGuidance` 追加指导。
-- `toolCallTimeoutMs`：FastCtx RPC 等待超时，不代表服务端工作已终止。
-- `required`：运行时不可用时是否拒绝激活。
-- `shellPolicy`：默认 `advise`；`deny-host-shell` 拒绝 `deniedHostTools` 列表中的宿主 shell（默认 `[pwsh, bash, pwsh_persistent]`）。这也会禁用第三层 pwsh，谨慎开启。
-- `allowSystemShellFallback`：默认 `false`，随包/已 provision 的 bash 缺失时不探测系统 PATH 或常见安装目录；后台组件也不绕过此选择调用 FastCtx 的自动探测。只有显式设 `true` 才使用未固定摘要的系统 bash，请自行信任与维护该执行器。显式 `bashPath` 是另一种操作者选择，并非自动回退。首次升级启动的迁移见下方“更新配置修改区”。
-- `shellPolicy` 与此开关独立：`deny-host-shell` 遮蔽/拒绝宿主工具；禁止系统回退只约束插件自己的 bash 解析，不关闭宿主 `pwsh`，也不提供文件系统沙箱。
-- `binaryPath` / `bashPath`：可选显式路径；不可用时报错，不悄悄换执行器。一般无需配置。
+| 想了解 | 看这里 |
+| --- | --- |
+| 安装、更新、卸载的完整流程与全部选项 | [docs/使用指南.md](docs/使用指南.md) |
+| 配置项逐个说明、哪个键属于哪个组件 | [docs/配置参考.md](docs/配置参考.md) |
+| 四个组件分别发布什么工具、参数与权限 | [docs/组件参考.md](docs/组件参考.md) |
+| 报错怎么读、装不上怎么办、常见问题 | [docs/常见问题.md](docs/常见问题.md) |
+| 原生 PTC 的设计与使用 | [docs/native-ptc.md](docs/native-ptc.md) |
+| 版本变更历史 | [CHANGELOG.md](CHANGELOG.md) |
+| 来源与载荷许可记录 | [PROVENANCE.md](PROVENANCE.md) |
 
-| 工具 | 用途 | 完全权限要求 |
-| --- | --- | --- |
-| `ops_inspect_local_file` | 批量文本范围、编码、PDF 文本、hex | 无命令权限门¹ |
-| `ops_grep` | Rust 正则搜索、多文件过滤、计数/摘要 | 无命令权限门¹ |
-| `ops_glob` | 多模式找路径，支持排除 | 无命令权限门¹ |
-| `ops_replace` | 跨文件批量替换；精确编辑仍用宿主 edit | 无命令权限门¹ |
-| `ops_bash` | 优先的通用 bash 命令执行器；短命令用 `command`，长脚本用 `script_path` | 受限模式经 DSH 沙箱；Windows x64 使用匹配的私有 IPC 副本 |
-| `ops_run_background` | 启动后台任务 | 是 |
-| `ops_job_output` / `ops_job_list` / `ops_job_kill` | 查看、列出、停止当前会话启动的任务 | 是 |
-| 宿主 `pwsh` | 使用随包 PowerShell 7 的 Windows 原生操作 | 沿用宿主策略 |
-
-¹ **固定文件操作遵循 DSH fs-sandbox 同类的可信操作权限检查，不执行模型代码。** 所有模式允许 OS 可读路径的读取；read-only 拒绝替换，workspace-write 允许工作区和 DSH 临时区域内替换，full-access 不额外限制写路径。通过宿主 subprocess 执行固定 Rust worker，保留无链接遍历、预算及 CAS；Bash/run_code 仍通过 OS 沙箱，绝不在失败后裸执行。Windows 启动前只为当前用户拥有的工作区根准备目录自身 WRITE_OWNER 并备份 DACL，不递归、不改所有者。
-
-## 长脚本与 JSON 稳定性
-
-`ops_bash` 的 `command` 适合短命令和短管道。对于超过约 1 KB，或包含 heredoc、引号、反斜杠、中文等内容的多行脚本，请先用宿主的文件工具写入脚本文件，再传入 `script_path` 执行；不要把整段 heredoc 塞进 `command`。这样可以显著减少模型在工具调用 JSON 中进行多层转义的负担，降低整轮因 `MALFORMED_RESPONSE` 作废的概率。
-
-当随包 bash 载荷在 profile 的声明/lockfile 中存在、但实际 `node_modules` 已被宿主包管理器清理时，`ops_bash` 会返回可读的 `ENOENT` 诊断，而不是把裸的 `spawn` 异常抛给模型。此时应使用 profile 的 frozen install 或官方插件管理器恢复依赖；不会静默切换到未授权的系统 bash。
-
-`script_path` 只接收脚本路径，脚本内容不会重复进入 `ops_bash` 的工具参数；`command` 与 `script_path` 必须二选一。该接口不会替模型修复非法 JSON，工具调用本身若未能解析，仍需由宿主或模型重试。
-
-`ops_bash` 的参数是**严格**的：传入 schema 未声明的键会在执行前被拒绝，错误信息同时点出未知键与可接受的键，不会静默忽略。**本工具没有 `run_in_background`，也没有 job id**，命令一律前台执行。宿主 `bash` / `pwsh` 工具接受 `run_in_background`，因此模型容易把该参数套到 `ops_bash` 上；这样调用会被明确拒绝而不是静默当前台执行。服务、监听器、watch 等常驻进程请改用宿主 `pwsh` 工具的 `run_in_background`，或在命令内部自行脱离（例如 `nohup ... & disown`）。否则该次调用会一直占用到 `timeoutMs`（上限 `MAX_BASH_TIMEOUT_MS`，约 24.9 天）。
-
-
-插件只回收自己启动的 `fastctx serve` 客户端：组件最后一个连接引用释放、连接关闭、宿主正常退出或强制退出时均有回收路径。`runtime-host` 是上游可复用的共享进程，父进程已退出不等于泄漏；无客户端且空闲约十分钟后自行退出。不要按进程名批量杀它。新版不自动清理旧版本已留下的进程。
-
-## 更新配置修改区
-
-`lib/config-updates.js` 集中维护一次性配置迁移。0.2.5 首次启动时逐个自有配置行执行自检：
-
-- 未完成迁移（无 `configUpdateVersion` 或值为 `0`）：把旧 `allowSystemShellFallback: true` 改为 `false`，在任何执行器解析/工具发布前生效。
-- 通过官方 loader 的配置生命周期写回该行，并加入 `configUpdateVersion: 1`；保留其它字段，不修改外来插件、PATH 或全局配置。未启用的组件在它首次启动时迁移。
-- 完成后重启/热加载不再覆盖；你之后主动改回 `true` 会被保留。不要删除迁移标记，否则会重新自检。
-- 没有 loader 配置行时只应用本次运行的安全值并告警；写入失败由迁移/loader 日志报告，未落盘的标记不能保证跨重启一次性。
+---
 
 ## 许可证
 
