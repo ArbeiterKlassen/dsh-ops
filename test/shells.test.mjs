@@ -1097,6 +1097,15 @@ await test('ops_bash refuses an argument its schema does not declare', async () 
       () => definition.execute({ command: 'ls', bogus: 1, other: 2 }, exec),
       /unknown keys "bogus", "other"/,
     )
+    // Host-style per-call escalation is named as unsupported, with the real next step (#42).
+    await assert.rejects(
+      () => definition.execute({ command: 'ls', sandbox_permissions: 'danger-full-access', justification: 'x' }, exec),
+      /unknown keys "sandbox_permissions", "justification".*no per-call sandbox escalation; ask the user to change the session permission mode/,
+    )
+    await assert.rejects(
+      () => definition.execute({ command: 'ls', bogus: 1 }, exec),
+      (error) => !/sandbox escalation/.test(error.message),
+    )
     // A non-object body is refused for the same reason, not coerced.
     await assert.rejects(() => definition.execute([], exec), /expected an object/)
     // Nothing reached the subprocess service: the guard runs before the spawn.

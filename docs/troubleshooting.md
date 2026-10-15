@@ -62,6 +62,22 @@ Long scripts, heredocs and multi-layer quotes and backslashes make the model esc
 
 A key the `ops_bash` schema does not declare is refused before execution, and the error names both the unknown keys and the accepted ones. This is deliberate — nothing is silently ignored.
 
+### `ops_bash` cannot run a custom bashPath or Git for Windows in restricted modes
+
+Symptom, in a read-only or workspace-write session: `EXECUTOR_UNAVAILABLE: ops_bash cannot run the configured bashPath … in restricted modes` (0.3.0 printed `This MSYS version has no verified DSH IPC compatibility build. Rebuild the matching proxies`).
+
+**This is by design.** Under the DSH Windows restricted token, MSYS cannot create its own signal pipe (`couldn't create signal pipe, Win32 error 5` / `0xC0000142`). dsh-ops makes Bash work there with IPC compatibility proxies verified against one pinned `msys-2.0.dll`. Any other MSYS build — your own Git for Windows, a custom `bashPath`, a system bash from `allowSystemShellFallback` — is refused rather than run unconfined. Rebuilding the proxies is not an end-user remedy: `npm run build:bash-ipc` only re-pins the bundled payload.
+
+What to do:
+
+- Remove `bashPath` (and `allowSystemShellFallback`) from the `dsh-ops/shell` row so the bundled pinned bash is used; if that payload is missing, run `npx --yes dsh-ops@latest provision-shells --bash`.
+- Or switch the session to `danger-full-access`, where `bashPath` runs directly.
+- Check with the profile's own copy: `node "<profile>\node_modules\dsh-ops\bin\dsh-ops.mjs" ladder --config <file>` reports `restricted: yes/no` for the resolved bash.
+
+### `ops_bash` rejects `sandbox_permissions` / `justification`
+
+The host `bash` tool accepts per-call escalation; `ops_bash` does not, and says so in the error. Ask the user to change the session permission mode instead of retrying the call.
+
 ---
 
 ## Permissions and sandboxing

@@ -55,6 +55,13 @@ These fixes are included in 0.3.0; the three Windows payload dependencies are un
 - Keep each component icon inside its exported manifest directory; fix the PTC Plugin Manager metadata error caused by the parent-relative icon path, with coverage in the existing manifest suite.
 - Source builds use `npm run build:ptc` and `npm run build:bash-ipc`; published 0.3.0 artifacts are Windows x64 only. See `docs/native-ptc.md`.
 
+## [Unreleased] — bashPath restricted-mode diagnostics
+
+- Document that `bashPath` (and any system bash) works only in `danger-full-access`: read-only and workspace-write run only the pinned MSYS whose IPC compatibility proxies were verified. The policy itself is unchanged and still fails closed. (#42)
+- Replace the restricted-mode `This MSYS version has no verified DSH IPC compatibility build. Rebuild the matching proxies` error with one that names the executable and where it came from, says the refusal is by design and not an authorization denial, and gives real next steps: remove `bashPath` to use the bundled or provisioned pinned bash, or ask the user to switch to `danger-full-access`. The signal-pipe runner-failure message gains the same next step.
+- `ops_bash` now says plainly that it has no per-call `sandbox_permissions` escalation when a model passes `sandbox_permissions` / `justification`.
+- `dsh-ops ladder` reports `restricted: { compatible, reason }` for the resolved bash, read-only and without copying anything, and drops the stale "bash requires a full-access session" line.
+
 ## [Unreleased] — Background job argument strictness
 
 - Check the background tools' arguments (`ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) against FastCtx's own published schema before the owned-job check, so a mistyped or missing `job_id` is reported as `invalid arguments: unknown key "id"` or `missing required field "job_id"` instead of "This job was not started by this session on the current connection." The ownership check itself is unchanged and still decides every call whose arguments are well formed; no argument error reaches the server. Covered by `test/jobs-args.test.mjs`. (#14)
