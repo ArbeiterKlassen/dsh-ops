@@ -108,6 +108,7 @@ Full tool parameters, configuration keys and permission requirements: [Component
 | What tools each of the four components publishes, with parameters and permissions | [docs/component-reference.md](docs/component-reference.md) |
 | How to read the errors, what to do when installation fails | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | The native PTC design and usage | [docs/native-ptc.md](docs/native-ptc.md) |
+| How to build, configure and troubleshoot Linux x64 | [docs/linux-build.md](docs/linux-build.md) |
 | Version history | [CHANGELOG.md](CHANGELOG.md) |
 | Provenance and payload license records | [PROVENANCE.md](PROVENANCE.md) |
 

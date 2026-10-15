@@ -107,6 +107,7 @@ Bundle 声明四个组件，分别启停，首次安装默认开启前两个：
 | 四个组件分别发布什么工具、参数与权限 | [docs/组件参考.md](docs/组件参考.md) |
 | 报错怎么读、装不上怎么办、常见问题 | [docs/常见问题.md](docs/常见问题.md) |
 | 原生 PTC 的设计与使用 | [docs/native-ptc.md](docs/native-ptc.md) |
+| 在 Linux x64 上构建、配置与故障排查 | [docs/linux构建.md](docs/linux构建.md) |
 | 版本变更历史 | [CHANGELOG.md](CHANGELOG.md) |
 | 来源与载荷许可记录 | [PROVENANCE.md](PROVENANCE.md) |
 
