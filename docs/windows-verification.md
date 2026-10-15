@@ -159,15 +159,15 @@ see so the diagnostic fix can be checked against it.
 
 ---
 
-## W3 — the ten new boundary suites on Windows x64
+## W3 — the eleven new boundary suites on Windows x64
 
-`test/run.mjs` auto-discovers `test/*.test.mjs`. Ten new suites were added
+`test/run.mjs` auto-discovers `test/*.test.mjs`. Eleven new suites were added
 (`test/lib/boundary.mjs` is a shared helper, not a suite). They were written so
 that a Windows run never reports a Linux-only check as passed and never fails for
 a Linux-only reason — but that reasoning is untested on a real Windows host.
 
 ```powershell
-npm run verify            # expect: 24 suite(s) passed, 0 failed
+npm run verify            # expect: 25 suite(s) passed, 0 failed
 
 npm run validate:manifest # expect: all 58 checks passed
 ```
@@ -176,6 +176,7 @@ npm run validate:manifest # expect: all 58 checks passed
 | --- | --- |
 | `inspect-hex.test.mjs` | Runs fully (byte slicing, platform-neutral) |
 | `output-budget.test.mjs` | Runs fully (byte accounting, platform-neutral) |
+| `grep-multiline.test.mjs` | Runs fully (pattern matching, platform-neutral) |
 | `replace-concurrency.test.mjs` | Must pass, but the outcome depends on Windows lock semantics — see the update-lock note below |
 | `file-metadata.test.mjs` | **Skips as a whole** (`skipSuite`, exit 77) because mode bits, POSIX ACLs and `user.*` xattrs are POSIX concepts. Windows carries a DACL; that is W1's question, not this suite's |
 | `linux-args.test.mjs` | Runs fully (platform-neutral) |
@@ -209,16 +210,16 @@ If any suite fails on Windows, that is a real finding: the guard is wrong.
 
 These were declared cross-platform on the strength of code reading, so they need
 a Windows data point. Rows marked **fixed** now have a suite on this branch and
-must show the *fixed* behaviour; the rest are **open** and are covered by the fix
-plan.
+must show the *fixed* behaviour; the rest (L7, L8, L12) are **open** and are
+covered by the fix plan.
 
 | Item | Repro | Expected (current behaviour) |
 | --- | --- | --- |
 | **L2** hex view drops the first 16 bytes — **fixed** | 8-byte file + `ops_inspect_local_file {view:"hex"}` with no offset | `items[0].text == "deadbeef00112233"`, `bytesTotal: 8`, `complete: true`, and `skipped: 0` |
-| **L3** default `maxReplacements` is a reject threshold | 101 matches, no explicit `maxReplacements` | whole operation refused, `OUTPUT_LIMIT`, **no file changed**, message blames the pattern |
+| **L3** default `maxReplacements` is a reject threshold — **fixed (message only)** | 101 matches, no explicit `maxReplacements` | still refused with `OUTPUT_LIMIT` and **no file changed**, but the message now names the 101 matches, the 100 ceiling and how to proceed. The ceiling is deliberate; only the message blamed the pattern |
 | **L4** `limit` bounds lines, not bytes — **fixed** | a file whose single line is 200 KB | the read completes with `truncated: true`, `items[0].truncatedInLine: true` and `bytesTotal`, still under the host's `stdout: { maxBytes: 128 * 1024 }`; the worker's own ceiling is 96 KiB |
-| **L5** `replace` pattern is a literal substring | `pattern:"a.c"` against text `abc` | no match, no error; `grep`'s same-named parameter *is* a regex |
-| **L6** `multiline` cannot cross lines | `pattern:"alpha\nbeta"` with `multiline:true` | 0 matches, no error |
+| **L5** `replace` pattern is a literal substring — **fixed (description only)** | `pattern:"a.c"` against text `abc` | still no match: that is the design. The `pattern` field now states that it is a literal in `replace` and a regex in `grep`, which is what the two tools disagreed about |
+| **L6** `multiline` cannot cross lines — **fixed** | `pattern:"alpha\nbeta"` with `multiline:true` | 1 match at line 1 with text `alpha\nbeta`; without the flag the same pattern still finds nothing, and `^`/`$` keep their per-line meaning |
 | **L7** hard kill leaves hidden debris | SIGKILL `ops_replace` during publication | a `.<name>.dsh-ops-<uuid>` file may remain (2 of 5 trials on Linux) |
 | **L8** sparse files are materialised | 16 MiB sparse hole | 16 MiB of real allocation |
 | **L12** exec bit is not validated | a 0644 worker binary | accepted at resolve time, fails later as `EACCES` |

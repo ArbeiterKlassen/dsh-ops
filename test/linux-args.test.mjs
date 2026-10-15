@@ -25,11 +25,11 @@
  * portable; the 32 MiB fixture from the report is deliberately not ported — see
  * the runtime budget note in the porting report.
  *
- * Intentional omission: the default `maxReplacements` abort (L3), an open defect
- * rather than a boundary; the fixture that proved it was removed with it. The
- * `limit`-bounds-lines-not-bytes defect (L4) used to be omitted here too and is
- * now fixed and covered by `test/output-budget.test.mjs`; the long-line case at
- * the end of this suite asserts both sides of the new byte boundary.
+ * No defect is left unasserted here. The `limit`-bounds-lines-not-bytes defect (L4)
+ * is fixed and covered by `test/output-budget.test.mjs`; the `maxReplacements`
+ * refusal (L3) now reports the count and the ceiling instead of blaming the
+ * pattern, which the case below asserts; and cross-line matching (L6) has its own
+ * suite, `test/grep-multiline.test.mjs`.
  *
  * @module dsh-ops/test/linux-args
  */
@@ -189,17 +189,44 @@ await test('replace treats its pattern as a literal while grep treats the same s
   })
 })
 
-await test('multiline means per-line anchors, never a cross-line match', async () => {
+await test('multiline reaches across lines while ^ and $ stay per line', async () => {
   await withTempDir('linux-args-multiline', async workspace => {
     const target = path.join(workspace, 'ml.txt')
     fs.writeFileSync(target, 'alpha\nbeta\ngamma\n')
 
     const crossLine = envelopeOf(await callTool('grep', { path: target, pattern: 'alpha\\nbeta', multiline: true }, { root: workspace }), assert)
     assert.equal(crossLine.status, 'completed')
-    assert.equal(crossLine.matched, 0, 'a \\n pattern is unbeatable because matching is line-oriented')
+    assert.equal(crossLine.matched, 1, 'with multiline the pattern reaches across the newline')
+    assert.equal(crossLine.items[0].line, 1, 'a cross-line match is reported where it starts')
+
+    // The same request without the flag is line-oriented, so the pattern cannot match.
+    const lineWise = envelopeOf(await callTool('grep', { path: target, pattern: 'alpha\\nbeta' }, { root: workspace }), assert)
+    assert.equal(lineWise.matched, 0, 'without multiline the pattern still has to fit on one line')
 
     const anchors = envelopeOf(await callTool('grep', { path: target, pattern: '^beta$', multiline: true }, { root: workspace }), assert)
-    assert.equal(anchors.matched, 1, '^ and $ apply per line')
+    assert.equal(anchors.matched, 1, '^ and $ still apply per line')
+  })
+})
+
+await test('maxReplacements refuses by naming the count and the ceiling, and writes nothing', async () => {
+  await withTempDir('linux-args-maxreplacements', async workspace => {
+    const target = path.join(workspace, 'many.txt')
+    const original = 'TOKEN\n'.repeat(101)
+    fs.writeFileSync(target, original)
+
+    const result = await callWorker(JSON.stringify(request('replace', { path: target, pattern: 'TOKEN', replacement: 'DONE' }, { root: workspace })))
+    // A refusal is carried by the envelope, not the exit status: the worker still
+    // exits 0, so `status` is what a caller must read.
+    assert.equal(result.body.status, 'error')
+    assert.equal(result.body.error.code, 'OUTPUT_LIMIT')
+    assert.match(result.body.error.message, /101 matches exceed maxReplacements \(100\)/u, 'the message must name the count and the ceiling, not the pattern')
+    assert.match(result.body.error.message, /no file was changed/u)
+    assert.equal(fs.readFileSync(target, 'utf8'), original, 'a refusal must not have written anything')
+
+    // Raising the ceiling past the count is the documented way forward.
+    const raised = envelopeOf(await callTool('replace', { path: target, pattern: 'TOKEN', replacement: 'DONE', maxReplacements: 101 }, { root: workspace }), assert)
+    assert.equal(raised.changed, 101)
+    assert.equal(fs.readFileSync(target, 'utf8'), 'DONE\n'.repeat(101))
   })
 })
 
