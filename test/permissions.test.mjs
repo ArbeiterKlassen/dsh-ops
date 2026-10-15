@@ -105,6 +105,47 @@ await test('real preparation writes only the root DACL, never descendants (#43)'
     assert.equal(receipts(),initial+1,'one backup receipt per cold preparation')
     await runPreparation(root)
     assert.equal(receipts(),initial+1,'the warm path writes no new receipt')
+  })
+})
+await test('an inheriting (AI) workspace root keeps its inheritance and descendants (#43)', async () => {
+  // The expensive real-world shape: a root with no explicit ACEs that inherits from its parent.
+  if(process.platform!=='win32')return
+  await withTempDir('prepare-inherited',async parent => {
+    ps(`$p='${parent.replaceAll("'","''")}'; $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $a=[Security.AccessControl.DirectorySecurity]::new(); $a.SetOwner($sid); $a.SetAccessRuleProtection($true,$false); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Modify','ContainerInherit,ObjectInherit','None','Allow')); Set-Acl -LiteralPath $p -AclObject $a`)
+    const ws=path.join(parent,'ws')
+    fs.mkdirSync(ws)
+    const quoted=ws.replaceAll("'","''")
+    // Owner-only write: the script refuses roots the user does not own, and this leaves the DACL untouched.
+    const sid=ps(`$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $o=[Security.AccessControl.DirectorySecurity]::new(); $o.SetOwner($sid); [IO.Directory]::SetAccessControl('${quoted}',$o); $sid.Value`)
+    for(let d=0;d<10;d++) { const dir=path.join(ws,`d${d}`,'deep'); fs.mkdirSync(dir,{recursive:true}); for(let f=0;f<30;f++) fs.writeFileSync(path.join(dir,`f${f}.txt`),'x') }
+    const sddl=target=>ps(`(Get-Acl -LiteralPath '${target.replaceAll("'","''")}').GetSecurityDescriptorSddlForm('Access')`)
+    const aces=text=>text.match(/\([^)]*\)/g) ?? []
+    const deep=path.join(ws,'d9','deep','f29.txt'), deepDir=path.join(ws,'d9','deep')
+    const before={root:sddl(ws),deep:sddl(deep),deepDir:sddl(deepDir)}
+    assert.ok(before.root.startsWith('D:AI('),`fixture root must be auto-inherited, not protected: ${before.root}`)
+    assert.ok(aces(before.root).length>0 && aces(before.root).every(ace=>ace.split(';')[1].includes('ID')),`fixture root must carry only inherited ACEs: ${before.root}`)
+    const backups=path.join(process.env.DSH_HOME,'dsh-ops','acl-backups')
+    const receipts=()=>fs.existsSync(backups) ? fs.readdirSync(backups).length : 0
+    const initial=receipts()
+    await runPreparation(ws)
+    const after=sddl(ws)
+    assert.ok(after.startsWith('D:AI('),`auto-inherited flag kept: ${before.root} -> ${after}`)
+    for(const ace of aces(before.root)) assert.ok(aces(after).includes(ace),`inherited ACE kept: ${ace} in ${after}`)
+    const added=aces(after).filter(ace=>!aces(before.root).includes(ace))
+    assert.equal(added.length,1,`exactly one ACE added: ${after}`)
+    const [type,flags,mask,,,trustee]=added[0].slice(1,-1).split(';')
+    assert.equal(type,'A'); assert.equal(flags,'','the added ACE applies to the root directory only')
+    assert.equal(trustee,sid)
+    assert.ok((Number.parseInt(mask,16) & 0x80000)!==0,`the added ACE grants WRITE_OWNER: ${added[0]}`)
+    const rights=ps(`(Get-Acl -LiteralPath '${quoted}').Access | ForEach-Object { $_.FileSystemRights.ToString() }`)
+    assert.doesNotMatch(rights,/FullControl/)
+    assert.equal(sddl(deep),before.deep,'a deep file keeps its exact ACL')
+    assert.equal(sddl(deepDir),before.deepDir,'a deep directory keeps its exact ACL')
+    assert.equal(receipts(),initial+1,'one backup receipt per cold preparation')
+    await runPreparation(ws)
+    assert.equal(receipts(),initial+1,'the warm path writes no new receipt')
+  })
+})
 await test('ops reads and writes reach the host read-before-edit table (#17)', async () => {
   await withTempDir('fs-observed',async root => {
     fs.writeFileSync(path.join(root,'a.txt'),'alpha\nbeta\n')
