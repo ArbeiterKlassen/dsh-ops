@@ -341,6 +341,10 @@ fn grep(request: &Request) -> Result<Value> {
     if args.before_context > 32 || args.after_context > 32 { return Err(Failure::new("INVALID_ARGUMENT", "context is limited to 32 lines")); }
     let regex = RegexBuilder::new(&args.pattern).case_insensitive(args.case_insensitive).multi_line(args.multiline).build().map_err(|e| Failure::new("INVALID_ARGUMENT", e))?;
     let walked = files_for(&args.path, &args.glob, &request.deny_roots_paths())?; let mut matches = Vec::new(); let mut file_count = 0; let mut match_count = 0;
+    // Which modes answer with an item per match (`content`) and which with an item per file. Declared
+    // once here because both the per-file loop and the envelope's `total` have to agree on it.
+    let content_mode = !matches!(args.output_mode.as_str(), "files_with_matches" | "count" | "summary");
+    let page = args.offset + args.limit;
     for file in walked.files { let bytes = match read_bytes(&file) { Ok(bytes) => bytes, Err(_) => continue }; if bytes.len() as u64 > MAX_FILE_BYTES { continue; } let text = match String::from_utf8(bytes) { Ok(v) => v, Err(_) => continue }; let lines: Vec<_> = text.lines().collect();
         // Line by line by default. With `multiline` the pattern is matched against
         // the whole file, so a pattern containing `\n` can match across lines
@@ -351,31 +355,50 @@ fn grep(request: &Request) -> Result<Value> {
         // Each hit is reduced to the span of lines it covers, so one reporting path
         // serves both modes: a cross-line match is reported at the line where it
         // starts, with its context lines around it.
-        let hits: Vec<(usize, usize)> = if args.multiline {
+        // Matches are counted in one pass and materialized in a second, page-bounded one. Counting a
+        // match costs no allocation, while joining its lines into a `text` item costs the lines
+        // themselves — and the previous shape built one item per match in the file *before* `limit`
+        // was consulted, so a 32 KiB line matched by `pattern: "a"` copied that line 32 768 times and
+        // the worker died under a memory cap instead of returning its first item. Reported by
+        // @Haoming9527 in review of #81.
+        let mut hits = 0usize;
+        let mut spans: Vec<(usize, usize)> = Vec::new();
+        if args.multiline {
             let starts: Vec<usize> = text.match_indices('\n').map(|(at, _)| at + 1).collect();
             // Clamped, so a match can never be attributed to a line the file does
             // not have: the offset-to-line map is only meaningful for offsets inside
             // the text.
             let line_of = |offset: usize| starts.partition_point(|start| *start <= offset).min(lines.len().saturating_sub(1));
-            regex.find_iter(&text)
+            for found in regex.find_iter(&text) {
                 // Matching the whole file at once adds one zero-width match at the
                 // position after a final newline — the one place `$` and `^` already
                 // matched at the end of the last real line. Reporting it invented
                 // line N+1 with empty text, so `$` answered six times for a
                 // five-line file. A file with no trailing newline keeps its last
                 // match, because there the end of the file is the end of a line.
-                .filter(|found| found.start() < text.len() || !text.ends_with('\n'))
-                .map(|found| (line_of(found.start()), line_of(found.end().saturating_sub(1).max(found.start()))))
-                .collect()
+                if found.start() >= text.len() && text.ends_with('\n') { continue; }
+                hits += 1;
+                // Only what the page can still hold is materialized, so the peak is the page and not
+                // the file's match count. `hits` above stays exact: `matched` reports every match.
+                if content_mode && spans.len() < page.saturating_sub(matches.len()) { spans.push((line_of(found.start()), line_of(found.end().saturating_sub(1).max(found.start())))); }
+            }
         } else {
-            lines.iter().enumerate().filter(|(_, line)| regex.is_match(line)).map(|(index, _)| (index, index)).collect()
-        };
-        if hits.is_empty() { continue; } file_count += 1; match_count += hits.len();
-        match args.output_mode.as_str() { "files_with_matches" => matches.push(json!({"path":file})), "count" => matches.push(json!({"path":file,"count":hits.len()})), _ => { for (first, last) in hits { let start=first.saturating_sub(args.before_context); let end=(last+args.after_context+1).min(lines.len()); matches.push(json!({"path":file,"line":if args.line_numbers {first+1} else {0},"text":lines[start..end].join("\n")})); } } }
+            for (index, line) in lines.iter().enumerate() {
+                if !regex.is_match(line) { continue; }
+                hits += 1;
+                if content_mode && spans.len() < page.saturating_sub(matches.len()) { spans.push((index, index)); }
+            }
+        }
+        if hits == 0 { continue; } file_count += 1; match_count += hits;
+        match args.output_mode.as_str() { "files_with_matches" => matches.push(json!({"path":file})), "count" => matches.push(json!({"path":file,"count":hits})), "summary" => {} , _ => { for (first, last) in spans { let start=first.saturating_sub(args.before_context); let end=(last+args.after_context+1).min(lines.len()); matches.push(json!({"path":file,"line":if args.line_numbers {first+1} else {0},"text":lines[start..end].join("\n")})); } } }
         if args.output_mode != "summary" && matches.len() >= args.offset + args.limit { break; }
     }
     if args.output_mode == "summary" { return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":match_count,"skipped":0,"failed":0,"complete":!walked.truncated,"truncated":walked.truncated,"omitted":0,"files":file_count,"matches":match_count})); }
-    let total=matches.len(); Ok(result(matches.into_iter().skip(args.offset).take(args.limit).collect(), total, args.offset, args.offset, match_count, walked.truncated))
+    // `total` is the number of items a full materialization would have produced: one per match in the
+    // content modes, one per file otherwise. It is the match count in the first case because the page
+    // bound above only limits what was *built*, never what was counted.
+    let total = if content_mode { match_count } else { matches.len() };
+    Ok(result(matches.into_iter().skip(args.offset).take(args.limit).collect(), total, args.offset, args.offset, match_count, walked.truncated))
 }
 fn replace(request: &Request) -> Result<Value> {
     if request.read_only { return Err(Failure::new("POLICY_DENIED", "replace is unavailable in read-only mode")); }
@@ -404,8 +427,11 @@ fn replace(request: &Request) -> Result<Value> {
         // Hold the update lock across the check, the read and the publish, so a
         // peer cannot slip in between them and lose our write, or make us lose
         // its. The guard is named, not `_`, so it lives to the end of this pass.
-        let _update = lock_for_update(&file)?;
-        let expected=item["revision"].as_str().unwrap_or("").to_string(); if hash_file(&file)? != expected { return Err(Failure::new("REVISION_CONFLICT", "file changed between observe and execute")); } let bytes=read_bytes(&file)?; let text=String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "replace only supports UTF-8 files"))?; let next=text.replace(&args.pattern,&args.replacement);
+        let (_update, bytes) = lock_and_read_for_update(&file)?;
+        // The revision is checked against the bytes the lock returned, so the check
+        // and the write cannot be separated by another open — see the lock for why.
+        let expected=item["revision"].as_str().unwrap_or(""); if format!("{:x}", Sha256::digest(&bytes)) != expected { return Err(Failure::new("REVISION_CONFLICT", "file changed between observe and execute")); }
+        let text=String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "replace only supports UTF-8 files"))?; let next=text.replace(&args.pattern,&args.replacement);
         // Report what the replacement kept. The fields are additive, so a caller
         // that ignores them sees exactly the envelope it saw before.
         if let Some((metadata,warnings))=atomic_write(&file,next.as_bytes())? { item["metadata"]=metadata; if !warnings.is_empty() { item["metadataWarnings"]=json!(warnings); } }
@@ -516,39 +542,60 @@ impl PreservedMetadata {
     }
 }
 
-/// Take the target's exclusive update lock and return the handle that owns it.
+/// Take the target's exclusive update lock and read its current bytes *through that
+/// handle*.
 ///
-/// Keeping that handle alive across the revision check, the read and the publish
+/// Keeping the handle alive across the revision check, the read and the publish
 /// is what makes the check mean anything. Without it the check is check-then-act:
 /// two callers can both observe the same pre-image, both pass it and both report a
 /// change, while only the last rename survives — a lost update reported as two
 /// successes.
 ///
+/// The bytes come back from the locked handle rather than from a second open.
+/// Windows `LockFileEx` denies access to the locked range through *any* other
+/// handle, including one this process opens itself, so re-reading the target after
+/// locking made an ordinary, uncontended replacement fail there with a lock
+/// violation — a defect Linux cannot reproduce, because `flock` is per open file
+/// description (reported by @Haoming9527 in review of #81). One handle for the lock,
+/// the check and the read also leaves no gap at all between them.
+///
 /// The lock is advisory and scoped to the handle, the way `store.rs` locks its
 /// workspace store. A writer that never takes it is still caught by the revision
 /// check, only later. Failing instead of waiting is deliberate: a blocked worker
 /// gets killed by the host, whereas a caller told nothing changed can retry.
-fn lock_for_update(file: &Path) -> Result<std::fs::File> {
+fn lock_and_read_for_update(file: &Path) -> Result<(std::fs::File, Vec<u8>)> {
     let raw = file.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;
     let target = crate::file_path::checked(raw)?;
-    let lock = crate::file_path::read_file(&target)?.into_std();
+    let mut lock = crate::file_path::read_file(&target)?.into_std();
     FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this file; nothing was changed, retry"))?;
-    Ok(lock)
+    let mut bytes = Vec::new();
+    lock.read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_FILE_BYTES { return Err(Failure::new("OUTPUT_LIMIT", "File exceeds the bounded read budget")); }
+    Ok((lock, bytes))
 }
-/// Remove `.<name>.dsh-ops-*` leftovers from earlier writers that were killed
+/// Remove `.<name>.dsh-ops-<uuid>` leftovers from earlier writers that were killed
 /// before they could publish.
 ///
 /// A `SIGKILL` cannot run a cleanup path, so the debris cannot be prevented at the
 /// point it is created. The next writer of the same file is the only place it can
 /// be bounded, and it is a safe place: the caller holds the update lock, so no live
-/// writer is using any of these names. Best-effort — a leftover that cannot be
-/// removed must not fail the write that is about to happen.
+/// writer is using any of *this* file's names. Best-effort — a leftover that cannot
+/// be removed must not fail the write that is about to happen.
+///
+/// A leftover is identified by the whole shape this writer creates, not by its
+/// prefix: the tail must parse as the v4 UUID `atomic_write` generates. The prefix
+/// rule deleted files that merely began the same way — an operator's
+/// `.notes.txt.dsh-ops-personal-backup`, and, for a target named `foo`, the live
+/// temporary file of a *different* target (`foo.dsh-ops-bar`), whose writer holds a
+/// lock on that other file and not on this one. Reported by @Haoming9527 in review
+/// of #81.
 fn sweep_debris(parent: &cap_std::fs::Dir, name: &str) {
     let prefix = format!(".{name}.dsh-ops-");
     if let Ok(entries) = parent.entries() {
         for entry in entries.flatten() {
             if let Ok(leftover) = entry.file_name().into_string() {
-                if leftover.starts_with(&prefix) { let _ = parent.remove_file(&leftover); }
+                let own = leftover.strip_prefix(&prefix).and_then(|tail| uuid::Uuid::parse_str(tail).ok()).is_some_and(|parsed| parsed.get_version_num() == 4);
+                if own { let _ = parent.remove_file(&leftover); }
             }
         }
     }

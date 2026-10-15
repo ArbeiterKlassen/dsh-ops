@@ -157,4 +157,32 @@ await test('no match is ever reported on a line the file does not have', async (
   })
 })
 
+await test('one enormous line is materialized once, not once per match', async () => {
+  // Reported by @Haoming9527 in review of #81: the content path built a text item per match *before*
+  // `limit` was consulted, so a 32 KiB line matched by `pattern: "a"` copied that line 32 768 times.
+  // The bound is the page: the old shape needed roughly `line length x matches` bytes here — this
+  // case's 256 KiB line has 262 144 matches, i.e. ~64 GiB — and the worker aborted under a memory cap
+  // instead of answering. Counting stays exact, because `matched` reports every match.
+  await withTempDir('grep-page-bound', async workspace => {
+    const target = path.join(workspace, 'one-line.txt')
+    const line = 'a'.repeat(256 * 1024)
+    fs.writeFileSync(target, `${line}\n`)
+
+    const page = envelopeOf(await callTool('grep', { path: target, pattern: 'a', multiline: true, limit: 1 }, { root: workspace, timeoutMs: 120_000 }), assert)
+    assert.equal(page.items.length, 1, 'the page is one item wide')
+    assert.equal(page.matched, line.length, 'every match is still counted')
+    assert.equal(page.total, line.length, 'and the envelope still knows how many items there are')
+    assert.equal(page.omitted, line.length - 1)
+    assert.equal(page.complete, false)
+    // The item is the line, cut to the response budget: the host collects 128 KiB of stdout, so the
+    // envelope reports how much text the line had rather than pretending it fits.
+    const [item] = page.items
+    assert.equal(item.line, 1)
+    assert.equal(item.bytesTotal, line.length)
+    assert.equal(item.truncatedInLine, true)
+    assert.equal(item.text.startsWith('aaaa'), true)
+    assert.equal(item.text.length < line.length, true)
+  })
+})
+
 report('grep-multiline')

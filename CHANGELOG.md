@@ -62,6 +62,22 @@ paths: a tool that reads any OS-readable file could hand a model the operator's 
   selected `dsh.cmd` and launched it through `cmd.exe`, so on Linux the call died as
   `spawnSync cmd.exe ENOENT` even with an executable `dsh` on PATH. The fallback is now
   platform-aware, and the `cmd.exe` wrapper is only used on Windows.
+- The Windows update lock blocked the worker's own read. Windows `LockFileEx` denies access to a
+  locked range through *any* other handle, including one the same process opens, and the revision
+  check re-read the target after taking the lock — so an ordinary, uncontended `replace` failed
+  there with a lock violation. Linux cannot show this, because `flock` is per open file description.
+  The worker now reads the current bytes through the lock handle, so nothing reopens the target
+  between the check and the publish. `docs/windows-verification.md` carries the W1g case.
+- Debris cleanup deleted files that merely shared a prefix. The sweep matched
+  `.<name>.dsh-ops-` and removed anything that began with it, which took an operator's
+  `.notes.txt.dsh-ops-personal-backup` and, for a target named `foo`, the *live* temporary file of a
+  different target (`foo.dsh-ops-bar`). A leftover must now be the whole shape this writer creates:
+  the tail has to parse as the v4 UUID `atomic_write` generates.
+- A single long line could exhaust the worker's memory. In the content modes the grep path built one
+  text item per match *before* `limit` was consulted, so a 32 KiB line matched by `pattern: "a"`
+  copied that line 32 768 times and the call aborted under a memory cap instead of returning its
+  first item. Matches are counted in one non-allocating pass and materialized in a second pass
+  bounded by the page; `matched`/`total` stay exact, because they report what was counted.
 
 ### The shell component on Linux: the host's own bash, under a mandatory sandbox
 

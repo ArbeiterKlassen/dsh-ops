@@ -105,6 +105,27 @@ Windows will not rename over an open file without `FILE_SHARE_DELETE`; Linux
 will. Check the reported error is a structured `ACCESS_DENIED`, not a raw
 platform string, and that no `.w1e.txt.dsh-ops-<uuid>` debris is left behind.
 
+### W1g — an uncontended replace must succeed *while the lock is held*
+
+Reported by @Haoming9527 in review of #81: `LockFileEx` denies access to a locked
+range through any other handle, including one the same process opens, and the
+revision check used to re-read the target after taking the lock. On Linux this is
+invisible (`flock` is per open file description), so only a Windows host can
+answer it. The worker now reads the current bytes **through the lock handle**, so
+nothing reopens the target between the check and the publish.
+
+```powershell
+$f = "$env:TEMP\w1g.txt"; "one two" | Set-Content -NoNewline $f
+# then ops_replace { path: $f, pattern: "two", replacement: "three" } — a plain,
+# uncontended replace, with no other process holding the file.
+```
+
+Check: the call reports `completed` with `changed: 1` (a lock violation here would
+mean the target is being reopened while locked), the file reads `one three`, no
+`.w1g.txt.dsh-ops-<uuid>` debris remains, and a *second* writer run against the
+same file while the first is mid-call still receives `REVISION_CONFLICT` rather
+than reporting a change that did not survive.
+
 ### W1f — alternate data streams and mark-of-the-web
 
 A rename does not carry ADS along. Add one and see whether it survives:

@@ -33,6 +33,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 
 import { assert, report, test, withTempDir } from './lib/harness.mjs'
 import { callTool, requireWorker } from './lib/boundary.mjs'
@@ -92,6 +93,31 @@ await test('concurrent replaces never claim a change that did not survive', asyn
       assert.ok(!final.includes('\nTOKEN\n'), `trial ${trial}: the original pattern must be gone, not half-replaced`)
       assert.equal(final.startsWith('filler line'), true, `trial ${trial}: the untouched prefix must survive intact`)
     }
+  })
+})
+
+await test('debris cleanup removes only this file\'s own temporary names', async () => {
+  // Reported by @Haoming9527 in review of #81. The sweep used to match a prefix, so it deleted files
+  // that merely began the same way: an operator's own backup, and — for a target named `foo` — the
+  // *live* temporary file of a different target (`foo.dsh-ops-bar`), whose writer holds a lock on that
+  // other file and not on this one. The lock makes this file's leftovers safe to remove; it says
+  // nothing at all about those.
+  await withTempDir('replace-debris', async workspace => {
+    const target = path.join(workspace, 'notes.txt')
+    fs.writeFileSync(target, 'one two\n')
+    const operator = path.join(workspace, '.notes.txt.dsh-ops-personal-backup')
+    const otherTarget = path.join(workspace, `.foo.dsh-ops-bar.dsh-ops-${randomUUID()}`)
+    const own = path.join(workspace, `.notes.txt.dsh-ops-${randomUUID()}`)
+    for (const [file, text] of [[operator, 'operator backup'], [otherTarget, "another target's live temporary"], [own, 'this writer was killed']]) fs.writeFileSync(file, text)
+
+    const result = await callTool('replace', { path: target, pattern: 'two', replacement: 'three' }, { root: workspace, timeoutMs: 60_000 })
+    assert.equal(result.body?.status, 'completed', JSON.stringify(result.body ?? result.stdout))
+    assert.equal(fs.readFileSync(target, 'utf8'), 'one three\n')
+    for (const [file, text] of [[operator, 'operator backup'], [otherTarget, "another target's live temporary"]]) {
+      assert.equal(fs.existsSync(file), true, `${path.basename(file)} does not have this writer\'s shape and must survive`)
+      assert.equal(fs.readFileSync(file, 'utf8'), text)
+    }
+    assert.equal(fs.existsSync(own), false, 'a leftover of this very file must still be swept')
   })
 })
 
