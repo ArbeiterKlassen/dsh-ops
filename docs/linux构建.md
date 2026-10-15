@@ -114,7 +114,7 @@ $ export DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx"
 $ DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx" \
   DSH_OPS_REQUIRE_RUNTIME=1 npm run verify
 …
-dsh-ops test: 20 suite(s) passed in 11s
+dsh-ops test: 21 suite(s) passed in 11s
 ```
 
 没有 FastCtx 构建时，同一条命令会少跑两个套件，并明确列出跳过项：
@@ -122,7 +122,7 @@ dsh-ops test: 20 suite(s) passed in 11s
 ```console
 dsh-ops lifecycle: skipped (no FastCtx executable found; …)
 dsh-ops mount: skipped (no FastCtx executable found; …)
-dsh-ops test: 18 suite(s) passed, 2 skipped in 7s
+dsh-ops test: 19 suite(s) passed, 2 skipped in 7s
 ```
 
 Rust worker 自身的 barrier 测试：
@@ -149,7 +149,8 @@ test result: ok. 1 passed; 0 failed
 它们被写成「Windows 上绝不会把 Linux 专属检查报成通过」：`linux-attributes` 整套
 跳过，`linux-paths` 与 `linux-sandbox` 就地守护其 POSIX 专属用例，其余三个与平台无关。
 **已知未修缺陷是刻意不写断言的**，这样修好一个不会反而让闸门变红；每个套件的文件头都
-列明了它留空的是哪一条。仍需 Windows 宿主回答的问题见
+列明了它留空的是哪一条。跨平台缺陷会带自己的套件，而不是塞进名字带 linux 的套件 ——
+`inspect-hex` 对应报告 L2 的 hex 行语义。仍需 Windows 宿主回答的问题见
 [Windows 验证清单](windows-verification.md)。
 
 ### 在 Linux 上回答「发布闭包」问题
@@ -162,7 +163,7 @@ stage 的**目标。在只构建 Linux 的机器上那就是 `linux-x64`，而 W
 ```console
 $ npm run verify:release
 …
-dsh-ops test: 20 suite(s) passed in 11s
+dsh-ops test: 21 suite(s) passed in 11s
 linux-x64: 3665672 bytes, sha256 327420ad…
 Release closure OK: dsh-ops@0.3.0, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
 ```

@@ -124,7 +124,7 @@ this is the strictest form:
 $ DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx" \
   DSH_OPS_REQUIRE_RUNTIME=1 npm run verify
 …
-dsh-ops test: 20 suite(s) passed in 11s
+dsh-ops test: 21 suite(s) passed in 11s
 ```
 
 Without a FastCtx build the same command reports fewer suites and lists the
@@ -133,7 +133,7 @@ skipped ones explicitly:
 ```console
 dsh-ops lifecycle: skipped (no FastCtx executable found; …)
 dsh-ops mount: skipped (no FastCtx executable found; …)
-dsh-ops test: 18 suite(s) passed, 2 skipped in 7s
+dsh-ops test: 19 suite(s) passed, 2 skipped in 7s
 ```
 
 The Rust worker's own barrier test:
@@ -162,8 +162,10 @@ They are written so that a Windows run never reports a Linux-only check as
 passed: `linux-attributes` skips as a whole, `linux-paths` and `linux-sandbox`
 guard their POSIX-only cases in place, and the other three are platform-neutral.
 Known open defects are deliberately **not** asserted, so that fixing one does not
-turn the gate red; each suite header names the finding it leaves untested. What
-still needs a Windows host is listed in
+turn the gate red; each suite header names the finding it leaves untested. A
+cross-platform fix brings its own suite rather than borrowing a Linux-named one —
+`inspect-hex` covers the hex row semantics of report L2. What still needs a
+Windows host is listed in
 [Windows verification](windows-verification.md).
 
 ### Closing the release question on Linux
@@ -177,7 +179,7 @@ skipped rather than silently implied:
 ```console
 $ npm run verify:release
 …
-dsh-ops test: 20 suite(s) passed in 11s
+dsh-ops test: 21 suite(s) passed in 11s
 linux-x64: 3665672 bytes, sha256 327420ad…
 Release closure OK: dsh-ops@0.3.0, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
 ```

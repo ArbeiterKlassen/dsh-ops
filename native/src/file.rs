@@ -237,9 +237,16 @@ fn inspect(request: &Request) -> Result<Value> {
     let bytes = read_bytes(&path)?;
     if bytes.len() as u64 > MAX_FILE_BYTES { return Err(Failure::new("OUTPUT_LIMIT", "file exceeds the inspect size budget")); }
     if args.view == "hex" {
-        let start = args.offset.saturating_mul(16).min(bytes.len()); let end = (start + args.limit * 16).min(bytes.len());
+        // `offset` means the same thing in both views: the 1-based unit to start
+        // from — line N for text, 16-byte row N for hex. It used to count rows
+        // from zero here while the text branch counted lines from one, so the
+        // declared default of 1 skipped the first row, and the declared
+        // `minimum: 1` left no way to ask for it back: any file of at most 16
+        // bytes read back as an empty string. In this view `skipped` and the item
+        // `offset` are byte counts, not row counts.
+        let start = args.offset.saturating_sub(1).saturating_mul(16).min(bytes.len()); let end = (start + args.limit * 16).min(bytes.len());
         let text = bytes[start..end].iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
-        return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":1,"skipped":start,"failed":0,"complete":end == bytes.len(),"omitted":bytes.len().saturating_sub(end),"items":[{"path":path,"view":"hex","offset":start,"text":text}]}));
+        return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":1,"skipped":start,"failed":0,"complete":end == bytes.len(),"omitted":bytes.len().saturating_sub(end),"bytesTotal":bytes.len(),"items":[{"path":path,"view":"hex","offset":start,"text":text}]}));
     }
     if args.view != "text" { return Err(Failure::new("INVALID_ARGUMENT", "view must be text or hex")); }
     let text = String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "file is not valid UTF-8"))?;
