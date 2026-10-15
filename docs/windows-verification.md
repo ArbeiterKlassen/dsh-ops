@@ -16,19 +16,26 @@ difference is the deliverable, not a nuisance.
 
 ---
 
-## W1 — `ops_replace` silently changes file security (highest priority: L1 / L9)
+## W1 — `ops_replace` and file security on Windows (L1 / L9, Windows half)
 
-On Linux, `ops_replace` rebuilds the file at a new inode and never reads the old
-one's metadata, so mode/ACL/xattr are destroyed. Verified live: `0600` → `0664`
-(world-readable), `0755` → `0664` (a script stops being executable). Windows has
-no POSIX mode bits, so the same code takes a **different** path and needs its own
-answer.
+The POSIX half of this defect is **fixed**. `atomic_write` now captures the target's
+mode, owner, POSIX ACL and extended attributes and reapplies them before publishing,
+and `test/file-metadata.test.mjs` locks that in: `0600` and `0400` stay `0600`/`0400`,
+`0755` stays executable, a POSIX ACL returns entry for entry, and user xattrs keep
+their values. Verified live on Linux before the fix: `0600` → `0664`
+(world-readable), `0755` → `0664` (a script stops being executable).
+
+Windows takes a **different** path and is **not** fixed, because it needs
+measurements this machine cannot produce. Windows has no POSIX mode bits: what a
+replacement loses there is the *security descriptor*.
 
 Mechanism to check: `atomic_write()` publishes with an ordinary rename, which
 `cap-std` maps on Windows to `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)`. That
 substitutes the directory entry and therefore the **new** file's security
 descriptor. `ReplaceFileW` is the Windows API that preserves the replaced file's
 ACL and attributes, and is the natural fix if this reproduces.
+
+Everything below is a question, not a measurement.
 
 ### W1a — explicit DACL survives a replace?
 
@@ -152,15 +159,16 @@ see so the diagnostic fix can be checked against it.
 
 ---
 
-## W3 — the nine new boundary suites on Windows x64
+## W3 — the ten new boundary suites on Windows x64
 
-`test/run.mjs` auto-discovers `test/*.test.mjs`. Nine new suites were added
+`test/run.mjs` auto-discovers `test/*.test.mjs`. Ten new suites were added
 (`test/lib/boundary.mjs` is a shared helper, not a suite). They were written so
 that a Windows run never reports a Linux-only check as passed and never fails for
 a Linux-only reason — but that reasoning is untested on a real Windows host.
 
 ```powershell
-npm run verify            # expect: 23 suite(s) passed, 0 failed
+npm run verify            # expect: 24 suite(s) passed, 0 failed
+
 npm run validate:manifest # expect: all 58 checks passed
 ```
 
@@ -169,12 +177,16 @@ npm run validate:manifest # expect: all 58 checks passed
 | `inspect-hex.test.mjs` | Runs fully (byte slicing, platform-neutral) |
 | `output-budget.test.mjs` | Runs fully (byte accounting, platform-neutral) |
 | `replace-concurrency.test.mjs` | Must pass, but the outcome depends on Windows lock semantics — see the update-lock note below |
+| `file-metadata.test.mjs` | **Skips as a whole** (`skipSuite`, exit 77) because mode bits, POSIX ACLs and `user.*` xattrs are POSIX concepts. Windows carries a DACL; that is W1's question, not this suite's |
 | `linux-args.test.mjs` | Runs fully (platform-neutral) |
 | `linux-protocol.test.mjs` | Runs fully (platform-neutral) |
 | `linux-scope.test.mjs` | Runs fully (platform-neutral; the staged-worker digest case returns early when `runtime/` carries only the other platform) |
 | `linux-paths.test.mjs` | 5 cases run; **3 POSIX-only cases guarded in place**: 255-byte basename, a `0xff` non-UTF-8 name, and a NUL path |
 | `linux-sandbox.test.mjs` | Containment cases run; symlink refusal, `/dev/null`, `/dev/zero`, `/proc/self/status`, FIFO, unix socket and the `0555` directory are guarded |
-| `linux-attributes.test.mjs` | **Skips as a whole** (`skipSuite`, exit 77) because `nlink`/`blocks`/mode/rename-over-inode are POSIX-only. A Windows run must report **1 skipped** — never a pass, never a failure |
+| `linux-attributes.test.mjs` | **Skips as a whole** (`skipSuite`, exit 77) because `nlink`/`blocks`/mode/rename-over-inode are POSIX-only |
+
+Two suites skip as a whole (`file-metadata` and `linux-attributes`), so a Windows
+run must report **2 skipped** — never a pass, never a failure.
 
 Verify the skip path is honest, and that `DSH_OPS_REQUIRE_RUNTIME=1` turns it
 into a failure rather than a green run:

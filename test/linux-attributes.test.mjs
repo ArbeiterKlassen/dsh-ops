@@ -20,15 +20,13 @@
  * - A `0444` target is replaced anyway: the directory write permission is what
  *   the rename needs, and the file mode is not a barrier. This is report F8.
  *
- * Intentional omissions, and why, in one place: the attribute loss itself is
+ * Intentional omissions, and why, in one place: the attribute loss itself was
  * report L1/L9 — a `0600` `.env` becoming world-readable, a `0755` script losing
- * its execute bit, POSIX ACLs and user xattrs disappearing. Those are defects,
- * so this suite does NOT assert the loss as expected behaviour and does NOT
- * assert preservation either (it does not hold yet). The fixtures that proved
- * them are omitted with the defect; a future fix is free to add the preservation
- * assertions without deleting anything from here. The same rule covers L7 (a
- * hard kill stranding a hidden partial copy): the kill window is timing-
- * dependent, so it is not in a gate.
+ * its execute bit, POSIX ACLs and user xattrs disappearing. That is now **fixed**
+ * and asserted by `test/file-metadata.test.mjs`, which owns the preservation
+ * contract; this suite keeps owning inode identity and allocation. L7 (a hard kill
+ * stranding a hidden partial copy) stays omitted because the kill window is
+ * timing-dependent, so it is not in a gate.
  *
  * @module dsh-ops/test/linux-attributes
  */

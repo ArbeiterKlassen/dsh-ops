@@ -1,0 +1,145 @@
+/**
+ * A replacement keeps the file's metadata (report L1 / L9).
+ *
+ * `ops_replace` publishes by writing a new inode and renaming it over the target.
+ * A new inode is created with the caller's umask and its own security state, so
+ * everything the old inode carried had to be reapplied deliberately — and nothing
+ * was. A `0600` `.env` came back `0664`, a `0755` script lost its execute bit, and
+ * a POSIX ACL or a user xattr disappeared without a word. The replacement was more
+ * permissive than what it replaced, silently, in the one direction a file tool
+ * must never drift.
+ *
+ * What this suite locks in:
+ *
+ * - The mode survives, across the modes that actually matter: `0600` and `0400`
+ *   (secrets), `0755` and `0750` (executables), `0640` and `0644` (config).
+ * - A POSIX ACL comes back byte for byte, and the envelope says it was reapplied.
+ * - User extended attributes come back with their values.
+ * - The envelope reports what was kept (`items[].metadata`) and warns only when
+ *   something could not be put back, so a clean replace carries no warning field.
+ * - A dry run carries no metadata, because it published nothing.
+ *
+ * The policy the fix implements, and why the failure modes differ: the mode and a
+ * POSIX ACL must be reapplied or nothing is published, since both are ways of
+ * widening access if guessed. Owner and other xattrs are best-effort and reported
+ * in `metadataWarnings`.
+ *
+ * Platform. Whole-suite skip on win32: mode bits, POSIX ACLs and `user.*` xattrs
+ * are not what a Windows replacement carries — it carries a DACL, and
+ * `docs/windows-verification.md` W1 asks for those measurements on a real host.
+ *
+ * Not asserted here, and why:
+ *
+ * - The refusal path — a mode that cannot be reapplied must publish nothing — is
+ *   not reachable on a filesystem that supports `chmod`, which is every filesystem
+ *   this gate runs on. It is defensive code held by reading, not by a probe.
+ * - `metadataWarnings` needs a restore that genuinely fails (an owner that cannot
+ *   be set, an attribute the filesystem rejects). Provoking either requires an
+ *   unprivileged or unsupported-filesystem context, so the field's *absence* on a
+ *   clean replace is asserted and its presence is not.
+ *
+ * @module dsh-ops/test/file-metadata
+ */
+
+import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
+
+import { assert, report, skipSuite, test, withTempDir } from './lib/harness.mjs'
+import { callTool, envelopeOf, requireWorker } from './lib/boundary.mjs'
+
+requireWorker('file-metadata')
+if (process.platform === 'win32') {
+  skipSuite('file-metadata', 'mode bits, POSIX ACLs and user xattrs are POSIX-only; Windows carries a DACL instead (windows-verification.md W1)')
+}
+
+const installed = command => {
+  try { execFileSync('sh', ['-c', `command -v ${command}`], { stdio: 'ignore' }); return true } catch { return false }
+}
+const SETFACL = installed('setfacl') && installed('getfacl')
+const PYTHON = installed('python3')
+
+/** The low twelve bits, octal, so a comparison never depends on setuid or the file type. */
+const modeOf = target => (fs.statSync(target).mode & 0o7777).toString(8).padStart(4, '0')
+const octal = mode => mode.toString(8).padStart(4, '0')
+
+/** A file whose only content is the marker the replacement looks for. */
+const seed = (target, mode) => {
+  fs.writeFileSync(target, 'TOKEN\n')
+  fs.chmodSync(target, mode)
+  return target
+}
+
+const replaceToken = async (target, workspace) =>
+  envelopeOf(await callTool('replace', { path: target, pattern: 'TOKEN', replacement: 'DONE' }, { root: workspace }), assert)
+
+await test('every mode a caller can set survives a replacement', async () => {
+  await withTempDir('file-metadata-mode', async workspace => {
+    for (const mode of [0o600, 0o400, 0o640, 0o644, 0o755, 0o750]) {
+      const target = seed(path.join(workspace, `mode-${octal(mode)}.txt`), mode)
+      const body = await replaceToken(target, workspace)
+
+      assert.equal(body.items[0].metadata.mode, octal(mode), `the envelope must report ${octal(mode)} as kept`)
+      assert.equal(modeOf(target), octal(mode), `mode ${octal(mode)} must survive the replace`)
+      assert.equal(fs.readFileSync(target, 'utf8'), 'DONE\n', 'the content still has to change')
+      assert.equal(body.items[0].metadata.owner, true)
+      assert.equal(body.items[0].metadata.acl, false)
+      assert.equal(body.items[0].metadataWarnings, undefined, 'a clean restore must not carry a warning')
+    }
+  })
+})
+
+await test('a POSIX ACL comes back entry for entry', async () => {
+  await withTempDir('file-metadata-acl', async workspace => {
+    const target = seed(path.join(workspace, 'acl.txt'), 0o640)
+    if (!SETFACL) {
+      // Not installed here; the mode and xattr cases still run. Stated rather than
+      // skipped silently so a Linux host without acl tools is not mistaken for a pass.
+      assert.ok(true, 'setfacl/getfacl are not installed, so the ACL case cannot be exercised on this host')
+      return
+    }
+    execFileSync('setfacl', ['-m', 'u:65534:r--', target])
+    const before = execFileSync('getfacl', ['-cpn', target], { encoding: 'utf8' })
+    assert.match(before, /user:65534:r--/u, 'the fixture must actually carry the extra entry')
+
+    const body = await replaceToken(target, workspace)
+    assert.equal(body.items[0].metadata.acl, true, 'the envelope must report that an ACL was reapplied')
+    assert.equal(execFileSync('getfacl', ['-cpn', target], { encoding: 'utf8' }), before, 'the ACL must be restored exactly')
+    assert.equal(modeOf(target), '0640', 'the mask and the mode must stay consistent')
+  })
+})
+
+await test('user extended attributes come back with their values', async () => {
+  await withTempDir('file-metadata-xattr', async workspace => {
+    if (!PYTHON) {
+      assert.ok(true, 'python3 is not installed, so the xattr case cannot be exercised on this host')
+      return
+    }
+    const target = seed(path.join(workspace, 'attrs.txt'), 0o644)
+    const set = "import os,sys; os.setxattr(sys.argv[1],'user.dsh-ops',b'kept'); os.setxattr(sys.argv[1],'user.other',b'second')"
+    execFileSync('python3', ['-c', set, target])
+
+    const body = await replaceToken(target, workspace)
+    assert.deepEqual(
+      [...body.items[0].metadata.xattrs].sort(),
+      ['user.dsh-ops', 'user.other'],
+      'the envelope must name every attribute it put back',
+    )
+    const get = "import os,sys; print(os.getxattr(sys.argv[1],'user.dsh-ops').decode(), os.getxattr(sys.argv[1],'user.other').decode())"
+    assert.equal(execFileSync('python3', ['-c', get, target], { encoding: 'utf8' }).trim(), 'kept second')
+    assert.equal(modeOf(target), '0644')
+  })
+})
+
+await test('a dry run reports no metadata because it published nothing', async () => {
+  await withTempDir('file-metadata-dryrun', async workspace => {
+    const target = seed(path.join(workspace, 'dry.txt'), 0o600)
+    const body = envelopeOf(await callTool('replace', { path: target, pattern: 'TOKEN', replacement: 'DONE', dryRun: true }, { root: workspace }), assert)
+    assert.equal(body.changed, 0)
+    assert.equal(body.items[0].metadata, undefined, 'nothing was written, so there is nothing to report')
+    assert.equal(modeOf(target), '0600')
+    assert.equal(fs.readFileSync(target, 'utf8'), 'TOKEN\n')
+  })
+})
+
+report('file-metadata')

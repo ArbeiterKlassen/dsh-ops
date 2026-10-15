@@ -30,7 +30,7 @@ payload dependency (see the 0.2.1 historical limitation below).
 
 The Windows x64 Rust worker with its two IPC proxies, and the Linux x64 Rust
 worker, are staged with hash receipts. `npm run verify:release` includes 58
-manifest checks, 23 test suites, worker PE/ELF/version/hash checks and — when the
+manifest checks, 24 test suites, worker PE/ELF/version/hash checks and — when the
 package carries `win32-x64` — the IPC binary/source closure. It closes the
 targets the package actually stages; `DSH_OPS_REQUIRE_ALL_TARGETS=1` requires
 every declared platform instead. Real Node PTC runtime and SDK coverage includes

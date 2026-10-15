@@ -349,7 +349,7 @@ fn replace(request: &Request) -> Result<Value> {
     if total > args.max_replacements { return Err(Failure::new("OUTPUT_LIMIT", "maxReplacements exceeded; no files were changed")); }
     let mut items=Vec::new(); for (file, original, text, count) in plans { let revision=hash_file(&file)?; let next=text.replace(&args.pattern,&args.replacement); items.push(json!({"path":file,"replacements":count,"revision":revision,"bytesBefore":original.len(),"bytesAfter":next.len()})); }
     if args.dry_run { return Ok(json!({"status":"completed","phase":"observe","changed":0,"matched":total,"skipped":0,"failed":0,"complete":true,"omitted":0,"dryRun":true,"items":items})); }
-    let mut changed=0usize; for item in &items { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
+    let mut changed=0usize; for item in &mut items { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
         // Trusted transport owns this allowlist. Re-check every selected file,
         // not only the initial search root, immediately before publication.
         if let Some(roots) = &request.write_roots {
@@ -362,9 +362,110 @@ fn replace(request: &Request) -> Result<Value> {
         // peer cannot slip in between them and lose our write, or make us lose
         // its. The guard is named, not `_`, so it lives to the end of this pass.
         let _update = lock_for_update(&file)?;
-        let expected=item["revision"].as_str().unwrap_or(""); if hash_file(&file)? != expected { return Err(Failure::new("REVISION_CONFLICT", "file changed between observe and execute")); } let bytes=read_bytes(&file)?; let text=String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "replace only supports UTF-8 files"))?; let next=text.replace(&args.pattern,&args.replacement); atomic_write(&file,next.as_bytes())?; changed += item["replacements"].as_u64().unwrap_or(0) as usize; }
+        let expected=item["revision"].as_str().unwrap_or("").to_string(); if hash_file(&file)? != expected { return Err(Failure::new("REVISION_CONFLICT", "file changed between observe and execute")); } let bytes=read_bytes(&file)?; let text=String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "replace only supports UTF-8 files"))?; let next=text.replace(&args.pattern,&args.replacement);
+        // Report what the replacement kept. The fields are additive, so a caller
+        // that ignores them sees exactly the envelope it saw before.
+        if let Some((metadata,warnings))=atomic_write(&file,next.as_bytes())? { item["metadata"]=metadata; if !warnings.is_empty() { item["metadataWarnings"]=json!(warnings); } }
+        changed += item["replacements"].as_u64().unwrap_or(0) as usize; }
     Ok(json!({"status":"completed","phase":"verify","changed":changed,"matched":total,"skipped":0,"failed":0,"complete":true,"omitted":0,"items":items}))
 }
+/// A POSIX ACL is exposed as this attribute, so preserving ACLs needs no libacl.
+#[cfg(unix)]
+const ACL_XATTR: &str = "system.posix_acl_access";
+
+/// What the file being replaced carried, captured before its replacement exists.
+///
+/// `atomic_write` publishes a *new* inode, and a new inode arrives with none of
+/// the old one's metadata: the mode, the owner, the POSIX ACL and every extended
+/// attribute belong to the file that is about to be unlinked. So a `0600` `.env`
+/// came back world-readable, a `0755` script lost its execute bit and an ACL was
+/// dropped outright — the replacement was more permissive than what it replaced,
+/// which is the one direction a file tool must never drift in silently.
+///
+/// Policy, by severity:
+///
+/// - The mode is **not optional**. If it cannot be reapplied the call fails and
+///   nothing is published; guessing at permissions widens access.
+/// - A POSIX ACL is not optional either. A file that had one and comes back
+///   without it has lost entries, and losing a *deny* entry is a widening change.
+/// - The owner and the remaining extended attributes are best-effort and are
+///   reported in `metadataWarnings`; they cannot be used as a substitute for the
+///   two above, and a caller can act on a warning in a way it cannot act on a
+///   silent change.
+#[cfg(unix)]
+struct PreservedMetadata { mode: u32, uid: u32, gid: u32, acl: Option<Vec<u8>>, xattrs: Vec<(String, Vec<u8>)> }
+
+/// Read one extended attribute, or `None` when it is absent or unsupported.
+#[cfg(unix)]
+fn get_xattr(fd: &impl rustix::fd::AsFd, name: &str) -> Result<Option<Vec<u8>>> {
+    let mut probe: [u8; 0] = [];
+    match rustix::fs::fgetxattr(fd, name, &mut probe[..]) {
+        Ok(size) => {
+            let mut buffer = vec![0u8; size];
+            let written = rustix::fs::fgetxattr(fd, name, &mut buffer[..]).map_err(|error| Failure::new("ACCESS_DENIED", format!("Read extended attribute {name}: {error}")))?;
+            buffer.truncate(written);
+            Ok(Some(buffer))
+        }
+        Err(error) if matches!(error, rustix::io::Errno::NODATA | rustix::io::Errno::NOTSUP) => Ok(None),
+        Err(error) => Err(Failure::new("ACCESS_DENIED", format!("Read extended attribute {name}: {error}"))),
+    }
+}
+
+/// Every attribute name on the file. An empty list is not an error: a filesystem
+/// that carries none answers `ENOTSUP`.
+#[cfg(unix)]
+fn list_xattrs(fd: &impl rustix::fd::AsFd) -> Result<Vec<String>> {
+    let mut probe: [u8; 0] = [];
+    let size = match rustix::fs::flistxattr(fd, &mut probe[..]) {
+        Ok(size) => size,
+        Err(error) if error == rustix::io::Errno::NOTSUP => return Ok(Vec::new()),
+        Err(error) => return Err(Failure::new("ACCESS_DENIED", format!("List extended attributes: {error}"))),
+    };
+    let mut buffer = vec![0u8; size];
+    let written = rustix::fs::flistxattr(fd, &mut buffer[..]).map_err(|error| Failure::new("ACCESS_DENIED", format!("List extended attributes: {error}")))?;
+    buffer.truncate(written);
+    Ok(buffer.split(|byte| *byte == 0).filter(|name| !name.is_empty()).map(|name| String::from_utf8_lossy(name).into_owned()).collect())
+}
+
+#[cfg(unix)]
+impl PreservedMetadata {
+    fn of(target: &crate::file_path::Target) -> Result<Self> {
+        let file = crate::file_path::read_file(target)?;
+        let stat = rustix::fs::fstat(&file).map_err(|error| Failure::new("ACCESS_DENIED", format!("Stat {}: {error}", target.display.display())))?;
+        let mut xattrs = Vec::new();
+        for name in list_xattrs(&file)? { if name == ACL_XATTR { continue } if let Some(value) = get_xattr(&file, &name)? { xattrs.push((name, value)) } }
+        Ok(Self { mode: stat.st_mode as u32, uid: stat.st_uid as u32, gid: stat.st_gid as u32, acl: get_xattr(&file, ACL_XATTR)?, xattrs })
+    }
+    /// Reapply onto the replacement. `Err` forbids publication; `Ok` may still
+    /// carry warnings for whatever could not be restored.
+    fn restore(&self, file: &cap_std::fs::File) -> Result<(Value, Vec<String>)> {
+        let mut warnings = Vec::new();
+        let current = rustix::fs::fstat(file).map_err(|error| Failure::new("ACCESS_DENIED", format!("Stat replacement: {error}")))?;
+        let owner = if (self.uid, self.gid) == (current.st_uid as u32, current.st_gid as u32) {
+            true
+        } else {
+            match rustix::fs::fchown(file, Some(rustix::process::Uid::from_raw(self.uid)), Some(rustix::process::Gid::from_raw(self.gid))) {
+                Ok(()) => true,
+                Err(error) => { warnings.push(format!("owner {}:{} was not restored ({error}); the replacement is owned by the current user", self.uid, self.gid)); false }
+            }
+        };
+        // The mode goes on after the owner, because a successful `chown` clears
+        // setuid and setgid. This one is fatal if it fails.
+        rustix::fs::fchmod(file, rustix::fs::Mode::from_bits_truncate(self.mode)).map_err(|error| Failure::new("ACCESS_DENIED", format!("Mode {:04o} could not be preserved ({error}); nothing was published", self.mode & 0o7777)))?;
+        // The ACL goes on after the mode, because `chmod` rewrites an ACL's mask
+        // entry; applying the captured attribute last reproduces the original pair.
+        let acl = match &self.acl {
+            Some(acl) => { rustix::fs::fsetxattr(file, ACL_XATTR, acl, rustix::fs::XattrFlags::empty()).map_err(|error| Failure::new("ACCESS_DENIED", format!("POSIX ACL could not be preserved ({error}); nothing was published")))?; true }
+            None => false,
+        };
+        let mut restored = Vec::new();
+        for (name, value) in &self.xattrs {
+            match rustix::fs::fsetxattr(file, name.as_str(), value, rustix::fs::XattrFlags::empty()) { Ok(()) => restored.push(name.clone()), Err(error) => warnings.push(format!("extended attribute {name} was not restored ({error})")) }
+        }
+        Ok((json!({"mode": format!("{:04o}", self.mode & 0o7777), "owner": owner, "acl": acl, "xattrs": restored}), warnings))
+    }
+}
+
 /// Take the target's exclusive update lock and return the handle that owns it.
 ///
 /// Keeping that handle alive across the revision check, the read and the publish
@@ -384,9 +485,13 @@ fn lock_for_update(file: &Path) -> Result<std::fs::File> {
     FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this file; nothing was changed, retry"))?;
     Ok(lock)
 }
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)>> {
     let raw = path.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;
     let checked = crate::file_path::checked(raw)?;
+    // Capture what the file carries before creating its replacement: publication is
+    // a rename, so the new inode arrives with none of it.
+    #[cfg(unix)]
+    let preserved = PreservedMetadata::of(&checked)?;
     let parent = checked.parent;
     let name = checked.name;
     let temporary = format!(".{name}.dsh-ops-{}", uuid::Uuid::new_v4());
@@ -395,7 +500,17 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = parent.open_with(&temporary, &options).map_err(|e| Failure::new("ACCESS_DENIED", format!("Atomic replacement create: {e}")))?;
     file.write_all(bytes)?;
     file.sync_all()?;
+    // Metadata goes back before publication, so a refusal leaves the original file
+    // exactly as it was rather than half-replaced.
+    #[cfg(unix)]
+    let restored = preserved.restore(&file).map(Some);
+    #[cfg(not(unix))]
+    let restored: Result<Option<(Value, Vec<String>)>> = Ok(None);
     drop(file);
+    let report = match restored {
+        Ok(report) => report,
+        Err(failure) => { let _ = parent.remove_file(&temporary); return Err(failure); }
+    };
     // Publication stays handle-relative and does not traverse links.
     let publish = parent.rename(&temporary, &parent, &name);
     if let Err(error) = publish {
@@ -404,5 +519,5 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     }
     #[cfg(unix)]
     crate::sync_directory(&parent)?;
-    Ok(())
+    Ok(report)
 }
