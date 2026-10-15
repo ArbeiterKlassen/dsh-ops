@@ -90,6 +90,14 @@ try {
   assert.equal(request('result', { action: 'page', id: huge.id, fields: ['payload'], maxBytes: 4096 }).items[0].payload.length, 2000)
   const schemaBytes = Buffer.byteLength(JSON.stringify(['batch','result'].map(n => definition(n, () => {})).map(({name,description,parameters}) => ({name,description,parameters}))))
   console.log(`ok: 1000-row round trip and byte-bounded projection; schemas=${schemaBytes} bytes, summary=${Buffer.byteLength(JSON.stringify(run))} bytes vs audit=${Buffer.byteLength(JSON.stringify(page))} bytes`)
+  // Driving PTC on macOS exposed two facts the schema text must not omit: a
+  // relative root is rejected at preflight, and paging a detailsRef needs the
+  // batch's root. Assert the wording so it cannot silently regress.
+  const batchText = definition('batch', () => ({})).description
+  const resultText = definition('result', () => ({})).description
+  assert.match(batchText, /absolute path/)
+  assert.match(batchText, /INVALID_ARGUMENT/)
+  assert.match(resultText, /NOT_FOUND/)
 
   // 3. Actual host registration scopes and presentation with a simulated enforcing
   // provider; subprocess still starts the real worker. Never claim this is an OS sandbox test.

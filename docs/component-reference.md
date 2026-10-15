@@ -106,13 +106,13 @@ Preflight and verify copy / move / remove.
 | Parameter | Type | Notes |
 | --- | --- | --- |
 | `action` | `plan` \| `run` \| `resume` (required) | Action |
-| `root` | string | Defaults to session cwd; an absolute root follows DSH permissions |
+| `root` | string | Defaults to session cwd; when supplied it must be an absolute path (a relative root is rejected at preflight with `INVALID_ARGUMENT`) |
 | `operations` | array, ≤512 items | Each item: `op` (`copy`/`move`/`remove`) + `path` + `to` |
 | `operationsRef` | string | Reference a stored operation list |
 | `protect` | string[], ≤128 items | Protected paths |
 | `id` | string | The existing plan for `resume` |
 
-> `action=plan` requires `operations` and creates a no-effect audit plan; execute that exact plan with `action=resume` plus `id` (**do not change it to `run`**). `action=run` requires `operations` and executes immediately. Operations use relative `/` paths, with no overwrite or link traversal. Page `detailsRef` with `ops_result`.
+> `action=plan` requires `operations` and creates a no-effect audit plan; execute that exact plan with `action=resume` plus `id` (**do not change it to `run`**). `action=run` requires `operations` and executes immediately. Operations use relative `/` paths, with no overwrite or link traversal. Page a plan's `detailsRef` with `ops_result`, passing the same `root` when it differs from the session workspace root (otherwise the page returns `NOT_FOUND`).
 
 ### `ops_result`
 
