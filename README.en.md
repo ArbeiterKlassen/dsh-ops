@@ -8,7 +8,7 @@ attention wasted on repeated PowerShell errors.
 
 > tips: "ops" here is short for the general sense of operations — the plugin sits at the base layer between dsh and system / code / file operations. It is not an operations (DevOps) plugin.
 
-**0.3.1 supports Windows x64 and Linux x64, with the Linux side verified on a real host**, targeting DSH `0.2.0-rc.2`. The independent Rust file/PTC worker ships for each supported platform (`runtime/<platform>-<arch>/`); PTC remains opt-in. macOS/ARM64 are future work, not release claims, and the shell component (`ops_bash`/pwsh) stays Windows-only. See [Linux support](#linux-support) and [Native PTC](docs/native-ptc.md).
+**0.3.1 supports Windows x64 and Linux x64, with the Linux side verified on a real host**, targeting DSH `0.2.0-rc.2`. The independent Rust file/PTC worker ships for each supported platform (`runtime/<platform>-<arch>/`); PTC remains opt-in. macOS/ARM64 are future work, not release claims, and the shell component's pinned bash/pwsh payloads stay Windows-only: on Linux `ops_bash` runs the host distribution's own bash under a mandatory host sandbox. See [Linux support](#linux-support) and [Native PTC](docs/native-ptc.md).
 
 ---
 
@@ -41,11 +41,11 @@ Routing: **toolkit → bash → PowerShell 7**.
 
 On **Linux x64** `dsh-ops` does what it does on Windows, except where noted below: the independent Rust worker ships as an ELF binary, and the file tools (`inspect_local_file` / `glob` / `grep` / `replace`) plus the opt-in PTC component (`ops_batch` / `ops_result`) work the same way there.
 
-- **Windows-only**: the shell component (`ops_bash` / pwsh 7) and its Bash IPC proxies; the background component, which uses them as its execution channel, is unavailable on Linux.
+- **Where the shell component splits**: on Windows it is the digest-pinned bash 5.3.15 / PowerShell 7.6.6 payload plus the Bash IPC proxies; on Linux it resolves the **host distribution's own bash** (`config.bashPath` → `PATH` → `/bin/bash`, `/usr/bin/bash`, `/usr/local/bin/bash`) and ships neither a second shell nor the pwsh overlay — a distribution bash is tied to that distribution's libc and architecture, so a second copy would add supply-chain and licensing burden without solving anything. `ops_bash` works on both; a confined mode must be enforced by a host sandbox (bwrap / Landlock), and when no sandbox can confine the call it is **refused** rather than run unrestricted. The background component, which executes through the shell component, stays Windows-only, and so does `dsh-ops provision-shells` — on Linux it refuses and points at `config.bashPath`.
 - **Build and install**: see [Building and verifying on Linux](docs/linux-build.md) — `npm run verify` → `npm run build:ptc` → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz`.
 - **Platform differences handled**: replacing a file keeps its mode/owner/POSIX ACL/xattrs; directory `fsync` follows POSIX semantics; `multiline` search reaches across lines; reads are bounded by encoded bytes as well as by lines. The Windows-side equivalent (the security descriptor) is tracked in the [Windows verification checklist](docs/windows-verification.md).
 - **Credential reads are refused by default**: the file tools (including PTC batches) refuse `~/.ssh`, `~/.aws`, `~/.azure`, `~/.kube`, `.npmrc` and the DSH credential stores before the worker is spawned, and a traversal skips those directories by identity, so `glob` cannot even list a private key's name and `grep` matches nothing inside one. Write roots are narrowed to the session's own `dsh-ops-session-<id>` temporary directory (`0700`). A row can opt out with `denyCredentialReads: false`; `DSH_OPS_DENY_READ` can only widen the fence.
-- **Measured state** (Debian 13 x86_64): `DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 29 suites passed, no skips; `npm run validate:manifest` → all 58 checks passed; `npm run verify:release` → release closure OK; a `npm pack` tarball unpacks to a worker whose receipt sha256 matches, with its execute bit intact and metadata preserved across a replace.
+- **Measured state** (Debian 13 x86_64): `DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 30 suites passed, no skips; `npm run validate:manifest` → all 61 checks passed; `npm run verify:release` → release closure OK; a `npm pack` tarball unpacks to a worker whose receipt sha256 matches, with its execute bit intact and metadata preserved across a replace.
 - The defects those runs found are **fixed here**, and Windows gains them too: a replace no longer loses mode/ACL/xattrs, `multiline` reaches across lines, one long line no longer fails a read outright, concurrent replaces no longer lose a write silently, a hard kill leaves no unbounded debris, and an unexecutable worker is named by path and mode instead of a bare `EACCES`. See the [0.3.1 release notes](docs/release-0.3.1.md) and the [CHANGELOG](CHANGELOG.md).
 
 ---
@@ -55,7 +55,7 @@ On **Linux x64** `dsh-ops` does what it does on Windows, except where noted belo
 ### Prerequisites
 
 - **Node.js `^22.19 || >=24`** (the `engines` requirement in `package.json`)
-- Windows x64 or Linux x64 (the shell component's `ops_bash`/pwsh is Windows-only)
+- Windows x64 or Linux x64 (`ops_bash` works on both; the pwsh 7 overlay is Windows-only and Linux uses the distribution's own bash)
 - The target DSH application initialized
 
 ### Install

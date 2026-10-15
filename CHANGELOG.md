@@ -18,7 +18,7 @@ the metadata work needs Windows measurements and is tracked in
 
 ### Linux x64 adaption
 
-- Build and verify the native worker on `x86_64-unknown-linux-gnu` as a first-class target: `cargo build --release --locked`, `cargo test`, the full `npm run verify` with `DSH_OPS_REQUIRE_RUNTIME=1` (29 suites, no skip counted as a pass) and `npm run verify:release`. `npm run build:ptc` now stages the Linux worker beside the Windows one, each with its own receipt, and the release checks reject a missing or corrupt artifact for any target the package carries.
+- Build and verify the native worker on `x86_64-unknown-linux-gnu` as a first-class target: `cargo build --release --locked`, `cargo test`, the full `npm run verify` with `DSH_OPS_REQUIRE_RUNTIME=1` (30 suites, no skip counted as a pass) and `npm run verify:release`. `npm run build:ptc` now stages the Linux worker beside the Windows one, each with its own receipt, and the release checks reject a missing or corrupt artifact for any target the package carries.
 - Keep the platform paths separate instead of compromising both: directory `fsync` and metadata reapplication on POSIX, `MoveFileExW` publication on Windows, chosen per `cfg` rather than papered over with one behaviour that would be wrong on both.
 - Derive platform facts when a suite runs instead of from the host it happens to be on: mount and filesystem fixtures are resolved at run time, no tool is parsed for `LC_MESSAGES`-dependent wording, and whole-suite skips are declared per platform (2 on Linux) rather than counted as passes.
 - Close the release gate over the targets a checkout actually staged, so a Linux-only build passes and `DSH_OPS_REQUIRE_ALL_TARGETS=1` states the multi-platform claim; the closure message names the staged platform instead of assuming Windows.
@@ -47,6 +47,36 @@ paths: a tool that reads any OS-readable file could hand a model the operator's 
 - A directory that holds one binary file no longer fails a whole `ops_replace`: the text files around
   it are still edited, the binary is reported through `skipped` and `skippedPaths`, and the previous
   behaviour (refusing the entire call with an error that named no file) is gone.
+
+### The shell component on Linux: the host's own bash, under a mandatory sandbox
+
+Taken from WTStarMark's PR #40, which designed the same capability as a separate opt-in
+`dsh-ops-linux` component. It lives in `dsh-ops/shell` here: `dsh-ops/file` already gives Linux the
+four file tools, so a second component publishing the same four would be two names for one surface.
+The capability is taken; the duplicate component is not.
+
+- On POSIX the resolver answers from `config.bashPath`, then `PATH`, then `/bin/bash`,
+  `/usr/bin/bash`, `/usr/local/bin/bash`, and never provisions a plugin-owned shell: a distribution
+  bash is tied to that distribution's libc and architecture, so a second copy would add supply-chain
+  and licensing burden without solving anything. `allowSystemShellFallback` is the Windows gate on
+  reaching past the pinned payload; with no payload on POSIX the host bash *is* the rung, so the flag
+  is not required there. Windows is unchanged — same config, same `disabled`.
+- `dsh-ops provision-shells` refuses on a POSIX host and names `config.bashPath`, instead of failing
+  on an empty pin table: the pinned payload is the Windows one.
+- Confinement is not weakened by the new rung. A confined command reaches the host sandbox first, and
+  an unavailable or unusable confinement result is refused with no command executed; read-only still
+  publishes no command tool.
+- The FastCtx job lane is **not** widened by it: `lib/tools.js` resolves that lane with `posix: false`,
+  because the lane is Windows-only in 0.3.1 (its payload and IPC proxies are), so a host bash cannot
+  make it publish job tools on a platform nothing here has verified.
+- The manifest now states each component's platforms — `dsh-ops-shell` and `dsh-ops-file`: win32 +
+  linux; `dsh-ops-background`: win32 only — and `npm run validate:manifest` fails if a Linux claim
+  rides along (61 checks).
+- Covered by `test/linux-shell.test.mjs` (a real `ops_bash` execution through the host bash, the
+  refusal under unusable confinement, and the two lanes being one decision apart), by a
+  spawn-environment assertion in `test/mount.test.mjs` that fails if the job-lane fence is removed,
+  and by `test/shells.test.mjs`, whose Windows-doctrine cases now name their platform instead of
+  inheriting the host's.
 
 ### Native worker boundary fixes
 

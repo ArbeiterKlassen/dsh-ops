@@ -181,7 +181,7 @@ that a Windows run never reports a Linux-only check as passed and never fails fo
 a Linux-only reason — but that reasoning is untested on a real Windows host.
 
 ```powershell
-npm run verify            # expect: 29 suite(s) passed, 0 failed
+npm run verify            # expect: the platform suite set to pass (Linux: 30 with a runtime, 28 + 2 skips without one)
 
 npm run validate:manifest # expect: all 58 checks passed
 ```

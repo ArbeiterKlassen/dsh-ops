@@ -114,7 +114,7 @@ $ export DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx"
 $ DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx" \
   DSH_OPS_REQUIRE_RUNTIME=1 npm run verify
 …
-dsh-ops test: 29 suite(s) passed in 15s
+dsh-ops test: 30 suite(s) passed in 15s
 ```
 
 没有 FastCtx 构建时，同一条命令会少跑两个套件，并明确列出跳过项：
@@ -122,7 +122,7 @@ dsh-ops test: 29 suite(s) passed in 15s
 ```console
 dsh-ops lifecycle: skipped (no FastCtx executable found; …)
 dsh-ops mount: skipped (no FastCtx executable found; …)
-dsh-ops test: 27 suite(s) passed, 2 skipped in 10s
+dsh-ops test: 28 suite(s) passed, 2 skipped in 11s
 ```
 
 Rust worker 自身的 barrier 测试：
@@ -166,7 +166,7 @@ stage 的**目标。在只构建 Linux 的机器上那就是 `linux-x64`，而 W
 ```console
 $ npm run verify:release
 …
-dsh-ops test: 29 suite(s) passed in 15s
+dsh-ops test: 30 suite(s) passed in 15s
 linux-x64: 3665672 bytes, sha256 327420ad…
 Release closure OK: dsh-ops@0.3.1, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
 ```
@@ -209,12 +209,17 @@ $ dsh --profile <profile> --dump-config
 
 ## 配置 shell 通道
 
-Linux 上插件不发布 bash 也不发布 PowerShell，因此 `shell` 组件无物可给，
-`background` 组件的 job 工具（`ops_run_background`、`ops_job_output`、
-`ops_job_list`、`ops_job_kill`）也保持不发布。这是 fail-closed，不是缺陷：
+Linux 上 `ops_bash` 开箱可用：`shell` 组件不随包提供 shell，而是解析发行版自带的
+bash（`config.bashPath` → `PATH` → `/bin/bash`、`/usr/bin/bash`、`/usr/local/bin/bash`）；
+受限模式必须由宿主沙箱落实约束，沙箱无法约束时拒绝执行，绝不无约束运行。
+
+需要显式指定 bash 的是 **`background`** 组件的 job 工具（`ops_run_background`、
+`ops_job_output`、`ops_job_list`、`ops_job_kill`）：这条车道在 0.3.1 仅 Windows（其载荷与
+IPC 代理如此），因此在 Linux 上它有意不采用 `shell` 组件那条宿主 bash 档位，只有显式路径
+才能到达它。不给路径时这些工具保持不发布——这是 fail-closed，不是缺陷：
 `FastCtxTools.shellAllowed()` 在无可解析执行器时会拒绝提供命令面。
 
-要拿到这些工具，显式指定 bash：
+要拿到这些工具：
 
 ```yaml
 - id: dsh-ops-background

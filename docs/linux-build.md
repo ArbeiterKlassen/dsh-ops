@@ -124,7 +124,7 @@ this is the strictest form:
 $ DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx" \
   DSH_OPS_REQUIRE_RUNTIME=1 npm run verify
 …
-dsh-ops test: 29 suite(s) passed in 15s
+dsh-ops test: 30 suite(s) passed in 15s
 ```
 
 Without a FastCtx build the same command reports fewer suites and lists the
@@ -133,7 +133,7 @@ skipped ones explicitly:
 ```console
 dsh-ops lifecycle: skipped (no FastCtx executable found; …)
 dsh-ops mount: skipped (no FastCtx executable found; …)
-dsh-ops test: 27 suite(s) passed, 2 skipped in 10s
+dsh-ops test: 28 suite(s) passed, 2 skipped in 11s
 ```
 
 The Rust worker's own barrier test:
@@ -182,7 +182,7 @@ skipped rather than silently implied:
 ```console
 $ npm run verify:release
 …
-dsh-ops test: 29 suite(s) passed in 15s
+dsh-ops test: 30 suite(s) passed in 15s
 linux-x64: 3665672 bytes, sha256 327420ad…
 Release closure OK: dsh-ops@0.3.1, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
 ```
@@ -227,13 +227,21 @@ $ dsh --profile <profile> --dump-config
 
 ## Configuring the shell lane
 
-On Linux the plugin publishes no bash and no PowerShell, so the `shell`
-component has nothing to offer and the `background` component's job tools
-(`ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) stay
-unpublished. That is fail-closed, not a bug: `FastCtxTools.shellAllowed()`
+`ops_bash` works on Linux out of the box: the `shell` component resolves the
+distribution's own bash (`config.bashPath` → `PATH` → `/bin/bash`,
+`/usr/bin/bash`, `/usr/local/bin/bash`) instead of shipping one, and a confined
+mode must be confined by a host sandbox — if none can confine the call it is
+refused, never run unrestricted.
+
+The **`background`** component's job tools (`ops_run_background`,
+`ops_job_output`, `ops_job_list`, `ops_job_kill`) are the ones that need naming a
+bash explicitly. That lane is Windows-only in 0.3.1 — its payload and IPC proxies
+are — so on Linux it deliberately ignores the host-bash rung the `shell`
+component uses, and only an explicit path reaches it. Without one the tools stay
+unpublished, which is fail-closed, not a bug: `FastCtxTools.shellAllowed()`
 refuses a command surface when no executor is resolvable.
 
-To get those tools, name the bash explicitly:
+To get those tools:
 
 ```yaml
 - id: dsh-ops-background

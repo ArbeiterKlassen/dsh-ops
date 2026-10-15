@@ -4,16 +4,17 @@
 
 - 平台范围：**Windows x64 与 Linux x64**，目标宿主 DSH `0.2.0-rc.2`。`0.3.0` 只发布 Windows x64；本版补上 Linux x64。
 - 本版把 Linux x64 做成**实测平台**：同一批测试套件、发布闭包与出厂 tarball 在 Linux x86_64 实机上跑通，这些运行暴露的缺陷在本版修复。修复本身与平台无关，Windows 同样受益。
-- macOS 与 ARM64 不在支持范围；不能把历史编译检查当作实机支持。shell 组件（`ops_bash`/pwsh）及其 Bash IPC 代理仍仅 Windows。
+- macOS 与 ARM64 不在支持范围；不能把历史编译检查当作实机支持。**shell 组件在 Linux 上不随包提供 shell，而是解析发行版自带的 bash**（`ops_bash` 可用，受限模式由宿主沙箱落实）；随包固定摘要的 bash/pwsh 载荷、Bash IPC 代理，以及以 shell 为执行通道的后台组件仍仅 Windows。
 - `dsh-ops` 主包更新为 `0.3.1`；三个 Windows 可选载荷依赖仍固定 `0.2.1`，无需重复发布。
 
 ## Linux 适配了什么
 
-- **原生 worker**：`x86_64-unknown-linux-gnu` 上 `cargo build --release --locked`、`cargo test`、完整 `npm run verify`（`DSH_OPS_REQUIRE_RUNTIME=1` 下 29 个套件全过、0 跳过）与 `npm run verify:release` 全部实机通过。
+- **原生 worker**：`x86_64-unknown-linux-gnu` 上 `cargo build --release --locked`、`cargo test`、完整 `npm run verify`（`DSH_OPS_REQUIRE_RUNTIME=1` 下 30 个套件全过、0 跳过）与 `npm run verify:release` 全部实机通过。
 - **平台分支而非兼容层**：POSIX 侧走目录 `fsync` 与元数据重放，Windows 侧保持 `MoveFileExW`；同一份 Rust 代码用 `cfg` 分开，不做「两边都能跑」的折中。
 - **测试与发布校验按平台推导**：挂载点与文件系统夹具在运行时解析，不解析依赖 `LC_MESSAGES` 的工具措辞，整套跳过按平台显式声明（Linux 上 2 个）且从不计为通过。
 - **发布闭包**：只闭合本包实际 stage 的目标，因此只构建 Linux 的机器同样通过；要声明「发布包必须齐平台」设 `DSH_OPS_REQUIRE_ALL_TARGETS=1`。闭包信息点明当前 checkout 实际 stage 的平台，不再假定 Windows。
 - **文档**：[Linux 构建与验证](linux构建.md)（[English](linux-build.md)）覆盖 build → stage → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz` 全流程与门禁预期输出。
+- **shell 组件的 Linux 路线**：`shell` 组件在 POSIX 上解析 `bashPath` → `PATH` → `/bin/bash`、`/usr/bin/bash`、`/usr/local/bin/bash`，不 provision 第二份 shell，`ops_bash` 开箱可用；受限模式先过宿主沙箱，沙箱不可用或无法约束时返回错误信封且不执行任何命令；`dsh-ops provision-shells` 在 Linux 上明确拒绝并指向 `config.bashPath`。FastCtx 作业车道（仅 Windows）显式不采用该档位，`dsh-plugin.json` 也把每个组件的平台写进清单，由 `npm run validate:manifest` 把关。
 - **新增 11 个边界套件**，两个平台都跑：grep 跨行、替换元数据、输出字节预算、更新锁、hex 偏移、参数与运行时诊断、发布作用域、PTC 溯源、Linux 参数/属性。见 `test/`。
 
 ## 修掉的原生 worker 缺陷
@@ -39,7 +40,7 @@ Linux 侧不提供 bash/pwsh 与 Bash IPC 代理，依赖它作为执行通道�
 ## 发布验证
 
 - Manifest、源码测试、真实 Windows x64 与 Linux x64 DSH provider、真实 Node PTC SDK command/script/pipeline 和权限切换测试。
-- Linux x86_64 实机：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 29 个套件全过、0 跳过；`npm run validate:manifest` → 58 项全过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留 mode/ACL/xattr、跨行 grep 正确。
+- Linux x86_64 实机：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 30 个套件全过、0 跳过；`npm run validate:manifest` → 61 项全过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留 mode/ACL/xattr、跨行 grep 正确。
 - `npm run verify:release` 核验声明作用域与 `PLATFORMS` 一致、已 stage 目标的 worker PE/ELF 与 version/hash，并在包内携带 `win32-x64` 时核验 IPC 二进制与源码 hash 闭包。
 - GitHub Release 为源码/tag/说明；随后生成 npm tarball，核验包内容、凭据排除、哈希与独立安装。
 - npm 发布由维护者使用本机 `dist/publish.bat` 执行，不由 Actions 自动发布。GitHub Actions 保持既有关闭状态。
