@@ -55,7 +55,7 @@ Read bounded UTF-8 text lines, or a hex view of one path. Directories are reject
 
 ### `ops_glob`
 
-Find regular files below `path` using explicit include/exclude patterns.
+Find regular files below `path`. `pattern` is an **array** of globs matched segment by segment against paths relative to `path` (ASCII case-insensitive), e.g. `["**/*.md","!vendor/**"]`: `*.md` matches the top level only and `**/*.md` any depth; a `!` prefix excludes, and at least one positive entry is required. A bare string is rejected; there is no `include` field.
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ Find regular files below `path` using explicit include/exclude patterns.
 
 ### `ops_grep`
 
-Search UTF-8 files below `path` with Rust regex, bounded output, paging and optional line context.
+Search UTF-8 files below `path` with Rust regex, bounded output, paging and optional line context. `pattern` is **one** regex string; filter files with `glob`, an array in the same syntax as `ops_glob`. **There is no `include` field.** `glob` may contain only exclusions ("everything except"); when `path` is a single file, `glob` is ignored.
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
@@ -84,16 +84,22 @@ Search UTF-8 files below `path` with Rust regex, bounded output, paging and opti
 
 ### `ops_replace`
 
-Perform a deterministic UTF-8 replacement under `path`. `dryRun` observes only; writes use revision checks and atomic replacement. Read-only sessions are rejected.
+Perform a deterministic UTF-8 replacement under `path`. `pattern` is **literal text, not a regex**; `glob` works as in `ops_grep`. `dryRun` observes only; writes use revision checks and atomic replacement. Read-only sessions are rejected.
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
-| `pattern` | string (required) | Match pattern |
+| `pattern` | string (required) | Literal text |
 | `replacement` | string (required) | Replacement text |
 | `path` | string | Operation root |
 | `glob` | string[] | Restrict files |
 | `maxReplacements` | integer 1–100000 | Hard replacement limit |
 | `dryRun` | boolean | Never writes |
+
+### Results and errors
+
+- **File tools, `ops_batch` and `ops_result` never throw.** Failures resolve as values with `status` `"error"` or `"rejected"` (authorization refusal) plus `error.code` / `error.message` / `error.nextAction`; success is `"completed"` (`ops_batch` also reports `planned` and related states). In PTC, a `try/catch` alone misses these failures — check `status`.
+- **`ops_bash`** resolves command results as values: `status` (`completed` only for exit code 0 with no error, permission refusal, signal or timeout; otherwise `failed`), `exitCode`, `stdout` / `stderr`, `error`, `permission`. It throws (a `ToolCallError` in PTC) only for **invalid arguments** or an **unavailable executor**.
+- Host tools (`read` / `write` / `edit` / `pwsh` …) throw `ToolCallError` on failure.
 
 ---
 
