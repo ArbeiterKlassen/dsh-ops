@@ -114,7 +114,7 @@ $ export DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx"
 $ DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx" \
   DSH_OPS_REQUIRE_RUNTIME=1 npm run verify
 …
-dsh-ops test: 14 suite(s) passed in 11s
+dsh-ops test: 20 suite(s) passed in 11s
 ```
 
 没有 FastCtx 构建时，同一条命令会少跑两个套件，并明确列出跳过项：
@@ -122,7 +122,7 @@ dsh-ops test: 14 suite(s) passed in 11s
 ```console
 dsh-ops lifecycle: skipped (no FastCtx executable found; …)
 dsh-ops mount: skipped (no FastCtx executable found; …)
-dsh-ops test: 12 suite(s) passed, 2 skipped in 2s
+dsh-ops test: 18 suite(s) passed, 2 skipped in 7s
 ```
 
 Rust worker 自身的 barrier 测试：
@@ -131,6 +131,26 @@ Rust worker 自身的 barrier 测试：
 $ cargo test --release --locked --manifest-path native/Cargo.toml
 test result: ok. 1 passed; 0 failed
 ```
+
+### Linux 边界套件
+
+有六个套件绕过宿主桥接层，直接驱动发布的 worker，专测那些会被桥接层归一化掉的边界。
+它们在 `test/linux-*.test.mjs`，共用 `test/lib/boundary.mjs`：
+
+| 套件 | 主题 |
+| --- | --- |
+| `linux-paths` | 怪异与 CJK 文件名、名称/NUL 长度上限、深度、符号链接拒绝 |
+| `linux-args` | `offset`/`limit` 边界、glob 模式、正则安全性、上下文上限、分页是否诚实 |
+| `linux-sandbox` | `read_only`、`write_roots` 围栏、符号链接拒绝、特殊对象 |
+| `linux-protocol` | 畸形帧、超大请求、重复调用、并发原子性 |
+| `linux-attributes` | 内容/mtime/无残留、硬链接 inode 替换、`0444`、稀疏文件 |
+| `linux-scope` | 平台闸门、provenance 篡改与伪造、三层作用域、已 stage 摘要 |
+
+它们被写成「Windows 上绝不会把 Linux 专属检查报成通过」：`linux-attributes` 整套
+跳过，`linux-paths` 与 `linux-sandbox` 就地守护其 POSIX 专属用例，其余三个与平台无关。
+**已知未修缺陷是刻意不写断言的**，这样修好一个不会反而让闸门变红；每个套件的文件头都
+列明了它留空的是哪一条。仍需 Windows 宿主回答的问题见
+[Windows 验证清单](windows-verification.md)。
 
 ### 在 Linux 上回答「发布闭包」问题
 
@@ -142,7 +162,7 @@ stage 的**目标。在只构建 Linux 的机器上那就是 `linux-x64`，而 W
 ```console
 $ npm run verify:release
 …
-dsh-ops test: 14 suite(s) passed in 11s
+dsh-ops test: 20 suite(s) passed in 11s
 linux-x64: 3665672 bytes, sha256 327420ad…
 Release closure OK: dsh-ops@0.3.0, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
 ```

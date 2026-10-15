@@ -30,7 +30,7 @@ payload dependency (see the 0.2.1 historical limitation below).
 
 The Windows x64 Rust worker with its two IPC proxies, and the Linux x64 Rust
 worker, are staged with hash receipts. `npm run verify:release` includes 58
-manifest checks, 14 test suites, worker PE/ELF/version/hash checks and — when the
+manifest checks, 20 test suites, worker PE/ELF/version/hash checks and — when the
 package carries `win32-x64` — the IPC binary/source closure. It closes the
 targets the package actually stages; `DSH_OPS_REQUIRE_ALL_TARGETS=1` requires
 every declared platform instead. Real Node PTC runtime and SDK coverage includes
@@ -52,13 +52,15 @@ cwd and sandbox policy, forwards cancellation, and maps worker JSON into the DSH
 structured output contract. The initial exact-argv file confinement below was
 superseded by the fixed trusted-operation fence described above.
 
-The Windows x64 worker was built with the managed Rust `1.97.1` toolchain and
-staged under `runtime/win32-x64` with a version/target/executable/SHA-256 receipt.
-`cargo check`, `cargo build --release --locked`, `cargo clippy --all-targets
--D warnings`, manifest validation, and all ten local JavaScript suites pass.
-The six-target release matrix and Linux/macOS runtime and sandbox acceptance are
-not claimed. FastCtx source/vendor remains unchanged and is retained only for
-the explicitly disabled background component.
+At the time of the Windows-only 0.3.0 development, the worker was built with the
+managed Rust `1.97.1` toolchain and staged under `runtime/win32-x64` with a
+version/target/executable/SHA-256 receipt. `cargo check`, `cargo build --release
+--locked`, `cargo clippy --all-targets -D warnings`, manifest validation and the
+local JavaScript suites passed. The six-target release matrix and Linux/macOS
+runtime acceptance were not claimed at that point; Linux x64 file and PTC
+acceptance was added afterwards and is claimed above. FastCtx source/vendor
+remains unchanged and is retained only for the explicitly disabled background
+component.
 
 
 The independent MIT Rust core in `native/` is original dsh-ops code. It uses
