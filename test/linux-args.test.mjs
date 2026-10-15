@@ -28,8 +28,10 @@
  * No defect is left unasserted here. The `limit`-bounds-lines-not-bytes defect (L4)
  * is fixed and covered by `test/output-budget.test.mjs`; the `maxReplacements`
  * refusal (L3) now reports the count and the ceiling instead of blaming the
- * pattern, which the case below asserts; and cross-line matching (L6) has its own
- * suite, `test/grep-multiline.test.mjs`.
+ * pattern, which the case below asserts; cross-line matching (L6) has its own
+ * suite, `test/grep-multiline.test.mjs`; and the debris a hard kill leaves behind
+ * (L7) is asserted as self-healing, because it cannot be prevented — a `SIGKILL`
+ * runs no cleanup path, so the next writer of the same file has to reclaim it.
  *
  * @module dsh-ops/test/linux-args
  */
@@ -227,6 +229,27 @@ await test('maxReplacements refuses by naming the count and the ceiling, and wri
     const raised = envelopeOf(await callTool('replace', { path: target, pattern: 'TOKEN', replacement: 'DONE', maxReplacements: 101 }, { root: workspace }), assert)
     assert.equal(raised.changed, 101)
     assert.equal(fs.readFileSync(target, 'utf8'), 'DONE\n'.repeat(101))
+  })
+})
+
+await test('a leftover from a killed writer is reclaimed by the next replace of that file', async () => {
+  await withTempDir('linux-args-debris', async workspace => {
+    const target = path.join(workspace, 'debris.txt')
+    fs.writeFileSync(target, 'TOKEN\n')
+    // What a SIGKILL during publication leaves behind: a hidden partial copy beside
+    // the real file. It cannot be prevented, so the contract is that the next writer
+    // of the same file reclaims it.
+    const leftover = path.join(workspace, '.debris.txt.dsh-ops-00000000-0000-4000-8000-000000000000')
+    const unrelated = path.join(workspace, '.other.txt.dsh-ops-11111111-1111-4111-8111-111111111111')
+    fs.writeFileSync(leftover, 'partial')
+    fs.writeFileSync(unrelated, 'belongs to another file')
+
+    const body = envelopeOf(await callTool('replace', { path: target, pattern: 'TOKEN', replacement: 'DONE' }, { root: workspace }), assert)
+    assert.equal(body.changed, 1)
+    assert.equal(fs.existsSync(leftover), false, 'the next writer must reclaim the debris for its own name')
+    assert.deepEqual(fs.readdirSync(workspace).filter(entry => entry.startsWith('.debris.txt.dsh-ops-')), [], 'and leave none of its own')
+    assert.equal(fs.existsSync(unrelated), true, 'debris for a different name must not be touched')
+    assert.equal(fs.readFileSync(target, 'utf8'), 'DONE\n')
   })
 })
 

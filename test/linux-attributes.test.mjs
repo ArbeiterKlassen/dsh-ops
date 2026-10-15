@@ -24,9 +24,16 @@
  * report L1/L9 — a `0600` `.env` becoming world-readable, a `0755` script losing
  * its execute bit, POSIX ACLs and user xattrs disappearing. That is now **fixed**
  * and asserted by `test/file-metadata.test.mjs`, which owns the preservation
- * contract; this suite keeps owning inode identity and allocation. L7 (a hard kill
- * stranding a hidden partial copy) stays omitted because the kill window is
- * timing-dependent, so it is not in a gate.
+ * contract; this suite keeps owning inode identity and allocation.
+ *
+ * Two things are still not asserted here. L7 used to be one of them — a hard kill
+ * stranding a hidden partial copy — and is now only half of one: the kill window is
+ * still timing-dependent, so the *stranding* is not in a gate, but the recovery is,
+ * in `test/linux-args.test.mjs`, which asserts that the next writer of the same file
+ * reclaims the debris. The post-publication sync failure (L13) is not asserted
+ * either: it needs a directory whose `fsync` fails after a rename that succeeded,
+ * which no filesystem in this gate provides. Its contract — the failure reports
+ * `effectState: "applied"` rather than the default `"none"` — is held by reading.
  *
  * @module dsh-ops/test/linux-attributes
  */

@@ -210,8 +210,8 @@ If any suite fails on Windows, that is a real finding: the guard is wrong.
 
 These were declared cross-platform on the strength of code reading, so they need
 a Windows data point. Rows marked **fixed** now have a suite on this branch and
-must show the *fixed* behaviour; the rest (L7, L8, L12) are **open** and are
-covered by the fix plan.
+must show the *fixed* behaviour; the rest (L8, L12) are **open** and are covered by
+the fix plan.
 
 | Item | Repro | Expected (current behaviour) |
 | --- | --- | --- |
@@ -220,7 +220,7 @@ covered by the fix plan.
 | **L4** `limit` bounds lines, not bytes — **fixed** | a file whose single line is 200 KB | the read completes with `truncated: true`, `items[0].truncatedInLine: true` and `bytesTotal`, still under the host's `stdout: { maxBytes: 128 * 1024 }`; the worker's own ceiling is 96 KiB |
 | **L5** `replace` pattern is a literal substring — **fixed (description only)** | `pattern:"a.c"` against text `abc` | still no match: that is the design. The `pattern` field now states that it is a literal in `replace` and a regex in `grep`, which is what the two tools disagreed about |
 | **L6** `multiline` cannot cross lines — **fixed** | `pattern:"alpha\nbeta"` with `multiline:true` | 1 match at line 1 with text `alpha\nbeta`; without the flag the same pattern still finds nothing, and `^`/`$` keep their per-line meaning |
-| **L7** hard kill leaves hidden debris | SIGKILL `ops_replace` during publication | a `.<name>.dsh-ops-<uuid>` file may remain (2 of 5 trials on Linux) |
+| **L7** hard kill leaves hidden debris — **bounded** | SIGKILL `ops_replace` during publication | one `.<name>.dsh-ops-<uuid>` file may remain until the next write of that same file, which reclaims it. A `SIGKILL` runs no cleanup path, so that is the tightest bound available without a journal |
 | **L8** sparse files are materialised | 16 MiB sparse hole | 16 MiB of real allocation |
 | **L12** exec bit is not validated | a 0644 worker binary | accepted at resolve time, fails later as `EACCES` |
 | **L14** concurrent replaces lose an update — **fixed** | 6 simultaneous `ops_replace` on one file | exactly one call reports a change and its replacement is the one in the file; the others refuse with `REVISION_CONFLICT` or report `changed: 0` |

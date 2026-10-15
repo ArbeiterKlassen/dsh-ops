@@ -502,6 +502,24 @@ fn lock_for_update(file: &Path) -> Result<std::fs::File> {
     FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this file; nothing was changed, retry"))?;
     Ok(lock)
 }
+/// Remove `.<name>.dsh-ops-*` leftovers from earlier writers that were killed
+/// before they could publish.
+///
+/// A `SIGKILL` cannot run a cleanup path, so the debris cannot be prevented at the
+/// point it is created. The next writer of the same file is the only place it can
+/// be bounded, and it is a safe place: the caller holds the update lock, so no live
+/// writer is using any of these names. Best-effort — a leftover that cannot be
+/// removed must not fail the write that is about to happen.
+fn sweep_debris(parent: &cap_std::fs::Dir, name: &str) {
+    let prefix = format!(".{name}.dsh-ops-");
+    if let Ok(entries) = parent.entries() {
+        for entry in entries.flatten() {
+            if let Ok(leftover) = entry.file_name().into_string() {
+                if leftover.starts_with(&prefix) { let _ = parent.remove_file(&leftover); }
+            }
+        }
+    }
+}
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)>> {
     let raw = path.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;
     let checked = crate::file_path::checked(raw)?;
@@ -511,6 +529,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     let preserved = PreservedMetadata::of(&checked)?;
     let parent = checked.parent;
     let name = checked.name;
+    sweep_debris(&parent, &name);
     let temporary = format!(".{name}.dsh-ops-{}", uuid::Uuid::new_v4());
     let mut options = cap_std::fs::OpenOptions::new();
     options.write(true).create_new(true).follow(FollowSymlinks::No);
@@ -535,6 +554,16 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
         return Err(Failure::new("ACCESS_DENIED", format!("Atomic replacement publish: {error}")));
     }
     #[cfg(unix)]
-    crate::sync_directory(&parent)?;
+    if let Err(error) = crate::sync_directory(&parent) {
+        // The rename already happened, so the file *is* replaced. Reporting the
+        // default `effect_state: "none"` here would tell the caller that nothing
+        // changed, which is the one answer a caller must never get wrong: it would
+        // invite a repeat of a write that has already been applied.
+        let mut failure = Failure::new("SYNC_FAILED", format!("Atomic replacement published, but the directory entry could not be synced: {}", error.message));
+        failure.phase = "publish".into();
+        failure.effect_state = "applied".into();
+        failure.next_action = "The replacement is already published; do not repeat it. Verify the file if durability matters.".into();
+        return Err(failure);
+    }
     Ok(report)
 }

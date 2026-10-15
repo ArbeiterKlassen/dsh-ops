@@ -45,6 +45,12 @@ pub struct Job {
     pub protect: Vec<String>,
     pub items: Vec<Item>,
 }
+/// A failed request.
+///
+/// `effect_state` answers the question a caller must not get wrong: did anything
+/// happen? `none` — nothing was written. `applied` — the change is published even
+/// though the call failed, so repeating it is wrong. `unknown` — the failure was
+/// caught mid-flight and the caller has to go and look.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Failure {
