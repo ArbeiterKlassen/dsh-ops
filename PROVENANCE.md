@@ -5,9 +5,10 @@ was not.
 
 ## 0.3.0 release scope and verification
 
-0.3.0 is Windows x64 only, explicitly approved by the maintainer for this release.
-Package os/cpu, component declarations and native target checks agree. Linux,
-macOS and ARM64 are future work; prior cross-compile checks are not release claims.
+0.3.0 supports Windows x64 and Linux x64, explicitly approved by the maintainer
+for this release. Package os/cpu, component declarations and native target checks
+agree. macOS and ARM64 are future work; prior cross-compile checks are not release
+claims. The shell component and its Bash IPC proxies remain Windows-only.
 
 The fixed file worker implements inspect/glob/grep/replace, receives session-cwd
 paths plus authoritative DSH write policy, and rechecks the writable-root allowlist
