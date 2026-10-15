@@ -123,4 +123,38 @@ await test('a cross-line match reports matched: 1 even when the file has no trai
   })
 })
 
+await test('no match is ever reported on a line the file does not have', async () => {
+  await withTempDir('grep-multiline-phantom', async workspace => {
+    const target = path.join(workspace, 'lines.txt')
+    fs.writeFileSync(target, `${LINES.join('\n')}\n`) // five lines, trailing newline
+
+    // Matching the whole file at once makes `$` and `^` match once more, at the
+    // position after the final newline. That position is not a line: reporting it
+    // invented line 6 of a five-line file, with empty text, so `$` answered six
+    // times for five lines. Found by an independent verification pass against the
+    // first version of this feature.
+    const dollars = envelopeOf(await grep(workspace, target, { pattern: '$', multiline: true }), assert)
+    assert.equal(dollars.matched, LINES.length, 'one match per line, and no sixth line')
+    assert.deepEqual(dollars.items.map(item => item.line), [1, 2, 3, 4, 5])
+    assert.ok(dollars.items.every(item => item.text !== ''), 'a reported line must carry content')
+
+    const carets = envelopeOf(await grep(workspace, target, { pattern: '^', multiline: true }), assert)
+    assert.deepEqual(carets.items.map(item => item.line), [1, 2, 3, 4, 5])
+
+    // The property that matters generally: every reported line exists, whatever the
+    // pattern matches. `a*` matches empty at every offset, so it is the strongest
+    // form of this check.
+    const star = envelopeOf(await grep(workspace, target, { pattern: 'a*', multiline: true }), assert)
+    assert.ok(star.items.length > 0)
+    assert.ok(star.items.every(item => item.line >= 1 && item.line <= LINES.length), 'no match may land past the last line')
+
+    // A file with no trailing newline keeps its final match, because there the end
+    // of the file really is the end of a line.
+    const bare = path.join(workspace, 'bare.txt')
+    fs.writeFileSync(bare, 'alpha\nbravo')
+    const bareDollars = envelopeOf(await grep(workspace, bare, { pattern: '$', multiline: true }), assert)
+    assert.deepEqual(bareDollars.items.map(item => item.line), [1, 2])
+  })
+})
+
 report('grep-multiline')

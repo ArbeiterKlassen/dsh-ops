@@ -345,8 +345,20 @@ fn grep(request: &Request) -> Result<Value> {
         // starts, with its context lines around it.
         let hits: Vec<(usize, usize)> = if args.multiline {
             let starts: Vec<usize> = text.match_indices('\n').map(|(at, _)| at + 1).collect();
-            let line_of = |offset: usize| starts.partition_point(|start| *start <= offset);
-            regex.find_iter(&text).map(|found| (line_of(found.start()), line_of(found.end().saturating_sub(1).max(found.start())))).collect()
+            // Clamped, so a match can never be attributed to a line the file does
+            // not have: the offset-to-line map is only meaningful for offsets inside
+            // the text.
+            let line_of = |offset: usize| starts.partition_point(|start| *start <= offset).min(lines.len().saturating_sub(1));
+            regex.find_iter(&text)
+                // Matching the whole file at once adds one zero-width match at the
+                // position after a final newline — the one place `$` and `^` already
+                // matched at the end of the last real line. Reporting it invented
+                // line N+1 with empty text, so `$` answered six times for a
+                // five-line file. A file with no trailing newline keeps its last
+                // match, because there the end of the file is the end of a line.
+                .filter(|found| found.start() < text.len() || !text.ends_with('\n'))
+                .map(|found| (line_of(found.start()), line_of(found.end().saturating_sub(1).max(found.start()))))
+                .collect()
         } else {
             lines.iter().enumerate().filter(|(_, line)| regex.is_match(line)).map(|(index, _)| (index, index)).collect()
         };
