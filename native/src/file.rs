@@ -2,6 +2,7 @@
 //! this module never invokes a shell and never follows links.
 use crate::contract::{Failure, Request, Result};
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
+use fs2::FileExt;
 use regex::RegexBuilder;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -357,8 +358,31 @@ fn replace(request: &Request) -> Result<Value> {
                 return Err(Failure::new("POLICY_DENIED", "User authorized workspace writes only; target is outside DSH writable roots. Ask the user to select full access; do not retry or bypass."));
             }
         }
+        // Hold the update lock across the check, the read and the publish, so a
+        // peer cannot slip in between them and lose our write, or make us lose
+        // its. The guard is named, not `_`, so it lives to the end of this pass.
+        let _update = lock_for_update(&file)?;
         let expected=item["revision"].as_str().unwrap_or(""); if hash_file(&file)? != expected { return Err(Failure::new("REVISION_CONFLICT", "file changed between observe and execute")); } let bytes=read_bytes(&file)?; let text=String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "replace only supports UTF-8 files"))?; let next=text.replace(&args.pattern,&args.replacement); atomic_write(&file,next.as_bytes())?; changed += item["replacements"].as_u64().unwrap_or(0) as usize; }
     Ok(json!({"status":"completed","phase":"verify","changed":changed,"matched":total,"skipped":0,"failed":0,"complete":true,"omitted":0,"items":items}))
+}
+/// Take the target's exclusive update lock and return the handle that owns it.
+///
+/// Keeping that handle alive across the revision check, the read and the publish
+/// is what makes the check mean anything. Without it the check is check-then-act:
+/// two callers can both observe the same pre-image, both pass it and both report a
+/// change, while only the last rename survives — a lost update reported as two
+/// successes.
+///
+/// The lock is advisory and scoped to the handle, the way `store.rs` locks its
+/// workspace store. A writer that never takes it is still caught by the revision
+/// check, only later. Failing instead of waiting is deliberate: a blocked worker
+/// gets killed by the host, whereas a caller told nothing changed can retry.
+fn lock_for_update(file: &Path) -> Result<std::fs::File> {
+    let raw = file.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;
+    let target = crate::file_path::checked(raw)?;
+    let lock = crate::file_path::read_file(&target)?.into_std();
+    FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this file; nothing was changed, retry"))?;
+    Ok(lock)
 }
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let raw = path.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;

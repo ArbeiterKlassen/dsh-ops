@@ -152,15 +152,15 @@ see so the diagnostic fix can be checked against it.
 
 ---
 
-## W3 — the seven new boundary suites on Windows x64
+## W3 — the nine new boundary suites on Windows x64
 
-`test/run.mjs` auto-discovers `test/*.test.mjs`. Eight new suites were added
+`test/run.mjs` auto-discovers `test/*.test.mjs`. Nine new suites were added
 (`test/lib/boundary.mjs` is a shared helper, not a suite). They were written so
 that a Windows run never reports a Linux-only check as passed and never fails for
 a Linux-only reason — but that reasoning is untested on a real Windows host.
 
 ```powershell
-npm run verify            # expect: 22 suite(s) passed, 0 failed
+npm run verify            # expect: 23 suite(s) passed, 0 failed
 npm run validate:manifest # expect: all 58 checks passed
 ```
 
@@ -168,6 +168,7 @@ npm run validate:manifest # expect: all 58 checks passed
 | --- | --- |
 | `inspect-hex.test.mjs` | Runs fully (byte slicing, platform-neutral) |
 | `output-budget.test.mjs` | Runs fully (byte accounting, platform-neutral) |
+| `replace-concurrency.test.mjs` | Must pass, but the outcome depends on Windows lock semantics — see the update-lock note below |
 | `linux-args.test.mjs` | Runs fully (platform-neutral) |
 | `linux-protocol.test.mjs` | Runs fully (platform-neutral) |
 | `linux-scope.test.mjs` | Runs fully (platform-neutral; the staged-worker digest case returns early when `runtime/` carries only the other platform) |
@@ -195,19 +196,40 @@ If any suite fails on Windows, that is a real finding: the guard is wrong.
 ## W4 — the cross-platform defects, confirmed on Windows
 
 These were declared cross-platform on the strength of code reading, so they need
-a Windows data point. All of them are **open** and are covered by the fix plan.
+a Windows data point. Rows marked **fixed** now have a suite on this branch and
+must show the *fixed* behaviour; the rest are **open** and are covered by the fix
+plan.
 
 | Item | Repro | Expected (current behaviour) |
 | --- | --- | --- |
-| **L2** hex view drops the first 16 bytes | 8-byte file + `ops_inspect_local_file {view:"hex"}` with no offset | `items[0].text == ""` while `status:"completed"`, `complete:true`, `skipped:8` |
+| **L2** hex view drops the first 16 bytes — **fixed** | 8-byte file + `ops_inspect_local_file {view:"hex"}` with no offset | `items[0].text == "deadbeef00112233"`, `bytesTotal: 8`, `complete: true`, and `skipped: 0` |
 | **L3** default `maxReplacements` is a reject threshold | 101 matches, no explicit `maxReplacements` | whole operation refused, `OUTPUT_LIMIT`, **no file changed**, message blames the pattern |
-| **L4** `limit` bounds lines, not bytes | a file whose single line is 200 KB | `OUTPUT_LIMIT` with `effectState:"unknown"` on a **pure read**; the wall is the host's `stdout: { maxBytes: 128 * 1024 }`, so the boundary sits just under 128 KiB (122,880 B passes, 133,120 B fails) |
+| **L4** `limit` bounds lines, not bytes — **fixed** | a file whose single line is 200 KB | the read completes with `truncated: true`, `items[0].truncatedInLine: true` and `bytesTotal`, still under the host's `stdout: { maxBytes: 128 * 1024 }`; the worker's own ceiling is 96 KiB |
 | **L5** `replace` pattern is a literal substring | `pattern:"a.c"` against text `abc` | no match, no error; `grep`'s same-named parameter *is* a regex |
 | **L6** `multiline` cannot cross lines | `pattern:"alpha\nbeta"` with `multiline:true` | 0 matches, no error |
 | **L7** hard kill leaves hidden debris | SIGKILL `ops_replace` during publication | a `.<name>.dsh-ops-<uuid>` file may remain (2 of 5 trials on Linux) |
 | **L8** sparse files are materialised | 16 MiB sparse hole | 16 MiB of real allocation |
 | **L12** exec bit is not validated | a 0644 worker binary | accepted at resolve time, fails later as `EACCES` |
-| **L14** concurrent replaces lose an update | 6 simultaneous `ops_replace` on one file | every call reports `changed=1`, but only one edit survives — a silent lost update, never a torn file |
+| **L14** concurrent replaces lose an update — **fixed** | 6 simultaneous `ops_replace` on one file | exactly one call reports a change and its replacement is the one in the file; the others refuse with `REVISION_CONFLICT` or report `changed: 0` |
+
+### The update lock on Windows — a new data point, please
+
+The L14 fix takes an exclusive advisory lock on the target before re-checking the
+revision and publishing. On Linux that is `flock`, which is advisory: a process
+that never locks is unaffected. On Windows `fs2` reaches for `LockFileEx`, and
+byte-range locks there are **mandatory** — a concurrent read of the locked range
+by another process can fail with `ERROR_LOCK_VIOLATION` instead of waiting.
+
+Two questions, both answered by `npm run verify`:
+
+1. Does `replace-concurrency` pass — does exactly one writer win, with every other
+   call refusing or reporting `changed: 0`?
+2. While one process holds the lock, does a plain `ops_inspect_local_file` on the
+   same file still succeed? If reads are refused, the lock needs narrowing (a
+   dedicated lock file, or a per-directory lock) before this ships on Windows.
+
+The `replace` path itself is exercised by `linux-args.test.mjs` on every platform,
+so a Windows failure here is specific to the lock.
 
 ---
 
