@@ -1,4 +1,4 @@
-# Native PTC enhancement — 0.3.0 Windows x64
+# Native PTC enhancement — 0.3.0
 
 Issues: [#3](https://github.com/T-Auto/dsh-ops/issues/3), [#8](https://github.com/T-Auto/dsh-ops/issues/8).
 The file and PTC components use an independent Rust worker. FastCtx remains only
@@ -9,9 +9,12 @@ behind the explicitly enabled background component.
 0.3.0 ships Windows x64 only: `runtime/win32-x64/dsh-ops-worker.exe`, its
 version/checksum receipt, and Bash IPC compatibility proxies. Package os/cpu,
 manifest and release checks agree on that scope. `npm run verify:release`
-rejects missing/corrupt worker or proxy artifacts. Linux/macOS/ARM64 are not
-supported by this release. No postinstall download/build or binaryPath override
-is required. Source builds use `npm run build:ptc` and `npm run build:bash-ipc`.
+rejects missing/corrupt worker or proxy artifacts. Linux/ARM64 are not supported
+by this release; macOS arm64 is added after 0.3.0 and stages its own
+`runtime/darwin-arm64/dsh-ops-worker` from the same crate (see
+[macOS arm64](macos-arm64.md)). No postinstall download/build or binaryPath
+override is required. Source builds use `npm run build:ptc` and
+`npm run build:bash-ipc`.
 
 PTC/Bash use original per-call sandboxPolicy and sandbox.confine, reporting the
 host's full/partial enforcement honestly. Read-only permits existing result pages
@@ -27,7 +30,8 @@ Real Windows provider and pure PTC SDK acceptance is covered in the release gate
 
 The fixed file component follows DSH fs-sandbox's trusted-operation policy fence,
 not arbitrary-code isolation; shell and PTC code still require confinement.
-Only Windows x64 runtime/proxy binaries are shipped and claimed by 0.3.0.
+0.3.0 ships and claims Windows x64 runtime/proxy binaries only; macOS arm64
+stages its own worker from the same crate and carries no proxy binaries.
 
 In `workspace-write`, native batch/result operations and their audit records are
 permitted under the selected workspace root through DSH confinement. Read-only
@@ -58,7 +62,7 @@ session toolchain before building; do not add multi-version toolchains to global
 Enable the opt-in `dsh-ops/ptc` bundle row. Its only config keys are `required`
 (default false) and an optional absolute `binaryPath`. `DSH_OPS_WORKER_BIN` can
 select a build; otherwise the component uses `runtime/<platform>-<arch>/dsh-ops-worker[.exe]` before `native/target/release`.
-The component remains opt-in. Published 0.3.0 packages include Windows x64 runtime bytes; source checkouts stage them explicitly. There is no automatic compilation or download during installation.
+The component remains opt-in. Published 0.3.0 packages include Windows x64 runtime bytes; source checkouts stage them explicitly, and macOS arm64 stages its own worker with `node bin/native-runtime.mjs stage --platform darwin-arm64`. There is no automatic compilation or download during installation.
 
 The session must already use DSH's **PTC-only** presentation. The component does
 not force presentation, replace the registry, or create a REPL. It recognizes the

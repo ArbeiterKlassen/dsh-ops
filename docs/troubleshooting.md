@@ -106,6 +106,34 @@ Legacy explicitly provisioned `<DSH_HOME>/dsh-ops/` files must be cleaned separa
 
 No. It is a reusable upstream shared process; a dead parent alone is not a leak. With no clients and about ten minutes of inactivity, it exits normally. Do not kill it by process-name sweeps. This release does not automatically sweep processes left by older versions.
 
+## macOS arm64
+
+### There is no bundled bash or PowerShell payload
+
+macOS ships no `@dsh-ops/bash-darwin-arm64` or `@dsh-ops/pwsh-darwin-arm64`
+package, and no portable upstream bash exists for macOS. Select the shell the
+plugin should use with `bashPath` (for example `/opt/homebrew/bin/bash`), and
+repeat that key on **every** row that needs bash: a `bashPath` on
+`dsh-ops/shell` alone leaves `dsh-ops/background` without a resolvable bash, and
+its four tools are then never published, without any error being reported.
+PowerShell 7 can be provisioned, but the host disables its `pwsh-sandbox` and
+`tool-pwsh` rows outside Windows, so no pwsh tool appears on macOS.
+
+### The file tools reject a path under `/tmp`
+
+`/tmp` is a symlink to `/private/tmp` on macOS, and the native file worker
+refuses to traverse links. The file tools answer
+`POLICY_DENIED: Links, reparse points and special objects are not traversed` for
+such a path; pass the canonical path (`/private/tmp/...`) instead. This is the
+intended no-follow behaviour, not a defect.
+
+### The file tools disappeared after changing the package
+
+The host imports the plugin's modules once, so a profile patch edit can remount
+or unmount a component but cannot replace already-loaded code. After swapping the
+package version, restart the application. Configuration changes alone do take
+effect without a restart.
+
 ---
 
 ## See also

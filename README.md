@@ -7,7 +7,7 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 
 > tips：本项目的 ops 是广义 operations（运行操作）的缩写，代指本插件处于 dsh 和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
 
-**0.3.0 仅支持 Windows x64**，目标宿主 DSH `0.2.0-rc.2`。原生 Rust 文件/PTC worker 随包携带；PTC 默认关闭，须显式启用。Linux/macOS/ARM64 留待后续版本。见 [PTC 设计与使用](docs/native-ptc.md)。
+**0.3.0 的发布范围是 Windows x64**，目标宿主 DSH `0.2.0-rc.2`；本分支已扩展到 **macOS arm64**（`darwin-arm64`），Linux 仍留待后续版本。原生 Rust worker **不进 git**，macOS 上须自行构建；PTC 默认关闭，须显式启用。见 [macOS arm64](docs/macos-arm64.md) 与 [PTC 设计与使用](docs/native-ptc.md)。
 
 有问题可以加qq群：1127808570
 
@@ -25,7 +25,7 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 
   的成绩，并改善了在 DSH 运行的 AI 的智力表现。
 
-- （仅 Windows）提供独立 **bash 5.3.15** 和独立 **PowerShell 7.6.6**：优先使用 bash，必要时回退 pwsh 7，让你的 AI 不再和 PowerShell 打架 —— **不修改系统默认终端、PATH 或宿主原有 shell 工具名称**，环境变量安全。
+- （自带载荷仅 Windows）提供独立 **bash 5.3.15** 和独立 **PowerShell 7.6.6**：优先使用 bash，必要时回退 pwsh 7，让你的 AI 不再和 PowerShell 打架 —— **不修改系统默认终端、PATH 或宿主原有 shell 工具名称**，环境变量安全。macOS 没有对应载荷：bash 由配置项 `bashPath` 指向本机副本（如 Homebrew bash），pwsh 在 macOS 上不可用，见 [macOS arm64](docs/macos-arm64.md)。
 
 - 独立的 Rust 原生文件工具与安全批处理（**默认关闭**，须显式启用），见 [组件参考](docs/组件参考.md)。
 
@@ -42,7 +42,7 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 ### 前置条件
 
 - **Node.js `^22.19 || >=24`**（`package.json` 的 `engines` 要求）
-- Windows x64
+- Windows x64，或 macOS arm64（macOS 须自行构建原生 worker，见 [macOS arm64](docs/macos-arm64.md)）
 - 目标 DSH 应用已初始化
 
 ### 安装
@@ -108,6 +108,7 @@ Bundle 声明四个组件，分别启停，首次安装默认开启前两个：
 | 四个组件分别发布什么工具、参数与权限 | [docs/组件参考.md](docs/组件参考.md) |
 | 报错怎么读、装不上怎么办、常见问题 | [docs/常见问题.md](docs/常见问题.md) |
 | 原生 PTC 的设计与使用 | [docs/native-ptc.md](docs/native-ptc.md) |
+| macOS arm64 的支持范围、构建与配置 | [docs/macos-arm64.md](docs/macos-arm64.md) |
 | 版本变更历史 | [CHANGELOG.md](CHANGELOG.md) |
 | 来源与载荷许可记录 | [PROVENANCE.md](PROVENANCE.md) |
 

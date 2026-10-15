@@ -8,7 +8,7 @@ attention wasted on repeated PowerShell errors.
 
 > tips: "ops" here is short for the general sense of operations — the plugin sits at the base layer between dsh and system / code / file operations. It is not an operations (DevOps) plugin.
 
-**0.3.0 supports Windows x64 only**, targeting DSH `0.2.0-rc.2`. The independent Rust file/PTC worker is included; PTC remains opt-in. Linux/macOS/ARM64 are future work, not release claims. See [Native PTC](docs/native-ptc.md).
+**0.3.0 shipped Windows x64**; this branch adds **macOS arm64** (`darwin-arm64`), targeting DSH `0.2.0-rc.2`. The independent Rust worker ships in the published package but is **not carried in git**, so macOS has to build it locally. PTC remains opt-in, and Linux remains future work. See [macOS arm64](docs/macos-arm64.md) and [Native PTC](docs/native-ptc.md).
 
 ---
 
@@ -23,7 +23,7 @@ attention wasted on repeated PowerShell errors.
 
   and improved model performance on DSH.
 
-- (Windows only) Independent **bash 5.3.15** and independent **PowerShell 7.6.6**: bash is preferred, and pwsh 7 is the fallback when it is needed, so your AI no longer fights PowerShell — **it does not change the system default terminal, PATH or existing host shell tool names**, and environment variables stay safe.
+- (Bundled payloads are Windows only) Independent **bash 5.3.15** and independent **PowerShell 7.6.6**: bash is preferred, and pwsh 7 is the fallback when it is needed, so your AI no longer fights PowerShell — **it does not change the system default terminal, PATH or existing host shell tool names**, and environment variables stay safe. macOS ships no such payload: bash comes from the configured `bashPath`, and pwsh is unavailable there; see [macOS arm64](docs/macos-arm64.md).
 
 - Independent native Rust file tools and safe batch operations (**off by default**, opt-in), see [Component reference](docs/component-reference.md).
 
@@ -42,7 +42,7 @@ Routing: **toolkit → bash → PowerShell 7**.
 ### Prerequisites
 
 - **Node.js `^22.19 || >=24`** (the `engines` requirement in `package.json`)
-- Windows x64
+- Windows x64, or macOS arm64 (the native worker must be built locally; see [macOS arm64](docs/macos-arm64.md))
 - The target DSH application initialized
 
 ### Install
@@ -108,6 +108,7 @@ Full tool parameters, configuration keys and permission requirements: [Component
 | What tools each of the four components publishes, with parameters and permissions | [docs/component-reference.md](docs/component-reference.md) |
 | How to read the errors, what to do when installation fails | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | The native PTC design and usage | [docs/native-ptc.md](docs/native-ptc.md) |
+| macOS arm64 scope, build and configuration | [docs/macos-arm64.md](docs/macos-arm64.md) |
 | Version history | [CHANGELOG.md](CHANGELOG.md) |
 | Provenance and payload license records | [PROVENANCE.md](PROVENANCE.md) |
 

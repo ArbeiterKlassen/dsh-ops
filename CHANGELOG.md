@@ -5,11 +5,23 @@ All notable changes to this package are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — macOS arm64 support
+
+- Widen the package scope to Windows x64 **and** macOS arm64: `os`/`cpu` accept `darwin`/`arm64`, and `PLATFORMS` adds `darwin-arm64` to the native worker targets.
+- Add `@fastctx/darwin-arm64` as an optional dependency. FastCtx is resolved from the plugin's own `node_modules`, so the background component cannot rely on a profile-level copy of it.
+- Derive shell file names from the platform (`shellExecutable`): the `bash.exe` / `pwsh.exe` name on Windows, the bare name elsewhere. The Windows names and the two Windows pins are unchanged.
+- Add the Homebrew and system well-known install locations to system discovery on macOS and Linux. No portable upstream bash exists for macOS, so the shell component is pointed at the operator's own copy with `bashPath`.
+- Add a digest-pinned PowerShell 7.6.6 `tar.gz` pin for darwin-arm64 and a `tar.gz` extractor to `provision-shells`. The host disables its `pwsh-sandbox` and `tool-pwsh` rows outside Windows, so no pwsh tool appears on macOS.
+- Drop the win32-only gate on the pwsh overlay: it is gated by `shells.pwsh.available` alone, and stays a no-op wherever the host disables the owning row.
+- Accept darwin in the profile commands, discover the desktop application's CLI per platform, and allow `DSH_OPS_INSTALL_SPEC` to select what an install resolves to.
+- Make the manifest and release gates follow the declared platform scope, and parameterise the test fixtures and assertions by platform. See [macOS arm64](docs/macos-arm64.md).
+
 ## [0.3.0] — 2026-10-14 — Windows x64 native tools and PTC
 
-Release scope: **Windows x64 only**, targeting DSH 0.2.0-rc.2. Linux/macOS/ARM64
-are not shipped or claimed. The package includes the native Rust worker, Windows
-Bash IPC proxies, receipts and matching source; payload dependencies remain 0.2.1.
+Release scope: **Windows x64 only**, targeting DSH 0.2.0-rc.2. macOS arm64 is
+added after this release (see [Unreleased]); Linux/ARM64 are not shipped or
+claimed. The package includes the native Rust worker, Windows Bash IPC proxies,
+receipts and matching source; payload dependencies remain 0.2.1.
 
 ### Permission alignment
 
@@ -53,7 +65,7 @@ These fixes are included in 0.3.0; the three Windows payload dependencies are un
 - Keep business code separate from one three-scenario simulation suite using the real Rust worker and real Cordis/tools/prompt registration.
 - Target native Windows/macOS/Linux; Windows runtime acceptance and Linux/macOS compile checks are recorded separately from pending on-platform sandbox tests. Legacy payloads remain unchanged.
 - Keep each component icon inside its exported manifest directory; fix the PTC Plugin Manager metadata error caused by the parent-relative icon path, with coverage in the existing manifest suite.
-- Source builds use `npm run build:ptc` and `npm run build:bash-ipc`; published 0.3.0 artifacts are Windows x64 only. See `docs/native-ptc.md`.
+- Source builds use `npm run build:ptc` and `npm run build:bash-ipc`; published 0.3.0 artifacts are Windows x64 only. macOS arm64 support is added after this release (see [Unreleased]). See `docs/native-ptc.md`.
 
 ## [Unreleased] — Background job argument strictness
 
