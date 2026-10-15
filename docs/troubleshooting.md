@@ -77,10 +77,17 @@ What to do:
 ### `ops_bash` rejects `sandbox_permissions` / `justification`
 
 The host `bash` tool accepts per-call escalation; `ops_bash` does not, and says so in the error. Ask the user to change the session permission mode instead of retrying the call.
+### Empty placeholder arguments on file tools
+
+Strict tool-call adapters that fill every schema field send `""`, `null` or `[]` for unused optional fields of `ops_inspect_local_file`, `ops_grep`, `ops_glob` and `ops_replace`. The plugin drops those placeholders for optional fields before the native worker runs, so they no longer trip `path`/`encoding`/`view` validation. Required fields, `replacement: ""`, `false` and `0` are forwarded unchanged, so genuinely invalid values still error.
 
 ---
 
 ## Permissions and sandboxing
+
+### Host `edit` says "has not been read" or "changed since it was read" after ops file tools
+
+Fixed since this change: `ops_inspect_local_file` and `ops_replace` report to the host's read-before-edit table like host `read`/`edit`, so host `edit` works right after them. On older versions (FastCtx-backed 0.2.x), ops reads did not count — read the file with the host `read` tool before using host `edit`. (#17)
 
 ### Do the file tools need command permission?
 
