@@ -43,7 +43,7 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 - **仅 Windows**：shell 组件（`ops_bash` / pwsh 7）及其 Bash IPC 代理；以它为执行通道的后台组件在 Linux 上不可用。
 - **构建与安装**：见 [Linux 构建与验证](docs/linux构建.md)（[English](docs/linux-build.md)）—— `npm run verify` → `npm run build:ptc` → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz`。
 - **平台差异已处理**：替换文件时保留 mode/owner/POSIX ACL/xattr；目录 `fsync` 按 POSIX 语义；`multiline` 搜索跨行匹配；读取按编码字节与行数双重设界。Windows 侧等价的安全描述符（DACL）处理见 [Windows 验证清单](docs/windows-verification.md)。
-- **实测状态**（Debian 13 x86_64）：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 25 个套件全通过、0 跳过；`npm run validate:manifest` → 58 项全通过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留元数据。
+- **实测状态**（Debian 13 x86_64）：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 27 个套件全通过、0 跳过；`npm run validate:manifest` → 58 项全通过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留元数据。
 - 这些实测暴露并**已修复**的缺陷（Windows 同样受益）：替换丢失 mode/ACL/xattr、`multiline` 无法跨行、单行超长文件让读取整体失败、并发替换静默丢更新、硬杀残留临时文件、worker 无执行位时只报裸 `EACCES`。详见 [0.3.1 发布说明](docs/release-0.3.1.md) 与 [CHANGELOG](CHANGELOG.md)。
 
 ---
@@ -75,6 +75,8 @@ npx --yes dsh-ops@latest install --profile desktop
 > ⚠️ **`node_modules/@dsh-ops/` 下没有 `bash-win32-x64` 不是安装损坏。** 三个载荷都是精确钉版的**可选依赖**（`optionalDependencies`）：若你的 registry 未同步该平台包的对应版本，包管理器会**静默跳过**它——安装仍以退出码 0 结束，且不打印任何指向缺包的警告。
 
 > **不要**用 `allowSystemShellFallback: true` 绕过：那是安全姿态降级（改用未固定摘要的系统 bash），且首次升级启动的配置迁移会把它改回 `false`。
+
+> **`bashPath` 仅在 `danger-full-access` 下生效**：只读/工作区内修改模式只运行固定摘要的随包或 provision 的 bash，自带 Git for Windows 会按设计返回 `EXECUTOR_UNAVAILABLE`，不要靠它绕过受限模式问题。见 [配置参考](docs/配置参考.md)。
 
 > 普通 DSH CLI 不能管理保留的 `desktop` profile；不要把它与桌面自带入口混淆。
 

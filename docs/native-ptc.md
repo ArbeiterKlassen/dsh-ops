@@ -291,7 +291,7 @@ all `native/src` and `lib/ptc` business code:
 Windows x64: release build, clippy `-D warnings`, full `npm run verify` and original
 DSH process sandbox acceptance executed.
 Linux x64 (`x86_64-unknown-linux-gnu`): release build, `cargo test`, full
-`npm run verify` (every suite that does not need a FastCtx runtime, i.e. 23 passed
+`npm run verify` (every suite that does not need a FastCtx runtime, i.e. 25 passed
 and 2 skipped) and the native worker scenarios executed on the platform, including
 the DSH local sandbox's workspace/temporary-area policy fence.
 macOS arm64 (`aarch64-apple-darwin`) is `cargo check --locked` only: compiling the

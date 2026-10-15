@@ -44,7 +44,7 @@ On **Linux x64** `dsh-ops` does what it does on Windows, except where noted belo
 - **Windows-only**: the shell component (`ops_bash` / pwsh 7) and its Bash IPC proxies; the background component, which uses them as its execution channel, is unavailable on Linux.
 - **Build and install**: see [Building and verifying on Linux](docs/linux-build.md) — `npm run verify` → `npm run build:ptc` → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz`.
 - **Platform differences handled**: replacing a file keeps its mode/owner/POSIX ACL/xattrs; directory `fsync` follows POSIX semantics; `multiline` search reaches across lines; reads are bounded by encoded bytes as well as by lines. The Windows-side equivalent (the security descriptor) is tracked in the [Windows verification checklist](docs/windows-verification.md).
-- **Measured state** (Debian 13 x86_64): `DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 25 suites passed, no skips; `npm run validate:manifest` → all 58 checks passed; `npm run verify:release` → release closure OK; a `npm pack` tarball unpacks to a worker whose receipt sha256 matches, with its execute bit intact and metadata preserved across a replace.
+- **Measured state** (Debian 13 x86_64): `DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 27 suites passed, no skips; `npm run validate:manifest` → all 58 checks passed; `npm run verify:release` → release closure OK; a `npm pack` tarball unpacks to a worker whose receipt sha256 matches, with its execute bit intact and metadata preserved across a replace.
 - The defects those runs found are **fixed here**, and Windows gains them too: a replace no longer loses mode/ACL/xattrs, `multiline` reaches across lines, one long line no longer fails a read outright, concurrent replaces no longer lose a write silently, a hard kill leaves no unbounded debris, and an unexecutable worker is named by path and mode instead of a bare `EACCES`. See the [0.3.1 release notes](docs/release-0.3.1.md) and the [CHANGELOG](CHANGELOG.md).
 
 ---
@@ -76,6 +76,8 @@ Desktop must use the CLI bundled with the desktop application; the default auto-
 > ⚠️ **A missing `bash-win32-x64` under `node_modules/@dsh-ops/` is not a broken installation.** The three payloads are exact-versioned **optional dependencies** (`optionalDependencies`): if your registry has not synced that platform package at the pinned version, the package manager **skips it silently** — the install still exits 0 and prints no warning that names the missing payload.
 
 > **Do not** work around a missing payload with `allowSystemShellFallback: true`: that lowers the security posture (it uses a system bash with no pinned digest), and the one-time startup configuration migration sets it back to `false`.
+
+> **`bashPath` works only in `danger-full-access`.** Read-only and workspace-write sessions run only the pinned bundled or provisioned bash; your own Git for Windows returns `EXECUTOR_UNAVAILABLE` by design, so do not use it to work around restricted-mode problems. See the [Configuration reference](docs/configuration-reference.md).
 
 > The ordinary DSH CLI cannot manage the reserved `desktop` profile; do not confuse it with the desktop app's bundled entry point.
 

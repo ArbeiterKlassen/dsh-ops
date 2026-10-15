@@ -19,6 +19,7 @@ import * as urlHelpers from 'node:url'
 import fs from 'node:fs'
 import path from 'node:path'
 import { mountBundledPwsh } from '../lib/session-pwsh.js'
+import { sessionWorkdir } from '../lib/session-shells.js'
 import { parseDocument } from 'yaml'
 import { resolveConfig } from '../lib/config.js'
 import {
@@ -39,6 +40,7 @@ import {
   publishShellTools,
   resolveShells,
   shellUpstreamPin,
+  withBashStatus,
 } from '../lib/shells.js'
 import { assert, PACKAGE_ROOT, TEST_HOME, report, test, withTempDir } from './lib/harness.mjs'
 
@@ -861,7 +863,7 @@ await test('ops_bash runs the resolved bash as `bash -c <command>` through ctx.s
     const definition = bashToolDefinition({ file: shells.bash.file, source: shells.bash.source, subprocess: service })
 
     const controller = new AbortController()
-    const spec = { cwd: 'D:\\work' }
+    const spec = { cwd: dir }
     const running = definition.execute(
       { command: 'echo $BASH_VERSION', workdir: spec.cwd, timeoutMs: 5_000, graceMs: 250 },
       { signal: controller.signal },
@@ -872,7 +874,7 @@ await test('ops_bash runs the resolved bash as `bash -c <command>` through ctx.s
     assert.equal(specs.length, 1)
     const [spawned] = specs
     assert.deepEqual(spawned.argv, [bash, '-c', 'echo $BASH_VERSION'])
-    assert.equal(spawned.cwd, 'D:\\work')
+    assert.equal(spawned.cwd, dir)
     assert.equal(spawned.graceMs, 250)
     assert.equal(spawned.signal.aborted, false)
     assert.deepEqual(spawned.env, { ...ENV_OVERRIDES })
@@ -885,6 +887,7 @@ await test('ops_bash runs the resolved bash as `bash -c <command>` through ctx.s
     // never carries a null, because the output schema declares single types.
     assert.deepEqual(value, {
       exitCode: 3,
+      status: 'failed',
       timedOut: false,
       timeoutMs: 5_000,
       stdout: { text: 'out\n', truncated: false },
@@ -907,6 +910,7 @@ await test('ops_bash reports a signal death with a signal and no exit code', asy
 
     assert.deepEqual(value, {
       signal: 'SIGTERM',
+      status: 'failed',
       timedOut: false,
       timeoutMs: DEFAULT_BASH_TIMEOUT_MS,
       stdout: { text: '', truncated: false },
@@ -914,6 +918,31 @@ await test('ops_bash reports a signal death with a signal and no exit code', asy
     })
     assert.equal(Object.hasOwn(value, 'exitCode'), false)
     assert.equal(definition.output.render({}, value)[0].text, '(no output)\n[signal: SIGTERM]')
+  })
+})
+
+await test('ops_bash results carry status: completed only for a clean zero exit (#44)', async () => {
+  await withTempDir('shells-status', async (dir) => {
+    const bash = makeExecutable(path.join(dir, 'bash'))
+    const run = async (outcome, args = { command: 'true' }) => {
+      const { service, settle } = fakeSubprocess(outcome)
+      const running = bashToolDefinition({ file: bash, source: 'config', subprocess: service }).execute(args, { signal: new AbortController().signal })
+      settle()
+      return running
+    }
+    assert.equal((await run({ exitCode: 0, stdout: 'ok' })).status, 'completed')
+    assert.equal((await run({ exitCode: 1 })).status, 'failed')
+    assert.equal((await run({ exitCode: null, signal: 'SIGKILL' })).status, 'failed')
+    const broken = { spawn() { throw Object.assign(new Error('gone'), { code: 'ENOENT' }) } }
+    const spawnError = await bashToolDefinition({ file: bash, source: 'config', subprocess: broken }).execute({ command: 'true' }, {})
+    assert.equal(spawnError.status, 'failed')
+    assert.match(spawnError.error, /ENOENT/)
+    // Stamping after a wrapper adds error/permission always yields failed.
+    assert.equal(withBashStatus({ exitCode: 0, timedOut: false, error: 'EXECUTOR_UNAVAILABLE' }).status, 'failed')
+    assert.equal(withBashStatus({ exitCode: 0, timedOut: false, permission: {} }).status, 'failed')
+    assert.equal(withBashStatus({ exitCode: 0, timedOut: true }).status, 'failed')
+    // Argument errors still throw, so the host reports them as a failed tool call.
+    await assert.rejects(() => run({ exitCode: 0 }, { command: 'true', bogus: 1 }), /unknown key "bogus"/)
   })
 })
 
@@ -949,14 +978,65 @@ await test('ops_bash executes a script_path without embedding its contents in ar
     makeExecutable(script)
     const { service, specs, settle } = fakeSubprocess()
     const definition = bashToolDefinition({ file: bash, source: 'config', subprocess: service })
-    const running = definition.execute({ script_path: script, workdir: 'D:\\work' }, { signal: new AbortController().signal })
+    const running = definition.execute({ script_path: script, workdir: dir }, { signal: new AbortController().signal })
     settle()
     await running
 
     assert.deepEqual(specs[0].argv, [bash, script])
-    assert.equal(specs[0].cwd, 'D:\\work')
+    assert.equal(specs[0].cwd, dir)
     assert.equal(specs[0].stdio.stdin, 'ignore')
   })
+})
+
+await test('ops_bash rejects a missing or non-directory workdir before spawning', async () => {
+  await withTempDir('shells-workdir', async (dir) => {
+    const bash = makeExecutable(path.join(dir, 'bash'))
+    const file = path.join(dir, 'a-file')
+    fs.writeFileSync(file, 'placeholder')
+    // The service records any spawn: a rejected workdir must never reach it,
+    // or the failure would come back as the misleading missing-payload ENOENT.
+    const { service, specs } = fakeSubprocess()
+    const definition = bashToolDefinition({ file: bash, source: 'bundled', subprocess: service })
+    const exec = { signal: new AbortController().signal }
+    const missing = path.join(dir, 'definitely-missing')
+
+    await assert.rejects(
+      () => definition.execute({ command: 'echo hi', workdir: missing }, exec),
+      { message: `invalid workdir: must be an existing directory, got ${missing}` })
+    await assert.rejects(
+      () => definition.execute({ command: 'echo hi', workdir: file }, exec),
+      { message: `invalid workdir: must be an existing directory, got ${file}` })
+    assert.equal(specs.length, 0)
+  })
+})
+
+await test('ops_bash rejects an empty workdir string instead of spawning it', async () => {
+  const { service, specs } = fakeSubprocess()
+  const definition = bashToolDefinition({ file: 'bash', source: 'config', subprocess: service })
+  const exec = { signal: new AbortController().signal }
+  // Placeholder strings are the session layer's job (sessionWorkdir resolves
+  // them to the session directory); a string that reaches the executor is a
+  // chosen path, and "" names no directory.
+  for (const workdir of ['', '   ']) {
+    await assert.rejects(
+      () => definition.execute({ command: 'echo hi', workdir }, exec),
+      /invalid workdir: must be an existing directory/)
+  }
+  assert.equal(specs.length, 0)
+})
+
+await test('sessionWorkdir resolves placeholders to the session directory', async () => {
+  const session = { header: { cwd: 'C:\\session\\cwd' } }
+  assert.equal(sessionWorkdir({}, session), 'C:\\session\\cwd')
+  assert.equal(sessionWorkdir({ workdir: undefined }, session), 'C:\\session\\cwd')
+  assert.equal(sessionWorkdir({ workdir: null }, session), 'C:\\session\\cwd')
+  assert.equal(sessionWorkdir({ workdir: '' }, session), 'C:\\session\\cwd')
+  assert.equal(sessionWorkdir({ workdir: '   ' }, session), 'C:\\session\\cwd')
+  assert.equal(sessionWorkdir({ workdir: 'D:\\chosen' }, session), 'D:\\chosen')
+  // A meaningful string passes through unaltered, and a non-string is not
+  // silently coerced to the default; the executor rejects it.
+  assert.equal(sessionWorkdir({ workdir: '  D:\\chosen  ' }, session), '  D:\\chosen  ')
+  assert.equal(sessionWorkdir({ workdir: 5 }, session), 5)
 })
 
 await test('ops_bash turns a missing executable into the remedy its source deserves', async () => {
@@ -1100,6 +1180,15 @@ await test('ops_bash refuses an argument its schema does not declare', async () 
     await assert.rejects(
       () => definition.execute({ command: 'ls', bogus: 1, other: 2 }, exec),
       /unknown keys "bogus", "other"/,
+    )
+    // Host-style per-call escalation is named as unsupported, with the real next step (#42).
+    await assert.rejects(
+      () => definition.execute({ command: 'ls', sandbox_permissions: 'danger-full-access', justification: 'x' }, exec),
+      /unknown keys "sandbox_permissions", "justification".*no per-call sandbox escalation; ask the user to change the session permission mode/,
+    )
+    await assert.rejects(
+      () => definition.execute({ command: 'ls', bogus: 1 }, exec),
+      (error) => !/sandbox escalation/.test(error.message),
     )
     // A non-object body is refused for the same reason, not coerced.
     await assert.rejects(() => definition.execute([], exec), /expected an object/)

@@ -7,18 +7,18 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [0.3.1] — 2026-10-15 — Linux x64 adaption verified, native worker boundary fixes
 
-Release scope: unchanged platform declarations (**Windows x64 and Linux x64**), targeting
-DSH 0.2.0-rc.2; macOS and ARM64 remain unclaimed, and the shell component
-(`ops_bash`/pwsh) with its Bash IPC proxies remains Windows-only. What 0.3.1 changes is
-that Linux x64 stops being a declaration and becomes a measured platform: the same
-suites, the release closure and the packaged artifact were run on a Linux host, and the
-defects those runs found are fixed here. Every fix below is platform-neutral, so Windows
-gains them too; the Windows half of the metadata work needs Windows measurements and is
-tracked in `docs/windows-verification.md`.
+Release scope: **Windows x64 and Linux x64**, targeting DSH 0.2.0-rc.2. 0.3.0
+shipped Windows x64 only; this release adds the Linux x64 half and makes it a measured
+platform rather than a declaration — the same suites, the release closure and the
+packaged artifact were run on a Linux host, and the defects those runs found are fixed
+here. Every fix below is platform-neutral, so Windows gains them too; the Windows half of
+the metadata work needs Windows measurements and is tracked in
+`docs/windows-verification.md`. macOS and ARM64 remain unclaimed, and the shell component
+(`ops_bash`/pwsh) with its Bash IPC proxies remains Windows-only.
 
 ### Linux x64 adaption
 
-- Build and verify the native worker on `x86_64-unknown-linux-gnu` as a first-class target: `cargo build --release --locked`, `cargo test`, the full `npm run verify` with `DSH_OPS_REQUIRE_RUNTIME=1` (25 suites, no skip counted as a pass) and `npm run verify:release`.
+- Build and verify the native worker on `x86_64-unknown-linux-gnu` as a first-class target: `cargo build --release --locked`, `cargo test`, the full `npm run verify` with `DSH_OPS_REQUIRE_RUNTIME=1` (27 suites, no skip counted as a pass) and `npm run verify:release`. `npm run build:ptc` now stages the Linux worker beside the Windows one, each with its own receipt, and the release checks reject a missing or corrupt artifact for any target the package carries.
 - Keep the platform paths separate instead of compromising both: directory `fsync` and metadata reapplication on POSIX, `MoveFileExW` publication on Windows, chosen per `cfg` rather than papered over with one behaviour that would be wrong on both.
 - Derive platform facts when a suite runs instead of from the host it happens to be on: mount and filesystem fixtures are resolved at run time, no tool is parsed for `LC_MESSAGES`-dependent wording, and whole-suite skips are declared per platform (2 on Linux) rather than counted as passes.
 - Close the release gate over the targets a checkout actually staged, so a Linux-only build passes and `DSH_OPS_REQUIRE_ALL_TARGETS=1` states the multi-platform claim; the closure message names the staged platform instead of assuming Windows.
@@ -35,13 +35,41 @@ tracked in `docs/windows-verification.md`.
 - Bound the debris a hard kill leaves behind. The next writer of a file reclaims its own `.<name>.dsh-ops-*` leftovers, which a `SIGKILL` cannot clean up at the point they are created, and a directory `fsync` that fails after a successful rename reports `effectState: "applied"` with a `nextAction` that says not to repeat it, rather than `"none"`.
 - Refuse a native worker that exists without its execute bit, naming the path and the mode, instead of failing later as a bare `EACCES` from `spawn`. The resolver's "unavailable" error lists the candidates it tried, a missing or malformed `provenance.json` is named as an incomplete stage, and `node bin/native-runtime.mjs check` on a package missing a declared platform explains both ways forward instead of raising a raw `ENOENT`.
 
-## [0.3.0] — 2026-10-14 — native file/PTC tools for Windows x64 and Linux x64
+## [Unreleased]
 
-Release scope: **Windows x64 and Linux x64**, targeting DSH 0.2.0-rc.2. macOS and
-ARM64 are not shipped or claimed, and the shell component (`ops_bash`/pwsh) with
-its Bash IPC proxies remains Windows-only. The package includes the native Rust
-worker for both platforms, Windows Bash IPC proxies, receipts and matching
-source; payload dependencies remain 0.2.1.
+### Payload trust
+
+Found while reviewing what runs *before* it is trusted. Independent of the workspace-preparation
+fix; see that entry for the `PSModulePath` scope note.
+
+- Never hand a spawned child the host environment implicitly. Child processes now receive an
+  **allow-list** (`lib/env.js`): paths, identity, scratch space, locale and proxy variables survive;
+  everything else is withheld. The previous shape-based deny-list (`KEY|PASSWORD|SECRET|TOKEN`) let
+  `SSH_AUTH_SOCK` (which authorises the host's SSH keys) and `DATABASE_URL` (usually carrying a
+  password) through. `probeBinary` also defaults to the scrubbed environment — it **executes** a
+  candidate that may have come from `PATH`, so handing it the full environment made the check a
+  credential-delivery mechanism.
+- Judge the cached confined-Bash runtime with one function on both the cached and the cold path, and
+  keep the two anchors that live **outside** the writable cache (the IPC proxies against the
+  in-package receipt) separate from two **in-domain consistency checks** (the patched MSYS runtime
+  and `bash.exe`, both compared against the source payload). Folding all four into the stat
+  comparison lets a tampered `opsipc.dll` through on both paths. A generation that fails
+  verification is **quarantined and rebuilt** rather than refused forever — one bad write used to
+  brick the bash tool until the host restarted — and the quarantine is bounded to two generations.
+- Isolate every teardown callback (`lib/teardown.js`): one throwing disposer no longer strands the
+  rest of a capability withdrawal or a tool unpublish, and `ptc`'s publication gate is released in a
+  `finally` instead of wedging shut.
+- Compare the native-worker candidate path with `path.resolve` + case folding rather than a path
+  **substring**, so `…\RUNTIME\…` can no longer skip receipt verification.
+- Report a `PATH`-sourced FastCtx on the success path; behaviour is unchanged (same-user, not a
+  privilege boundary).
+
+
+## [0.3.0] — 2026-10-14 — Windows x64 native tools and PTC
+
+Release scope: **Windows x64 only**, targeting DSH 0.2.0-rc.2. Linux/macOS/ARM64
+are not shipped or claimed. The package includes the native Rust worker, Windows
+Bash IPC proxies, receipts and matching source; payload dependencies remain 0.2.1.
 
 ### Permission alignment
 
@@ -79,13 +107,34 @@ These fixes are included in 0.3.0; the three Windows payload dependencies are un
 - Share independent safe Rust core for preflighted copy/move/remove, content verification, protected/no-follow paths, write-ahead per-item manifests and conservative resume.
 - Add scoped expiring result references, byte/quantity-bounded pages, field/equality projection and operation-reference consumption without widening authority.
 - Follow original DSH enforcement levels (including Windows partial ACL confinement), enable no-write read-only reference pages, and allow explicit external roots under danger-full-access without confinement.
-- Stage checksum-verified Windows x64 and Linux x64 workers plus the Windows Bash IPC proxy binaries; release checks reject missing or corrupt artifacts for the targets a package actually carries. No install-time downloads/compilation; owned-workspace WRITE_OWNER preparation is runtime-only, backed up and non-recursive.
+- Stage checksum-verified Windows x64 worker and Bash IPC proxy binaries; release checks reject missing artifacts. No install-time downloads/compilation; owned-workspace WRITE_OWNER preparation is runtime-only, backed up and non-recursive.
 - Extend the existing PTC simulation suite with original DSH sandbox/subprocess provider acceptance: workspace copy, read-only page, outside-write denial and full-access outside-root operation.
 - Execute through DSH policy + native process confinement + subprocess cancellation; standard/native and hybrid/both scopes receive no PTC-only definitions.
 - Keep business code separate from one three-scenario simulation suite using the real Rust worker and real Cordis/tools/prompt registration.
-- Target native Windows x64 and Linux x64; runtime acceptance for both comes from on-platform runs of the same suites, while macOS/ARM64 remain future work. Legacy payloads remain unchanged.
+- Target native Windows/macOS/Linux; Windows runtime acceptance and Linux/macOS compile checks are recorded separately from pending on-platform sandbox tests. Legacy payloads remain unchanged.
 - Keep each component icon inside its exported manifest directory; fix the PTC Plugin Manager metadata error caused by the parent-relative icon path, with coverage in the existing manifest suite.
-- Source builds use `npm run build:ptc` and `npm run build:bash-ipc`; published 0.3.0 artifacts carry the native workers for every declared platform, with the Bash IPC proxies still Windows-only. See `docs/native-ptc.md`.
+- Source builds use `npm run build:ptc` and `npm run build:bash-ipc`; published 0.3.0 artifacts are Windows x64 only. See `docs/native-ptc.md`.
+
+## [Unreleased] — Bash workdir spawn diagnostics
+
+- Validate `ops_bash` `workdir` as an existing directory before spawning, so a missing, file-valued or inaccessible working directory is reported as an explicit `invalid workdir` error (naming the stat error code when access, not existence, failed) instead of the bash-payload ENOENT remedy; a directory deleted between the check and the spawn still falls back to that remedy. The two ENOENT causes cannot be told apart after the fact: Node puts no `cwd` on the spawn error, and the host's Windows runner maps missing program and missing directory onto one code. The session layer now resolves empty or whitespace `workdir` placeholders to the session directory like an omitted value, instead of letting them fail the spawn. Covered by `test/shells.test.mjs`. (#33)
+## [Unreleased] — Workspace preparation
+
+- Write the workspace root's DACL through its own handle (`SetKernelObjectSecurity`) instead of path-based `SetAccessControl`. The added ACE is directory-only, so no descendant needs a new ACL, but the path-based write made Windows walk and re-propagate the whole subtree, and the cost grew with workspace size. Measured on 50,000 files: 18.65 s → 4.30 s cold, versus 3.86 s for 10 files; the warm `ready` path is unchanged. The root DACL is byte-identical to before (control flags including `AI`, existing ACEs, the added `WRITE_OWNER` ACE), and descendant ACLs are untouched. Guards, backup receipt, verification and rollback are kept; rollback uses the same handle-based write. (#43)
+- Raise the preparation timeout from 10 s to a 120 s safety net, and never end the error at the colon: a timeout names the limit, the workspace, that the ACL state is unknown and where the receipt is; a non-zero exit names the exit code, elapsed time and the script's stderr (or stdout, or `(no output)`).
+- Restore `test/permissions.test.mjs`: a merge resolution had dropped the two closing lines of the root-only preparation test, so the suite failed to parse and none of these tests ran. Add the expensive real-world shape as a regression test: a workspace root that inherits its ACL (`D:AI`, no explicit ACEs) keeps its auto-inherited flag and inherited ACEs, gains one directory-only `WRITE_OWNER` ACE, and leaves descendants untouched.
+- Start Windows PowerShell 5.1 with `-ExecutionPolicy Bypass` for the package's own `prepare-workspace.ps1`. Without it, the Windows client default (`Restricted`) refused the script, so every `run_code` / `pwsh` / `bash` / `pwsh_persistent` / `bash_persistent` call in a workspace-write session failed. The flag applies to that one child process; Group Policy still takes precedence. Covered by running the real script under a process-scope `Restricted` policy. (#66)
+- Name the cause of a failed preparation instead of the blanket "(not a user permission denial)": an execution-policy refusal (now only possible through Group Policy, with that remedy), a workspace folder that does not meet the `WRITE_OWNER` prerequisite (with the script's reason), an executor that could not start or timed out, or otherwise the exit code with the script's output. Document that preparation runs as the current user before sandbox confinement.
+
+## [Unreleased] — bashPath restricted-mode diagnostics
+
+- Document that `bashPath` (and any system bash) works only in `danger-full-access`: read-only and workspace-write run only the pinned MSYS whose IPC compatibility proxies were verified. The policy itself is unchanged and still fails closed. (#42)
+- Replace the restricted-mode `This MSYS version has no verified DSH IPC compatibility build. Rebuild the matching proxies` error with one that names the executable and where it came from, says the refusal is by design and not an authorization denial, and gives real next steps: remove `bashPath` to use the bundled or provisioned pinned bash, or ask the user to switch to `danger-full-access`. The signal-pipe runner-failure message gains the same next step.
+- `ops_bash` now says plainly that it has no per-call `sandbox_permissions` escalation when a model passes `sandbox_permissions` / `justification`.
+- `dsh-ops ladder` reports `restricted: { compatible, reason }` for the resolved bash, read-only and without copying anything, and drops the stale "bash requires a full-access session" line.
+## [Unreleased] — File tool placeholder arguments
+
+- The native file tools (`ops_inspect_local_file`, `ops_grep`, `ops_glob`, `ops_replace`) now drop `null` values and empty `""`/`[]` placeholders for *optional* fields at the plugin's own execute entry before the worker runs, so strict tool-call adapters that fill every schema field no longer trip `path`/`encoding`/`view` validation; required fields, `replacement: ""`, `false` and `0` are forwarded unchanged and real conflicts still error; the caller's argument object is not mutated. (#19)
 
 ## [Unreleased] — Background job argument strictness
 
@@ -104,6 +153,13 @@ Bug-fix-only release for issues reported against 0.2.8 and the 0.2.6/DSH 0.2.0-r
 - Persist the one-time legacy shell-fallback migration without calling `Entry.update()` or remounting the plugin. This avoids competing with Desktop profile reloads when configuration is edited, while preserving the safe runtime value and the raw loader row. (B站评论区报告)
 
 No new tools, components, configuration keys, or runtime capabilities are included. The three Windows payload dependencies remain pinned to `0.2.1`.
+
+## [Unreleased] — Tool descriptions and result contract
+
+- Rewrite the native file-tool descriptions to match what the worker enforces: `ops_glob.pattern` and the `glob` filters of `ops_grep`/`ops_replace` are arrays of globs matched against relative paths (`*.md` is top level only, `**/*.md` any depth, `!` excludes; a positive entry is required for `ops_glob` only), `ops_grep` has no `include` field, and `ops_replace.pattern` is literal text, not a regex. (#44)
+- State the result contract precisely, in the descriptions and the prompt section, only for published tools: file tools, `ops_batch` and `ops_result` resolve failures as `status: "error"|"rejected"` values and never throw; `ops_bash` resolves command failures as values and throws only for invalid arguments or an unavailable executor. Drop the stale PTC note about catching errors from "legacy ops_* tools".
+- Add `status: "completed"|"failed"` to `ops_bash` results (additive; `completed` only for a clean zero exit with no error, permission refusal, signal or timeout).
+- Pin the `ops_grep`/`ops_glob`/`ops_replace` parameter keys against their descriptions, and prove the documented behaviour against the real worker.
 
 ## [0.2.6] — Owned MCP client lifecycle
 

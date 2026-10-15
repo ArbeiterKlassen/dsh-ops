@@ -5,7 +5,7 @@ import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import { assert, test, report, withTempDir } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
-import { prepareWorkspace, mountWorkspacePreparation } from '../lib/workspace-preparation.js'
+import { prepareWorkspace, mountWorkspacePreparation, runPreparation, preparationEnvironment, preparationSpawnSpec } from '../lib/workspace-preparation.js'
 import { invoke as fileCall } from '../lib/file/worker.js'
 import { invoke as ptcCall } from '../lib/ptc/worker.js'
 import { resolveWorker } from '../lib/ptc/runtime.js'
@@ -14,12 +14,50 @@ import { resolveShells } from '../lib/shells.js'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import NodePtc from '@deepseek-ai/dsh-ptc-runtime-node'
 import FileSystem from '@deepseek-ai/dsh-fs-local'
+import * as ObservationPolicy from '@deepseek-ai/dsh-fs-observation-policy'
 const worker = resolveWorker()
 function ps(code) {
-  const result = spawnSync('powershell.exe', ['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(code,'utf16le').toString('base64')], { encoding:'utf8' })
+  // The interpreter here is the inbox 5.1 one, and a pwsh 7 host publishes its own module directories
+  // into the **process-level** `PSModulePath`; 5.1 then resolves `Microsoft.PowerShell.Security` to
+  // the pwsh 7 copy, fails to load it, and loses `Get-Acl`/`Set-Acl`. Hand this helper the same
+  // scrubbed environment the preparation script gets, so it drives 5.1 the way production does.
+  const result = spawnSync('powershell.exe', ['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(code,'utf16le').toString('base64')], { encoding:'utf8', env: preparationEnvironment() })
   assert.equal(result.status,0,result.stderr)
   return result.stdout.trim()
 }
+await test('the real worker behaves as the file-tool descriptions say (#44)', async () => {
+  await withTempDir('file-contract',async root => {
+    fs.mkdirSync(path.join(root,'sub'),{recursive:true}); fs.mkdirSync(path.join(root,'vendor'),{recursive:true})
+    fs.writeFileSync(path.join(root,'top.md'),'needle\n'); fs.writeFileSync(path.join(root,'sub','nested.md'),'needle\n')
+    fs.writeFileSync(path.join(root,'vendor','v.md'),'needle\n'); fs.writeFileSync(path.join(root,'a.txt'),'a.b axb\n')
+    const {ctx}=await bootHost()
+    const agent={id:'contract',session:{id:'contract',header:{cwd:root}}}
+    const exec={agent,signal:new AbortController().signal}
+    try {
+      await ctx.plugin(Subprocess)
+      await ctx.plugin(inner=>inner.provide('sandboxPolicy',{defaultMode:'danger-full-access',resolve:()=>({mode:'danger-full-access',workspaceRoot:root})}))
+      const call=(tool,args)=>fileCall(ctx,worker,tool,args,exec,exec.signal)
+      const names=value=>value.items.map(item=>path.relative(root,typeof item==='string'?item:item.path).replaceAll('\\','/')).sort()
+      // Wrong shapes resolve as structured errors; nothing is thrown.
+      const bare=await call('glob',{pattern:'*.md'})
+      assert.equal(bare.status,'error',JSON.stringify(bare)); assert.equal(typeof bare.error.code,'string')
+      const include=await call('grep',{pattern:'needle',include:'*.md'})
+      assert.equal(include.status,'error',JSON.stringify(include)); assert.match(include.error.message,/include/)
+      // "*.md" is top level only; "**/*.md" with "!" exclusions reaches nested files.
+      assert.deepEqual(names(await call('glob',{pattern:['*.md']})),['top.md'])
+      assert.deepEqual(names(await call('glob',{pattern:['**/*.md','!vendor/**']})),['sub/nested.md','top.md'])
+      const negativeOnly=await call('glob',{pattern:['!vendor/**']})
+      assert.equal(negativeOnly.status,'error',JSON.stringify(negativeOnly))
+      // The grep/replace glob filter accepts exclude-only lists: everything except.
+      const grep=await call('grep',{pattern:'needle',glob:['!vendor/**'],outputMode:'files_with_matches'})
+      assert.deepEqual(names(grep),['sub/nested.md','top.md'])
+      // replace matches literal text: "a.b" does not match "axb".
+      const replaced=await call('replace',{path:'a.txt',pattern:'a.b',replacement:'Z'})
+      assert.equal(replaced.changed,1,JSON.stringify(replaced))
+      assert.equal(fs.readFileSync(path.join(root,'a.txt'),'utf8'),'Z axb\n')
+    } finally { await shutdown(ctx) }
+  })
+})
 await test('preparation never runs in read-only or full-access', async () => {
   let calls = 0
   for (const mode of ['read-only','danger-full-access']) await prepareWorkspace({mode,workspaceRoot:'invalid'}, {platform:'win32',run(){ calls++ }})
@@ -32,6 +70,151 @@ await test('preparation coalesces one trusted workspace and retries only failed 
     const options={platform:'win32',run(){calls++;return Promise.resolve()}}
     await Promise.all([prepareWorkspace(policy,options),prepareWorkspace(policy,options)])
     assert.equal(calls,1)
+  })
+})
+await test('preparation failures always say why, including a timeout (#43)', async () => {
+  const node=code=>({executable:process.execPath,args:['-e',code]})
+  const failure=async options=>{ try { await runPreparation('C:\\ws',options); return '' } catch(error) { return error.message } }
+  const timeout=await failure({...node('setTimeout(()=>{},60000)'),timeoutMs:200})
+  assert.match(timeout,/timed out after 200 ms preparing C:\\ws; the workspace ACL state is unknown/)
+  assert.match(timeout,/acl-backups/)
+  assert.match(timeout,/^DSH workspace preparation failed: the preparation executor timed out/)
+  assert.notEqual(timeout.slice('DSH workspace preparation failed:'.length).trim(),'')
+  assert.match(await failure(node('process.exit(3)')),/exited with code 3 after \d+ ms preparing C:\\ws: \(no output\)$/)
+  assert.match(await failure(node('process.stderr.write("Get-Acl failed\\n");process.exit(1)')),/exited with code 1 .*: Get-Acl failed$/)
+  assert.match(await failure(node('process.stdout.write("half done");process.exit(1)')),/: half done$/)
+  assert.match(await failure({executable:path.join(process.cwd(),'missing-powershell.exe'),args:[]}),/could not start .*missing-powershell\.exe/)
+  await runPreparation('C:\\ws',node('process.stdout.write("prepared")'))
+})
+await test('preparation failures name their cause: execution policy vs folder prerequisite (#66)', async () => {
+  const failing=text=>({executable:process.execPath,args:['-e',`process.stderr.write(${JSON.stringify(text)});process.exit(1)`]})
+  const failure=async options=>{ try { await runPreparation('C:\\ws',options); return '' } catch(error) { return error.message } }
+  const english='File C:\\x\\prepare-workspace.ps1 cannot be loaded because running scripts is disabled on this system. For more information, see about_Execution_Policies at https:/go.microsoft.com/fwlink/?LinkID=135170.\r\n    + CategoryInfo          : SecurityError: (:) [], PSSecurityException\r\n    + FullyQualifiedErrorId : UnauthorizedAccess\r\n'
+  const chinese='无法加载文件 C:\\x\\prepare-workspace.ps1，因为在此系统上禁止运行脚本。有关详细信息，请参阅 https:/go.microsoft.com/fwlink/?LinkID=135170 中的 about_Execution_Policies。\r\n    + FullyQualifiedErrorId : UnauthorizedAccess\r\n'
+  for(const text of [english,chinese]) {
+    const message=await failure(failing(text))
+    assert.match(message,/^DSH workspace preparation failed: PowerShell execution policy blocked dsh-ops's own preparation script/)
+    assert.match(message,/even with -ExecutionPolicy Bypass, so the policy comes from Group Policy/)
+    assert.match(message,/danger-full-access/)
+    assert.doesNotMatch(message,/not a user permission denial/)
+  }
+  const owner=await failure(failing('C:\\x\\prepare-workspace.ps1 : Workspace is not owned by the current user; refusing automatic ACL preparation\r\n    + CategoryInfo          : OperationStopped\r\n'))
+  assert.match(owner,/^DSH workspace preparation failed: the workspace root C:\\ws does not meet the sandbox prerequisite \(the host needs WRITE_OWNER on it\): .*not owned by the current user; refusing automatic ACL preparation\. Fix the folder's owner or permissions/)
+  assert.match(owner,/not a DSH authorization denial/)
+  assert.doesNotMatch(owner,/execution policy/)
+  assert.match(await failure(failing('Explicit effective denial of WRITE_OWNER; refusing to override user policy')),/does not meet the sandbox prerequisite.*Explicit effective denial of WRITE_OWNER/)
+  // Unknown output keeps the plain exit-code text rather than guessing a cause.
+  assert.match(await failure(failing('something else broke')),/: exited with code 1 after \d+ ms preparing C:\\ws: something else broke$/)
+})
+await test('the real script runs even when the effective execution policy is Restricted (#66)', async () => {
+  if(process.platform!=='win32')return
+  await withTempDir('prepare-restricted',async root => {
+    // Process scope only: the variable reaches this one child; no machine or user policy is changed.
+    const previous=process.env.PSExecutionPolicyPreference
+    process.env.PSExecutionPolicyPreference='Restricted'
+    try { await runPreparation(root) }
+    finally { if(previous===undefined) delete process.env.PSExecutionPolicyPreference; else process.env.PSExecutionPolicyPreference=previous }
+  })
+})
+await test('real preparation writes only the root DACL, never descendants (#43)', async () => {
+  if(process.platform!=='win32')return
+  await withTempDir('prepare-root-only',async root => {
+    for(let d=0;d<10;d++) { const dir=path.join(root,`d${d}`,'deep'); fs.mkdirSync(dir,{recursive:true}); for(let f=0;f<30;f++) fs.writeFileSync(path.join(dir,`f${f}.txt`),'x') }
+    const quoted=root.replaceAll("'","''")
+    ps(`$p='${quoted}'; $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $a=[Security.AccessControl.DirectorySecurity]::new(); $a.SetOwner($sid); $a.SetAccessRuleProtection($true,$false); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Modify','ContainerInherit,ObjectInherit','None','Allow')); Set-Acl -LiteralPath $p -AclObject $a`)
+    const sddl=target=>ps(`(Get-Acl -LiteralPath '${target.replaceAll("'","''")}').GetSecurityDescriptorSddlForm('Access')`)
+    const deep=path.join(root,'d9','deep','f29.txt'), deepDir=path.join(root,'d9','deep')
+    const before={root:sddl(root),deep:sddl(deep),deepDir:sddl(deepDir)}
+    const backups=path.join(process.env.DSH_HOME,'dsh-ops','acl-backups')
+    const receipts=()=>fs.existsSync(backups) ? fs.readdirSync(backups).length : 0
+    const initial=receipts()
+    await runPreparation(root)
+    const after=sddl(root)
+    assert.ok(after.startsWith(before.root.slice(0,before.root.indexOf('('))),`DACL control flags kept: ${before.root} -> ${after}`)
+    assert.ok(after.startsWith(before.root),`existing ACEs kept in order: ${after}`)
+    const rights=ps(`(Get-Acl -LiteralPath '${quoted}').Access | ForEach-Object { $_.FileSystemRights.ToString() }`)
+    assert.match(rights,/TakeOwnership/)
+    assert.doesNotMatch(rights,/FullControl/)
+    assert.equal(sddl(deep),before.deep,'a deep file keeps its exact ACL')
+    assert.equal(sddl(deepDir),before.deepDir,'a deep directory keeps its exact ACL')
+    assert.equal(receipts(),initial+1,'one backup receipt per cold preparation')
+    await runPreparation(root)
+    assert.equal(receipts(),initial+1,'the warm path writes no new receipt')
+  })
+})
+await test('an inheriting (AI) workspace root keeps its inheritance and descendants (#43)', async () => {
+  // The expensive real-world shape: a root with no explicit ACEs that inherits from its parent.
+  if(process.platform!=='win32')return
+  await withTempDir('prepare-inherited',async parent => {
+    ps(`$p='${parent.replaceAll("'","''")}'; $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $a=[Security.AccessControl.DirectorySecurity]::new(); $a.SetOwner($sid); $a.SetAccessRuleProtection($true,$false); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Modify','ContainerInherit,ObjectInherit','None','Allow')); Set-Acl -LiteralPath $p -AclObject $a`)
+    const ws=path.join(parent,'ws')
+    fs.mkdirSync(ws)
+    const quoted=ws.replaceAll("'","''")
+    // Owner-only write: the script refuses roots the user does not own, and this leaves the DACL untouched.
+    const sid=ps(`$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $o=[Security.AccessControl.DirectorySecurity]::new(); $o.SetOwner($sid); [IO.Directory]::SetAccessControl('${quoted}',$o); $sid.Value`)
+    for(let d=0;d<10;d++) { const dir=path.join(ws,`d${d}`,'deep'); fs.mkdirSync(dir,{recursive:true}); for(let f=0;f<30;f++) fs.writeFileSync(path.join(dir,`f${f}.txt`),'x') }
+    const sddl=target=>ps(`(Get-Acl -LiteralPath '${target.replaceAll("'","''")}').GetSecurityDescriptorSddlForm('Access')`)
+    const aces=text=>text.match(/\([^)]*\)/g) ?? []
+    const deep=path.join(ws,'d9','deep','f29.txt'), deepDir=path.join(ws,'d9','deep')
+    const before={root:sddl(ws),deep:sddl(deep),deepDir:sddl(deepDir)}
+    assert.ok(before.root.startsWith('D:AI('),`fixture root must be auto-inherited, not protected: ${before.root}`)
+    assert.ok(aces(before.root).length>0 && aces(before.root).every(ace=>ace.split(';')[1].includes('ID')),`fixture root must carry only inherited ACEs: ${before.root}`)
+    const backups=path.join(process.env.DSH_HOME,'dsh-ops','acl-backups')
+    const receipts=()=>fs.existsSync(backups) ? fs.readdirSync(backups).length : 0
+    const initial=receipts()
+    await runPreparation(ws)
+    const after=sddl(ws)
+    assert.ok(after.startsWith('D:AI('),`auto-inherited flag kept: ${before.root} -> ${after}`)
+    for(const ace of aces(before.root)) assert.ok(aces(after).includes(ace),`inherited ACE kept: ${ace} in ${after}`)
+    const added=aces(after).filter(ace=>!aces(before.root).includes(ace))
+    assert.equal(added.length,1,`exactly one ACE added: ${after}`)
+    const [type,flags,mask,,,trustee]=added[0].slice(1,-1).split(';')
+    assert.equal(type,'A'); assert.equal(flags,'','the added ACE applies to the root directory only')
+    assert.equal(trustee,sid)
+    assert.ok((Number.parseInt(mask,16) & 0x80000)!==0,`the added ACE grants WRITE_OWNER: ${added[0]}`)
+    const rights=ps(`(Get-Acl -LiteralPath '${quoted}').Access | ForEach-Object { $_.FileSystemRights.ToString() }`)
+    assert.doesNotMatch(rights,/FullControl/)
+    assert.equal(sddl(deep),before.deep,'a deep file keeps its exact ACL')
+    assert.equal(sddl(deepDir),before.deepDir,'a deep directory keeps its exact ACL')
+    assert.equal(receipts(),initial+1,'one backup receipt per cold preparation')
+    await runPreparation(ws)
+    assert.equal(receipts(),initial+1,'the warm path writes no new receipt')
+  })
+})
+await test('ops reads and writes reach the host read-before-edit table (#17)', async () => {
+  await withTempDir('fs-observed',async root => {
+    fs.writeFileSync(path.join(root,'a.txt'),'alpha\nbeta\n')
+    const {ctx}=await bootHost()
+    const agent={id:'observed',session:{id:'observed',header:{cwd:root}}}
+    const exec={agent,signal:new AbortController().signal}
+    try {
+      await ctx.plugin(Subprocess)
+      await ctx.plugin(inner=>inner.provide('sandboxPolicy',{defaultMode:'danger-full-access',resolve:()=>({mode:'danger-full-access',workspaceRoot:root})}))
+      // Without the host fs service, ops tools still work and simply record nothing.
+      const bare=await fileCall(ctx,worker,'inspect_local_file',{path:'a.txt'},exec,exec.signal)
+      assert.equal(bare.status,'completed',JSON.stringify(bare))
+      await ctx.plugin(FileSystem,{})
+      await ctx.plugin(ObservationPolicy)
+      const host=ctx.get('fs')
+      const target=await host.resolve('a.txt',{cwd:root})
+      const intent=()=>ctx.waterfall('fs/edit-intent',target,exec,()=>undefined)
+      const current=async()=>(await host.stat(target)).version
+      await assert.rejects(intent(),error=>error.code==='FS_NOT_OBSERVED')
+      const read=await fileCall(ctx,worker,'inspect_local_file',{path:'a.txt',limit:1},exec,exec.signal)
+      assert.equal(read.status,'completed',JSON.stringify(read))
+      assert.deepEqual(await intent(),{version:await current()})
+      const before=await current()
+      const dry=await fileCall(ctx,worker,'replace',{path:'a.txt',pattern:'alpha',replacement:'gamma',dryRun:true},exec,exec.signal)
+      assert.equal(dry.dryRun,true,JSON.stringify(dry))
+      assert.deepEqual(await intent(),{version:before})
+      // Keep the size identical so the version change is not a size-only artifact.
+      await new Promise(r=>setTimeout(r,20))
+      const replaced=await fileCall(ctx,worker,'replace',{path:'a.txt',pattern:'alpha',replacement:'delta'},exec,exec.signal)
+      assert.equal(replaced.changed,1,JSON.stringify(replaced))
+      const after=await current()
+      assert.notEqual(after,before)
+      assert.deepEqual(await intent(),{version:after})
+    } finally { await shutdown(ctx) }
   })
 })
 await test('owned Modify-only workspace starts real DSH sandbox; three modes and explicit denials', async () => {
@@ -71,6 +254,15 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       assert.equal(nodeHandle.collected.stdout.readFrom(0).text,'NODE_PTC_READY')
       const read=await fileCall(ctx,worker,'inspect_local_file',{path:path.join(outside,'keep.txt')},exec,exec.signal)
       assert.equal(read.status,'completed',JSON.stringify(read))
+      // Strict adapters fill optional fields with empty placeholders; they must not reach the worker. (#19)
+      const grep=await fileCall(ctx,worker,'grep',{path:'',pattern:'before',glob:[],outputMode:''},exec,exec.signal)
+      assert.equal(grep.status,'completed',JSON.stringify(grep))
+      assert.ok(grep.matched>=1,JSON.stringify(grep))
+      const placeholders=await fileCall(ctx,worker,'inspect_local_file',{path:path.join(outside,'keep.txt'),encoding:'',view:'',offset:null},exec,exec.signal)
+      assert.equal(placeholders.status,'completed',JSON.stringify(placeholders))
+      const badEncoding=await fileCall(ctx,worker,'inspect_local_file',{path:path.join(outside,'keep.txt'),encoding:'gbk'},exec,exec.signal)
+      assert.notEqual(badEncoding.status,'completed',JSON.stringify(badEncoding))
+      assert.equal(badEncoding.error.code,'INVALID_ARGUMENT',JSON.stringify(badEncoding))
       const replaced=await fileCall(ctx,worker,'replace',{path:'data.txt',pattern:'before',replacement:'after'},exec,exec.signal)
       assert.equal(replaced.changed,1,JSON.stringify(replaced))
       const batch=await ptcCall(ctx,worker,'batch',{root,action:'run',operations:[{op:'copy',path:'data.txt',to:'copy.txt'}]},exec,exec.signal)
@@ -154,5 +346,46 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       assert.equal(fs.readFileSync(path.join(root,'data.txt'),'utf8'),'after-grant')
     } finally { await shutdown(ctx); fs.rmSync(outside,{recursive:true,force:true}) }
   })
+})
+// The preparation interpreter must not inherit the host's PowerShell module search path: a DSH host
+// runs under pwsh 7, whose **process-level** `PSModulePath` makes PowerShell 5.1 resolve
+// `Microsoft.PowerShell.Security` to the pwsh 7 copy, fail to load it, and lose `Get-Acl`/`Set-Acl`
+// before the script reaches its first ACL statement.
+await test('preparation hands the 5.1 interpreter no inherited PowerShell module path', async () => {
+  const inherited = {
+    PATH: 'C:\\bin',
+    SystemRoot: 'C:\\Windows',
+    PSModulePath: 'C:\\Program Files\\PowerShell\\7\\Modules;C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
+  }
+  const env = preparationEnvironment(inherited)
+  assert.equal(Object.hasOwn(env, 'PSModulePath'), false)
+  assert.equal(env.PATH, 'C:\\bin')
+  assert.equal(env.SystemRoot, 'C:\\Windows')
+  assert.equal(preparationEnvironment({}).PSModulePath, undefined)
+  assert.equal(inherited.PSModulePath.startsWith('C:\\Program Files\\PowerShell\\7'), true)
+})
+// Covers the **call site**, not just the helper: `preparationSpawnSpec()` returns the exact
+// `{executable, args, options}` handed to `spawn`, so a regression that passes `process.env` straight
+// through is caught here — verified by mutation, which the helper-only assertion did not catch.
+await test('preparation hands the spawned interpreter the scrubbed environment', async () => {
+  const spec = preparationSpawnSpec('C:\\work\\scratch')
+  assert.equal(Object.hasOwn(spec.options.env, 'PSModulePath'), false)
+  // ⚠️ Look keys up case-insensitively: on Windows `process.env` is a case-insensitive proxy, but
+  // `{ ...process.env }` is a plain object whose keys keep their original spelling (`Path`, not PATH).
+  const pick = (obj, name) => Object.keys(obj).find((k) => k.toUpperCase() === name)
+  const pathKey = pick(spec.options.env, 'PATH')
+  assert.notEqual(pathKey, undefined)
+  assert.equal(spec.options.env[pathKey], process.env.PATH)
+  // The interpreter path is a Windows fact: `preparationSpawnSpec` builds it from `SystemRoot` and
+  // joins it with the *host's* separator, so the full `…\System32\WindowsPowerShell\v1.0\powershell.exe`
+  // spelling can only hold on win32 — the same line yields `C:\Windows/System32/…` on POSIX. The
+  // environment assertions above are the regression this case exists to catch, and the flags below are
+  // set unconditionally, so both keep running on every platform.
+  const interpreter = process.platform === 'win32'
+    ? 'windows\\system32\\windowspowershell\\v1.0\\powershell.exe'
+    : 'powershell.exe'
+  assert.equal(spec.executable.toLowerCase().endsWith(interpreter), true)
+  assert.deepEqual(spec.args.slice(0, 5), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'])
+  assert.equal(spec.args.includes('C:\\work\\scratch'), true)
 })
 report('permissions')

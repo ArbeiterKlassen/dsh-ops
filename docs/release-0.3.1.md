@@ -2,14 +2,14 @@
 
 ## 发布范围
 
-- 平台声明与 `0.3.0` 相同：**Windows x64 与 Linux x64**，目标宿主 DSH `0.2.0-rc.2`。
-- 本版把 Linux x64 从「声明支持」推进为「实测平台」：同一批测试套件、发布闭包与出厂 tarball 在 Linux x86_64 实机上跑通，这些运行暴露的缺陷在本版修复。修复本身与平台无关，Windows 同样受益。
+- 平台范围：**Windows x64 与 Linux x64**，目标宿主 DSH `0.2.0-rc.2`。`0.3.0` 只发布 Windows x64；本版补上 Linux x64。
+- 本版把 Linux x64 做成**实测平台**：同一批测试套件、发布闭包与出厂 tarball 在 Linux x86_64 实机上跑通，这些运行暴露的缺陷在本版修复。修复本身与平台无关，Windows 同样受益。
 - macOS 与 ARM64 不在支持范围；不能把历史编译检查当作实机支持。shell 组件（`ops_bash`/pwsh）及其 Bash IPC 代理仍仅 Windows。
 - `dsh-ops` 主包更新为 `0.3.1`；三个 Windows 可选载荷依赖仍固定 `0.2.1`，无需重复发布。
 
 ## Linux 适配了什么
 
-- **原生 worker**：`x86_64-unknown-linux-gnu` 上 `cargo build --release --locked`、`cargo test`、完整 `npm run verify`（`DSH_OPS_REQUIRE_RUNTIME=1` 下 25 个套件全过、0 跳过）与 `npm run verify:release` 全部实机通过。
+- **原生 worker**：`x86_64-unknown-linux-gnu` 上 `cargo build --release --locked`、`cargo test`、完整 `npm run verify`（`DSH_OPS_REQUIRE_RUNTIME=1` 下 27 个套件全过、0 跳过）与 `npm run verify:release` 全部实机通过。
 - **平台分支而非兼容层**：POSIX 侧走目录 `fsync` 与元数据重放，Windows 侧保持 `MoveFileExW`；同一份 Rust 代码用 `cfg` 分开，不做「两边都能跑」的折中。
 - **测试与发布校验按平台推导**：挂载点与文件系统夹具在运行时解析，不解析依赖 `LC_MESSAGES` 的工具措辞，整套跳过按平台显式声明（Linux 上 2 个）且从不计为通过。
 - **发布闭包**：只闭合本包实际 stage 的目标，因此只构建 Linux 的机器同样通过；要声明「发布包必须齐平台」设 `DSH_OPS_REQUIRE_ALL_TARGETS=1`。闭包信息点明当前 checkout 实际 stage 的平台，不再假定 Windows。
@@ -39,7 +39,7 @@ Linux 侧不提供 bash/pwsh 与 Bash IPC 代理，依赖它作为执行通道�
 ## 发布验证
 
 - Manifest、源码测试、真实 Windows x64 与 Linux x64 DSH provider、真实 Node PTC SDK command/script/pipeline 和权限切换测试。
-- Linux x86_64 实机：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 25 个套件全过、0 跳过；`npm run validate:manifest` → 58 项全过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留 mode/ACL/xattr、跨行 grep 正确。
+- Linux x86_64 实机：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 27 个套件全过、0 跳过；`npm run validate:manifest` → 58 项全过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留 mode/ACL/xattr、跨行 grep 正确。
 - `npm run verify:release` 核验声明作用域与 `PLATFORMS` 一致、已 stage 目标的 worker PE/ELF 与 version/hash，并在包内携带 `win32-x64` 时核验 IPC 二进制与源码 hash 闭包。
 - GitHub Release 为源码/tag/说明；随后生成 npm tarball，核验包内容、凭据排除、哈希与独立安装。
 - npm 发布由维护者使用本机 `dist/publish.bat` 执行，不由 Actions 自动发布。GitHub Actions 保持既有关闭状态。

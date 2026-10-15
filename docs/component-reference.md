@@ -31,13 +31,15 @@ What each of the four components publishes, with parameters and permission requi
 | `ops_result` | Bounded result references: put, page, release | See the PTC notes |
 | Host `pwsh` | Windows-native operations using bundled PowerShell 7 | Host policy |
 
-¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes; read-only rejects replacement, workspace-write permits writes under the workspace and DSH temporary areas, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes.
+¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes; read-only rejects replacement, workspace-write permits writes under the workspace and DSH temporary areas, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes. That preparation runs the package's own script as the current user before sandbox confinement applies, only in workspace-write, with `-ExecutionPolicy Bypass` (Group Policy still wins).
 
 ---
 
 ## `dsh-ops/file` — file tools
 
 All four resolve relative paths against the DSH session cwd, accept a single `path`, and expose no `root`, `workspace`, `cwd` or `file_path` alias. All are UTF-8 first with bounded output; glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
+
+When the host provides its `fs` service, `ops_inspect_local_file` reads and real `ops_replace` writes are recorded in the host's read-before-edit table (`fs/observed`) exactly like host `read`/`edit`: a file read with ops can be edited with host `edit` directly, and an ops write does not make the host's earlier read look like an external change. `ops_grep`, `ops_glob` and `dryRun` record nothing.
 
 ### `ops_inspect_local_file`
 
@@ -53,7 +55,7 @@ Read bounded UTF-8 text lines, or a hex view of one path. Directories are reject
 
 ### `ops_glob`
 
-Find regular files below `path` using explicit include/exclude patterns.
+Find regular files below `path`. `pattern` is an **array** of globs matched segment by segment against paths relative to `path` (ASCII case-insensitive), e.g. `["**/*.md","!vendor/**"]`: `*.md` matches the top level only and `**/*.md` any depth; a `!` prefix excludes, and at least one positive entry is required. A bare string is rejected; there is no `include` field.
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
@@ -66,7 +68,7 @@ Find regular files below `path` using explicit include/exclude patterns.
 
 ### `ops_grep`
 
-Search UTF-8 files below `path` with Rust regex, bounded output, paging and optional line context.
+Search UTF-8 files below `path` with Rust regex, bounded output, paging and optional line context. `pattern` is **one** regex string; filter files with `glob`, an array in the same syntax as `ops_glob`. **There is no `include` field.** `glob` may contain only exclusions ("everything except"); when `path` is a single file, `glob` is ignored.
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
@@ -82,16 +84,22 @@ Search UTF-8 files below `path` with Rust regex, bounded output, paging and opti
 
 ### `ops_replace`
 
-Perform a deterministic UTF-8 replacement under `path`. `dryRun` observes only; writes use revision checks and atomic replacement. Read-only sessions are rejected.
+Perform a deterministic UTF-8 replacement under `path`. `pattern` is **literal text, not a regex**; `glob` works as in `ops_grep`. `dryRun` observes only; writes use revision checks and atomic replacement. Read-only sessions are rejected.
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
-| `pattern` | string (required) | Match pattern |
+| `pattern` | string (required) | Literal text |
 | `replacement` | string (required) | Replacement text |
 | `path` | string | Operation root |
 | `glob` | string[] | Restrict files |
 | `maxReplacements` | integer 1–100000 | Hard replacement limit |
 | `dryRun` | boolean | Never writes |
+
+### Results and errors
+
+- **File tools, `ops_batch` and `ops_result` never throw.** Failures resolve as values with `status` `"error"` or `"rejected"` (authorization refusal) plus `error.code` / `error.message` / `error.nextAction`; success is `"completed"` (`ops_batch` also reports `planned` and related states). In PTC, a `try/catch` alone misses these failures — check `status`.
+- **`ops_bash`** resolves command results as values: `status` (`completed` only for exit code 0 with no error, permission refusal, signal or timeout; otherwise `failed`), `exitCode`, `stdout` / `stderr`, `error`, `permission`. It throws (a `ToolCallError` in PTC) only for **invalid arguments** or an **unavailable executor**.
+- Host tools (`read` / `write` / `edit` / `pwsh` …) throw `ToolCallError` on failure.
 
 ---
 
