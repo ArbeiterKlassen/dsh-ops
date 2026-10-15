@@ -55,9 +55,9 @@ These fixes are included in 0.3.0; the three Windows payload dependencies are un
 - Keep each component icon inside its exported manifest directory; fix the PTC Plugin Manager metadata error caused by the parent-relative icon path, with coverage in the existing manifest suite.
 - Source builds use `npm run build:ptc` and `npm run build:bash-ipc`; published 0.3.0 artifacts are Windows x64 only. See `docs/native-ptc.md`.
 
-## [Unreleased] — Host file observation
+## [Unreleased] — File tool placeholder arguments
 
-- `ops_inspect_local_file` and non-dry-run `ops_replace` now emit the host's `fs/observed` event, mirroring host `read` (version from a pre-read stat) and `edit` (version after the write), with the calling tool execution as the actor. Host `edit` no longer reports "file has not been read" after an ops read, nor "file changed since it was read" after an ops write. Observation is best-effort and skipped when the host has no `fs` service; a replaced file whose size no longer matches the written bytes is not recorded, so a concurrent writer still surfaces as stale. Covered end to end with the real `dsh-fs-local` and `dsh-fs-observation-policy`. (#17)
+- The native file tools (`ops_inspect_local_file`, `ops_grep`, `ops_glob`, `ops_replace`) now drop `null` values and empty `""`/`[]` placeholders for *optional* fields at the plugin's own execute entry before the worker runs, so strict tool-call adapters that fill every schema field no longer trip `path`/`encoding`/`view` validation; required fields, `replacement: ""`, `false` and `0` are forwarded unchanged and real conflicts still error; the caller's argument object is not mutated. (#19)
 
 ## [Unreleased] — Background job argument strictness
 
