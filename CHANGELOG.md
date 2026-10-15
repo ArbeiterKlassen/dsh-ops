@@ -59,6 +59,15 @@ These fixes are included in 0.3.0; the three Windows payload dependencies are un
 
 - Write the workspace root's DACL through its own handle (`SetKernelObjectSecurity`) instead of path-based `SetAccessControl`. The added ACE is directory-only, so no descendant needs a new ACL, but the path-based write made Windows walk and re-propagate the whole subtree, and the cost grew with workspace size. Measured on 50,000 files: 18.65 s → 4.30 s cold, versus 3.86 s for 10 files; the warm `ready` path is unchanged. The root DACL is byte-identical to before (control flags including `AI`, existing ACEs, the added `WRITE_OWNER` ACE), and descendant ACLs are untouched. Guards, backup receipt, verification and rollback are kept; rollback uses the same handle-based write. (#43)
 - Raise the preparation timeout from 10 s to a 120 s safety net, and never end the error at the colon: a timeout names the limit, the workspace, that the ACL state is unknown and where the receipt is; a non-zero exit names the exit code, elapsed time and the script's stderr (or stdout, or `(no output)`).
+## [Unreleased] — bashPath restricted-mode diagnostics
+
+- Document that `bashPath` (and any system bash) works only in `danger-full-access`: read-only and workspace-write run only the pinned MSYS whose IPC compatibility proxies were verified. The policy itself is unchanged and still fails closed. (#42)
+- Replace the restricted-mode `This MSYS version has no verified DSH IPC compatibility build. Rebuild the matching proxies` error with one that names the executable and where it came from, says the refusal is by design and not an authorization denial, and gives real next steps: remove `bashPath` to use the bundled or provisioned pinned bash, or ask the user to switch to `danger-full-access`. The signal-pipe runner-failure message gains the same next step.
+- `ops_bash` now says plainly that it has no per-call `sandbox_permissions` escalation when a model passes `sandbox_permissions` / `justification`.
+- `dsh-ops ladder` reports `restricted: { compatible, reason }` for the resolved bash, read-only and without copying anything, and drops the stale "bash requires a full-access session" line.
+## [Unreleased] — File tool placeholder arguments
+
+- The native file tools (`ops_inspect_local_file`, `ops_grep`, `ops_glob`, `ops_replace`) now drop `null` values and empty `""`/`[]` placeholders for *optional* fields at the plugin's own execute entry before the worker runs, so strict tool-call adapters that fill every schema field no longer trip `path`/`encoding`/`view` validation; required fields, `replacement: ""`, `false` and `0` are forwarded unchanged and real conflicts still error; the caller's argument object is not mutated. (#19)
 
 ## [Unreleased] — Background job argument strictness
 
