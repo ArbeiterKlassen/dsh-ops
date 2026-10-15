@@ -26,13 +26,28 @@ const command = positionals[0] ?? 'check'
 if (command !== 'stage' && command !== 'check') throw Error('Expected stage or check')
 if (values.staged && command !== 'check') throw Error('--staged only applies to check; stage always names its targets')
 const root = path.resolve(values.root ?? PACKAGE_ROOT)
-const version = JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version
+/** Read a JSON file, or name it: a raw ENOENT names a path but not the mistake. */
+const readJson = (file, what) => {
+  let text
+  try { text = fs.readFileSync(file,'utf8') } catch (error) { throw Error(`${what} at ${file} could not be read: ${error.message}`) }
+  try { return JSON.parse(text) } catch (error) { throw Error(`${what} at ${file} is not valid JSON: ${error.message}`) }
+}
+const version = readJson(path.join(root,'package.json'),'package manifest').version
 /** The targets physically present in this package, declared order first. */
 const stagedTargets = () => {
   const directory = path.join(root,'runtime')
-  const present = fs.existsSync(directory)
-    ? fs.readdirSync(directory,{withFileTypes:true}).filter(entry => entry.isDirectory() && fs.existsSync(path.join(directory,entry.name,'provenance.json'))).map(entry => entry.name)
-    : []
+  if (!fs.existsSync(directory)) return []
+  const present = []
+  for (const entry of fs.readdirSync(directory,{withFileTypes:true})) {
+    if (!entry.isDirectory()) continue
+    const receipt = path.join(directory,entry.name,'provenance.json')
+    const worker = path.join(directory,entry.name,workerName(entry.name.split('-')[0]))
+    // A directory holding a worker but no receipt is a half-finished stage, not an
+    // absent target. Skipping it silently would let `--staged` pass on a package
+    // whose runtime cannot resolve.
+    if (fs.existsSync(worker) && !fs.existsSync(receipt)) throw Error(`Half-staged runtime: ${worker} exists but ${receipt} is missing. Re-run npm run build:ptc -- stage for ${entry.name}, or remove the directory.`)
+    if (fs.existsSync(receipt)) present.push(entry.name)
+  }
   return [...PLATFORMS.filter(target => present.includes(target)), ...present.filter(target => !PLATFORMS.includes(target))]
 }
 const targets = values.platform
@@ -47,13 +62,20 @@ for (const target of targets) {
   if (command === 'stage') {
     const input = path.resolve(values.input ?? path.join(PACKAGE_ROOT,'native','target','release'))
     const source = values.platform ? path.join(input,name) : path.join(input,target,name)
-    if (!fs.statSync(source).isFile()) throw Error(`Missing target build: ${source}`)
+    if (!fs.existsSync(source)) throw Error(`Missing target build: ${source}. Build it on that target with npm run build:ptc, or pass --input <dir> laid out as <input>/<platform>-<arch>/${name}.`)
+    if (!fs.statSync(source).isFile()) throw Error(`Target build is not a regular file: ${source}`)
     fs.mkdirSync(directory,{recursive:true})
     fs.copyFileSync(source,destination)
     if (!target.startsWith('win32-')) fs.chmodSync(destination,0o755)
     fs.writeFileSync(path.join(directory,'provenance.json'),JSON.stringify({version,target,executable:name,sha256:hash(destination),source:'native/Cargo.lock + native/src; original MIT Rust core'},null,2)+'\n')
   } else if (command !== 'check') throw Error('Expected stage or check')
-  const receipt = JSON.parse(fs.readFileSync(path.join(directory,'provenance.json'),'utf8'))
+  const receiptPath = path.join(directory,'provenance.json')
+  // `check` without a scope demands every declared target, so on a one-host source
+  // build it reaches targets that were never staged. Naming the missing receipt and
+  // both ways forward beats a raw ENOENT from inside readFileSync.
+  if (!fs.existsSync(receiptPath)) throw Error(`Runtime for ${target} is not staged: ${receiptPath} is missing. Run npm run build:ptc -- stage on ${target}, or use check --staged to validate only the targets this package carries.`)
+  const receipt = readJson(receiptPath,`runtime provenance for ${target}`)
+  if (!fs.existsSync(destination)) throw Error(`Runtime for ${target} is incomplete: ${receiptPath} exists but ${destination} is missing.`)
   if (receipt.version !== version || receipt.target !== target || receipt.executable !== name || receipt.sha256 !== hash(destination)) throw Error(`Runtime provenance mismatch: ${target}`)
   const bytes = fs.readFileSync(destination)
   // Reject accidental copies of a host binary labeled as a foreign target.

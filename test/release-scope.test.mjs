@@ -118,6 +118,29 @@ await test('check --staged validates the target this host actually built', async
   })
 })
 
+await test('a half-staged runtime is reported instead of being skipped as absent', async () => {
+  await withTempDir('scope-half-staged', (dir) => {
+    const pkg = makePackage(dir, { staged: ['linux-x64'] })
+    // A worker in place with no receipt: `--staged` used to pass this by, calling the
+    // target absent while its binary sat in the package.
+    const half = path.join(pkg, 'runtime', 'win32-x64')
+    fs.mkdirSync(half, { recursive: true })
+    fs.writeFileSync(path.join(half, 'dsh-ops-worker.exe'), peX64())
+    const result = run(path.join(pkg, 'bin', 'native-runtime.mjs'), ['check', '--staged', '--root', pkg])
+    assert.notEqual(result.status, 0, 'a worker without its receipt is not a staged target')
+    assert.match(result.out, /Half-staged runtime/u)
+    assert.match(result.out, /win32-x64/u, 'the message names the target that is half staged')
+  })
+})
+
+await test('a --root without a package manifest is named rather than leaked as ENOENT', async () => {
+  await withTempDir('scope-no-root', (dir) => {
+    const result = run(NATIVE_RUNTIME, ['check', '--root', dir])
+    assert.notEqual(result.status, 0, 'a root with no package.json cannot be validated')
+    assert.match(result.out, /package manifest at .*package\.json could not be read/u)
+  })
+})
+
 await test('check --staged reports an actionable failure when nothing is staged', async () => {
   await withTempDir('scope-empty', (dir) => {
     const pkg = makePackage(dir, { staged: [] })

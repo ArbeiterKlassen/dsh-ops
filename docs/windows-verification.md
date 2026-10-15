@@ -144,18 +144,32 @@ that the COFF machine field is `0x8664`.
 node -e "const b=require('fs').readFileSync('runtime/win32-x64/dsh-ops-worker');console.log(b.slice(0,2).toString(),b.readUInt32LE(0x3c).toString(16),b.slice(b.readUInt32LE(0x3c),b.readUInt32LE(0x3c)+4).toString(),b.readUInt16LE(b.readUInt32LE(0x3c)+4).toString(16))"
 ```
 
-### Known diagnostic gap (planned, not yet fixed)
+### Diagnostic gap — fixed
 
-A bare `check` on a package missing a declared platform currently dies on a raw
+A bare `check` on a package missing a declared platform used to die on a raw
 unhandled error instead of a designed message:
 
 ```
 Error: ENOENT: no such file or directory, open '.../runtime/linux-x64/provenance.json'
 ```
 
-The same happens when `runtime/<target>/` holds a worker but no
-`provenance.json`. Fail-closed is correct; the *message* is not. Confirm what you
-see so the diagnostic fix can be checked against it.
+It now names the missing receipt and both ways forward:
+
+```
+Runtime for linux-x64 is not staged: .../runtime/linux-x64/provenance.json is missing.
+Run npm run build:ptc -- stage on linux-x64, or use check --staged to validate only
+the targets this package carries.
+```
+
+The same class of leak is closed in three more places: `runtime/<target>/` holding a
+worker but no receipt is refused as a **half-staged** runtime instead of being
+skipped as absent; a worker that exists without its execute bit is refused by name
+and mode rather than failing later as a bare `EACCES` from `spawn` (L12); and a
+`--root` without a `package.json` says which file it could not read.
+
+Windows is the place this still needs a look: the execute-bit check is POSIX-only,
+and what Windows reports for a worker it cannot execute is exactly what this file
+exists to find out.
 
 ---
 
@@ -210,8 +224,8 @@ If any suite fails on Windows, that is a real finding: the guard is wrong.
 
 These were declared cross-platform on the strength of code reading, so they need
 a Windows data point. Rows marked **fixed** now have a suite on this branch and
-must show the *fixed* behaviour; the rest (L8, L12) are **open** and are covered by
-the fix plan.
+must show the *fixed* behaviour; the remaining one (L8) is **open** and is covered
+by the fix plan.
 
 | Item | Repro | Expected (current behaviour) |
 | --- | --- | --- |
@@ -222,7 +236,7 @@ the fix plan.
 | **L6** `multiline` cannot cross lines — **fixed** | `pattern:"alpha\nbeta"` with `multiline:true` | 1 match at line 1 with text `alpha\nbeta`; without the flag the same pattern still finds nothing, and `^`/`$` keep their per-line meaning |
 | **L7** hard kill leaves hidden debris — **bounded** | SIGKILL `ops_replace` during publication | one `.<name>.dsh-ops-<uuid>` file may remain until the next write of that same file, which reclaims it. A `SIGKILL` runs no cleanup path, so that is the tightest bound available without a journal |
 | **L8** sparse files are materialised | 16 MiB sparse hole | 16 MiB of real allocation |
-| **L12** exec bit is not validated | a 0644 worker binary | accepted at resolve time, fails later as `EACCES` |
+| **L12** exec bit is not validated — **fixed** | a 0644 worker binary | refused at resolve time by path and mode, `not executable (mode 0644)`. POSIX-only: Windows has no execute bit, so a Windows run cannot show this row |
 | **L14** concurrent replaces lose an update — **fixed** | 6 simultaneous `ops_replace` on one file | exactly one call reports a change and its replacement is the one in the file; the others refuse with `REVISION_CONFLICT` or report `changed: 0` |
 
 ### The update lock on Windows — a new data point, please

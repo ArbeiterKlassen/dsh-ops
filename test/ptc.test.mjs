@@ -249,6 +249,34 @@ try {
     const runtime = path.dirname(resolveWorker({}, {packageRoot:path.resolve('.')}))
     fs.cpSync(runtime,path.join(staged,'runtime',`${process.platform}-${process.arch}`),{recursive:true})
     assert.ok(resolveWorker({}, {packageRoot:staged}).startsWith(staged))
+
+    // L12: a worker that exists but cannot be executed is refused here, by name and
+    // mode, instead of being accepted and failing later as a bare EACCES from spawn.
+    // POSIX-only: Windows has no execute bit.
+    if (process.platform !== 'win32') {
+      const flat = path.join(dir,'flat-worker')
+      const flatTarget = path.join(flat,'runtime',`${process.platform}-${process.arch}`)
+      fs.mkdirSync(flatTarget,{recursive:true})
+      fs.copyFileSync('package.json',path.join(flat,'package.json'))
+      fs.copyFileSync(path.join(runtime,path.basename(file)),path.join(flatTarget,path.basename(file)))
+      fs.copyFileSync(path.join(runtime,'provenance.json'),path.join(flatTarget,'provenance.json'))
+      fs.chmodSync(path.join(flatTarget,path.basename(file)),0o644)
+      assert.throws(() => resolveWorker({}, {packageRoot:flat}), /not executable \(mode 0644\)/)
+    }
+
+    // A missing receipt must be named as an incomplete stage, not leak a raw ENOENT
+    // from inside readFileSync.
+    const noReceipt = path.join(dir,'no-receipt')
+    const noReceiptTarget = path.join(noReceipt,'runtime',`${process.platform}-${process.arch}`)
+    fs.mkdirSync(noReceiptTarget,{recursive:true})
+    fs.copyFileSync('package.json',path.join(noReceipt,'package.json'))
+    fs.copyFileSync(path.join(runtime,path.basename(file)),path.join(noReceiptTarget,path.basename(file)))
+    fs.chmodSync(path.join(noReceiptTarget,path.basename(file)),0o755)
+    assert.throws(() => resolveWorker({}, {packageRoot:noReceipt}), /provenance receipt at .*could not be read/)
+
+    // An unavailable runtime must say what was tried, so it is debuggable without
+    // reading the resolver.
+    assert.throws(() => resolveWorker({}, {packageRoot:path.join(dir,'nothing-here')}), /unavailable[\s\S]*runtime[\s\S]*native[\s\S]*build:ptc/)
     console.log('ok: original DSH native sandbox, readonly pages, outside-root denial and full-access outside-root execution')
   } finally { await real.fiber.dispose(); fs.rmSync(outside,{recursive:true,force:true}) }
 } finally { fs.rmSync(dir, { recursive: true, force: true }) }

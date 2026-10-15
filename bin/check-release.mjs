@@ -44,7 +44,10 @@ if(check.status!==0)throw Error('Native runtime gate failed')
 let ipcNote
 if(staged.includes('win32-x64')){
   const ipc=path.join(root,'runtime/win32-x64/bash-ipc')
-  const receipt=JSON.parse(fs.readFileSync(path.join(ipc,'provenance.json'),'utf8'))
+  const receiptPath=path.join(ipc,'provenance.json')
+  if(!fs.existsSync(receiptPath))throw Error(`win32-x64 is staged without its Bash IPC proxies: ${receiptPath} is missing. Stage them with npm run build:bash-ipc on Windows, or leave the target unstaged.`)
+  let receipt
+  try{receipt=JSON.parse(fs.readFileSync(receiptPath,'utf8'))}catch(error){throw Error(`Bash IPC receipt at ${receiptPath} could not be read: ${error.message}`)}
   if(receipt.version!==1||receipt.platform!=='win32-x64')throw Error('Invalid Bash IPC receipt')
   for(const name of ['opsipc.dll','opsnt.dll'])if(hash(path.join(ipc,name))!==receipt.files[name])throw Error(`IPC hash mismatch ${name}`)
   for(const name of ['security.h','opsipc.cpp','opsnt.cpp'])if(hash(path.join(root,'native/bash-ipc',name))!==receipt.sources[name])throw Error(`IPC source mismatch ${name}; rebuild proxies`)
