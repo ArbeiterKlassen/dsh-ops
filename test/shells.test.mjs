@@ -18,6 +18,7 @@
 import * as urlHelpers from 'node:url'
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { mountBundledPwsh } from '../lib/session-pwsh.js'
 import { sessionWorkdir } from '../lib/session-shells.js'
 import { parseDocument } from 'yaml'
@@ -27,6 +28,7 @@ import {
   BASH_TOOL_NAME,
   DEFAULT_BASH_TIMEOUT_MS,
   ENV_OVERRIDES,
+  shellEnvOverrides,
   MAX_BASH_TIMEOUT_MS,
   PLATFORM_PACKAGES,
   PWSH_LAYOUT_ORDER,
@@ -900,7 +902,9 @@ await test('ops_bash runs the resolved bash as `bash -c <command>` through ctx.s
     assert.equal(spawned.cwd, dir)
     assert.equal(spawned.graceMs, 250)
     assert.equal(spawned.signal.aborted, false)
-    assert.deepEqual(spawned.env, { ...ENV_OVERRIDES })
+    // The spawn env is the overrides as they must reach a child given THIS host environment: a
+    // host that sets `LC_ALL` gets it neutralized (see the locale case below).
+    assert.deepEqual(spawned.env, shellEnvOverrides(process.env))
     assert.equal(spawned.stdio.stdin, 'ignore')
     assert.equal(typeof spawned.stdio.stdout.maxBytes, 'number')
     assert.equal(typeof spawned.stdio.stderr.maxBytes, 'number')
@@ -979,7 +983,7 @@ await test('ops_bash forwards the terminal overrides and no credential-shaped na
     await running
 
     const env = specs[0].env
-    assert.deepEqual(Object.keys(env).sort(), ['GIT_PAGER', 'LC_MESSAGES', 'NO_COLOR', 'PAGER', 'TERM'])
+    assert.deepEqual(env, shellEnvOverrides(process.env))
     assert.equal(env.NO_COLOR, '1')
     assert.equal(env.TERM, 'dumb')
     assert.equal(env.PAGER, 'cat')
@@ -1612,6 +1616,34 @@ await test('runtime pwsh overlay targets only the owning row and restores latest
   assert.deepEqual(updates[1], { config: target.options.config, noSave: true })
   cleanup()
   assert.equal(updates.length, 2, 'cleanup is idempotent')
+})
+
+
+await test('an inherited LC_ALL cannot un-pin the message locale, and encoding survives it', () => {
+  // Reported by @Haoming9527 in review of #81: POSIX resolves LC_ALL before LC_MESSAGES, so on a host
+  // that sets LC_ALL (`zh_CN.UTF-8` desktops commonly set nothing else) the English pin below was
+  // silently ineffective, and a localized libc stopped matching the host's English
+  // `denialSignatures`. Measured on this host before the fix: `LC_MESSAGES="zh_CN.UTF-8"`.
+  const pinned = shellEnvOverrides({ ...process.env, LC_ALL: 'zh_CN.UTF-8' }, {})
+  assert.equal(pinned.LC_MESSAGES, 'C')
+  assert.equal(pinned.LC_ALL, '', 'an empty value is "unset" to the C library, so the pin holds')
+  assert.equal(pinned.LC_CTYPE, 'zh_CN.UTF-8', "the variable's encoding intent must survive")
+  // A host that stated its own ctype keeps it: only the language is pinned, never the codeset.
+  assert.equal(Object.hasOwn(shellEnvOverrides({ LC_ALL: 'zh_CN.UTF-8', LC_CTYPE: 'en_US.UTF-8' }, {}), 'LC_CTYPE'), false)
+  // No ambient override to neutralize: the plain shape is unchanged, byte for byte.
+  assert.deepEqual(shellEnvOverrides({ LANG: 'zh_CN.UTF-8' }, {}), { ...ENV_OVERRIDES })
+  // A caller's own LC_ALL is neutralized the same way, so the seam cannot un-pin it either.
+  assert.equal(shellEnvOverrides({}, { LC_ALL: 'zh_CN.UTF-8' }).LC_ALL, '')
+  assert.equal(shellEnvOverrides({}, { LC_ALL: 'zh_CN.UTF-8' }).LC_CTYPE, 'zh_CN.UTF-8')
+  if (process.platform === 'win32') return
+  // Effective locale, read back from the C library rather than from the environment: `locale` prints
+  // what libc resolved, and `wc -m` counts characters, which `LC_ALL=C` would break (6 for `中文`).
+  const probe = spawnSync('/bin/sh', ['-c', 'locale 2>/dev/null | grep "^LC_MESSAGES="; printf "中文" | wc -m'], {
+    env: { ...process.env, ...pinned }, encoding: 'utf8',
+  })
+  assert.equal(probe.status, 0, probe.stderr)
+  assert.match(probe.stdout, /LC_MESSAGES="?C"?/, `the effective message locale must be C: ${probe.stdout}`)
+  assert.equal(probe.stdout.trim().split('\n').pop().trim(), '2', `UTF-8 input must still count per character: ${probe.stdout}`)
 })
 
 report('shells')

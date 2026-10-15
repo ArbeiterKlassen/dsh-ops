@@ -48,6 +48,21 @@ paths: a tool that reads any OS-readable file could hand a model the operator's 
   it are still edited, the binary is reported through `skipped` and `skippedPaths`, and the previous
   behaviour (refusing the entire call with an error that named no file) is gone.
 
+### Review follow-ups (@Haoming9527, #81)
+
+- An inherited `LC_ALL` silently un-pinned the message locale. POSIX resolves `LC_ALL` before
+  `LC_MESSAGES`, so on a host that sets it — a `zh_CN.UTF-8` desktop commonly sets nothing else — the
+  English pin that keeps the host's `denialSignatures` matching never took effect, and a sandbox
+  refusal was reported as a generic command failure (measured here before the fix:
+  `LC_MESSAGES="zh_CN.UTF-8"`). `shellEnvOverrides` now neutralizes the inherited override (an empty
+  value is "unset" to the C library) and carries its **encoding** intent forward as `LC_CTYPE`, which
+  a host that stated its own ctype keeps. `LC_ALL=C` was not an option: it would make commands read
+  UTF-8 input as bytes.
+- The profile CLI fallback was Windows-only in shape: with no package-based CLI to resolve it
+  selected `dsh.cmd` and launched it through `cmd.exe`, so on Linux the call died as
+  `spawnSync cmd.exe ENOENT` even with an executable `dsh` on PATH. The fallback is now
+  platform-aware, and the `cmd.exe` wrapper is only used on Windows.
+
 ### The shell component on Linux: the host's own bash, under a mandatory sandbox
 
 Taken from WTStarMark's PR #40, which designed the same capability as a separate opt-in
