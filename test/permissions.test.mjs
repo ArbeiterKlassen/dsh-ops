@@ -20,20 +20,6 @@ function ps(code) {
   assert.equal(result.status,0,result.stderr)
   return result.stdout.trim()
 }
-await test('preparation never runs in read-only or full-access', async () => {
-  let calls = 0
-  for (const mode of ['read-only','danger-full-access']) await prepareWorkspace({mode,workspaceRoot:'invalid'}, {platform:'win32',run(){ calls++ }})
-  assert.equal(calls,0)
-})
-await test('preparation coalesces one trusted workspace and retries only failed preparation', async () => {
-  await withTempDir('prepare-coalesce',async root => {
-    let calls=0
-    const policy={mode:'workspace-write',workspaceRoot:root}
-    const options={platform:'win32',run(){calls++;return Promise.resolve()}}
-    await Promise.all([prepareWorkspace(policy,options),prepareWorkspace(policy,options)])
-    assert.equal(calls,1)
-  })
-})
 await test('the real worker behaves as the file-tool descriptions say (#44)', async () => {
   await withTempDir('file-contract',async root => {
     fs.mkdirSync(path.join(root,'sub'),{recursive:true}); fs.mkdirSync(path.join(root,'vendor'),{recursive:true})
@@ -65,6 +51,20 @@ await test('the real worker behaves as the file-tool descriptions say (#44)', as
       assert.equal(replaced.changed,1,JSON.stringify(replaced))
       assert.equal(fs.readFileSync(path.join(root,'a.txt'),'utf8'),'Z axb\n')
     } finally { await shutdown(ctx) }
+  })
+})
+await test('preparation never runs in read-only or full-access', async () => {
+  let calls = 0
+  for (const mode of ['read-only','danger-full-access']) await prepareWorkspace({mode,workspaceRoot:'invalid'}, {platform:'win32',run(){ calls++ }})
+  assert.equal(calls,0)
+})
+await test('preparation coalesces one trusted workspace and retries only failed preparation', async () => {
+  await withTempDir('prepare-coalesce',async root => {
+    let calls=0
+    const policy={mode:'workspace-write',workspaceRoot:root}
+    const options={platform:'win32',run(){calls++;return Promise.resolve()}}
+    await Promise.all([prepareWorkspace(policy,options),prepareWorkspace(policy,options)])
+    assert.equal(calls,1)
   })
 })
 await test('owned Modify-only workspace starts real DSH sandbox; three modes and explicit denials', async () => {
