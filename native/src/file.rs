@@ -130,15 +130,19 @@ struct WalkResult {
     truncated: bool,
 }
 
-fn walk(root: &Path) -> Result<WalkResult> {
+fn walk(root: &Path, deny_roots: &[PathBuf]) -> Result<WalkResult> {
     let target = crate::file_path::checked(root.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?)?;
     let directory = target.parent.open_dir_nofollow(&target.name)?;
     let mut files = Vec::new();
     let mut truncated = false;
-    visit_dir(root, root, directory, 0, &mut files, &mut truncated)?;
+    visit_dir(root, root, directory, 0, deny_roots, &mut files, &mut truncated)?;
     Ok(WalkResult { files, truncated })
 }
-fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: usize, output: &mut Vec<PathBuf>, truncated: &mut bool) -> Result<()> {
+/// Whether a path is inside one of the roots the traversal must not enter.
+fn under_any(roots: &[PathBuf], path: &Path) -> bool {
+    roots.iter().any(|root| path.starts_with(root))
+}
+fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: usize, deny_roots: &[PathBuf], output: &mut Vec<PathBuf>, truncated: &mut bool) -> Result<()> {
     if depth > MAX_DEPTH || output.len() >= MAX_ENTRIES {
         *truncated = true;
         return Ok(());
@@ -166,6 +170,10 @@ fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: us
         if crate::file_path::link(&metadata) { continue; }
         let child = display.join(&name);
         if host_link_or_reparse(&child) { continue; }
+        // A denied root is skipped by identity, not by name: the host names the
+        // credential locations and the worker stays out of them entirely, so a
+        // traversal cannot even report a private key below one.
+        if under_any(deny_roots, &child) { continue; }
         if hidden(&child, root) || matches!(name.as_str(), ".git" | ".dsh-ops" | "node_modules" | "target" | ".venv") { continue; }
         if metadata.is_file() {
             if output.len() >= MAX_ENTRIES { *truncated = true; return Ok(()); }
@@ -174,7 +182,7 @@ fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: us
         }
         if metadata.is_dir() {
             let Ok(child_dir) = directory.open_dir_nofollow(&name) else { continue };
-            visit_dir(root, &child, child_dir, depth + 1, output, truncated)?;
+            visit_dir(root, &child, child_dir, depth + 1, deny_roots, output, truncated)?;
             if *truncated && output.len() >= MAX_ENTRIES { return Ok(()); }
         }
     }
@@ -188,12 +196,12 @@ fn matches_any(root: &Path, file: &Path, patterns: &[String]) -> bool {
     let excluded = patterns.iter().filter_map(|p| p.strip_prefix('!')).any(|p| glob_match(p, &name));
     included && !excluded
 }
-fn files_for(path: &str, patterns: &[String]) -> Result<WalkResult> {
+fn files_for(path: &str, patterns: &[String], deny_roots: &[PathBuf]) -> Result<WalkResult> {
     let root = target(path, false)?;
     if root.is_file() {
         return Ok(WalkResult { files: vec![root.clone()], truncated: false });
     }
-    let walked = walk(&root)?;
+    let walked = walk(&root, deny_roots)?;
     Ok(WalkResult {
         files: walked.files.into_iter()
             .filter(|f| matches_any(&root, f, patterns))
@@ -319,7 +327,7 @@ fn glob(request: &Request) -> Result<Value> {
     let args: GlobArgs = serde_json::from_value(request.args.clone())?;
     if args.pattern.is_empty() || args.pattern.iter().all(|p| p.starts_with('!')) { return Err(Failure::new("INVALID_ARGUMENT", "pattern requires a positive glob")); }
     let root = target(&args.path, false)?; if !root.is_dir() { return Err(Failure::new("INVALID_ARGUMENT", "glob path must be a directory")); }
-    let walked = walk(&root)?;
+    let walked = walk(&root, &request.deny_roots_paths())?;
     let mut files: Vec<_> = walked.files.into_iter().filter(|f| matches_any(&root, f, &args.pattern)).collect();
     if args.sort == "modified" { files.sort_by_key(|f| std::cmp::Reverse(modified(f))); } else if !args.sort.is_empty() && args.sort != "path" { return Err(Failure::new("INVALID_ARGUMENT", "sort must be path or modified")); }
     let output_mode = if args.output_mode.is_empty() { "paths" } else { args.output_mode.as_str() };
@@ -332,7 +340,7 @@ fn grep(request: &Request) -> Result<Value> {
     if args.pattern.is_empty() || args.limit == 0 || args.limit > 10_000 { return Err(Failure::new("INVALID_ARGUMENT", "pattern and bounded limit are required")); }
     if args.before_context > 32 || args.after_context > 32 { return Err(Failure::new("INVALID_ARGUMENT", "context is limited to 32 lines")); }
     let regex = RegexBuilder::new(&args.pattern).case_insensitive(args.case_insensitive).multi_line(args.multiline).build().map_err(|e| Failure::new("INVALID_ARGUMENT", e))?;
-    let walked = files_for(&args.path, &args.glob)?; let mut matches = Vec::new(); let mut file_count = 0; let mut match_count = 0;
+    let walked = files_for(&args.path, &args.glob, &request.deny_roots_paths())?; let mut matches = Vec::new(); let mut file_count = 0; let mut match_count = 0;
     for file in walked.files { let bytes = match read_bytes(&file) { Ok(bytes) => bytes, Err(_) => continue }; if bytes.len() as u64 > MAX_FILE_BYTES { continue; } let text = match String::from_utf8(bytes) { Ok(v) => v, Err(_) => continue }; let lines: Vec<_> = text.lines().collect();
         // Line by line by default. With `multiline` the pattern is matched against
         // the whole file, so a pattern containing `\n` can match across lines
@@ -373,11 +381,17 @@ fn replace(request: &Request) -> Result<Value> {
     if request.read_only { return Err(Failure::new("POLICY_DENIED", "replace is unavailable in read-only mode")); }
     let args: ReplaceArgs = serde_json::from_value(request.args.clone())?;
     if args.pattern.is_empty() || args.max_replacements == 0 || args.max_replacements > 100_000 { return Err(Failure::new("INVALID_ARGUMENT", "pattern and maxReplacements are required")); }
-    let walked = files_for(&args.path, &args.glob)?; let mut plans = Vec::new(); let mut total = 0usize;
-    for file in walked.files { let bytes=read_bytes(&file)?; let text=String::from_utf8(bytes.clone()).map_err(|_| Failure::new("INVALID_ARGUMENT", "replace only supports UTF-8 files"))?; let count=text.match_indices(&args.pattern).count(); if count>0 { total += count; plans.push((file, bytes, text, count)); } }
+    let walked = files_for(&args.path, &args.glob, &request.deny_roots_paths())?; let mut plans = Vec::new(); let mut total = 0usize; let mut binary: Vec<PathBuf> = Vec::new();
+    // A directory that holds one binary file (an icon, an archive) is a normal repository, not a
+    // malformed request: the binary is reported as skipped and the text files around it are still
+    // edited. Failing the whole call on the first non-UTF-8 byte made a routine directory edit
+    // impossible, and the error named no file, so the caller could not even narrow the request.
+    for file in walked.files { let bytes=read_bytes(&file)?; match String::from_utf8(bytes.clone()) { Ok(text) => { let count=text.match_indices(&args.pattern).count(); if count>0 { total += count; plans.push((file, bytes, text, count)); } } Err(_) => binary.push(file) } }
+    let skipped = binary.len();
+    let skipped_paths: Vec<Value> = binary.iter().take(16).map(|file| json!(relative_display(&request.root_path(), file))).collect();
     if total > args.max_replacements { return Err(Failure::new("OUTPUT_LIMIT", format!("{total} matches exceed maxReplacements ({}); no file was changed. maxReplacements is a ceiling, not a truncation: raise it to {total} or more and retry.", args.max_replacements))); }
     let mut items=Vec::new(); for (file, original, text, count) in plans { let revision=hash_file(&file)?; let next=text.replace(&args.pattern,&args.replacement); items.push(json!({"path":file,"replacements":count,"revision":revision,"bytesBefore":original.len(),"bytesAfter":next.len()})); }
-    if args.dry_run { return Ok(json!({"status":"completed","phase":"observe","changed":0,"matched":total,"skipped":0,"failed":0,"complete":true,"omitted":0,"dryRun":true,"items":items})); }
+    if args.dry_run { return Ok(json!({"status":"completed","phase":"observe","changed":0,"matched":total,"skipped":skipped,"failed":0,"complete":true,"omitted":0,"dryRun":true,"items":items,"skippedPaths":skipped_paths})); }
     let mut changed=0usize; for item in &mut items { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
         // Trusted transport owns this allowlist. Re-check every selected file,
         // not only the initial search root, immediately before publication.
@@ -396,7 +410,7 @@ fn replace(request: &Request) -> Result<Value> {
         // that ignores them sees exactly the envelope it saw before.
         if let Some((metadata,warnings))=atomic_write(&file,next.as_bytes())? { item["metadata"]=metadata; if !warnings.is_empty() { item["metadataWarnings"]=json!(warnings); } }
         changed += item["replacements"].as_u64().unwrap_or(0) as usize; }
-    Ok(json!({"status":"completed","phase":"verify","changed":changed,"matched":total,"skipped":0,"failed":0,"complete":true,"omitted":0,"items":items}))
+    Ok(json!({"status":"completed","phase":"verify","changed":changed,"matched":total,"skipped":skipped,"failed":0,"complete":true,"omitted":0,"items":items,"skippedPaths":skipped_paths}))
 }
 /// A POSIX ACL is exposed as this attribute, so preserving ACLs needs no libacl.
 #[cfg(unix)]
