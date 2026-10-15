@@ -184,7 +184,7 @@ $ npm run verify:release
 …
 dsh-ops test: 25 suite(s) passed in 11s
 linux-x64: 3665672 bytes, sha256 327420ad…
-Release closure OK: dsh-ops@0.3.0, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
+Release closure OK: dsh-ops@0.3.1, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
 ```
 
 `npm run check:ptc-runtime` answers the narrower question — are the staged
@@ -216,7 +216,7 @@ ships `runtime/`, so the staged worker travels with the tarball):
 
 ```console
 $ npm pack
-$ dsh plugin --profile <profile> add ./dsh-ops-0.3.0.tgz
+$ dsh plugin --profile <profile> add ./dsh-ops-0.3.1.tgz
 ```
 
 Confirm what the host composed:

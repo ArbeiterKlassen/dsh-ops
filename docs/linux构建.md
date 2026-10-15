@@ -168,7 +168,7 @@ $ npm run verify:release
 …
 dsh-ops test: 25 suite(s) passed in 11s
 linux-x64: 3665672 bytes, sha256 327420ad…
-Release closure OK: dsh-ops@0.3.0, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
+Release closure OK: dsh-ops@0.3.1, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
 ```
 
 `npm run check:ptc-runtime` 回答的是更窄的问题 —— 已 stage 的运行时是否完好 ——
@@ -198,7 +198,7 @@ worker 会随 tarball 一起走）：
 
 ```console
 $ npm pack
-$ dsh plugin --profile <profile> add ./dsh-ops-0.3.0.tgz
+$ dsh plugin --profile <profile> add ./dsh-ops-0.3.1.tgz
 ```
 
 确认宿主到底合成了什么：

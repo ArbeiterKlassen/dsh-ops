@@ -1,4 +1,4 @@
-# Native PTC enhancement — 0.3.0 Windows x64 + Linux x64
+# Native PTC enhancement — 0.3.1 Windows x64 + Linux x64
 
 Issues: [#3](https://github.com/T-Auto/dsh-ops/issues/3), [#8](https://github.com/T-Auto/dsh-ops/issues/8).
 The file and PTC components use an independent Rust worker. FastCtx remains only
@@ -6,7 +6,7 @@ behind the explicitly enabled background component.
 
 ## Runtime-bearing installation and original DSH permission linkage
 
-0.3.0 ships `runtime/win32-x64/dsh-ops-worker.exe` and
+0.3.1 ships `runtime/win32-x64/dsh-ops-worker.exe` and
 `runtime/linux-x64/dsh-ops-worker`, each with its version/checksum receipt, plus
 the Bash IPC compatibility proxies of the Windows release. Package os/cpu,
 manifest and release checks agree on that scope: `verify:release` derives the
@@ -66,7 +66,7 @@ session toolchain before building; do not add multi-version toolchains to global
 Enable the opt-in `dsh-ops/ptc` bundle row. Its only config keys are `required`
 (default false) and an optional absolute `binaryPath`. `DSH_OPS_WORKER_BIN` can
 select a build; otherwise the component uses `runtime/<platform>-<arch>/dsh-ops-worker[.exe]` before `native/target/release`.
-The component remains opt-in. Published 0.3.0 packages include the runtime bytes
+The component remains opt-in. Published 0.3.1 packages include the runtime bytes
 of every supported platform; source checkouts stage them explicitly with
 `node bin/native-runtime.mjs stage --platform <target>`. There is no automatic
 compilation or download during installation.

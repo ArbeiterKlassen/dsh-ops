@@ -3,9 +3,9 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
-## 0.3.0 release scope and verification
+## 0.3.1 release scope and verification
 
-0.3.0 supports Windows x64 and Linux x64, explicitly approved by the maintainer
+0.3.1 supports Windows x64 and Linux x64, explicitly approved by the maintainer
 for this release. Package os/cpu, component declarations and native target checks
 agree. macOS and ARM64 are future work; prior cross-compile checks are not release
 claims. The shell component and its Bash IPC proxies remain Windows-only.
@@ -23,7 +23,7 @@ Restricted Bash uses an installation-relative private MSYS copy: only import DLL
 names are redirected to original MIT IPC proxies, preserving the token and disk
 API paths. Original payload/proxy/source hashes are recorded and checked.
 Only the original GPL payload is an existing dependency; no modified MSYS DLL
-or complete private copy is included in the 0.3.0 tarball. Runtime modifications
+or complete private copy is included in the 0.3.1 tarball. Runtime modifications
 are identified in the local receipt; original licenses remain in the copy.
 This does not attest source-delivery closure for the historical PortableGit
 payload dependency (see the 0.2.1 historical limitation below).

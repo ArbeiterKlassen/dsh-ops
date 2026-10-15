@@ -127,7 +127,7 @@ Windows Bash IPC payload **only when `win32-x64` is staged**. On Linux only the
 
 | Command | Expected on a Windows host with `runtime/win32-x64` staged |
 | --- | --- |
-| `npm run verify:release` | EXIT=0; 58 manifest checks; **the IPC closure RUNS** (no "skipped" note); `Release closure OK: dsh-ops@0.3.0, win32-x64 worker (...)` |
+| `npm run verify:release` | EXIT=0; 58 manifest checks; **the IPC closure RUNS** (no "skipped" note); `Release closure OK: dsh-ops@0.3.1, win32-x64 worker (...)` |
 | `node bin/native-runtime.mjs check` | Validates the **declared** targets. On this branch `package.json` declares `win32` + `linux`, so a Windows-only checkout will refuse unless `runtime/linux-x64` is also staged. See the diagnostic note below. |
 | `node bin/native-runtime.mjs check --staged` | Validates only what is under `runtime/`; on a Windows-only staging that is `win32-x64`, EXIT=0 |
 | `DSH_OPS_REQUIRE_ALL_TARGETS=1 node bin/check-release.mjs` | Refuses on a Windows-only staging, naming `linux-x64` |

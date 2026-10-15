@@ -5,6 +5,36 @@ All notable changes to this package are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-10-15 — Linux x64 adaption verified, native worker boundary fixes
+
+Release scope: unchanged platform declarations (**Windows x64 and Linux x64**), targeting
+DSH 0.2.0-rc.2; macOS and ARM64 remain unclaimed, and the shell component
+(`ops_bash`/pwsh) with its Bash IPC proxies remains Windows-only. What 0.3.1 changes is
+that Linux x64 stops being a declaration and becomes a measured platform: the same
+suites, the release closure and the packaged artifact were run on a Linux host, and the
+defects those runs found are fixed here. Every fix below is platform-neutral, so Windows
+gains them too; the Windows half of the metadata work needs Windows measurements and is
+tracked in `docs/windows-verification.md`.
+
+### Linux x64 adaption
+
+- Build and verify the native worker on `x86_64-unknown-linux-gnu` as a first-class target: `cargo build --release --locked`, `cargo test`, the full `npm run verify` with `DSH_OPS_REQUIRE_RUNTIME=1` (25 suites, no skip counted as a pass) and `npm run verify:release`.
+- Keep the platform paths separate instead of compromising both: directory `fsync` and metadata reapplication on POSIX, `MoveFileExW` publication on Windows, chosen per `cfg` rather than papered over with one behaviour that would be wrong on both.
+- Derive platform facts when a suite runs instead of from the host it happens to be on: mount and filesystem fixtures are resolved at run time, no tool is parsed for `LC_MESSAGES`-dependent wording, and whole-suite skips are declared per platform (2 on Linux) rather than counted as passes.
+- Close the release gate over the targets a checkout actually staged, so a Linux-only build passes and `DSH_OPS_REQUIRE_ALL_TARGETS=1` states the multi-platform claim; the closure message names the staged platform instead of assuming Windows.
+- Document the Linux route end to end in `docs/linux-build.md` and `docs/linux构建.md`: build, stage, `npm pack`, `dsh plugin add ./dsh-ops-0.3.1.tgz`, and the gate commands with their expected output.
+- Add 11 boundary suites that run on both platforms: grep across lines, replace metadata, output byte budget, update lock, hex offsets, argument and runtime diagnostics, release scope, PTC provenance, and the Linux argument/attribute suites.
+
+### Native worker boundary fixes
+
+- Preserve file identity across `ops_replace`. The replacement is published as a new inode, so the target's mode, owner, POSIX ACL and user extended attributes are now captured before the write and reapplied before publication. Previously a `0600` file came back world-readable (typically `0664`) and a `0755` script lost its execute bit. A mode or ACL that cannot be reapplied aborts the call with nothing published; on restore, an owner or attribute that cannot be put back is reported in `items[].metadataWarnings`, while `items[].metadata` reports what was kept. Covered by `test/file-metadata.test.mjs`.
+- Make `ops_grep`'s `multiline` match across lines. It previously only changed what `^` and `$` anchored to while still matching one line at a time, so a pattern containing `\n` could never match and the call answered `matched: 0` without an error. `^`/`$` keep their per-line meaning, context lines still apply, and behaviour without the flag is unchanged. Matching the whole file at once also adds one zero-width match after a final newline, so that position is no longer reported as a line of its own: `$` answers once per line, not once per line plus one, and no match lands on a line the file does not have. Covered by `test/grep-multiline.test.mjs`.
+- State what the shared parameter names mean, without changing the behaviour they name: `replace`'s `pattern` is a literal substring while `grep`'s is a regular expression, and `maxReplacements` is a ceiling that refuses the whole operation rather than truncating it. The refusal now names the match count, the ceiling and how to raise it instead of blaming the pattern.
+- Bound every response by encoded bytes as well as by lines, so a single long line can no longer fail a read outright; `bytesTotal` and `truncatedInLine` report where that applies. The hex view of `ops_inspect_local_file` now reads the first row of the file instead of starting at the second.
+- Hold an exclusive lock across the read-check-publish window of `ops_replace`, so concurrent replacements cannot silently lose a write: a peer now receives `REVISION_CONFLICT` rather than reporting a change it did not keep. Covered by `test/replace-concurrency.test.mjs`.
+- Bound the debris a hard kill leaves behind. The next writer of a file reclaims its own `.<name>.dsh-ops-*` leftovers, which a `SIGKILL` cannot clean up at the point they are created, and a directory `fsync` that fails after a successful rename reports `effectState: "applied"` with a `nextAction` that says not to repeat it, rather than `"none"`.
+- Refuse a native worker that exists without its execute bit, naming the path and the mode, instead of failing later as a bare `EACCES` from `spawn`. The resolver's "unavailable" error lists the candidates it tried, a missing or malformed `provenance.json` is named as an incomplete stage, and `node bin/native-runtime.mjs check` on a package missing a declared platform explains both ways forward instead of raising a raw `ENOENT`.
+
 ## [0.3.0] — 2026-10-14 — native file/PTC tools for Windows x64 and Linux x64
 
 Release scope: **Windows x64 and Linux x64**, targeting DSH 0.2.0-rc.2. macOS and
@@ -56,16 +86,6 @@ These fixes are included in 0.3.0; the three Windows payload dependencies are un
 - Target native Windows x64 and Linux x64; runtime acceptance for both comes from on-platform runs of the same suites, while macOS/ARM64 remain future work. Legacy payloads remain unchanged.
 - Keep each component icon inside its exported manifest directory; fix the PTC Plugin Manager metadata error caused by the parent-relative icon path, with coverage in the existing manifest suite.
 - Source builds use `npm run build:ptc` and `npm run build:bash-ipc`; published 0.3.0 artifacts carry the native workers for every declared platform, with the Bash IPC proxies still Windows-only. See `docs/native-ptc.md`.
-
-## [Unreleased] — Native worker boundary fixes (Linux x64 parity)
-
-- Preserve file identity across `ops_replace`. The replacement is published as a new inode, so the target's mode, owner, POSIX ACL and user extended attributes are now captured before the write and reapplied before publication. Previously a `0600` file came back world-readable (typically `0664`) and a `0755` script lost its execute bit. A mode or ACL that cannot be reapplied aborts the call with nothing published; on restore, an owner or attribute that cannot be put back is reported in `items[].metadataWarnings`, while `items[].metadata` reports what was kept. Covered by `test/file-metadata.test.mjs`.
-- Make `ops_grep`'s `multiline` match across lines. It previously only changed what `^` and `$` anchored to while still matching one line at a time, so a pattern containing `\n` could never match and the call answered `matched: 0` without an error. `^`/`$` keep their per-line meaning, context lines still apply, and behaviour without the flag is unchanged. Matching the whole file at once also adds one zero-width match after a final newline, so that position is no longer reported as a line of its own: `$` answers once per line, not once per line plus one, and no match lands on a line the file does not have. Covered by `test/grep-multiline.test.mjs`.
-- State what the shared parameter names mean, without changing the behaviour they name: `replace`'s `pattern` is a literal substring while `grep`'s is a regular expression, and `maxReplacements` is a ceiling that refuses the whole operation rather than truncating it. The refusal now names the match count, the ceiling and how to raise it instead of blaming the pattern.
-- Bound every response by encoded bytes as well as by lines, so a single long line can no longer fail a read outright; `bytesTotal` and `truncatedInLine` report where that applies. The hex view of `ops_inspect_local_file` now reads the first row of the file instead of starting at the second.
-- Hold an exclusive lock across the read-check-publish window of `ops_replace`, so concurrent replacements cannot silently lose a write: a peer now receives `REVISION_CONFLICT` rather than reporting a change it did not keep. Covered by `test/replace-concurrency.test.mjs`.
-- Bound the debris a hard kill leaves behind. The next writer of a file reclaims its own `.<name>.dsh-ops-*` leftovers, which a `SIGKILL` cannot clean up at the point they are created, and a directory `fsync` that fails after a successful rename reports `effectState: "applied"` with a `nextAction` that says not to repeat it, rather than `"none"`.
-- Refuse a native worker that exists without its execute bit, naming the path and the mode, instead of failing later as a bare `EACCES` from `spawn`. The resolver's "unavailable" error lists the candidates it tried, a missing or malformed `provenance.json` is named as an incomplete stage, and `node bin/native-runtime.mjs check` on a package missing a declared platform explains both ways forward instead of raising a raw `ENOENT`.
 
 ## [Unreleased] — Background job argument strictness
 

@@ -490,7 +490,7 @@ check(JSON.stringify(ptc?.tools) === JSON.stringify(PTC_TOOLS.map(publicToolName
 check(PTC_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
 check(JSON.stringify(pkg.os) === '["win32","linux"]' && JSON.stringify(pkg.cpu) === '["x64"]' &&
   JSON.stringify(ptc?.platforms) === '["win32","linux"]' && JSON.stringify(ptc?.architectures) === '["x64"]',
-  '0.3.0 package and PTC declarations support Windows x64 and Linux x64')
+  '0.3.1 package and PTC declarations support Windows x64 and Linux x64')
 const REQUIRED_ENTRIES = [
   'native/Cargo.toml',
   'native/Cargo.lock',

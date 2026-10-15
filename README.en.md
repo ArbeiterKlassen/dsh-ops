@@ -8,7 +8,7 @@ attention wasted on repeated PowerShell errors.
 
 > tips: "ops" here is short for the general sense of operations — the plugin sits at the base layer between dsh and system / code / file operations. It is not an operations (DevOps) plugin.
 
-**0.3.0 supports Windows x64 and Linux x64**, targeting DSH `0.2.0-rc.2`. The independent Rust file/PTC worker ships for each supported platform (`runtime/<platform>-<arch>/`); PTC remains opt-in. macOS/ARM64 are future work, not release claims, and the shell component (`ops_bash`/pwsh) stays Windows-only. See [Native PTC](docs/native-ptc.md).
+**0.3.1 supports Windows x64 and Linux x64, with the Linux side verified on a real host**, targeting DSH `0.2.0-rc.2`. The independent Rust file/PTC worker ships for each supported platform (`runtime/<platform>-<arch>/`); PTC remains opt-in. macOS/ARM64 are future work, not release claims, and the shell component (`ops_bash`/pwsh) stays Windows-only. See [Linux support](#linux-support) and [Native PTC](docs/native-ptc.md).
 
 ---
 
@@ -34,6 +34,18 @@ attention wasted on repeated PowerShell errors.
 > The illustration is the maintainer's to replace or remove.
 
 Routing: **toolkit → bash → PowerShell 7**.
+
+---
+
+## Linux support
+
+On **Linux x64** `dsh-ops` does what it does on Windows, except where noted below: the independent Rust worker ships as an ELF binary, and the file tools (`inspect_local_file` / `glob` / `grep` / `replace`) plus the opt-in PTC component (`ops_batch` / `ops_result`) work the same way there.
+
+- **Windows-only**: the shell component (`ops_bash` / pwsh 7) and its Bash IPC proxies; the background component, which uses them as its execution channel, is unavailable on Linux.
+- **Build and install**: see [Building and verifying on Linux](docs/linux-build.md) — `npm run verify` → `npm run build:ptc` → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz`.
+- **Platform differences handled**: replacing a file keeps its mode/owner/POSIX ACL/xattrs; directory `fsync` follows POSIX semantics; `multiline` search reaches across lines; reads are bounded by encoded bytes as well as by lines. The Windows-side equivalent (the security descriptor) is tracked in the [Windows verification checklist](docs/windows-verification.md).
+- **Measured state** (Debian 13 x86_64): `DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 25 suites passed, no skips; `npm run validate:manifest` → all 58 checks passed; `npm run verify:release` → release closure OK; a `npm pack` tarball unpacks to a worker whose receipt sha256 matches, with its execute bit intact and metadata preserved across a replace.
+- The defects those runs found are **fixed here**, and Windows gains them too: a replace no longer loses mode/ACL/xattrs, `multiline` reaches across lines, one long line no longer fails a read outright, concurrent replaces no longer lose a write silently, a hard kill leaves no unbounded debris, and an unexecutable worker is named by path and mode instead of a bare `EACCES`. See the [0.3.1 release notes](docs/release-0.3.1.md) and the [CHANGELOG](CHANGELOG.md).
 
 ---
 
