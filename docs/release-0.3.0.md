@@ -28,9 +28,9 @@ Windows 宿主仍报告 `partial` enforcement，本插件不将其冒充完整�
 ## 发布验证
 
 - Manifest、源码测试、真实 Windows DSH provider、真实 Node PTC SDK command/script/pipeline 和权限切换测试。
-- `npm run verify:release` 核验单平台声明、worker PE/hash、IPC 二进制与源码 hash 闭包。
+- `npm run verify:release` 核验声明作用域与 `PLATFORMS` 一致、已 stage 目标的 worker PE/ELF 与 version/hash，并在包内携带 `win32-x64` 时核验 IPC 二进制与源码 hash 闭包。默认只闭合**本包实际携带的**目标，因此在只构建 Linux 的机器上同样通过；要声明「发布包必须齐平台」，设 `DSH_OPS_REQUIRE_ALL_TARGETS=1`。
 - GitHub Release 为源码/tag/说明；随后生成 npm tarball，核验包内容、凭据排除、哈希与独立安装。
 - npm 发布由维护者使用本机 `dist/publish.bat` 执行，不由 Actions 自动发布。GitHub Actions 保持既有关闭状态。
 
-未宣称 Linux/macOS/ARM64 验收，也不把用户特定任务的 token 统计当作通用性能保证。
+未宣称 macOS/ARM64 验收；Linux x64（`x86_64-unknown-linux-gnu`）的 file 与 PTC 验收来自同一批测试套件在本机的运行结果。也不把用户特定任务的 token 统计当作通用性能保证。
 历史 PortableGit 载荷的完整 source-delivery 闭包限制见 [PROVENANCE](../PROVENANCE.md)；0.3.0 不分发修改后的 MSYS DLL，私有修改仅在用户本机生成。

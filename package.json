@@ -107,7 +107,7 @@
     "build:bash-ipc": "node bin/build-bash-ipc.mjs",
     "build:ptc": "node bin/dsh-ops.mjs build-ptc",
     "stage:ptc": "node bin/native-runtime.mjs stage",
-    "check:ptc-runtime": "node bin/native-runtime.mjs check",
+    "check:ptc-runtime": "node bin/native-runtime.mjs check --staged",
     "test:ptc": "node test/run.mjs ptc",
     "build:rust": "node bin/dsh-ops.mjs build",
     "provision": "node bin/dsh-ops.mjs provision",

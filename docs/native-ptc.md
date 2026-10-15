@@ -9,8 +9,12 @@ behind the explicitly enabled background component.
 0.3.0 ships `runtime/win32-x64/dsh-ops-worker.exe` and
 `runtime/linux-x64/dsh-ops-worker`, each with its version/checksum receipt, plus
 the Bash IPC compatibility proxies of the Windows release. Package os/cpu,
-manifest and release checks agree on that scope. `npm run verify:release`
-rejects missing/corrupt worker or proxy artifacts. macOS/ARM64 are not supported
+manifest and release checks agree on that scope: `verify:release` derives the
+declared set from `package.json` and asserts it equals the resolver's
+`PLATFORMS`, then rejects a corrupt worker or proxy artifact among the targets
+the package actually carries. `DSH_OPS_REQUIRE_ALL_TARGETS=1` requires every
+declared platform instead, which is what a cross-platform release must satisfy.
+macOS/ARM64 are not supported
 by this release, and the shell component remains Windows-only: `ops_bash`, its
 pwsh payload and the IPC proxies are Windows artifacts. No postinstall
 download/build or binaryPath override is required. Source builds use

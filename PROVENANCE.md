@@ -27,13 +27,17 @@ are identified in the local receipt; original licenses remain in the copy.
 This does not attest source-delivery closure for the historical PortableGit
 payload dependency (see the 0.2.1 historical limitation below).
 
-The Windows x64 Rust worker and two IPC proxies are staged with hash receipts.
-`npm run verify:release` includes 58 manifest checks, 13 test suites, worker
-PE/version/hash checks and IPC binary/source closure. Real Node PTC runtime and
-SDK coverage includes Bash command/script/pipeline, workspace write, outside-write
+The Windows x64 Rust worker with its two IPC proxies, and the Linux x64 Rust
+worker, are staged with hash receipts. `npm run verify:release` includes 58
+manifest checks, 14 test suites, worker PE/ELF/version/hash checks and — when the
+package carries `win32-x64` — the IPC binary/source closure. It closes the
+targets the package actually stages; `DSH_OPS_REQUIRE_ALL_TARGETS=1` requires
+every declared platform instead. Real Node PTC runtime and SDK coverage includes
+Bash command/script/pipeline, workspace write, outside-write
 denial and downgrade to read-only. Native PTC copy/move/remove, read-only result
-pages and full-access external roots pass with original DSH providers. No Linux,
-macOS or ARM64 binary/runtime acceptance is claimed. No benchmark is inferred
+pages and full-access external roots pass with original DSH providers. Linux x64
+(`x86_64-unknown-linux-gnu`) file and PTC acceptance is claimed from local runs
+of the same suites; macOS and ARM64 remain unclaimed. No benchmark is inferred
 from these gates. The npm tarball is built and checked after the GitHub Release;
 publication itself is performed separately by the maintainer.
 

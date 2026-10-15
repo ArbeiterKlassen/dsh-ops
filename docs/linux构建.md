@@ -114,7 +114,7 @@ $ export DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx"
 $ DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx" \
   DSH_OPS_REQUIRE_RUNTIME=1 npm run verify
 …
-dsh-ops test: 13 suite(s) passed in 10s
+dsh-ops test: 14 suite(s) passed in 11s
 ```
 
 没有 FastCtx 构建时，同一条命令会少跑两个套件，并明确列出跳过项：
@@ -122,7 +122,7 @@ dsh-ops test: 13 suite(s) passed in 10s
 ```console
 dsh-ops lifecycle: skipped (no FastCtx executable found; …)
 dsh-ops mount: skipped (no FastCtx executable found; …)
-dsh-ops test: 11 suite(s) passed, 2 skipped in 2s
+dsh-ops test: 12 suite(s) passed, 2 skipped in 2s
 ```
 
 Rust worker 自身的 barrier 测试：
@@ -131,6 +131,34 @@ Rust worker 自身的 barrier 测试：
 $ cargo test --release --locked --manifest-path native/Cargo.toml
 test result: ok. 1 passed; 0 failed
 ```
+
+### 在 Linux 上回答「发布闭包」问题
+
+`npm run verify:release` 在上面的门禁之上再加发布闭合检查。它从 `package.json`
+推导声明的作用域，断言它与解析器的 `PLATFORMS` 完全一致，然后校验**本包实际
+stage 的**目标。在只构建 Linux 的机器上那就是 `linux-x64`，而 Windows 的 IPC 闭包
+会被明确报告为跳过，而不是被悄悄略过：
+
+```console
+$ npm run verify:release
+…
+dsh-ops test: 14 suite(s) passed in 11s
+linux-x64: 3665672 bytes, sha256 327420ad…
+Release closure OK: dsh-ops@0.3.0, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
+```
+
+`npm run check:ptc-runtime` 回答的是更窄的问题 —— 已 stage 的运行时是否完好 ——
+所以它在单平台构建上同样通过：
+
+```console
+$ npm run check:ptc-runtime
+linux-x64: 3665672 bytes, sha256 327420ad…
+Validated 1 native runtime(s); no install-time scripts or permission changes.
+```
+
+不带参数的 `node bin/native-runtime.mjs check` 仍然要求**每个**已声明平台都在场，
+因为那是发布装配脚本在发布之前要问的问题。组装跨平台发布版、希望缺平台即失败时，
+设 `DSH_OPS_REQUIRE_ALL_TARGETS=1`。
 
 ## 6. 安装进 profile
 

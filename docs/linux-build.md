@@ -124,7 +124,7 @@ this is the strictest form:
 $ DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx" \
   DSH_OPS_REQUIRE_RUNTIME=1 npm run verify
 …
-dsh-ops test: 13 suite(s) passed in 10s
+dsh-ops test: 14 suite(s) passed in 11s
 ```
 
 Without a FastCtx build the same command reports fewer suites and lists the
@@ -133,7 +133,7 @@ skipped ones explicitly:
 ```console
 dsh-ops lifecycle: skipped (no FastCtx executable found; …)
 dsh-ops mount: skipped (no FastCtx executable found; …)
-dsh-ops test: 11 suite(s) passed, 2 skipped in 2s
+dsh-ops test: 12 suite(s) passed, 2 skipped in 2s
 ```
 
 The Rust worker's own barrier test:
@@ -142,6 +142,36 @@ The Rust worker's own barrier test:
 $ cargo test --release --locked --manifest-path native/Cargo.toml
 test result: ok. 1 passed; 0 failed
 ```
+
+### Closing the release question on Linux
+
+`npm run verify:release` adds the release closure on top of the gate above. It
+derives the declared scope from `package.json`, asserts it equals the resolver's
+`PLATFORMS`, then validates the targets this package actually stages. On a
+Linux-only build that is `linux-x64`, and the Windows IPC closure is reported as
+skipped rather than silently implied:
+
+```console
+$ npm run verify:release
+…
+dsh-ops test: 14 suite(s) passed in 11s
+linux-x64: 3665672 bytes, sha256 327420ad…
+Release closure OK: dsh-ops@0.3.0, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
+```
+
+`npm run check:ptc-runtime` answers the narrower question — are the staged
+runtimes intact? — which is why it too passes on a one-host build:
+
+```console
+$ npm run check:ptc-runtime
+linux-x64: 3665672 bytes, sha256 327420ad…
+Validated 1 native runtime(s); no install-time scripts or permission changes.
+```
+
+A bare `node bin/native-runtime.mjs check` still demands **every** declared
+platform, because that is the question the release packager asks before it
+publishes. Set `DSH_OPS_REQUIRE_ALL_TARGETS=1` when you are assembling a
+cross-platform release and a missing platform must be a failure.
 
 ## 6. Install into a profile
 
