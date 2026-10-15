@@ -4,6 +4,7 @@ import path from 'node:path'
 import { resolveConfig } from '../lib/config.js'
 import { BASH_TOOL, FILE_TOOLS, BACKGROUND_TOOLS, TOOLING_SECTION, publicToolName } from '../lib/policy.js'
 import { FastCtxTools, childEnv } from '../lib/tools.js'
+import { resolveShells } from '../lib/shells.js'
 import { applyComponent } from '../lib/index.js'
 import { assert, report, skipSuite, test, waitFor, withTempDir } from './lib/harness.mjs'
 import { bootHost, callTool, mountPlugin, mountScopedToolPlugin, preExecute, publicToolNames,
@@ -245,7 +246,15 @@ await test('file/background share runtime, but command tools never leak into glo
   try {
     await executor(ctx)
     const file = await fileMount(ctx)
-    const background = await component(ctx, 'background')
+    // The background lane publishes its command tools only when a bash executor
+    // is resolvable (`FastCtxTools.shellAllowed`), and the shipped default
+    // refuses an unpinned system shell. Resolve a real bash for this host the
+    // way an operator would, then hand it over explicitly, so the scoping
+    // assertions below are exercised on every platform instead of only where a
+    // bundled Windows payload happens to exist.
+    const hostShells = resolveShells({ allowSystemShellFallback: true })
+    assert.ok(hostShells.bash.available, 'this fixture drives real command tools and needs a real bash on this host')
+    const background = await component(ctx, 'background', { bashPath: hostShells.bash.file })
     const full = await agent(ctx, 'background-full')
     const jobs = BACKGROUND_TOOLS.map(publicToolName)
     await visible(ctx, full, jobs)
