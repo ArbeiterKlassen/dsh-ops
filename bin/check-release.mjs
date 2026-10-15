@@ -18,8 +18,8 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { PLATFORMS } from '../lib/ptc/runtime.js'
 const { values } = parseArgs({ options: { root: { type: 'string' } } })
-// `--root` lets the same closure run against an extracted tarball, so the artifact
-// that ships can be validated instead of only the checkout it came from.
+// `--root` 让同一套闭合逻辑作用于解包后的 tarball, 从而校验真正发布出去的产物,
+// 而不只是它所在的 checkout。
 const root = path.resolve(values.root ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'))
 const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'))
 const hash=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex')
