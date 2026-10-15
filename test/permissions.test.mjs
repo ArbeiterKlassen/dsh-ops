@@ -34,6 +34,39 @@ await test('preparation coalesces one trusted workspace and retries only failed 
     assert.equal(calls,1)
   })
 })
+await test('the real worker behaves as the file-tool descriptions say (#44)', async () => {
+  await withTempDir('file-contract',async root => {
+    fs.mkdirSync(path.join(root,'sub'),{recursive:true}); fs.mkdirSync(path.join(root,'vendor'),{recursive:true})
+    fs.writeFileSync(path.join(root,'top.md'),'needle\n'); fs.writeFileSync(path.join(root,'sub','nested.md'),'needle\n')
+    fs.writeFileSync(path.join(root,'vendor','v.md'),'needle\n'); fs.writeFileSync(path.join(root,'a.txt'),'a.b axb\n')
+    const {ctx}=await bootHost()
+    const agent={id:'contract',session:{id:'contract',header:{cwd:root}}}
+    const exec={agent,signal:new AbortController().signal}
+    try {
+      await ctx.plugin(Subprocess)
+      await ctx.plugin(inner=>inner.provide('sandboxPolicy',{defaultMode:'danger-full-access',resolve:()=>({mode:'danger-full-access',workspaceRoot:root})}))
+      const call=(tool,args)=>fileCall(ctx,worker,tool,args,exec,exec.signal)
+      const names=value=>value.items.map(item=>path.relative(root,typeof item==='string'?item:item.path).replaceAll('\\','/')).sort()
+      // Wrong shapes resolve as structured errors; nothing is thrown.
+      const bare=await call('glob',{pattern:'*.md'})
+      assert.equal(bare.status,'error',JSON.stringify(bare)); assert.equal(typeof bare.error.code,'string')
+      const include=await call('grep',{pattern:'needle',include:'*.md'})
+      assert.equal(include.status,'error',JSON.stringify(include)); assert.match(include.error.message,/include/)
+      // "*.md" is top level only; "**/*.md" with "!" exclusions reaches nested files.
+      assert.deepEqual(names(await call('glob',{pattern:['*.md']})),['top.md'])
+      assert.deepEqual(names(await call('glob',{pattern:['**/*.md','!vendor/**']})),['sub/nested.md','top.md'])
+      const negativeOnly=await call('glob',{pattern:['!vendor/**']})
+      assert.equal(negativeOnly.status,'error',JSON.stringify(negativeOnly))
+      // The grep/replace glob filter accepts exclude-only lists: everything except.
+      const grep=await call('grep',{pattern:'needle',glob:['!vendor/**'],outputMode:'files_with_matches'})
+      assert.deepEqual(names(grep),['sub/nested.md','top.md'])
+      // replace matches literal text: "a.b" does not match "axb".
+      const replaced=await call('replace',{path:'a.txt',pattern:'a.b',replacement:'Z'})
+      assert.equal(replaced.changed,1,JSON.stringify(replaced))
+      assert.equal(fs.readFileSync(path.join(root,'a.txt'),'utf8'),'Z axb\n')
+    } finally { await shutdown(ctx) }
+  })
+})
 await test('owned Modify-only workspace starts real DSH sandbox; three modes and explicit denials', async () => {
   await withTempDir('permission-matrix',async root => {
     const outside=path.join(path.dirname(root),'permission-outside-'+path.basename(root))
