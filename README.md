@@ -43,8 +43,9 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 
 - **仅 Windows**：shell 组件（`ops_bash` / pwsh 7）及其 Bash IPC 代理；以它为执行通道的后台组件在 Linux 上不可用。
 - **构建与安装**：见 [Linux 构建与验证](docs/linux构建.md)（[English](docs/linux-build.md)）—— `npm run verify` → `npm run build:ptc` → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz`。
-- **平台差异已处理**：替换文件时保留 mode/owner/POSIX ACL/xattr；目录 `fsync` 按 POSIX 语义；`multiline` 搜索跨行匹配；读取按编码字节与行数双重设界。Windows 侧等价的安全描述符（DACL）处理见 [Windows 验证清单](docs/windows-verification.md)。
-- **实测状态**（Debian 13 x86_64）：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 27 个套件全通过、0 跳过；`npm run validate:manifest` → 58 项全通过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留元数据。
+- **平台差异已处理**：替换文件时保留 mode/owner/POSIX ACL/xattr；目录 `fsync` 按 POSIX 语义；`multiline` 搜索跨行匹配；读取按编码字节与行数双重设界。
+- **默认拒绝读取凭据**：文件工具（含 PTC 批处理）在 worker 被 spawn 之前就拒绝 `~/.ssh`、`~/.aws`、`~/.azure`、`~/.kube`、`.npmrc`、DSH 凭据库等位置，遍历也按路径身份跳过这些目录，所以 `glob` 连私钥文件名都不会列出、`grep` 不会在其中匹配到任何内容；写入根收窄为本会话自己的 `dsh-ops-session-<id>` 临时目录（`0700`）。该行可用 `denyCredentialReads: false` 关闭，`DSH_OPS_DENY_READ` 只能加严、不能放松。Windows 侧等价的安全描述符（DACL）处理见 [Windows 验证清单](docs/windows-verification.md)。
+- **实测状态**（Debian 13 x86_64）：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 29 个套件全通过、0 跳过；`npm run validate:manifest` → 58 项全通过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留元数据。
 - 这些实测暴露并**已修复**的缺陷（Windows 同样受益）：替换丢失 mode/ACL/xattr、`multiline` 无法跨行、单行超长文件让读取整体失败、并发替换静默丢更新、硬杀残留临时文件、worker 无执行位时只报裸 `EACCES`。详见 [0.3.1 发布说明](docs/release-0.3.1.md) 与 [CHANGELOG](CHANGELOG.md)。
 
 ---

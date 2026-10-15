@@ -9,7 +9,7 @@
 
 ## Linux 适配了什么
 
-- **原生 worker**：`x86_64-unknown-linux-gnu` 上 `cargo build --release --locked`、`cargo test`、完整 `npm run verify`（`DSH_OPS_REQUIRE_RUNTIME=1` 下 27 个套件全过、0 跳过）与 `npm run verify:release` 全部实机通过。
+- **原生 worker**：`x86_64-unknown-linux-gnu` 上 `cargo build --release --locked`、`cargo test`、完整 `npm run verify`（`DSH_OPS_REQUIRE_RUNTIME=1` 下 29 个套件全过、0 跳过）与 `npm run verify:release` 全部实机通过。
 - **平台分支而非兼容层**：POSIX 侧走目录 `fsync` 与元数据重放，Windows 侧保持 `MoveFileExW`；同一份 Rust 代码用 `cfg` 分开，不做「两边都能跑」的折中。
 - **测试与发布校验按平台推导**：挂载点与文件系统夹具在运行时解析，不解析依赖 `LC_MESSAGES` 的工具措辞，整套跳过按平台显式声明（Linux 上 2 个）且从不计为通过。
 - **发布闭包**：只闭合本包实际 stage 的目标，因此只构建 Linux 的机器同样通过；要声明「发布包必须齐平台」设 `DSH_OPS_REQUIRE_ALL_TARGETS=1`。闭包信息点明当前 checkout 实际 stage 的平台，不再假定 Windows。
@@ -39,7 +39,7 @@ Linux 侧不提供 bash/pwsh 与 Bash IPC 代理，依赖它作为执行通道�
 ## 发布验证
 
 - Manifest、源码测试、真实 Windows x64 与 Linux x64 DSH provider、真实 Node PTC SDK command/script/pipeline 和权限切换测试。
-- Linux x86_64 实机：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 27 个套件全过、0 跳过；`npm run validate:manifest` → 58 项全过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留 mode/ACL/xattr、跨行 grep 正确。
+- Linux x86_64 实机：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 29 个套件全过、0 跳过；`npm run validate:manifest` → 58 项全过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留 mode/ACL/xattr、跨行 grep 正确。
 - `npm run verify:release` 核验声明作用域与 `PLATFORMS` 一致、已 stage 目标的 worker PE/ELF 与 version/hash，并在包内携带 `win32-x64` 时核验 IPC 二进制与源码 hash 闭包。
 - GitHub Release 为源码/tag/说明；随后生成 npm tarball，核验包内容、凭据排除、哈希与独立安装。
 - npm 发布由维护者使用本机 `dist/publish.bat` 执行，不由 Actions 自动发布。GitHub Actions 保持既有关闭状态。

@@ -38,6 +38,7 @@ The table below gives the **owning component** for each key. Putting a key on a 
 | `shellPolicy` | `advise` \| `deny-host-shell` | `advise` | shell |
 | `deniedHostTools` | string array | `[pwsh, bash, pwsh_persistent]` | shell |
 | `allowSystemShellFallback` | boolean | `false` | shell |
+| `denyCredentialReads` | boolean | `true` | file / ptc |
 
 ---
 

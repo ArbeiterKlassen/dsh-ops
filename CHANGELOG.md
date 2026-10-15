@@ -18,12 +18,35 @@ the metadata work needs Windows measurements and is tracked in
 
 ### Linux x64 adaption
 
-- Build and verify the native worker on `x86_64-unknown-linux-gnu` as a first-class target: `cargo build --release --locked`, `cargo test`, the full `npm run verify` with `DSH_OPS_REQUIRE_RUNTIME=1` (27 suites, no skip counted as a pass) and `npm run verify:release`. `npm run build:ptc` now stages the Linux worker beside the Windows one, each with its own receipt, and the release checks reject a missing or corrupt artifact for any target the package carries.
+- Build and verify the native worker on `x86_64-unknown-linux-gnu` as a first-class target: `cargo build --release --locked`, `cargo test`, the full `npm run verify` with `DSH_OPS_REQUIRE_RUNTIME=1` (29 suites, no skip counted as a pass) and `npm run verify:release`. `npm run build:ptc` now stages the Linux worker beside the Windows one, each with its own receipt, and the release checks reject a missing or corrupt artifact for any target the package carries.
 - Keep the platform paths separate instead of compromising both: directory `fsync` and metadata reapplication on POSIX, `MoveFileExW` publication on Windows, chosen per `cfg` rather than papered over with one behaviour that would be wrong on both.
 - Derive platform facts when a suite runs instead of from the host it happens to be on: mount and filesystem fixtures are resolved at run time, no tool is parsed for `LC_MESSAGES`-dependent wording, and whole-suite skips are declared per platform (2 on Linux) rather than counted as passes.
 - Close the release gate over the targets a checkout actually staged, so a Linux-only build passes and `DSH_OPS_REQUIRE_ALL_TARGETS=1` states the multi-platform claim; the closure message names the staged platform instead of assuming Windows.
 - Document the Linux route end to end in `docs/linux-build.md` and `docs/linux构建.md`: build, stage, `npm pack`, `dsh plugin add ./dsh-ops-0.3.1.tgz`, and the gate commands with their expected output.
 - Add 11 boundary suites that run on both platforms: grep across lines, replace metadata, output byte budget, update lock, hex offsets, argument and runtime diagnostics, release scope, PTC provenance, and the Linux argument/attribute suites.
+
+### Credential reads are refused, and the write surface is the session's own
+
+Taken from WTStarMark's PR #40, which found that DSH's filesystem layer does not fence credential
+paths: a tool that reads any OS-readable file could hand a model the operator's keys and tokens.
+
+- The file tools now refuse to read a credential location, by default and before the worker is
+  spawned: `~/.ssh`, `~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `.docker/config.json`,
+  `.netrc`, `.git-credentials`, `.npmrc`, `.pypirc` and the DSH credential stores, plus
+  `id_rsa`/`id_ed25519`-style keys, `*credentials.{json,yaml,ini}` and `service-account*.json`
+  wherever they live. The refusal names the fence and the way out; a row can opt out with
+  `denyCredentialReads: false`, and `DSH_OPS_DENY_READ` can only ever *widen* the list (an absolute
+  entry is used as written, a relative one is resolved below the home).
+- A traversal skips those directories by identity, so `ops_glob` cannot name a private key below one
+  and `ops_grep` cannot match inside one — the match text never enters a result. Covered by
+  `test/credential-fence.test.mjs`, which runs the same call with and without the skip.
+- The shared system temp is no longer endorsed as a `replace`/batch write root: the session's own
+  `dsh-ops-session-<id>` directory is, created lazily with mode `0700`. The host sandbox grants the
+  whole of `/tmp` to workspace-write on Linux, so endorsing it here would let one session replace
+  another's temporary files; this fence is deliberately narrower than the kernel's grant.
+- A directory that holds one binary file no longer fails a whole `ops_replace`: the text files around
+  it are still edited, the binary is reported through `skipped` and `skippedPaths`, and the previous
+  behaviour (refusing the entire call with an error that named no file) is gone.
 
 ### Native worker boundary fixes
 

@@ -114,7 +114,7 @@ $ export DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx"
 $ DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx" \
   DSH_OPS_REQUIRE_RUNTIME=1 npm run verify
 …
-dsh-ops test: 27 suite(s) passed in 16s
+dsh-ops test: 29 suite(s) passed in 15s
 ```
 
 没有 FastCtx 构建时，同一条命令会少跑两个套件，并明确列出跳过项：
@@ -122,7 +122,7 @@ dsh-ops test: 27 suite(s) passed in 16s
 ```console
 dsh-ops lifecycle: skipped (no FastCtx executable found; …)
 dsh-ops mount: skipped (no FastCtx executable found; …)
-dsh-ops test: 25 suite(s) passed, 2 skipped in 10s
+dsh-ops test: 27 suite(s) passed, 2 skipped in 10s
 ```
 
 Rust worker 自身的 barrier 测试：
@@ -166,7 +166,7 @@ stage 的**目标。在只构建 Linux 的机器上那就是 `linux-x64`，而 W
 ```console
 $ npm run verify:release
 …
-dsh-ops test: 27 suite(s) passed in 16s
+dsh-ops test: 29 suite(s) passed in 15s
 linux-x64: 3665672 bytes, sha256 327420ad…
 Release closure OK: dsh-ops@0.3.1, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
 ```

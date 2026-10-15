@@ -124,7 +124,7 @@ this is the strictest form:
 $ DSH_OPS_FASTCTX_BIN="$PWD/vendor/fastctx/target/release/fastctx" \
   DSH_OPS_REQUIRE_RUNTIME=1 npm run verify
 …
-dsh-ops test: 27 suite(s) passed in 16s
+dsh-ops test: 29 suite(s) passed in 15s
 ```
 
 Without a FastCtx build the same command reports fewer suites and lists the
@@ -133,7 +133,7 @@ skipped ones explicitly:
 ```console
 dsh-ops lifecycle: skipped (no FastCtx executable found; …)
 dsh-ops mount: skipped (no FastCtx executable found; …)
-dsh-ops test: 25 suite(s) passed, 2 skipped in 10s
+dsh-ops test: 27 suite(s) passed, 2 skipped in 10s
 ```
 
 The Rust worker's own barrier test:
@@ -182,7 +182,7 @@ skipped rather than silently implied:
 ```console
 $ npm run verify:release
 …
-dsh-ops test: 27 suite(s) passed in 16s
+dsh-ops test: 29 suite(s) passed in 15s
 linux-x64: 3665672 bytes, sha256 327420ad…
 Release closure OK: dsh-ops@0.3.1, linux-x64 worker (Bash IPC closure skipped: win32-x64 is not staged; DSH_OPS_REQUIRE_ALL_TARGETS=1 demands it).
 ```
