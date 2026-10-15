@@ -95,8 +95,22 @@ one-command entry point with
 | `dsh-ops/file` | Available | Requires the staged `runtime/darwin-arm64/dsh-ops-worker`. 0.3.0 has no FastCtx fallback for this component, so a missing worker removes all four tools without reporting an error. |
 | `dsh-ops/shell` | Available | Requires `bashPath`. The host's `bash-sandbox` row is enabled on macOS, so confined modes keep host enforcement. |
 | `dsh-ops/background` | Available | Requires `bashPath` on its own row and `@fastctx/darwin-arm64`. Its tools are published per session and only under `danger-full-access`. |
-| `dsh-ops/ptc` | Not verified on macOS | The component is opt-in and loads only in a pure PTC session. The worker builds for darwin-arm64, but no macOS host has been verified to present that session mode. |
+| `dsh-ops/ptc` | Available in a PTC session; not exercised end to end | The component is opt-in and publishes only while a session's presentation is PTC-only (the host's `ptc` agent preset), which is the same gate as on Windows. See the note below. |
 | PowerShell 7 (`pwsh`) | Not available on macOS | `dsh-ops provision-shells --pwsh` installs the pinned 7.6.6 build and the ladder reports it as available, but the host's `pwsh-sandbox` and `tool-pwsh` rows are disabled outside Windows, so no pwsh tool appears. |
+
+### PTC on macOS
+
+The plugin side is verified on this port: in a PTC-only presentation the
+component publishes `ops_batch` and `ops_result`, and a native presentation
+publishes neither. Both halves matter — the second is the negative control that
+shows the gate is real rather than the probe passing for free. The host side is
+present as well: `@deepseek-ai/dsh-ptc-runtime-node` is enabled and the `ptc`
+agent preset exists on macOS, so PTC is not a Windows-only capability here.
+
+What is **not** verified is the whole path inside one real session. The one-shot
+runner refuses to compose a session that runs under an agent preset, so
+exercising PTC end to end needs the desktop application and a session started
+under the `ptc` preset, which this port did not drive.
 
 ## Known limitations
 
