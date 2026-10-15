@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import Sandbox from '@deepseek-ai/dsh-sandbox-local'
@@ -36,8 +37,14 @@ await test('preparation coalesces one trusted workspace and retries only failed 
 })
 await test('owned Modify-only workspace starts real DSH sandbox; three modes and explicit denials', async () => {
   await withTempDir('permission-matrix',async root => {
-    const outside=path.join(path.dirname(root),'permission-outside-'+path.basename(root))
-    fs.mkdirSync(outside); fs.writeFileSync(path.join(outside,'keep.txt'),'outside')
+    // A root outside the workspace AND outside the DSH temporary areas. The
+    // workspace-write policy grants the platform temp root on purpose — `/tmp`
+    // and `os.tmpdir()` are writable in that mode on every platform — so a
+    // directory under `os.tmpdir()` is allowed by policy and could never prove
+    // the denials below. The home directory is writable by this unconfined
+    // fixture process and is not one of the mode's writable roots.
+    const outside=fs.mkdtempSync(path.join(os.homedir(),'dsh-ops-permission-outside-'))
+    fs.writeFileSync(path.join(outside,'keep.txt'),'outside')
     fs.writeFileSync(path.join(root,'data.txt'),'before')
     // Strip broad inherited grants only on this test-owned directory. Recreate
     // the actual reported prerequisite: owner + Modify, no WRITE_OWNER.

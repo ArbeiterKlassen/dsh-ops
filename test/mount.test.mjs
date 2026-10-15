@@ -245,7 +245,13 @@ await test('file/background share runtime, but command tools never leak into glo
   try {
     await executor(ctx)
     const file = await fileMount(ctx)
-    const background = await component(ctx, 'background')
+    // A command surface exists only while an executor is approved — the check
+    // below proves the other half of that. The fixture approves one explicitly
+    // rather than asserting that this checkout carries the bundled copy for its
+    // own platform (a fresh checkout carries none for any of them). It is never
+    // executed: `executor()` refuses to spawn, and the surface only has to be
+    // resolvable, so any real executable file states the approval.
+    const background = await component(ctx, 'background', { bashPath: process.execPath })
     const full = await agent(ctx, 'background-full')
     const jobs = BACKGROUND_TOOLS.map(publicToolName)
     await visible(ctx, full, jobs)

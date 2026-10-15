@@ -208,13 +208,18 @@ try {
   fs.copyFileSync('package.json',path.join(isolatedPackage,'package.json'))
   const runtimeDir = path.resolve('runtime',`${process.platform}-${process.arch}`)
   fs.cpSync(runtimeDir,path.join(isolatedPackage,'runtime',`${process.platform}-${process.arch}`),{recursive:true})
-  assert.throws(() => resolveWorker({}, {platform:'linux',arch:'x64'}), /Windows x64 only/)
-  assert.throws(() => resolveWorker({}, {platform:'win32',arch:'arm64'}), /Windows x64 only/)
+  assert.throws(() => resolveWorker({}, {platform:'linux',arch:'x64'}), /unsupported runtime target/)
+  assert.throws(() => resolveWorker({}, {platform:'win32',arch:'arm64'}), /unsupported runtime target/)
   assert.ok(resolveWorker({}, {packageRoot:isolatedPackage}).startsWith(isolatedPackage))
   console.log('ok: installed runtime resolves without binaryPath or source build tree')
   const real = new Context(); real.logger.level = 0
   const outside = fs.mkdtempSync(path.join(os.tmpdir(),'ops-outside-'))
   const external = path.join(outside,'protected.txt'); fs.writeFileSync(external,'keep')
+  // A second root that is outside the workspace AND outside the DSH temporary
+  // areas. `workspace-write` grants `/tmp` and `os.tmpdir()` on purpose, so a
+  // temp sibling is authorized by the policy rather than caught by it.
+  const nonTemp = fs.mkdtempSync(path.join(os.homedir(),'ops-outside-'))
+  const externalNonTemp = path.join(nonTemp,'protected.txt'); fs.writeFileSync(externalNonTemp,'keep')
   try {
     await real.plugin(Subprocess)
     await real.plugin(Sandbox, {})
@@ -230,8 +235,20 @@ try {
     assert.equal(readonlyPage.items[0].state,'completed',JSON.stringify(readonlyPage))
     assert.deepEqual(fs.readdirSync(path.join(dir,'.dsh-ops')).sort(),beforeStore)
     agent.session.mode='workspace-write'
-    const denied=await call('batch',{root:outside,action:'run',operations:[{op:'remove',path:'protected.txt'}]})
-    assert.equal(denied.status,'error',JSON.stringify(denied)); assert.ok(fs.existsSync(external))
+    // Outside the workspace and the DSH temporary areas: refused by the
+    // authoritative preflight on every platform, and the target survives.
+    const refused=await call('batch',{root:nonTemp,action:'run',operations:[{op:'remove',path:'protected.txt'}]})
+    assert.equal(refused.error?.code,'POLICY_DENIED',JSON.stringify(refused)); assert.ok(fs.existsSync(externalNonTemp))
+    // A temp sibling is inside the writable set the policy promises, so only a
+    // runner that grants a NARROWER temp set than the policy does can refuse it.
+    // The windows-acl runner does (workspace plus a private temp child); the
+    // darwin/linux profiles grant `os.tmpdir()` exactly as the policy says.
+    if (process.platform === 'win32') {
+      const denied=await call('batch',{root:outside,action:'run',operations:[{op:'remove',path:'protected.txt'}]})
+      assert.equal(denied.status,'error',JSON.stringify(denied)); assert.ok(fs.existsSync(external))
+    } else {
+      console.log(`  skip the post-spawn temp-sibling denial — ${process.platform} grants os.tmpdir() in workspace-write, which is what the policy promises; only the windows-acl runner grants a narrower temp set`)
+    }
     agent.session.mode='danger-full-access'
     const unrestricted=await call('batch',{root:outside,action:'run',operations:[{op:'remove',path:'protected.txt'}]})
     assert.equal(unrestricted.status,'completed',JSON.stringify(unrestricted)); assert.equal(fs.existsSync(external),false)
@@ -244,5 +261,5 @@ try {
     fs.cpSync(runtime,path.join(staged,'runtime',`${process.platform}-${process.arch}`),{recursive:true})
     assert.ok(resolveWorker({}, {packageRoot:staged}).startsWith(staged))
     console.log('ok: original DSH native sandbox, readonly pages, outside-root denial and full-access outside-root execution')
-  } finally { await real.fiber.dispose(); fs.rmSync(outside,{recursive:true,force:true}) }
+  } finally { await real.fiber.dispose(); fs.rmSync(outside,{recursive:true,force:true}); fs.rmSync(nonTemp,{recursive:true,force:true}) }
 } finally { fs.rmSync(dir, { recursive: true, force: true }) }

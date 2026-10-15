@@ -15,7 +15,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -34,7 +34,31 @@ if (home === '' || !path.resolve(home).startsWith(path.resolve(tmpdir()))) {
 }
 
 /** The throwaway DSH home this suite may write into. */
-export const TEST_HOME = path.resolve(home)
+export const TEST_HOME = canonical(path.resolve(home))
+
+/**
+ * Canonicalize a fixture path.
+ *
+ * A fixture must hand the code under test a path that names the directory
+ * without any symlink hop the platform forced on us: on macOS `os.tmpdir()` is
+ * under `/var`, which is a symlink to `/private/var`, so a raw fixture path and
+ * a path the same code resolved itself (through `fs.realpath` or
+ * `require.resolve`) never compare equal — and a workspace root reached through
+ * that hop is refused as a junction. Every temporary directory below
+ * {@link TEST_HOME} is canonical for the same reason.
+ *
+ * A path that cannot be resolved (it does not exist) is returned unchanged: the
+ * caller's own assertion is the place that has to notice.
+ * @param {string} file - the path to canonicalize.
+ * @returns {string} the canonical path, or the input when it cannot be resolved.
+ */
+export function canonical(file) {
+  try {
+    return realpathSync(file)
+  } catch {
+    return file
+  }
+}
 
 let failures = 0
 const names = []
