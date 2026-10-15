@@ -488,9 +488,12 @@ const ptc = manifestRaw.contributes?.['x-components']?.find(c => c.id === 'dsh-o
 check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === false, 'native PTC component is opt-in')
 check(JSON.stringify(ptc?.tools) === JSON.stringify(PTC_TOOLS.map(publicToolName)), 'PTC declaration matches the generated tool contract')
 check(PTC_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
-check(JSON.stringify(pkg.os) === '["win32"]' && JSON.stringify(pkg.cpu) === '["x64"]' &&
-  JSON.stringify(ptc?.platforms) === '["win32"]' && JSON.stringify(ptc?.architectures) === '["x64"]',
-  '0.3.0 package and PTC declarations support Windows x64 only')
+// This fork widens the published scope to macOS arm64; the assertion tracks the
+// declaration instead of freezing one host, and still refuses an accidental
+// wildcard (`os`/`cpu` that would claim platforms no payload exists for).
+check(JSON.stringify(pkg.os) === '["win32","darwin"]' && JSON.stringify(pkg.cpu) === '["x64","arm64"]' &&
+  JSON.stringify(ptc?.platforms) === '["win32","darwin"]' && JSON.stringify(ptc?.architectures) === '["x64","arm64"]',
+  'package and PTC declarations match the published Windows x64 + macOS arm64 scope')
 const REQUIRED_ENTRIES = [
   'native/Cargo.toml',
   'native/Cargo.lock',
