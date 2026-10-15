@@ -78,12 +78,43 @@ await test('preparation failures always say why, including a timeout (#43)', asy
   const timeout=await failure({...node('setTimeout(()=>{},60000)'),timeoutMs:200})
   assert.match(timeout,/timed out after 200 ms preparing C:\\ws; the workspace ACL state is unknown/)
   assert.match(timeout,/acl-backups/)
-  assert.notEqual(timeout.split('): ')[1]?.trim() ?? '','')
+  assert.match(timeout,/^DSH workspace preparation failed: the preparation executor timed out/)
+  assert.notEqual(timeout.slice('DSH workspace preparation failed:'.length).trim(),'')
   assert.match(await failure(node('process.exit(3)')),/exited with code 3 after \d+ ms preparing C:\\ws: \(no output\)$/)
   assert.match(await failure(node('process.stderr.write("Get-Acl failed\\n");process.exit(1)')),/exited with code 1 .*: Get-Acl failed$/)
   assert.match(await failure(node('process.stdout.write("half done");process.exit(1)')),/: half done$/)
   assert.match(await failure({executable:path.join(process.cwd(),'missing-powershell.exe'),args:[]}),/could not start .*missing-powershell\.exe/)
   await runPreparation('C:\\ws',node('process.stdout.write("prepared")'))
+})
+await test('preparation failures name their cause: execution policy vs folder prerequisite (#66)', async () => {
+  const failing=text=>({executable:process.execPath,args:['-e',`process.stderr.write(${JSON.stringify(text)});process.exit(1)`]})
+  const failure=async options=>{ try { await runPreparation('C:\\ws',options); return '' } catch(error) { return error.message } }
+  const english='File C:\\x\\prepare-workspace.ps1 cannot be loaded because running scripts is disabled on this system. For more information, see about_Execution_Policies at https:/go.microsoft.com/fwlink/?LinkID=135170.\r\n    + CategoryInfo          : SecurityError: (:) [], PSSecurityException\r\n    + FullyQualifiedErrorId : UnauthorizedAccess\r\n'
+  const chinese='无法加载文件 C:\\x\\prepare-workspace.ps1，因为在此系统上禁止运行脚本。有关详细信息，请参阅 https:/go.microsoft.com/fwlink/?LinkID=135170 中的 about_Execution_Policies。\r\n    + FullyQualifiedErrorId : UnauthorizedAccess\r\n'
+  for(const text of [english,chinese]) {
+    const message=await failure(failing(text))
+    assert.match(message,/^DSH workspace preparation failed: PowerShell execution policy blocked dsh-ops's own preparation script/)
+    assert.match(message,/even with -ExecutionPolicy Bypass, so the policy comes from Group Policy/)
+    assert.match(message,/danger-full-access/)
+    assert.doesNotMatch(message,/not a user permission denial/)
+  }
+  const owner=await failure(failing('C:\\x\\prepare-workspace.ps1 : Workspace is not owned by the current user; refusing automatic ACL preparation\r\n    + CategoryInfo          : OperationStopped\r\n'))
+  assert.match(owner,/^DSH workspace preparation failed: the workspace root C:\\ws does not meet the sandbox prerequisite \(the host needs WRITE_OWNER on it\): .*not owned by the current user; refusing automatic ACL preparation\. Fix the folder's owner or permissions/)
+  assert.match(owner,/not a DSH authorization denial/)
+  assert.doesNotMatch(owner,/execution policy/)
+  assert.match(await failure(failing('Explicit effective denial of WRITE_OWNER; refusing to override user policy')),/does not meet the sandbox prerequisite.*Explicit effective denial of WRITE_OWNER/)
+  // Unknown output keeps the plain exit-code text rather than guessing a cause.
+  assert.match(await failure(failing('something else broke')),/: exited with code 1 after \d+ ms preparing C:\\ws: something else broke$/)
+})
+await test('the real script runs even when the effective execution policy is Restricted (#66)', async () => {
+  if(process.platform!=='win32')return
+  await withTempDir('prepare-restricted',async root => {
+    // Process scope only: the variable reaches this one child; no machine or user policy is changed.
+    const previous=process.env.PSExecutionPolicyPreference
+    process.env.PSExecutionPolicyPreference='Restricted'
+    try { await runPreparation(root) }
+    finally { if(previous===undefined) delete process.env.PSExecutionPolicyPreference; else process.env.PSExecutionPolicyPreference=previous }
+  })
 })
 await test('real preparation writes only the root DACL, never descendants (#43)', async () => {
   if(process.platform!=='win32')return
@@ -342,7 +373,7 @@ await test('preparation hands the spawned interpreter the scrubbed environment',
   assert.notEqual(pathKey, undefined)
   assert.equal(spec.options.env[pathKey], process.env.PATH)
   assert.equal(spec.executable.toLowerCase().endsWith('windows\\system32\\windowspowershell\\v1.0\\powershell.exe'), true)
-  assert.deepEqual(spec.args.slice(0, 3), ['-NoProfile', '-NonInteractive', '-File'])
+  assert.deepEqual(spec.args.slice(0, 5), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'])
   assert.equal(spec.args.includes('C:\\work\\scratch'), true)
 })
 report('permissions')
