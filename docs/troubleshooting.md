@@ -66,6 +66,10 @@ A key the `ops_bash` schema does not declare is refused before execution, and th
 
 ## Permissions and sandboxing
 
+### Host `edit` says "has not been read" or "changed since it was read" after ops file tools
+
+Fixed since this change: `ops_inspect_local_file` and `ops_replace` report to the host's read-before-edit table like host `read`/`edit`, so host `edit` works right after them. On older versions (FastCtx-backed 0.2.x), ops reads did not count — read the file with the host `read` tool before using host `edit`. (#17)
+
 ### Do the file tools need command permission?
 
 No. Fixed file operations follow a trusted-operation policy fence matching DSH fs-sandbox and **never execute model code**. Read-only rejects replacement, workspace-write permits writes under the workspace and DSH temporary areas, and full access adds no write fence.

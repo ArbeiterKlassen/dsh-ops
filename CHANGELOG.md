@@ -55,6 +55,10 @@ These fixes are included in 0.3.0; the three Windows payload dependencies are un
 - Keep each component icon inside its exported manifest directory; fix the PTC Plugin Manager metadata error caused by the parent-relative icon path, with coverage in the existing manifest suite.
 - Source builds use `npm run build:ptc` and `npm run build:bash-ipc`; published 0.3.0 artifacts are Windows x64 only. See `docs/native-ptc.md`.
 
+## [Unreleased] — Host file observation
+
+- `ops_inspect_local_file` and non-dry-run `ops_replace` now emit the host's `fs/observed` event, mirroring host `read` (version from a pre-read stat) and `edit` (version after the write), with the calling tool execution as the actor. Host `edit` no longer reports "file has not been read" after an ops read, nor "file changed since it was read" after an ops write. Observation is best-effort and skipped when the host has no `fs` service; a replaced file whose size no longer matches the written bytes is not recorded, so a concurrent writer still surfaces as stale. Covered end to end with the real `dsh-fs-local` and `dsh-fs-observation-policy`. (#17)
+
 ## [Unreleased] — Background job argument strictness
 
 - Check the background tools' arguments (`ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) against FastCtx's own published schema before the owned-job check, so a mistyped or missing `job_id` is reported as `invalid arguments: unknown key "id"` or `missing required field "job_id"` instead of "This job was not started by this session on the current connection." The ownership check itself is unchanged and still decides every call whose arguments are well formed; no argument error reaches the server. Covered by `test/jobs-args.test.mjs`. (#14)

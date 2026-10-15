@@ -14,6 +14,7 @@ import { resolveShells } from '../lib/shells.js'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import NodePtc from '@deepseek-ai/dsh-ptc-runtime-node'
 import FileSystem from '@deepseek-ai/dsh-fs-local'
+import * as ObservationPolicy from '@deepseek-ai/dsh-fs-observation-policy'
 const worker = resolveWorker()
 function ps(code) {
   const result = spawnSync('powershell.exe', ['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(code,'utf16le').toString('base64')], { encoding:'utf8' })
@@ -32,6 +33,42 @@ await test('preparation coalesces one trusted workspace and retries only failed 
     const options={platform:'win32',run(){calls++;return Promise.resolve()}}
     await Promise.all([prepareWorkspace(policy,options),prepareWorkspace(policy,options)])
     assert.equal(calls,1)
+  })
+})
+await test('ops reads and writes reach the host read-before-edit table (#17)', async () => {
+  await withTempDir('fs-observed',async root => {
+    fs.writeFileSync(path.join(root,'a.txt'),'alpha\nbeta\n')
+    const {ctx}=await bootHost()
+    const agent={id:'observed',session:{id:'observed',header:{cwd:root}}}
+    const exec={agent,signal:new AbortController().signal}
+    try {
+      await ctx.plugin(Subprocess)
+      await ctx.plugin(inner=>inner.provide('sandboxPolicy',{defaultMode:'danger-full-access',resolve:()=>({mode:'danger-full-access',workspaceRoot:root})}))
+      // Without the host fs service, ops tools still work and simply record nothing.
+      const bare=await fileCall(ctx,worker,'inspect_local_file',{path:'a.txt'},exec,exec.signal)
+      assert.equal(bare.status,'completed',JSON.stringify(bare))
+      await ctx.plugin(FileSystem,{})
+      await ctx.plugin(ObservationPolicy)
+      const host=ctx.get('fs')
+      const target=await host.resolve('a.txt',{cwd:root})
+      const intent=()=>ctx.waterfall('fs/edit-intent',target,exec,()=>undefined)
+      const current=async()=>(await host.stat(target)).version
+      await assert.rejects(intent(),error=>error.code==='FS_NOT_OBSERVED')
+      const read=await fileCall(ctx,worker,'inspect_local_file',{path:'a.txt',limit:1},exec,exec.signal)
+      assert.equal(read.status,'completed',JSON.stringify(read))
+      assert.deepEqual(await intent(),{version:await current()})
+      const before=await current()
+      const dry=await fileCall(ctx,worker,'replace',{path:'a.txt',pattern:'alpha',replacement:'gamma',dryRun:true},exec,exec.signal)
+      assert.equal(dry.dryRun,true,JSON.stringify(dry))
+      assert.deepEqual(await intent(),{version:before})
+      // Keep the size identical so the version change is not a size-only artifact.
+      await new Promise(r=>setTimeout(r,20))
+      const replaced=await fileCall(ctx,worker,'replace',{path:'a.txt',pattern:'alpha',replacement:'delta'},exec,exec.signal)
+      assert.equal(replaced.changed,1,JSON.stringify(replaced))
+      const after=await current()
+      assert.notEqual(after,before)
+      assert.deepEqual(await intent(),{version:after})
+    } finally { await shutdown(ctx) }
   })
 })
 await test('owned Modify-only workspace starts real DSH sandbox; three modes and explicit denials', async () => {
