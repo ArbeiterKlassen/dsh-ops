@@ -111,6 +111,13 @@
         "defaultEnabled": true,
         "platforms": ["win32", "linux", "darwin"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"]
+      },
+      {
+        "id": "dsh-ops-tui",
+        "entry": "dsh-ops/tui",
+        "defaultEnabled": false,
+        "presentation": "Optional read-only dsh-TUI panel API v1",
+        "tools": []
       }
     ]
   },

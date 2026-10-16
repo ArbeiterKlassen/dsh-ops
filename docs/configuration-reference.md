@@ -7,14 +7,13 @@ Every configuration key, and **which component row owns it**.
 ## Where configuration lives
 
 In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/file` or `dsh-ops/ptc` row, adjust `config`, then save; unknown configuration keys cause errors naming the key.
-
-The bundle declares three independently toggled components. On first installation, the first two are enabled by default:
-
+The bundle declares four independently toggled components. On first installation, the first two are enabled by default:
 | Row `name` | Component | Default |
 | --- | --- | --- |
 | `dsh-ops/shell` | Terminal and shell | On |
 | `dsh-ops/file` | Rust file tools | On |
 | `dsh-ops/ptc` | Native PTC batches | Off |
+| `dsh-ops/tui` | Read-only sidebar, separate config | Off |
 
 A `dsh-ops/background` row left over from an earlier version loads as a no-op stub (the FastCtx background component was removed); it ignores its config and can be deleted.
 
@@ -22,7 +21,7 @@ A `dsh-ops/background` row left over from an earlier version loads as a no-op st
 
 ## 🔴 Which key belongs to which component
 
-The table below gives the **owning component** for each key. Putting a key on a row that does not own it is rejected by configuration validation, which names the offending key.
+`dsh-ops/tui` uses only `maxSessions`, `maxActive` and `recentLimit`; see [sidebar limits](tui-panel.md#limits). The following legacy configuration does not apply to the tui row. The table below gives the **owning component** for each key. Putting a key on a row that does not own it is rejected by configuration validation, which names the offending key.
 
 | Key | Type | Default | Owning component |
 | --- | --- | --- | --- |

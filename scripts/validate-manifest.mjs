@@ -28,6 +28,7 @@ import {
   renderToolingPolicy,
 } from '../lib/policy.js'
 import { resolvePtcConfig } from '../lib/ptc/index.js'
+import { resolveTuiConfig } from '../lib/components/tui/index.js'
 import { PTC_TOOLS, definition } from '../lib/ptc/contract.js'
 import { resolveConfig } from '../lib/config.js'
 
@@ -223,14 +224,14 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
     const rows = Array.isArray(document)
       ? document.flatMap((entry) => (Array.isArray(entry?.insert) ? entry.insert : []))
       : []
-    check(rows.length === 3, 'the bundle declares exactly three components')
+    check(rows.length === 4, 'the bundle declares exactly four components')
     check(!rows.some(candidate => candidate?.name === `${pkg.name}/background`), 'the bundle no longer inserts the removed background component')
-    for (const component of ['shell', 'file', 'ptc']) {
+    for (const component of ['shell', 'file', 'ptc', 'tui']) {
       const row = rows.find(candidate => candidate?.name === `${pkg.name}/${component}`)
       check(row?.id === `${pkg.name}-${component}`, `the ${component} component has a stable row id`)
       if (!row) continue
-      check((row.disabled === true) === (component === 'ptc'), `${component} has its documented enablement default`)
-      try { (component === 'ptc' ? resolvePtcConfig : resolveConfig)(row.config); check(true, `${component} config is valid`) }
+      check((row.disabled === true) === ['ptc', 'tui'].includes(component), `${component} has its documented enablement default`)
+      try { (component === 'tui' ? resolveTuiConfig : component === 'ptc' ? resolvePtcConfig : resolveConfig)(row.config); check(true, `${component} config is valid`) }
       catch (error) { check(false, `${component} config is valid`, String(error?.message ?? error)) }
     }
   }
