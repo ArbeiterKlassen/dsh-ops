@@ -14,11 +14,10 @@
 
 ## 工具发布与提示词
 
-- 组件列表恰为四个：shell/file/PTC/hide-official 默认开启（Linux/macOS 默认不激活 shell，保留官方 bash）。严格隐藏若缺少等价能力必须 READINESS_BLOCKED、撤销全部自有隐藏限制并阻止组装/执行；不把阻断当全栈成功。后台替代尚未就绪。分别核验组件名称、中文介绍、图标，以及实际版本。
-- `workspace-write`、`read-only`：只有开启的四个 ops 文件工具；没有 ops_bash/后台工具，提示词不广告不存在的命令。
-- `danger-full-access`：默认四个文件工具 + ops_bash；仅后台组件开且 enableShellTools=true 时增加四个后台工具。任何组合都不发布 ops_run。
-- 文件与后台共享一个 FastCtx；关文件仍能管理后台，关后台仍能读搜改，重开不积累注册。
-- `enableShellTools: false`、无 sandboxPolicy 服务、无会话：后台组不出现。
+- 默认 bundle 由四个独立组件组成：shell（Windows 默认）、file（11 个原生文件工具）、PTC（仅 PTC 生效）和 hide-official。Linux/macOS 不启用 shell，并保留官方 bash。
+- 严格隐藏若缺少等价能力必须 `READINESS_BLOCKED`，撤销全部自有隐藏限制并阻止组装/执行；不把阻断当全栈成功。后台、web/UI、编排、`run_code` 等替代尚未就绪。
+- 在 `danger-full-access` 下，file 发布 11 个工具；Windows shell 另发布 `ops_bash`。受限模式不发布 `ops_bash`，但文件工具仍遵循 DSH trusted-operation policy。
+- 旧 `dsh-ops/background` 只作为兼容性行保留，默认不启用，不计入默认组件或默认工具面。
 - 同时开受限会话与完全权限会话：两者目录互不污染。受限子 agent 不继承祖先的命令组。
 - 同一会话切换受限 → 完全权限 → 受限：每次下一请求目录/提示词跟随变化，不重连 FastCtx；旧命令句柄不能继续调用。
 - 受限会话不发布 `ops_bash`；完全权限 + publishBashTool=true + bash 可解析 + subprocess 可用时出现，通用命令优先走它。FastCtx 缺失或 enableShellTools=false 时 bash 层仍独立可用。
@@ -68,7 +67,8 @@
 
 ## 数字复核
 
-运行 `node scripts/measure-schemas.mjs docs/schema-current.json`，对比 `schema-baseline.json`。不执行真实文件/命令操作。统计的是紧凑 schema JSON 的 UTF-8 字节，tokens≈bytes/4，不是使用频率或准确账单。基线来自修改前 dee3c57 + FastCtx 0.2.6；工具调用频率仍未知，不据此删除 ops_replace。
+`docs/schema-current.json` 和 `scripts/measure-schemas.mjs` 是 **0.2.x FastCtx 历史快照**，不代表当前默认工具面，也不是当前发布门禁。当前组件化 schema、提示词行数、hash、bytes、lineCount、冷/热延迟和跳过原因请使用本地-only `npm run bench`；它不会执行真实用户项目操作，也不会进入 CI 或 `npm run verify`。
+
 
 ## 不可误读为已解决的边界
 

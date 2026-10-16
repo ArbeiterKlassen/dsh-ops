@@ -153,6 +153,10 @@ await test('the file bridge refuses a credential path before the worker is spawn
       const refused = await invoke(ctx, path.join(workspace, 'worker'), 'inspect_local_file', { path: key }, exec, undefined, { denyCredentialReads: true })
       assert.equal(refused.status, 'rejected', JSON.stringify(refused))
       assert.match(JSON.stringify(refused), /credential location/)
+      assert.equal(refused.error.permission.current, 'read-only')
+      assert.equal(refused.error.permission.required, 'operator-approved credential access')
+      assert.equal(refused.error.permission.operation, 'inspect_local_file credential read')
+      assert.match(refused.error.nextAction, /disable the fence|operator/i)
       assert.equal(spawned, false, 'the refusal must happen before the worker is spawned')
 
       // The row-level opt-out reaches the call: with the fence off the refusal is not what stops it.

@@ -94,7 +94,7 @@ config:
 
 ## Prompt registration
 
-Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws native file guidance. The file component uses its independent Rust worker. Four native file tools and `ops_bash` are added by default. These changes reduce fixed declaration costs. The Minimal preset overrides additional system sections; PTC mode calls the underlying tools through the SDK with unchanged permission gates.
+Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws native file guidance. The file component uses its independent Rust worker and publishes eleven bounded file tools; the old background component is a removed no-op stub. Windows adds `ops_bash` by default; Linux/macOS retain the official host `bash` because shell is disabled there. PTC mode calls the underlying tools through the SDK with unchanged permission gates.
 
 ---
 

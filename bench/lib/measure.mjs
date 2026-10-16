@@ -73,7 +73,7 @@ export function markdownReport(report) {
     '',
     `Generated: ${report.generatedAt}`,
     `Commit: ${report.environment.gitCommit ?? 'unknown'}`,
-    `Platform: ${report.environment.platform}-${report.environment.arch}, Node ${report.environment.node}`, 
+    `Platform: ${report.environment.platform}-${report.environment.arch}, Node ${report.environment.node}`,
     '',
     '> Local-only harness. It is intentionally not part of `npm run verify` and refuses GitHub Actions.',
     '',

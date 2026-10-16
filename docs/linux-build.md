@@ -1,9 +1,10 @@
 # Building and running dsh-ops on Linux x64
 
-Linux x64 is a supported target for the **file**, **ptc** and **shell**
-components. On Linux the shell component's `ops_bash` runs the distribution's own
-bash (see [Configuring the shell lane](#configuring-the-shell-lane)); the bundled
-PowerShell 7 and the bash IPC proxies remain Windows x64 only.
+Linux x64 is a supported target for the **file**, **ptc** and **hide-official**
+components. The file component publishes eleven native tools. The **shell**
+component (`ops_bash`, bundled PowerShell 7, and Windows Bash IPC proxies) is
+Windows-only by default; on Linux the official host `bash` is retained by the
+strict hiding component instead of being replaced by component 1.
 
 Nothing on Linux is downloaded with the package: the native workers are staged
 locally from source, which is why this page exists. The npm package still
@@ -12,8 +13,9 @@ packages to fetch.
 
 | Component | Linux x64 | Notes |
 | --- | --- | --- |
-| `dsh-ops/file` | yes | 4 tools: `ops_inspect_local_file`, `ops_grep`, `ops_glob`, `ops_replace` |
+| `dsh-ops/file` | yes | 11 native tools: inspect, grep, glob, replace, write, edit, diff, stat, copy, move, remove |
 | `dsh-ops/ptc` | yes | `ops_batch`, `ops_result`; default enabled, PTC-only publication; strict hiding blocks reserved run_code |
+| `dsh-ops/hide-official` | yes | strict surface takeover; readiness-blocked until every visible official capability has a reviewed OPS equivalent |
 | `dsh-ops/shell` | opt-in | Host bash is supported; disabled by default on Linux. pwsh stays Windows x64 |
 
 ## Prerequisites

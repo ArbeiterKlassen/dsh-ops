@@ -66,16 +66,20 @@ Standard/native and hybrid/both scopes expose neither tool nor extra prompt.
 The host generates SDK declarations from the same tool schemas; no duplicate guide
 or dynamic plan IDs are added to the system prefix.
 
-### Native file-tool contract
+### Native file-tool contract (current)
 
-The migrated `ops_glob`, `ops_grep`, `ops_inspect_local_file` and `ops_replace`
-capabilities use one `path` resolved against the current DSH session cwd. `.`
-means that cwd. Reads are permitted wherever the OS permits them, matching DSH
-fs-sandbox. Replacement is denied in read-only; workspace-write fences writes to
-the workspace and DSH temporary areas; other writes require danger-full-access.
-These fixed trusted operations run through the host subprocess with native
-no-follow path checks, not an arbitrary-code confinement runner. Shell and PTC
-code continue to require OS confinement.
+The current native file component publishes eleven bounded tools: inspect, grep,
+glob, replace, write, edit, diff, stat, copy, move and remove. All use the
+current DSH session cwd and authoritative sandbox policy. Existing-file Windows
+overwrite/edit/replace and Windows/macOS copy fail closed with
+`METADATA_UNSUPPORTED` where security metadata preservation is unproven.
+
+### Legacy four-tool contract (historical)
+
+The following sections document the pre-0.3.1 FastCtx-compatible surface only.
+They are retained for migration and provenance; they do not describe the current
+default file component.
+
 
 `ops_glob.pattern` and `ops_grep.glob` are arrays of include/exclude patterns;
 `!` entries exclude matches. `ops_grep.pattern` and `ops_replace.pattern` are

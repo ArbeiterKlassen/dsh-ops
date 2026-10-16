@@ -1,8 +1,9 @@
 # 在 Linux x64 上构建与运行 dsh-ops
 
-Linux x64 是 **file**、**ptc**、**shell** 三个组件的受支持目标。Linux 上 shell
-组件的 `ops_bash` 使用发行版自带的 bash（见[配置 shell 通道](#配置-shell-通道)）；随包
-PowerShell 7 与 bash IPC 代理仍仅限 Windows x64。
+Linux x64 是 **file**、**ptc**、**hide-official** 三个组件的受支持目标。file
+组件使用独立 Rust worker，当前发布 11 个原生文件工具。**shell** 组件
+（`ops_bash`、随包 PowerShell 7、bash IPC 代理）默认仅在 Windows 启用；Linux
+上由严格隐藏组件保留宿主官方 `bash`，而不是启用 component 1。
 
 Linux 上**没有任何东西随安装包下载**：原生 worker 一律由本地源码构建后落到安装相对
 目录，这正是本文档存在的原因。npm 包仍然只携带 Windows x64 载荷
@@ -10,9 +11,10 @@ Linux 上**没有任何东西随安装包下载**：原生 worker 一律由本�
 
 | 组件 | Linux x64 | 说明 |
 | --- | --- | --- |
-| `dsh-ops/file` | 支持 | 4 个工具：`ops_inspect_local_file`、`ops_grep`、`ops_glob`、`ops_replace` |
-| `dsh-ops/ptc` | 支持 | `ops_batch`、`ops_result`；须显式启用 |
-| `dsh-ops/shell` | 支持 | `ops_bash` 使用宿主 bash；pwsh 仍仅限 Windows x64 |
+| `dsh-ops/file` | 支持 | 11 个原生工具：inspect、grep、glob、replace、write、edit、diff、stat、copy、move、remove |
+| `dsh-ops/ptc` | 支持 | `ops_batch`、`ops_result`；默认开启，仅纯 PTC 发布 |
+| `dsh-ops/hide-official` | 支持 | 严格工具 surface 接管；所有可见官方能力都有审核过的 OPS 等价实现前才会隐藏 |
+| `dsh-ops/shell` | 按需启用 | 默认关闭；`ops_bash` 使用宿主 bash；pwsh 仍仅限 Windows x64 |
 
 ## 前置条件
 

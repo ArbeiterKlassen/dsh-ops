@@ -1,6 +1,9 @@
-# Schema measurement
+# Historical schema measurement
 
-Manual measurement only; not a tokenizer, CI, or proof of whole-task savings.
+> This document and `schema-current.json` describe the 0.2.x FastCtx surface only.
+> They are retained for historical token comparisons and are not a current default
+> surface, release gate, or claim about the eleven native file tools.
+
 Metric: compact UTF-8 JSON `{name,description,parameters}` bytes, tokens ≈ ceil(bytes/4).
 Runtime is FastCtx 0.2.6; only plugin publication/presentation changes.
 
