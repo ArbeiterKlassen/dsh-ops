@@ -88,7 +88,7 @@ function stageRuntime(root, { target, bytes = Buffer.from('synthetic worker byte
 }
 
 await test('every foreign target is refused by name, naming the supported set', async () => {
-  for (const target of ['darwin-x64', 'darwin-arm64', 'linux-arm64', 'win32-arm64', 'linux-riscv64', 'openharmony-arm64']) {
+  for (const target of ['darwin-x64', 'linux-arm64', 'win32-arm64', 'linux-riscv64', 'openharmony-arm64']) {
     const [platform, arch] = target.split('-')
     await withTempDir(`linux-scope-${target}`, async root => {
       let error = null
@@ -96,11 +96,11 @@ await test('every foreign target is refused by name, naming the supported set', 
       try { resolved = resolveWorker({}, { packageRoot: stagePackage(root), platform, arch, env: {} }) } catch (caught) { error = caught }
       assert.equal(resolved, null, `${target} resolved to ${resolved}`)
       assert.ok(error, `${target} was allowed`)
-      assert.match(error.message, /Windows x64 and Linux x64 only/)
+      assert.match(error.message, /Windows x64, Linux x64 and macOS Apple Silicon/)
       assert.ok(error.message.includes(target), `the message must name ${target}: ${error.message}`)
     })
   }
-  assert.deepEqual([...PLATFORMS], ['win32-x64', 'linux-x64'])
+  assert.deepEqual([...PLATFORMS], ['win32-x64', 'linux-x64', 'darwin-arm64'])
   assert.equal(workerName('win32'), 'dsh-ops-worker.exe')
   assert.equal(workerName('linux'), 'dsh-ops-worker')
 })
@@ -150,13 +150,11 @@ await test('package.json, the resolver and the plugin manifest declare the same 
   const components = PLUGIN.contributes?.['x-components'] ?? []
   const ptc = components.find(component => component.id === 'dsh-ops-ptc')
   assert.ok(ptc, 'the PTC component row is missing from contributes.x-components')
-  assert.deepEqual([...PLATFORMS], ['win32-x64', 'linux-x64'], 'the resolver must declare exactly the two supported targets')
-  assert.deepEqual(manifest.os, ['win32', 'linux'], 'package.json os must match the resolver')
-  assert.deepEqual(ptc.platforms, ['win32', 'linux'], 'the manifest platforms must match the resolver')
-  assert.deepEqual(ptc.architectures, ['x64'], 'only x64 is supported on either platform')
-  const derived = [...PLATFORMS].sort().join(',')
-  const declared = ptc.platforms.flatMap(platform => ptc.architectures.map(arch => `${platform}-${arch}`)).sort().join(',')
-  assert.equal(declared, derived, 'the two declaration layers must describe the same target set')
+  assert.deepEqual([...PLATFORMS], ['win32-x64', 'linux-x64', 'darwin-arm64'], 'only the approved target pairs are supported')
+  assert.deepEqual(manifest.os, ['win32', 'linux', 'darwin'])
+  assert.deepEqual(ptc.platforms, ['win32', 'linux', 'darwin'])
+  assert.deepEqual(ptc.architectures, ['x64', 'arm64'])
+  assert.deepEqual(ptc.targets, [...PLATFORMS], 'exact targets, not the os/cpu Cartesian product, define support')
 })
 
 await test('the staged worker for this host hashes to exactly its provenance digest', async () => {

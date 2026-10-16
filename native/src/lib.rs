@@ -16,6 +16,7 @@ use serde_json::Value;
 /// `O_PATH` descriptor fails with `EBADF`. Reopening the same directory through
 /// `/proc/self/fd` yields an ordinary descriptor, which is how cap-primitives
 /// itself works around `O_PATH` handles elsewhere.
+#[cfg(unix)]
 pub(crate) fn sync_directory(dir: &Dir) -> Result<()> {
     let handle = dir.try_clone()?.into_std_file();
     let first = match handle.sync_all() {
@@ -32,7 +33,7 @@ pub(crate) fn sync_directory(dir: &Dir) -> Result<()> {
     Err(first.into())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

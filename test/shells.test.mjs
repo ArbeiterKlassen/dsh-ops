@@ -41,6 +41,7 @@ import {
   provisionedShellVersionDir,
   publishShellTools,
   resolveShells,
+  shellExecutable,
   shellUpstreamPin,
   withBashStatus,
 } from '../lib/shells.js'
@@ -66,7 +67,10 @@ function makeExecutable(file) {
  */
 function stageProvisioned(home, kind, version) {
   const pin = shellUpstreamPin({ kind, platform: process.platform, arch: process.arch })
-  const relative = pin?.executableRelativePath ?? path.join('bin', PLATFORM_PACKAGES[kind].executable)
+  // The same rule the resolver applies, so the fixture cannot disagree with the
+  // store it is pretending to be: the pin's own layout, or `bin/<name on this
+  // platform>` when this platform has no pin at all.
+  const relative = pin?.executableRelativePath ?? path.join('bin', shellExecutable(kind, process.platform))
   return makeExecutable(path.join(provisionedShellVersionDir({ kind, version, env: { DSH_HOME: home } }), relative))
 }
 
@@ -314,7 +318,7 @@ function stagePlatformPackage(root, kind, { install, binary, platform = process.
     name, version: '0.1.0',
   }))
   if (binary) {
-    makeExecutable(path.join(packageDir, 'bin', kind === 'bash' ? 'bash.exe' : 'pwsh.exe'))
+    makeExecutable(path.join(packageDir, 'bin', shellExecutable(kind, process.platform)))
   }
   return root
 }
@@ -325,7 +329,7 @@ await test('an installed platform package resolves to its bin/<exe>', async () =
     const found = bundledShell({ kind: 'bash', bundleRoot: dir, platform: process.platform, arch: process.arch })
     assert.equal(
       found.file,
-      path.join(dir, 'node_modules', ...platformPackageName('bash').split('/'), 'bin', 'bash.exe'),
+      path.join(dir, 'node_modules', ...platformPackageName('bash').split('/'), 'bin', shellExecutable('bash', process.platform)),
     )
     assert.equal(found.detail, undefined)
   })
@@ -338,7 +342,7 @@ await test('"installed without its executable" is reported apart from "not insta
       kind: 'bash', bundleRoot: dir, platform: process.platform, arch: process.arch,
     })
     assert.equal(withoutBinary.file, undefined)
-    assert.match(withoutBinary.detail, /is installed without bin\/bash\.exe/)
+    assert.match(withoutBinary.detail, new RegExp(`is installed without bin/${shellExecutable('bash', process.platform)}`))
   })
 
   // A separate root: node resolution walks UP from the bundle, so a sibling of
@@ -379,7 +383,7 @@ await test('the package-missing reason reaches the rung it belongs to', async ()
     })
     assert.equal(resolved.bash.available, false)
     assert.equal(resolved.bash.source, 'disabled')
-    assert.ok(resolved.bash.detail.includes(`is installed without bin/bash.exe`))
+    assert.ok(resolved.bash.detail.includes(`is installed without bin/${shellExecutable('bash', process.platform)}`))
   })
 })
 
@@ -414,7 +418,7 @@ await test('a package the registry never carried and a broken tree get different
   let corrupt
   await withTempDir('shells-cause-corrupt', async (dir) => {
     corrupt = detailFor(dir, { install: true, binary: false })
-    assert.ok(corrupt.includes('is installed without bin/bash.exe'), corrupt)
+    assert.ok(corrupt.includes(`is installed without bin/${shellExecutable('bash', process.platform)}`), corrupt)
     assert.match(corrupt, /repairs that/u)
     assert.ok(corrupt.includes('provision-shells --bash'), corrupt)
   })
@@ -465,7 +469,13 @@ await test('bundledShell names the machine-readable cause of every miss', async 
 // --- the upstream pins (phase C: pointers, not distributed binaries)
 
 await test('the pin table names one upstream release per shell, and nothing is spelled twice', () => {
-  assert.equal(SHELL_UPSTREAM_PINS.length, 2)
+  // One pin per (shell, target). Pinning a target has to be possible without
+  // the count being the contract: what must never happen is two entries
+  // answering the same lookup, which would make `shellUpstreamPin` order decide
+  // which bytes get downloaded.
+  const keys = SHELL_UPSTREAM_PINS.map((pin) => `${pin.name}/${pin.platform}-${pin.arch}`)
+  assert.deepEqual(keys, [...new Set(keys)], 'a shell and target is pinned at most once')
+  assert.equal(new Set(SHELL_UPSTREAM_PINS.map((pin) => pin.name)).size, 2, 'both shells are pinned')
   for (const pin of SHELL_UPSTREAM_PINS) {
     assert.equal(Object.isFrozen(pin), true, `${pin.name}: a pin is a frozen fact`)
     assert.equal(pin.name === 'bash' || pin.name === 'pwsh', true, `unexpected shell ${pin.name}`)
@@ -477,13 +487,14 @@ await test('the pin table names one upstream release per shell, and nothing is s
     assert.equal(typeof pin.license, 'string')
     assert.equal(typeof pin.releaseTag, 'string')
     // The two layouts the store and the provisioner share: the executable the
-    // resolver looks for is the one the unpack step puts there.
-    assert.equal(path.basename(pin.executableRelativePath), PLATFORM_PACKAGES[pin.name].executable,
-      `${pin.name}: the pin's executable is the one this module resolves`)
-    assert.equal(pin.extractor === 'zip' || pin.extractor === 'sfx-7z', true, `${pin.name}: a known extractor`)
+    // resolver looks for is the one the unpack step puts there — and the name it
+    // looks for is the one this platform's shells actually carry.
+    assert.equal(path.basename(pin.executableRelativePath), shellExecutable(pin.name, pin.platform),
+      `${pin.name}: the pin's executable is the one this module resolves on ${pin.platform}`)
+    assert.equal(['zip', 'sfx-7z', 'tar.gz'].includes(pin.extractor), true, `${pin.name}: a known extractor`)
     // The provisioner's own invariant: `<extractTo>/<file name>` is inside the
     // version directory, and it is where `executableRelativePath` was written
-    // for the two shapes this distribution pins.
+    // for the shapes this distribution pins.
     assert.equal(pin.extractTo === '.' || !path.isAbsolute(pin.extractTo), true)
   }
 
@@ -493,6 +504,12 @@ await test('the pin table names one upstream release per shell, and nothing is s
   const bash = shellUpstreamPin({ kind: 'bash', platform: 'win32', arch: 'x64' })
   assert.equal(bash?.extractTo, '.')
   assert.equal(bash?.executableRelativePath, 'bin/bash.exe')
+  // The macOS pwsh pin: a gzipped tar whose root is the payload, unpacked into
+  // `bin/`, so the provisioner's `tar.gz` branch and the store path agree.
+  const pwshArm64 = shellUpstreamPin({ kind: 'pwsh', platform: 'darwin', arch: 'arm64' })
+  assert.equal(pwshArm64?.extractor, 'tar.gz')
+  assert.equal(pwshArm64?.extractTo, 'bin')
+  assert.equal(pwshArm64?.executableRelativePath, 'bin/pwsh')
   // The one published layout each archive has, and the store path both sides of
   // the L3 contract compute.
   const shellHome = process.platform === 'win32' ? 'C:\\home' : '/home/dsh-ops'
@@ -513,18 +530,14 @@ await test('a provisioned copy outranks the bundled layouts and PATH, for both s
     const provisionedBash = stageProvisioned(home, 'bash', '2.56.0.2')
     const provisionedPwsh = stageProvisioned(home, 'pwsh', '7.6.6')
     // Everything the provisioned copy has to beat: the bundled platform package
-    // (declared, so it really is a candidate), the vendored layout, and a bash
-    // on PATH.
-    const bundleRoot = path.join(dir, 'plugin')
-    const packageDir = path.join(bundleRoot, 'node_modules', ...platformPackageName('bash').split('/'))
-    const packaged = makeExecutable(path.join(packageDir, 'bin', 'bash.exe'))
-    fs.mkdirSync(bundleRoot, { recursive: true })
-    fs.writeFileSync(path.join(bundleRoot, 'package.json'), JSON.stringify({
-      name: 'dsh-ops',
-      version: '0.1.0',
-      optionalDependencies: { [platformPackageName('bash')]: '0.1.0' },
-    }))
-    const onPath = makeExecutable(path.join(dir, 'onpath', 'bash.exe'))
+    // (declared and installed, so it really is a candidate), the vendored
+    // layout, and a bash on PATH. The whole package is staged, manifest
+    // included, because node only resolves a package that has one.
+    const bundleRoot = stagePlatformPackage(path.join(dir, 'plugin'), 'bash', { install: true, binary: true })
+    const packaged = path.join(
+      bundleRoot, 'node_modules', ...platformPackageName('bash').split('/'), 'bin', shellExecutable('bash', process.platform),
+    )
+    const onPath = makeExecutable(path.join(dir, 'onpath', shellExecutable('bash', process.platform)))
     const bundledPwsh = makeExecutable(bundledShellPath({
       kind: 'pwsh', bundleRoot, platform: process.platform, arch: process.arch,
     }))
@@ -545,6 +558,18 @@ await test('a provisioned copy outranks the bundled layouts and PATH, for both s
     assert.equal(resolved.pwsh.source, 'provisioned', resolved.pwsh.detail)
     assert.equal(resolved.pwsh.file, provisionedPwsh)
     assert.notEqual(resolved.pwsh.file, bundledPwsh, 'the provisioned copy beats the vendored layout')
+
+    // The package it beat is a live candidate, not an absent one: with the
+    // store gone, the bundled platform package is the rung that answers, and
+    // the PATH copy is the one behind it.
+    const withoutStore = resolveShells(config({ allowSystemShellFallback: true }), {
+      bundleRoot,
+      env: { DSH_HOME: path.join(dir, 'empty-home'), PATH: path.dirname(onPath) },
+      platform: process.platform,
+      arch: process.arch,
+    })
+    assert.equal(withoutStore.bash.source, 'bundled', withoutStore.bash.detail)
+    assert.equal(withoutStore.bash.file, packaged)
 
     // Confining the ladder to plugin-provided shells leaves the provisioned
     // copy alone: it is not a system shell, it is ours.
@@ -1385,19 +1410,20 @@ await test('the L3 override is inert while the plugin carries no pwsh', async ()
   })
 })
 
-await test('the L3 override stays Windows-gated, whatever the plugin carries', async () => {
+await test('the L3 override follows the plugin\'s own pwsh on every platform', async () => {
   await withTempDir('shells-patch-platform', async (dir) => {
     const { bundleRoot, profileUrl } = stageLinkedProfile(dir)
-    makeExecutable(bundledShellPath({
+    const bundled = makeExecutable(bundledShellPath({
       kind: 'pwsh', bundleRoot, platform: process.platform, arch: process.arch,
     }))
     fs.writeFileSync(path.join(bundleRoot, 'package.json'), JSON.stringify({ name: 'dsh-ops', version: '0.1.0' }))
     const value = evaluateLoaderExpression(pwshOverrideExpression(), { baseUrl: profileUrl, ctx: {} })
-    if (process.platform !== 'win32') {
-      // The plugin carries the executable, and the expression still declines:
-      // the override is Windows-only by design, as `pwsh-sandbox` itself is.
-      assert.equal(value, undefined)
-    }
+    // The plugin carries the executable and the overlay points the owning row at
+    // exactly that file. There is no platform gate left: the overlay is gated by
+    // `shells.pwsh.available` alone. Whether the owning `pwsh-sandbox` row is
+    // mounted stays the host's decision — `cordis.patch.yml` ships no persistent
+    // pwsh override — so on a host that disables its pwsh rows this stays a no-op.
+    assert.equal(value, bundled)
   })
 })
 
@@ -1479,9 +1505,11 @@ await test('the L3 override and the plugin probe agree on all three places, in t
     /** @type {Record<string, string>} */
     const made = {}
     if (places.includes('provisioned')) {
-      // What `dsh-ops provision-shells` installs: the pinned upstream release.
+      // What `dsh-ops provision-shells` installs: the pinned upstream release,
+      // at the layout the pin for this platform names.
       made.provisioned = makeExecutable(path.join(
-        home, 'dsh-ops', 'shells', 'pwsh', '7.6.6', 'bin', 'pwsh.exe',
+        provisionedShellVersionDir({ kind: 'pwsh', version: '7.6.6', env: { DSH_HOME: home } }),
+        'bin', shellExecutable('pwsh', process.platform),
       ))
     }
     if (places.includes('package')) {
@@ -1490,7 +1518,7 @@ await test('the L3 override and the plugin probe agree on all three places, in t
       fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({
         name: platformPackage, version: '0.1.0',
       }))
-      made.package = makeExecutable(path.join(packageDir, 'bin', 'pwsh.exe'))
+      made.package = makeExecutable(path.join(packageDir, 'bin', shellExecutable('pwsh', process.platform)))
     }
     if (places.includes('vendor')) {
       made.vendor = makeExecutable(bundledShellPath({
@@ -1523,7 +1551,9 @@ await test('the L3 override and the plugin probe agree on all three places, in t
       assert.equal(probe.pwsh.available, true, probe.pwsh.detail)
       assert.equal(probe.pwsh.source, place === 'provisioned' ? 'provisioned' : 'bundled', probe.pwsh.detail)
       assert.equal(probe.pwsh.file, made[place])
-      if (process.platform === 'win32') assert.equal(expression, made[place])
+      // Both sides of the L3 contract resolve the same file. The overlay has no
+      // platform gate, so this holds everywhere.
+      assert.equal(expression, made[place])
     })
   }
 
@@ -1534,22 +1564,20 @@ await test('the L3 override and the plugin probe agree on all three places, in t
     assert.notEqual(made.package, made.vendor)
     assert.equal(probe.pwsh.source, 'provisioned', probe.pwsh.detail)
     assert.equal(probe.pwsh.file, made.provisioned)
-    if (process.platform === 'win32') assert.equal(expression, made.provisioned)
+    assert.equal(expression, made.provisioned)
   })
 
   await withTempDir('shells-place-bundled', async (dir) => {
     const { made, expression, probe } = build(dir, ['vendor', 'package'])
     assert.equal(probe.pwsh.source, 'bundled', probe.pwsh.detail)
     assert.equal(probe.pwsh.file, made.package)
-    if (process.platform === 'win32') assert.equal(expression, made.package)
+    assert.equal(expression, made.package)
   })
 })
 
-await test('the L3 override is Windows-gated like the row it targets', () => {
+await test('the L3 override declines without a base URL, whatever the plugin carries', () => {
   const expr = pwshOverrideExpression()
-  if (process.platform !== 'win32') {
-    assert.equal(evaluateLoaderExpression(expr, { baseUrl: undefined, ctx: {} }), undefined)
-  }
+  assert.equal(evaluateLoaderExpression(expr, { baseUrl: undefined, ctx: {} }), undefined)
 })
 
 await test('system discovery is opt-in on Windows and is the rung on a POSIX host', async () => {
@@ -1586,8 +1614,10 @@ await test('system discovery is opt-in on Windows and is the rung on a POSIX hos
     assert.equal(linux.available, true, JSON.stringify(linux))
     assert.equal(linux.source, 'path')
     assert.equal(linux.file, system)
-    const posixWellKnown = resolveShells(config({}), { ...base, platform: 'linux', arch: 'x64', env: { ...base.env, PATH: '/nonexistent-bin' } }).bash
-    assert.equal(posixWellKnown.source, 'well-known', JSON.stringify(posixWellKnown))
+    if (process.platform !== 'win32') {
+      const posixWellKnown = resolveShells(config({}), { ...base, platform: 'linux', arch: 'x64', env: { ...base.env, PATH: '/nonexistent-bin' } }).bash
+      assert.equal(posixWellKnown.source, 'well-known', JSON.stringify(posixWellKnown))
+    }
     assert.equal(resolveShells(config({ bashPath: system }), { ...base, platform: host, arch: process.arch }).bash.source, 'config')
   })
 })
@@ -1607,7 +1637,9 @@ await test('runtime pwsh overlay targets only the owning row and restores latest
   }) } }
   const original = target.options.config
   mountBundledPwsh(fixture, { pwsh: { available: true, file: 'approved-pwsh' } })
-  if (process.platform !== 'win32') { assert.equal(hook, undefined); return }
+  // No platform gate: the overlay is gated by `shells.pwsh.available` alone, so
+  // the whole contract holds here — owning row only, no config saved, and the
+  // restore recomputed from the owner's latest raw config.
   assert.deepEqual(updates[0], { config: { pwshPath: 'approved-pwsh', retained: true }, noSave: true })
   assert.equal(target.options.config, original)
   assert.deepEqual(hook.call({ entry: foreign }, {}, () => ({ pwshPath: 'foreign' })), { pwshPath: 'foreign' })

@@ -151,9 +151,10 @@ fix; see that entry for the `PSModulePath` scope note.
 
 ## [0.3.0] — 2026-10-14 — Windows x64 native tools and PTC
 
-Release scope: **Windows x64 only**, targeting DSH 0.2.0-rc.2. Linux/macOS/ARM64
-are not shipped or claimed. The package includes the native Rust worker, Windows
-Bash IPC proxies, receipts and matching source; payload dependencies remain 0.2.1.
+Release scope: **Windows x64 only**, targeting DSH 0.2.0-rc.2. macOS arm64 is
+added after this release (see [Unreleased]); Linux/ARM64 are not shipped or
+claimed. The package includes the native Rust worker, Windows Bash IPC proxies,
+receipts and matching source; payload dependencies remain 0.2.1.
 
 ### Permission alignment
 
@@ -197,7 +198,7 @@ These fixes are included in 0.3.0; the three Windows payload dependencies are un
 - Keep business code separate from one three-scenario simulation suite using the real Rust worker and real Cordis/tools/prompt registration.
 - Target native Windows/macOS/Linux; Windows runtime acceptance and Linux/macOS compile checks are recorded separately from pending on-platform sandbox tests. Legacy payloads remain unchanged.
 - Keep each component icon inside its exported manifest directory; fix the PTC Plugin Manager metadata error caused by the parent-relative icon path, with coverage in the existing manifest suite.
-- Source builds use `npm run build:ptc` and `npm run build:bash-ipc`; published 0.3.0 artifacts are Windows x64 only. See `docs/native-ptc.md`.
+- Source builds use `npm run build:ptc` and `npm run build:bash-ipc`; published 0.3.0 artifacts are Windows x64 only. macOS arm64 support is added after this release (see [Unreleased]). See `docs/native-ptc.md`.
 
 ## [Unreleased] — Bash workdir spawn diagnostics
 

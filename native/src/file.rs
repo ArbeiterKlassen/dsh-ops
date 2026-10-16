@@ -100,6 +100,7 @@ fn utf8() -> String { "utf-8".into() }
 fn text() -> String { "text".into() }
 
 pub fn dispatch(request: &Request) -> Result<Value> {
+    if let Some(raw) = request.args.get("path").and_then(Value::as_str) { request.authorize_path(Path::new(raw))?; }
     match request.tool.as_str() {
         "inspect_local_file" => inspect(request),
         "glob" => glob(request),
@@ -130,19 +131,16 @@ struct WalkResult {
     truncated: bool,
 }
 
-fn walk(root: &Path, deny_roots: &[PathBuf]) -> Result<WalkResult> {
+fn walk(root: &Path, request: &Request) -> Result<WalkResult> {
+    request.authorize_path(root)?;
     let target = crate::file_path::checked(root.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?)?;
     let directory = target.parent.open_dir_nofollow(&target.name)?;
     let mut files = Vec::new();
     let mut truncated = false;
-    visit_dir(root, root, directory, 0, deny_roots, &mut files, &mut truncated)?;
+    visit_dir(root, root, directory, 0, request, &mut files, &mut truncated)?;
     Ok(WalkResult { files, truncated })
 }
-/// Whether a path is inside one of the roots the traversal must not enter.
-fn under_any(roots: &[PathBuf], path: &Path) -> bool {
-    roots.iter().any(|root| path.starts_with(root))
-}
-fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: usize, deny_roots: &[PathBuf], output: &mut Vec<PathBuf>, truncated: &mut bool) -> Result<()> {
+fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: usize, request: &Request, output: &mut Vec<PathBuf>, truncated: &mut bool) -> Result<()> {
     if depth > MAX_DEPTH || output.len() >= MAX_ENTRIES {
         *truncated = true;
         return Ok(());
@@ -173,7 +171,7 @@ fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: us
         // A denied root is skipped by identity, not by name: the host names the
         // credential locations and the worker stays out of them entirely, so a
         // traversal cannot even report a private key below one.
-        if under_any(deny_roots, &child) { continue; }
+        if request.denies_path(&child) { continue; }
         if hidden(&child, root) || matches!(name.as_str(), ".git" | ".dsh-ops" | "node_modules" | "target" | ".venv") { continue; }
         if metadata.is_file() {
             if output.len() >= MAX_ENTRIES { *truncated = true; return Ok(()); }
@@ -182,7 +180,7 @@ fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: us
         }
         if metadata.is_dir() {
             let Ok(child_dir) = directory.open_dir_nofollow(&name) else { continue };
-            visit_dir(root, &child, child_dir, depth + 1, deny_roots, output, truncated)?;
+            visit_dir(root, &child, child_dir, depth + 1, request, output, truncated)?;
             if *truncated && output.len() >= MAX_ENTRIES { return Ok(()); }
         }
     }
@@ -196,12 +194,13 @@ fn matches_any(root: &Path, file: &Path, patterns: &[String]) -> bool {
     let excluded = patterns.iter().filter_map(|p| p.strip_prefix('!')).any(|p| glob_match(p, &name));
     included && !excluded
 }
-fn files_for(path: &str, patterns: &[String], deny_roots: &[PathBuf]) -> Result<WalkResult> {
+fn files_for(path: &str, patterns: &[String], request: &Request) -> Result<WalkResult> {
     let root = target(path, false)?;
+    request.authorize_path(&root)?;
     if root.is_file() {
         return Ok(WalkResult { files: vec![root.clone()], truncated: false });
     }
-    let walked = walk(&root, deny_roots)?;
+    let walked = walk(&root, request)?;
     Ok(WalkResult {
         files: walked.files.into_iter()
             .filter(|f| matches_any(&root, f, patterns))
@@ -327,7 +326,7 @@ fn glob(request: &Request) -> Result<Value> {
     let args: GlobArgs = serde_json::from_value(request.args.clone())?;
     if args.pattern.is_empty() || args.pattern.iter().all(|p| p.starts_with('!')) { return Err(Failure::new("INVALID_ARGUMENT", "pattern requires a positive glob")); }
     let root = target(&args.path, false)?; if !root.is_dir() { return Err(Failure::new("INVALID_ARGUMENT", "glob path must be a directory")); }
-    let walked = walk(&root, &request.deny_roots_paths())?;
+    let walked = walk(&root, request)?;
     let mut files: Vec<_> = walked.files.into_iter().filter(|f| matches_any(&root, f, &args.pattern)).collect();
     if args.sort == "modified" { files.sort_by_key(|f| std::cmp::Reverse(modified(f))); } else if !args.sort.is_empty() && args.sort != "path" { return Err(Failure::new("INVALID_ARGUMENT", "sort must be path or modified")); }
     let output_mode = if args.output_mode.is_empty() { "paths" } else { args.output_mode.as_str() };
@@ -340,7 +339,7 @@ fn grep(request: &Request) -> Result<Value> {
     if args.pattern.is_empty() || args.limit == 0 || args.limit > 10_000 { return Err(Failure::new("INVALID_ARGUMENT", "pattern and bounded limit are required")); }
     if args.before_context > 32 || args.after_context > 32 { return Err(Failure::new("INVALID_ARGUMENT", "context is limited to 32 lines")); }
     let regex = RegexBuilder::new(&args.pattern).case_insensitive(args.case_insensitive).multi_line(args.multiline).build().map_err(|e| Failure::new("INVALID_ARGUMENT", e))?;
-    let walked = files_for(&args.path, &args.glob, &request.deny_roots_paths())?; let mut matches = Vec::new(); let mut file_count = 0; let mut match_count = 0;
+    let walked = files_for(&args.path, &args.glob, request)?; let mut matches = Vec::new(); let mut file_count = 0; let mut match_count = 0;
     // Which modes answer with an item per match (`content`) and which with an item per file. Declared
     // once here because both the per-file loop and the envelope's `total` have to agree on it.
     let content_mode = !matches!(args.output_mode.as_str(), "files_with_matches" | "count" | "summary");
@@ -404,7 +403,7 @@ fn replace(request: &Request) -> Result<Value> {
     if request.read_only { return Err(Failure::new("POLICY_DENIED", "replace is unavailable in read-only mode")); }
     let args: ReplaceArgs = serde_json::from_value(request.args.clone())?;
     if args.pattern.is_empty() || args.max_replacements == 0 || args.max_replacements > 100_000 { return Err(Failure::new("INVALID_ARGUMENT", "pattern and maxReplacements are required")); }
-    let walked = files_for(&args.path, &args.glob, &request.deny_roots_paths())?; let mut plans = Vec::new(); let mut total = 0usize; let mut binary: Vec<PathBuf> = Vec::new();
+    let walked = files_for(&args.path, &args.glob, request)?; let mut plans = Vec::new(); let mut total = 0usize; let mut binary: Vec<PathBuf> = Vec::new();
     // A directory that holds one binary file (an icon, an archive) is a normal repository, not a
     // malformed request: the binary is reported as skipped and the text files around it are still
     // edited. Failing the whole call on the first non-UTF-8 byte made a routine directory edit
@@ -527,12 +526,22 @@ impl PreservedMetadata {
         };
         // The mode goes on after the owner, because a successful `chown` clears
         // setuid and setgid. This one is fatal if it fails.
-        rustix::fs::fchmod(file, rustix::fs::Mode::from_bits_truncate(self.mode)).map_err(|error| Failure::new("ACCESS_DENIED", format!("Mode {:04o} could not be preserved ({error}); nothing was published", self.mode & 0o7777)))?;
+        rustix::fs::fchmod(file, rustix::fs::Mode::from_bits_truncate((self.mode & 0o7777) as _)).map_err(|error| Failure::new("ACCESS_DENIED", format!("Mode {:04o} could not be preserved ({error}); nothing was published", self.mode & 0o7777)))?;
         // The ACL goes on after the mode, because `chmod` rewrites an ACL's mask
         // entry; applying the captured attribute last reproduces the original pair.
         let acl = match &self.acl {
             Some(acl) => { rustix::fs::fsetxattr(file, ACL_XATTR, acl, rustix::fs::XattrFlags::empty()).map_err(|error| Failure::new("ACCESS_DENIED", format!("POSIX ACL could not be preserved ({error}); nothing was published")))?; true }
-            None => false,
+            None => {
+                // A new inode can inherit a parent's default ACL even when the old
+                // inode had no access ACL. Do not publish those inherited grants.
+                #[cfg(target_os = "linux")]
+                match rustix::fs::fremovexattr(file, ACL_XATTR) {
+                    Ok(()) => (),
+                    Err(error) if matches!(error, rustix::io::Errno::NODATA | rustix::io::Errno::NOTSUP) => (),
+                    Err(error) => return Err(Failure::new("ACCESS_DENIED", format!("Inherited POSIX ACL could not be cleared ({error}); nothing was published"))),
+                }
+                false
+            },
         };
         let mut restored = Vec::new();
         for (name, value) in &self.xattrs {
@@ -542,35 +551,27 @@ impl PreservedMetadata {
     }
 }
 
-/// Take the target's exclusive update lock and read its current bytes *through that
-/// handle*.
+/// Lock the stable per-path sidecar before reading the current target.
 ///
-/// Keeping the handle alive across the revision check, the read and the publish
-/// is what makes the check mean anything. Without it the check is check-then-act:
-/// two callers can both observe the same pre-image, both pass it and both report a
-/// change, while only the last rename survives — a lost update reported as two
-/// successes.
-///
-/// The bytes come back from the locked handle rather than from a second open.
-/// Windows `LockFileEx` denies access to the locked range through *any* other
-/// handle, including one this process opens itself, so re-reading the target after
-/// locking made an ordinary, uncontended replacement fail there with a lock
-/// violation — a defect Linux cannot reproduce, because `flock` is per open file
-/// description (reported by @Haoming9527 in review of #81). One handle for the lock,
-/// the check and the read also leaves no gap at all between them.
-///
-/// The lock is advisory and scoped to the handle, the way `store.rs` locks its
-/// workspace store. A writer that never takes it is still caught by the revision
-/// check, only later. Failing instead of waiting is deliberate: a blocked worker
-/// gets killed by the host, whereas a caller told nothing changed can retry.
+/// Target-inode locks are insufficient across atomic rename: a waiter can retain
+/// the old inode while the path already names a new one. Cooperating writers all
+/// use this persistent lock inode, held until publication and directory sync.
+/// Non-cooperating writers remain outside this advisory serialization contract.
 fn lock_and_read_for_update(file: &Path) -> Result<(std::fs::File, Vec<u8>)> {
     let raw = file.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;
-    let target = crate::file_path::checked(raw)?;
-    let mut lock = crate::file_path::read_file(&target)?.into_std();
-    FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this file; nothing was changed, retry"))?;
-    let mut bytes = Vec::new();
-    lock.read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_FILE_BYTES { return Err(Failure::new("OUTPUT_LIMIT", "File exceeds the bounded read budget")); }
+    let checked = crate::file_path::checked(raw)?;
+    // The lock inode must survive replacement of the target inode. Keep a
+    // persistent, hidden sidecar per path; unlinking it after unlock would let
+    // another process lock a different inode under the same lock name.
+    let key = format!("{:x}", Sha256::digest(checked.name.as_bytes()));
+    let lock_name = format!(".dsh-ops-update-{key}.lock");
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.read(true).write(true).create(true).follow(FollowSymlinks::No);
+    #[cfg(unix)]
+    { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
+    let lock = checked.parent.open_with(lock_name, &options)?.into_std();
+    FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this path; nothing was changed, retry"))?;
+    let bytes = read_bytes(file)?;
     Ok((lock, bytes))
 }
 /// Remove `.<name>.dsh-ops-<uuid>` leftovers from earlier writers that were killed
@@ -613,17 +614,23 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     let temporary = format!(".{name}.dsh-ops-{}", uuid::Uuid::new_v4());
     let mut options = cap_std::fs::OpenOptions::new();
     options.write(true).create_new(true).follow(FollowSymlinks::No);
-    let mut file = parent.open_with(&temporary, &options).map_err(|e| Failure::new("ACCESS_DENIED", format!("Atomic replacement create: {e}")))?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    // Metadata goes back before publication, so a refusal leaves the original file
-    // exactly as it was rather than half-replaced.
     #[cfg(unix)]
-    let restored = preserved.restore(&file).map(Some);
-    #[cfg(not(unix))]
-    let restored: Result<Option<(Value, Vec<String>)>> = Ok(None);
+    { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
+    let mut file = parent.open_with(&temporary, &options).map_err(|e| Failure::new("ACCESS_DENIED", format!("Atomic replacement create: {e}")))?;
+    // Keep content private until final metadata is restored. Creation mode also
+    // masks inherited ACL grants; never write sensitive bytes to a default 0666 inode.
+    let prepared = (|| -> Result<Option<(Value, Vec<String>)>> {
+        file.write_all(bytes)?;
+        #[cfg(unix)]
+        let report = Some(preserved.restore(&file)?);
+        #[cfg(not(unix))]
+        let report = None;
+        // Both bytes and restored mode/owner/ACL/xattrs must be durable before rename.
+        file.sync_all()?;
+        Ok(report)
+    })();
     drop(file);
-    let report = match restored {
+    let report = match prepared {
         Ok(report) => report,
         Err(failure) => { let _ = parent.remove_file(&temporary); return Err(failure); }
     };

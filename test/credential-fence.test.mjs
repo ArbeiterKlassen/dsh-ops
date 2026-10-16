@@ -113,7 +113,7 @@ await test('the environment variable widens the fence and cannot narrow it', asy
     assert.ok(roots.includes(path.join(workspace, '.ssh').split(path.sep).join('/')), `expected .ssh among ${roots.join(', ')}`)
     assert.ok(roots.some(root => root.endsWith('/vault')), 'the environment entry is a traversal root too')
     // A file-shaped suffix is not a traversal root: skipping its parent would hide the whole home.
-    assert.ok(!roots.some(root => root.endsWith('/.npmrc')), 'a file is not a directory to walk around')
+    assert.ok(roots.some(root => root.endsWith('/.npmrc')), 'a denied file is a narrow traversal root, not its parent')
   })
 })
 
@@ -122,9 +122,9 @@ await test('a symlink into a credential directory is denied by its target', asyn
     const home = path.join(workspace, 'home')
     fs.mkdirSync(path.join(home, '.ssh'), { recursive: true })
     fs.writeFileSync(path.join(home, '.ssh', 'id_ed25519'), 'PRIVATE')
-    const link = path.join(workspace, 'innocent.txt')
-    fs.symlinkSync(path.join(home, '.ssh', 'id_ed25519'), link)
-    const verdict = credentialPath(link, { home, env: {} })
+    const link = path.join(workspace, 'innocent')
+    fs.symlinkSync(path.join(home, '.ssh'), link, process.platform === 'win32' ? 'junction' : 'dir')
+    const verdict = credentialPath(path.join(link, 'id_ed25519'), { home, env: {} })
     assert.equal(verdict.denied, true, 'a link must not be a way around the fence')
     assert.match(credentialRefusal(link, verdict.matched).message, /credential location/)
   })
@@ -135,7 +135,7 @@ await test('the session temporary directory is per session, stable and never the
   assert.equal(first, sessionTempDir('session-a', '/tmp'), 'the same session keeps its directory')
   assert.notEqual(first, sessionTempDir('session-b', '/tmp'), 'two sessions must not share one directory')
   assert.ok(path.basename(first).startsWith(SESSION_TEMP_PREFIX), `unexpected name ${path.basename(first)}`)
-  assert.equal(path.dirname(first), '/tmp')
+  assert.equal(path.dirname(first), path.normalize('/tmp'))
   assert.ok(!first.includes('session-a'), 'the name is derived, not the raw session id')
 })
 
@@ -199,7 +199,7 @@ await test('one binary file no longer fails a whole replace, and is reported as 
     assert.equal(observed.status, 'completed', JSON.stringify(observed))
     assert.equal(observed.matched, 1)
     assert.equal(observed.skipped, 1, `the binary must be reported, got ${JSON.stringify(observed)}`)
-    assert.deepEqual(observed.skippedPaths, ['icon.bin'], `skippedPaths must name it: ${JSON.stringify(observed.skippedPaths)}`)
+    assert.deepEqual(observed.skippedPaths.map(file => path.basename(file)), ['icon.bin'], `skippedPaths must name it: ${JSON.stringify(observed.skippedPaths)}`)
 
     const applied = envelopeOf(await callWorker(JSON.stringify({ ...request('replace', { path: workspace, pattern: 'OLD', replacement: 'NEW' }, options) })), assert)
     assert.equal(applied.changed, 1, JSON.stringify(applied))

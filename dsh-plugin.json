@@ -41,7 +41,7 @@
       {
         "icon": "./icon.png",
         "title": "dsh-ops",
-        "description": "Provides bash, PowerShell 7, and a suite of high-performance tools written in Rust for Windows DSH to enhance token efficiency",
+        "description": "Provides bash, PowerShell 7, and a suite of high-performance tools written in Rust for DSH to enhance token efficiency",
         "locales": [
           "locale/en.json",
           "locale/zh.json"
@@ -57,7 +57,7 @@
       {
         "name": "dsh-ops:repository-tooling:shell",
         "order": 3251,
-        "summary": "Prefer bash, use bundled PowerShell 7 for Windows-native functionality; removed when shell component is off."
+        "summary": "Prefer bash; use the bundled PowerShell 7 for Windows-native functionality where that payload exists; removed when the shell component is off."
       },
       {
         "name": "dsh-ops:repository-tooling:background",
@@ -108,8 +108,9 @@
         "id": "dsh-ops-ptc",
         "entry": "dsh-ops/ptc",
         "defaultEnabled": false,
-        "platforms": ["win32", "linux"],
-        "architectures": ["x64"],
+        "platforms": ["win32", "linux", "darwin"],
+        "architectures": ["x64", "arm64"],
+        "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
         "presentation": "PTC-only",
         "runtime": "independent native Rust file worker; no FastCtx dependency",
         "tools": ["ops_batch", "ops_result"],
@@ -119,13 +120,15 @@
         "id": "dsh-ops-shell",
         "entry": "dsh-ops/shell",
         "defaultEnabled": true,
-        "platforms": ["win32", "linux"]
+        "platforms": ["win32", "linux", "darwin"],
+        "targets": ["win32-x64", "linux-x64", "darwin-arm64"]
       },
       {
         "id": "dsh-ops-file",
         "entry": "dsh-ops/file",
         "defaultEnabled": true,
-        "platforms": ["win32", "linux"]
+        "platforms": ["win32", "linux", "darwin"],
+        "targets": ["win32-x64", "linux-x64", "darwin-arm64"]
       },
       {
         "id": "dsh-ops-background",

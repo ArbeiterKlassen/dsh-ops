@@ -23,7 +23,7 @@ attention wasted on repeated PowerShell errors.
 
   and improved model performance on DSH.
 
-- (Windows only) Independent **bash 5.3.15** and independent **PowerShell 7.6.6**: bash is preferred, and pwsh 7 is the fallback when it is needed, so your AI no longer fights PowerShell — **it does not change the system default terminal, PATH or existing host shell tool names**, and environment variables stay safe.
+- (Bundled payloads are Windows only) Independent **bash 5.3.15** and independent **PowerShell 7.6.6**: bash is preferred, and pwsh 7 is the fallback when it is needed, so your AI no longer fights PowerShell — **it does not change the system default terminal, PATH or existing host shell tool names**, and environment variables stay safe. macOS ships no such payload: bash comes from the configured `bashPath`, and pwsh is unavailable there; see [macOS arm64](docs/macos-arm64.md).
 
 - Independent native Rust file tools and safe batch operations (**off by default**, opt-in), see [Component reference](docs/component-reference.md).
 

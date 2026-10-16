@@ -14,12 +14,14 @@
   },
   "os": [
     "win32",
-    "linux"
+    "linux",
+    "darwin"
   ],
   "cpu": [
-    "x64"
+    "x64",
+    "arm64"
   ],
-  "description": "Provides bash, PowerShell 7, and a suite of high-performance tools written in Rust for Windows DSH to enhance token efficiency",
+  "description": "Native file and PTC tools for DSH on Windows x64, Linux x64 and macOS Apple Silicon; Windows-only optional Bash and PowerShell 7 payloads",
   "icon": "./icon.png",
   "keywords": [
     "dsh",
@@ -131,7 +133,8 @@
   "optionalDependencies": {
     "@dsh-ops/bash-win32-x64": "0.2.1",
     "@dsh-ops/fastctx-win32-x64": "0.2.1",
-    "@dsh-ops/pwsh-win32-x64": "0.2.1"
+    "@dsh-ops/pwsh-win32-x64": "0.2.1",
+    "@fastctx/darwin-arm64": "0.2.6"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",

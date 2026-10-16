@@ -13,6 +13,37 @@ The complete install, update and remove flow, plus every option of the command-l
 | Host | DSH `0.2.0-rc.2` |
 | Target application | Initialized |
 
+### macOS arm64
+
+macOS carries no bundled shell payload, and the native worker is not part of the
+repository on any platform, so two extra steps apply.
+
+Build and stage the worker once from the checkout (Rust >= 1.88):
+
+```console
+cargo build --release --manifest-path native/Cargo.toml
+node bin/native-runtime.mjs stage --platform darwin-arm64
+```
+
+Then point every row that needs bash at a bash the machine already has:
+
+```yaml
+- id: dsh-ops-shell
+  name: dsh-ops/shell
+  config:
+    bashPath: /opt/homebrew/bin/bash
+- id: dsh-ops-background
+  name: dsh-ops/background
+  config:
+    bashPath: /opt/homebrew/bin/bash
+```
+
+The desktop application's bundled CLI lives inside its own installation, at
+`.../Contents/Resources/runtime/cli/bin/dsh` on macOS, rather than at the
+`%LOCALAPPDATA%` path used on Windows. The host exposes no pwsh row on macOS, so
+PowerShell 7 is unavailable there. See [macOS arm64](macos-arm64.md) for the
+capability matrix and the known limitations.
+
 ---
 
 ## Install

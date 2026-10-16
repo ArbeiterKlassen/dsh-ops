@@ -670,6 +670,7 @@ await test('provision-shells fails loud on a pin it cannot honour', async () => 
 })
 
 await test('on POSIX the profile CLI fallback launches dsh, not the Windows cmd wrapper', async () => {
+  if (process.platform === 'win32') return // This fixture exercises a POSIX shell launcher, not cmd.exe.
   // Reported by @Haoming9527 in review of #81: with no package-based CLI to resolve, the fallback
   // selected `dsh.cmd` and spawned it through `cmd.exe` — `spawnSync cmd.exe ENOENT` on Linux even
   // with an executable `dsh` on PATH. This case puts exactly that `dsh` on PATH and asserts it is the

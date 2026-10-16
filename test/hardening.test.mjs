@@ -130,7 +130,9 @@ await test('provision leaves no copy that cannot run on the managed path', async
       cwd: PACKAGE_ROOT, env: { ...process.env, DSH_HOME: home }, encoding: 'utf8', timeout: 60000,
     })
     assert.equal(result.status, 1, `provision must refuse and exit 1, got ${result.status}: ${result.stderr}`)
-    assert.match(`${result.stderr}${result.stdout}`, /the installed copy does not run/)
+    assert.match(`${result.stderr}${result.stdout}`, process.platform === 'win32'
+      ? /refusing to install an unusable executable/
+      : /the installed copy does not run/)
     assert.equal(fs.existsSync(managed), false, 'a copy that cannot run must not stay where resolution finds it first')
   })
 })

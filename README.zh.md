@@ -22,7 +22,7 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 
   的成绩，并改善了在 DSH 运行的 AI 的智力表现。
 
-- （仅 Windows）提供独立 **bash 5.3.15** 和独立 **PowerShell 7.6.6**：优先使用 bash，必要时回退 pwsh 7，让你的 AI 不再和 PowerShell 打架 —— **不修改系统默认终端、PATH 或宿主原有 shell 工具名称**，环境变量安全。
+- （自带载荷仅 Windows）提供独立 **bash 5.3.15** 和独立 **PowerShell 7.6.6**：优先使用 bash，必要时回退 pwsh 7，让你的 AI 不再和 PowerShell 打架 —— **不修改系统默认终端、PATH 或宿主原有 shell 工具名称**，环境变量安全。macOS 没有对应载荷：bash 由配置项 `bashPath` 指向本机副本（如 Homebrew bash），pwsh 在 macOS 上不可用，见 [macOS arm64](docs/macos-arm64.md)。
 
 - 独立的 Rust 原生文件工具与安全批处理（**默认关闭**，须显式启用），见 [组件参考](docs/组件参考.md)。
 

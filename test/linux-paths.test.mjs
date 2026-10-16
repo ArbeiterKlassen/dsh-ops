@@ -64,12 +64,9 @@ await test('every awkward filename round-trips through glob and an explicit read
       '中文文件名.txt',
       'emoji-😀-🎉.txt',
       'with space.txt',
-      'tab\there.txt',
-      "quote'and\"double.txt",
+      ...(POSIX ? ['tab\there.txt', "quote'and\"double.txt", 'semi;colon&amp|pipe.txt', 'star*and?glob.txt'] : []),
       'dollar$and`backtick`.txt',
-      'semi;colon&amp|pipe.txt',
       '--looks-like-a-flag.txt',
-      'star*and?glob.txt',
       'bracket[1]{2}.txt',
     ]
     for (const name of names) write(name)

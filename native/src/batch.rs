@@ -88,6 +88,7 @@ pub fn run(root: &Dir, store: &Store, request: &Request) -> Result<Value> {
             // Every item is fully preflighted before any audit/execution begins.
             let mut items = Vec::new();
             for operation in operations {
+                paths::authorize_tree(root, &operation.path, request)?;
                 let snap = paths::snapshot(root, &operation.path, operation.op)?;
                 items.push(Item {
                     operation,
@@ -128,7 +129,7 @@ pub fn run(root: &Dir, store: &Store, request: &Request) -> Result<Value> {
             };
             store.save(&job.id, &job)?;
             if args.action == "run" {
-                execute(root, store, &mut job)?;
+                execute(root, store, &mut job, request)?;
             }
             Ok(summary(&job))
         }
@@ -148,7 +149,10 @@ pub fn run(root: &Dir, store: &Store, request: &Request) -> Result<Value> {
                 return Err(Failure::new("POLICY_DENIED", "Manifest identity mismatch"));
             }
             validate_saved(&job)?;
-            execute(root, store, &mut job)?;
+            for item in &job.items {
+                if item.state == State::Pending { paths::authorize_tree(root, &item.operation.path, request)?; }
+            }
+            execute(root, store, &mut job, request)?;
             Ok(summary(&job))
         }
         _ => Err(Failure::new(
@@ -224,7 +228,7 @@ fn postcondition(root: &Dir, item: &Item) -> Result<bool> {
         }
     }
 }
-fn execute(root: &Dir, store: &Store, job: &mut Job) -> Result<()> {
+fn execute(root: &Dir, store: &Store, job: &mut Job, request: &Request) -> Result<()> {
     for index in 0..job.items.len() {
         let item = &job.items[index];
         if item.state == State::Completed {
@@ -253,6 +257,7 @@ fn execute(root: &Dir, store: &Store, job: &mut Job) -> Result<()> {
                     return Err(Failure::new("POLICY_DENIED", "Protected path"));
                 }
             }
+            paths::authorize_tree(root, &op.path, request)?;
             if paths::snapshot(root, &op.path, op.op)?.revision != item.revision {
                 return Err(Failure::new(
                     "REVISION_CONFLICT",
