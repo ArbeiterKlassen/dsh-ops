@@ -30,13 +30,20 @@
 - 提供关闭原版tools以最大化节省ai心智负担和系统固定提示词的可选项
 - 在windows平台下额外提供tools：ops_bash的支持——ai使用bash远比ai使用pwsh更流畅。可选择使用ops自带的独立 **bash 5.3.15** ，也可以将ops_bash工具指定为git bash
 
+插件特点：
+
+- 低侵入性，高兼容性，不改运行逻辑，不注入系统提示词，不改系统变量，只提供新的易用高级工具，从而几乎可以和任何插件兼容
+
+> [!NOTE]
+> 关于token节省和性能提升的严谨benchmark与具体测试方案将在下个版本推出，其将会覆盖大多数通用场景。上个版本的97% token减免仅代表 **“提示词全面，明确，具体的单次复杂任务交付”** 这一场景————简短提示词让ai发散性的寻找结论的随机性太大，很难控制变量
+
 > tips：本项目的 ops 是广义 operations （运行操作）的缩写，代指本插件处于dsh和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
 
 ## 安装、更新、卸载
 
 ### 官方插件市场
 
-在目标 DSH 应用的插件市场中输入 npm 包名 **`dsh-ops`**，选择自定义地址，输入https://mirrors.huaweicloud.com/repository/npm/，安装后选择启用。目前不推荐用npmmirror安装，有bug。
+在目标 DSH 应用的插件市场中输入 npm 包名 **`dsh-ops`**，选择自定义地址，输入 `https://mirrors.huaweicloud.com/repository/npm/`，安装后选择启用。目前不推荐用npmmirror安装，有bug。
 
 当然，如果你确定可以连接 npm 官方源那就选择官方源，如果你不确定那就按教程操作。
 
