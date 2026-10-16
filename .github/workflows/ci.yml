@@ -1,5 +1,12 @@
 name: Cross-platform 0.3.1 validation
 on:
+  # A merge to `main` must validate itself. Without this, `main` was only ever checked when someone
+  # remembered to dispatch the workflow by hand — which is how a stale number shipped in #134.
+  push:
+    branches: [main]
+  # And a pull request has to show its result before it is merged, not after.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
