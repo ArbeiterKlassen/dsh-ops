@@ -106,8 +106,31 @@ Cleanup first inventories the entire owned tree and rejects unexpected files,
 directories or links before any deletion. It then unlinks specific owned files
 and removes empty owned directories. Unexpected data is left intact with an error.
 
-Run benchmark self-tests using `node test/run.mjs file-bench`. These do not add
-the full benchmark to `npm test`; only small harness correctness tests run there.
+Run benchmark self-tests using `node test/run.mjs file-bench`. They run under `npm test`
+as well, because `test/run.mjs` discovers every `test/*.test.mjs`, so the gate CI runs
+(`npm run verify`, on `push` to `main`, on every pull request, and on dispatch) covers the
+fixtures, the measurement helper and the CLI wiring — with Node stand-ins for the workers.
+No number has to move for that: `scripts/verify-gate.mjs` derives the expected suite total
+from `test/*.test.mjs`, the same inventory the runner discovers, so a new suite file is
+covered the moment it exists and a suite that stops being collected is still a failure.
+
+The comparison itself is not in that gate: it needs two release workers and CI builds one.
+Instead, dispatching the workflow with the `bench` input set runs `bench/files.mjs` against
+the worker that job just staged, with the **same binary** on both sides:
+
+```text
+--baseline <staged worker>   --candidate <the same file>
+--out out/_test/file-bench/<target>.json --temp-dir out/_test/file-bench/fixtures
+--scale 0.01 --timeout-ms 180000
+```
+
+One binary on both sides means the only failures that step can report are the ones worth
+reporting — the harness broke, the worker crashed on a fixture, or two runs of one binary
+disagreed — and it asserts nothing about time. Medians are printed and the JSON is
+uploaded as `file-bench-<target>`. The before/after table stays manual evidence on the
+pull request, because a base-versus-head run needs two builds and a reviewed
+`EXPECTED_DIFFERENCES` entry for every intended change.
+
 Native resource regression assertions, `cargo test` integration and file
 deadline/completeness integration tests are follow-up work.
 

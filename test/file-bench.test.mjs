@@ -81,7 +81,12 @@ if (fixturesModule && measureModule) {
     const args = ['bench/files.mjs', '--baseline', process.execPath, '--candidate', process.execPath,
       '--out', output, '--temp-dir', parent, '--scale', '0.0001']
     try {
-      const run = spawnSync(process.execPath, args, { encoding: 'utf8', timeout: 60000,
+      // Not a tight budget, on purpose. This smoke drives 168 short-lived workers through
+      // the CLI (14 queries x one warmup + five rounds x two engines), and `test/run.mjs`
+      // stops a suite at 120s, so the watchdog sits just under that: a slow shared runner
+      // still finishes, and one that cannot gets a failure naming this budget instead of an
+      // unexplained runner timeout.
+      const run = spawnSync(process.execPath, args, { encoding: 'utf8', timeout: 110000,
         env: { ...process.env, NODE_OPTIONS: `--require="${preload.replaceAll('\\', '/')}"` } })
       assert.equal(run.status, 0, run.stderr + (fs.existsSync(output) ? JSON.stringify(JSON.parse(fs.readFileSync(output)).rows[0].failures) : ''))
       const result = JSON.parse(fs.readFileSync(output, 'utf8'))
@@ -91,7 +96,7 @@ if (fixturesModule && measureModule) {
       assert.ok(result.rows.filter(row => row.state === 'MATCH').every(row => row.runsMs.length === 5))
       assert.deepEqual(fs.readdirSync(parent).sort(), ['smoke.json', 'worker.cjs'])
       const before = fs.readFileSync(output)
-      const repeat = spawnSync(process.execPath, args, { encoding: 'utf8', timeout: 5000 })
+      const repeat = spawnSync(process.execPath, args, { encoding: 'utf8', timeout: 30000 })
       assert.equal(repeat.status, 1)
       assert.match(repeat.stderr, /Refusing to overwrite/)
       assert.deepEqual(fs.readFileSync(output), before)
