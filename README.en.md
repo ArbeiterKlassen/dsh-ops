@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>English</strong> | <a href="README.zh.md">简体中文</a>
+  <strong>English</strong> | <a href="README.md">中文</a>
 </p>
 
 <div align="center" style="text-align: center;">
@@ -85,7 +85,7 @@ Old files explicitly provisioned by earlier versions under `<DSH_HOME>/dsh-ops/`
 
 - [Usage](docs/usage.md) · [Troubleshooting](docs/troubleshooting.md) · [Component reference](docs/component-reference.md) · [Configuration reference](docs/configuration-reference.md)
 - [Native PTC](docs/native-ptc.md) · [Manual validation](docs/manual-validation.md)
-- [Contributing](docs/贡献指南.md) · [Roadmap](docs/roadmap.md) · [Changelog](docs/CHANGELOG.md) · [Provenance](docs/PROVENANCE.md)
+- [Contributing](docs/CONTRIBUTING.md) · [Roadmap](docs/roadmap.md) · [Changelog](docs/CHANGELOG.md) · [Provenance](docs/PROVENANCE.md)
 
 ## License
 
