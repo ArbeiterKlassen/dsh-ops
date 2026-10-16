@@ -211,6 +211,7 @@ answer, where the first of them previously threw while the module was still load
 the second failed a load-time existence check. `DSH_OPS_REQUIRE_RUNTIME=1` turns either
 absence into a failure rather than a green run, and a supported host with the worker
 built runs every check exactly as before.
+
 ### Windows verification follow-ups, and a lock-sidecar assertion
 
 A Windows x64 verification of the 0.3.1 boundary work (2026-10-16) closed most of its own
@@ -252,6 +253,22 @@ The two cases that assert the worker rung now seed an executable stand-in, and t
 refusal path gained the coverage the mistake had been hiding: on POSIX, a `binaryPath` naming a
 non-executable file must come back `resolved: false` with the resolver's own "is not executable
 (mode 0644)" reason and no file tools published.
+
+### The gate script, after review: Windows can be green, and a missing tool exits 2
+
+`scripts/verify-gate.mjs` set `DSH_OPS_REQUIRE_RUNTIME=1` on every host. `test/run.mjs` turns any
+skip into a failure under that variable, and Windows has three suites that skip by platform
+(`file-metadata`, `linux-attributes`, `linux-shell`), so the script could never be green there —
+its own allowed-skip table was unreachable. It is now set on the POSIX hosts only, and Windows
+keeps its protection through the skip set: anything skipped outside that list fails. The script
+also asserts the suite total it expects per platform (27), because a suite that stopped being
+collected is not a pass, and a tool that is not installed now exits `2` ("this host cannot answer
+the gate") instead of waiting on a `close` event that a failed `spawn` never emits.
+
+The documentation caught the same drift it exists to prevent: `docs/verify-locally.md` promised
+`61` manifest checks in two places, and `docs/windows-verification.md` still described the ladder
+as failing rather than skipping where no worker resolves, and credited the Windows numbers to a
+sandbox that cannot run the gate at all.
 
 ## [0.3.0] — 2026-10-14 — Windows x64 native tools and PTC
 

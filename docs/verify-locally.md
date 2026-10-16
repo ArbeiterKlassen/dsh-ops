@@ -8,7 +8,7 @@ skip on this platform. Two properties are the reason it exists:
 - **A skip is never a pass.** `test/run.mjs` already counts skips apart from passes,
   but a host that silently skips a suite still exits 0. This script knows which suites
   may skip on this platform, names any other one, and fails on it.
-- **The number in the docs matches the number on the host.** `61` manifest checks and
+- **The number in the docs matches the number on the host.** `59` manifest checks and
   the per-platform skip set are asserted here, so a stale document or a newly guarded
   suite is a failure rather than a quiet drift.
 
@@ -32,7 +32,7 @@ There is no exit code for "green with a surprise in it" — that is `1`.
 | worker unit tests | `cargo test --locked --manifest-path native/Cargo.toml` | The Rust worker in isolation |
 | stage | `npm run build:ptc` | Builds the worker **and stages it with its provenance receipt** into `runtime/<platform>-<arch>/`. Skipping this is the most common way to get a misleading failure — see the traps below |
 | platform payloads | `npm run build:bash-ipc` (Windows) | The Windows IPC proxies |
-| manifest | `npm run validate:manifest` | The declaration layers agree; asserts `61` |
+| manifest | `npm run validate:manifest` | The declaration layers agree; asserts `59` |
 | suites | `DSH_HOME=<temp> DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` | Every suite on this host. `DSH_OPS_REQUIRE_RUNTIME=1` turns a runtime-absence skip into a failure, and `DSH_HOME` must be a temporary directory or `test/lib/harness.mjs` refuses to run |
 | closure | `node bin/native-runtime.mjs check --platform <target>` | The staged runtime is complete and its receipt matches the worker byte for byte |
 
@@ -44,16 +44,23 @@ There is no exit code for "green with a surprise in it" — that is `1`.
 | `darwin-arm64` | 27 | none, same caveat |
 | `win32-x64` | 24 | `file-metadata` and `linux-attributes` (mode bits, POSIX ACLs, user xattrs, inode identity, sparse allocation) and `linux-shell` (the POSIX bash rung, which is its own subject) |
 
+`DSH_OPS_REQUIRE_RUNTIME=1` — which turns any skip into a failure — is set on the POSIX hosts
+only. On Windows the three suites above skip by platform, and `test/run.mjs` cannot tell that
+apart from a missing runtime, so the script keeps its protection there through the skip set
+instead: anything skipped outside that list fails. The suites that would betray a worker that was
+never built (`permissions`, `ptc`) are not in the list.
+
 **A note on what "green" cost.** `5bf33d4` was red on Linux and macOS in `test/bin.test.mjs`
 (2 of 19 checks) because the ladder's worker stand-in was a non-executable text file and the
 ladder report had started going through the resolver's POSIX execute-bit check. The scripts
 here are what surfaced it — the gate reports a red host rather than smoothing over it, which is
 also why it names the failing step and the failing suite count when a host is red.
 
-Manifest checks are **59** on every platform. (Measured on `5bf33d4`, the commit that
-removed the FastCtx and background components: those numbers were 30/27 and 61 before it.) Those numbers are the ones the documents
-claim; the script fails if a host disagrees, which is how `docs/windows-verification.md`
-learned it had been promising "exactly 2" skips on Windows when the real answer is three.
+Manifest checks are **59** on every platform, and the suite total is **27** everywhere. Measured
+on `5bf33d4`, the commit that removed the FastCtx and background components; before it the
+numbers were 61 checks and 30 suites. The script asserts the numbers the documents claim and
+fails when a host disagrees — which is how `docs/windows-verification.md` learned it had been
+promising "exactly 2" skips on Windows when the real answer is three.
 
 ## Traps that produce a wrong verdict
 

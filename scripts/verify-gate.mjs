@@ -73,6 +73,9 @@ const ALLOWED_SKIPS = TARGET === 'win32-x64'
 /** The manifest check count the docs promise. */
 const MANIFEST_CHECKS = 59
 
+/** The suite count `test/run.mjs` discovers on each platform. */
+const EXPECTED_SUITES = { 'win32-x64': 27, 'linux-x64': 27, 'darwin-arm64': 27 }
+
 const steps = []
 /** Steps that exited non-zero; only populated under `--keep-going`. */
 const stepFailures = []
@@ -82,10 +85,25 @@ async function run(title, command, args, { env = {}, optional = false } = {}) {
   const shown = [command, ...args].join(' ')
   process.stdout.write(`\n=== ${title}\n$ ${shown}\n`)
   const child = spawn(command, args, { cwd: PACKAGE_ROOT, env: { ...process.env, ...env }, shell: process.platform === 'win32' })
+  // The listeners go on before the streams are touched. A `spawn` that cannot find its tool emits
+  // `error` immediately, and an `error` event with no listener takes the whole runner down with a
+  // stack trace instead of reporting "this host cannot answer the gate" (exit 2).
+  let spawnError = null
+  const finished = new Promise(resolve => {
+    child.once('close', code => resolve(code))
+    child.once('error', error => { spawnError = error; resolve(null) })
+  })
   let output = ''
-  for await (const chunk of child.stdout) { output += chunk; process.stdout.write(chunk) }
-  for await (const chunk of child.stderr) { output += chunk; process.stderr.write(chunk) }
-  const code = await new Promise(resolve => child.on('close', resolve))
+  try {
+    for await (const chunk of child.stdout) { output += chunk; process.stdout.write(chunk) }
+    for await (const chunk of child.stderr) { output += chunk; process.stderr.write(chunk) }
+  } catch (error) {
+    spawnError ??= error
+  }
+  const code = await finished
+  if (spawnError !== null || code === null) {
+    throw Object.assign(new Error(`cannot run ${shown}: ${spawnError?.message ?? 'the command did not start'}`), { exitCode: 2 })
+  }
   const step = { title, command: shown, code, optional }
   steps.push(step)
   if (code !== 0 && !optional) {
@@ -143,7 +161,15 @@ async function main() {
   const manifest = await run('manifest contract', 'npm', ['run', 'validate:manifest'])
   const manifestChecks = parseManifest(manifest.output)
 
-  const env = { DSH_HOME: mkdtempSync(path.join(tmpdir(), 'dsh-ops-gate-')), DSH_OPS_REQUIRE_RUNTIME: '1' }
+  // `DSH_OPS_REQUIRE_RUNTIME=1` turns *any* skip into a failure (`test/run.mjs`), which is what
+  // makes a silent skip impossible on a POSIX host. It cannot be set on Windows: three suites
+  // skip there by platform (`file-metadata`, `linux-attributes`, `linux-shell`) and the runner
+  // does not tell "this platform cannot answer" apart from "the runtime is missing", so the
+  // script would never be green there. Windows keeps its protection through the skip set below
+  // instead — a skip outside `ALLOWED_SKIPS` fails, and the suites that would betray a worker
+  // that was never built (`permissions`, `ptc`) are not in it.
+  const env = { DSH_HOME: mkdtempSync(path.join(tmpdir(), 'dsh-ops-gate-')) }
+  if (TARGET !== 'win32-x64') env.DSH_OPS_REQUIRE_RUNTIME = '1'
   const verify = await run('full suite verification', 'npm', ['run', 'verify'], { env })
   const summary = parseSummary(verify.output)
 
@@ -154,6 +180,9 @@ async function main() {
   if (manifestChecks !== MANIFEST_CHECKS) failures.push(`manifest checks: expected ${MANIFEST_CHECKS}, got ${manifestChecks ?? 'none reported'}`)
   if (!summary.reported) failures.push('no suite summary line; the runner did not finish')
   if (summary.failed > 0) failures.push(`the runner reported ${summary.failed} failing suite(s); see its output above for the check names`)
+  // A suite that stopped being collected, or a file that stopped being discovered, still exits 0.
+  const discovered = summary.reported ? summary.passed + summary.skippedCount : null
+  if (discovered !== null && summary.failed === 0 && discovered !== EXPECTED_SUITES[TARGET]) failures.push(`the runner discovered ${discovered} suite(s); ${EXPECTED_SUITES[TARGET]} are expected on ${TARGET}`)
   if (verify.code !== 0 && stepFailures.length === 0) failures.push(`the verification step exited ${verify.code}`)
   const unexpected = summary.skipped.filter(name => !ALLOWED_SKIPS.includes(name))
   if (unexpected.length > 0) failures.push(`suites skipped that must not skip on ${TARGET}: ${unexpected.join(', ')} (a skip is not a pass)`)
@@ -189,5 +218,5 @@ main().catch(error => {
     process.stdout.write('\n=== summary of the steps that ran\n')
     for (const step of steps) process.stdout.write(`  ${step.code === 0 ? 'ok  ' : 'FAIL'} ${step.title}\n`)
   }
-  process.exit(1)
+  process.exit(error?.exitCode ?? 1)
 })

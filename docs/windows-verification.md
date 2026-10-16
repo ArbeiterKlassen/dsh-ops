@@ -1,10 +1,12 @@
 # Windows x64 verification checklist
 
-This branch adds Linux x64 support and fixes the release-scope gate. Everything
-below was established on **Debian 13 / x86_64 / Node v24.21.0 / Rust 1.98.1**.
-The **Windows x64 lane was not re-run** while writing it: GitHub Actions is
-disabled repo-wide, and no Windows host was available. So this file is the list
-of things that a Windows run must still answer.
+This file was written while adding Linux x64 support and fixing the release-scope gate.
+Everything below was established on **Debian 13 / x86_64 / Node v24.21.0 / Rust 1.98.1**.
+The **Windows x64 lane has since been run** on a hosted `windows-latest` runner (`ci.yml`,
+2026-10-16): the gate is green there with the three skips this file documents, and `ci.yml` is
+enabled again — still `workflow_dispatch`-only, so it takes a deliberate dispatch to run. What no
+hosted run answers is the security-descriptor and lock-window half; those stay on the checklist
+below.
 
 Each item states what to run, what "pass" looks like, and what would be a real
 finding. Four of the findings this branch documents (L1, L2, L4, and the new L14)
@@ -267,8 +269,9 @@ a Linux-only reason — but that reasoning is untested on a real Windows host.
 
 ```powershell
 npm run verify            # expect: the platform suite set to pass — 27 suites on this tree; the
-                          # worker-driven ones need a resolvable native worker, and `ptc` fails
-                          # rather than skips without one (it never silently skips by design)
+                          # worker-driven ones need a resolvable native worker; without one they
+                          # skip visibly (exit 77), and DSH_OPS_REQUIRE_RUNTIME=1 makes that skip
+                          # a failure
 
 npm run validate:manifest # expect: all 59 checks passed
 ```
@@ -290,10 +293,9 @@ npm run validate:manifest # expect: all 59 checks passed
 
 Three suites skip on a Windows host and none of them is a pass: `file-metadata`
 and `linux-attributes` (POSIX-only) and `linux-shell` (the POSIX bash rung's own
-suite, skipped where no POSIX bash is discoverable). **Measured on Windows x64
-(2026-10-16), in a `danger-full-access` sandbox, and again on a hosted
-`windows-latest` runner for the commit that removed FastCtx: **27 suites, 24 passed,
-3 skipped**.** This
+suite, skipped where no POSIX bash is discoverable). **Measured on Windows x64 (2026-10-16) on
+a hosted `windows-latest` runner: 27 suites, 24 passed, 3 skipped.** A DSH sandbox cannot
+produce those numbers at all — see "A DSH sandbox cannot answer this checklist" above. This
 checklist originally said "exactly 2", which counted only the two POSIX-only
 suites. A plain Windows host outside a DSH sandbox should show no failures; the
 sandbox itself cannot run the gate at all — see "A DSH sandbox cannot answer this
