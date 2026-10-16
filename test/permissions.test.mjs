@@ -184,7 +184,7 @@ await test('an inheriting (AI) workspace root keeps its inheritance and descenda
   await withTempDir('prepare-inherited',async parent => {
     // Protect the parent itself while retaining inheritable ACEs; create the
     // child afterwards so the runner actually receives an inherited-only DACL.
-    ps(`$p='${parent.replaceAll("'","''")}'; $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $a=[Security.AccessControl.DirectorySecurity]::new(); $a.SetOwner($sid); $a.SetAccessRuleProtection($true,$false); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Modify','ContainerInherit,ObjectInherit','None','Allow')); Set-Acl -LiteralPath $p -AclObject $a`)
+    ps(`$p='${parent.replaceAll("'","''")}'; $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $a=[Security.AccessControl.DirectorySecurity]::new(); $a.SetOwner($sid); $a.SetAccessRuleProtection($true,$false); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Modify','ContainerInherit,ObjectInherit','None','Allow')); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'TakeOwnership','ContainerInherit,ObjectInherit','None','Allow')); Set-Acl -LiteralPath $p -AclObject $a`)
     const ws=path.join(parent,'ws')
     fs.mkdirSync(ws)
     ownWindowsFixture(ws)
