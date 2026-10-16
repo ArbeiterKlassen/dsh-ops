@@ -1,6 +1,7 @@
 /** Three end-to-end scenarios: real Rust worker + real Cordis/tools/prompt;
  * simulated workspace and confinement provider, no business code in tests.
  */
+import { ownWindowsFixture } from './lib/harness.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -35,7 +36,8 @@ const workerCandidates = [
 ].filter(candidate => candidate !== undefined)
 const file = workerCandidates.find(candidate => fs.existsSync(candidate))
 assert.ok(file, `Build the independent worker with npm run build:ptc; this suite never silently skips. Looked in: ${workerCandidates.join(', ')}`)
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-ptc-'))
+const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ops-ptc-')))
+ownWindowsFixture(dir)
 const request = (tool, args, scope = 'scenario') => {
   const result = spawnSync(file, [], { input: JSON.stringify({ root: dir, scope, tool, args }), encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)

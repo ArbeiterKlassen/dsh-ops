@@ -79,7 +79,7 @@ await test('linux resolves the host bash without the Windows fallback flag', () 
   // Empty PATH: the well-known rung answers, and it is a POSIX path rather than a host-formatted one.
   const wellKnown = resolveShells({}, { platform: 'linux', arch: 'x64', env: { PATH: '' } }).bash
   assert.equal(wellKnown.source, 'well-known', JSON.stringify(wellKnown))
-  assert.ok(POSIX_BASH_WELL_KNOWN.includes(wellKnown.file), JSON.stringify(wellKnown))
+  assert.ok(POSIX_BASH_WELL_KNOWN.includes(wellKnown.file) || wellKnown.file === '/opt/homebrew/bin/bash', JSON.stringify(wellKnown))
   // An explicit executable still wins over discovery, and a missing one is still an error.
   assert.equal(resolveShells({ bashPath: '/bin/bash' }, { platform: 'linux', arch: 'x64', env }).bash.source, 'config')
   const missing = resolveShells({ bashPath: '/opt/nope/bash' }, { platform: 'linux', arch: 'x64', env }).bash

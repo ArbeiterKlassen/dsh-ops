@@ -53,6 +53,7 @@ jobs:
         if: runner.os == 'Windows'
         run: npm run build:bash-ipc
       - name: Build optional FastCtx backend
+        if: runner.os == 'Linux'
         run: cargo build --release --locked --manifest-path vendor/fastctx/Cargo.toml
       - name: Full verification
         run: npm run verify

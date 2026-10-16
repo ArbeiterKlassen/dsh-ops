@@ -92,7 +92,7 @@ export { assert }
  * @returns {Promise<unknown>} whatever the body returned.
  */
 let fixtureOwner
-function ownWindowsFixture(directory) {
+export function ownWindowsFixture(directory) {
   if (process.platform !== 'win32') return
   const system32 = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32')
   if (!fixtureOwner) {
