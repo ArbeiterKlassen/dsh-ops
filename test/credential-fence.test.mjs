@@ -69,9 +69,7 @@ await test('the policy denies credential directories below the home by whole com
     fs.writeFileSync(path.join(home, 'ssh-notes.txt'), 'notes')
     assert.equal(deny(path.join(home, 'ssh-notes.txt')).denied, false)
     assert.equal(deny(path.join(home, 'work', 'main.rs')).denied, false)
-    // Casing follows the filesystem: on a case-insensitive host the canonical form collapses
-    // `.SSH` onto `.ssh`, and on POSIX `.SSH` is a different directory that holds no credential,
-    // so the fence does not have to deny it. Asserted per platform rather than once for both.
+    // POSIX intentionally treats `.SSH` as distinct from `.ssh`; Windows is case-insensitive.
     const cased = deny(path.join(home, '.SSH', 'config'))
     if (process.platform === 'win32') assert.equal(cased.denied, true, 'a case-insensitive host must not be walked around by casing')
     else assert.equal(cased.denied, false, 'on POSIX .SSH is a different directory')
