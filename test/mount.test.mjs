@@ -3,8 +3,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { BASH_TOOL, FILE_TOOLS, TOOLING_SECTION, publicToolName } from '../lib/policy.js'
-import { resolveWorker } from '../lib/ptc/runtime.js'
 import { applyComponent } from '../lib/index.js'
+import * as ptc from '../lib/ptc/index.js'
+import { resolveWorker } from '../lib/ptc/runtime.js'
 import { PACKAGE_ROOT, assert, report, skipSuite, test, waitFor, withTempDir } from './lib/harness.mjs'
 import { bootHost, callTool, mountPlugin, mountScopedToolPlugin, preExecute, publicToolNames,
   registryHasOwnRegister, registryNames, renderSections, scopedToolNames,
@@ -104,6 +105,30 @@ await test('the same foreign name registers in two real scopes without becoming 
     assert.equal(registryNames(ctx).includes('subagent'), false)
     await first.dispose(); await second.dispose()
     assert.deepEqual(registryNames(ctx), EXPECTED)
+  } finally { await shutdown(ctx) }
+})
+await test('PTC batch/result mount only in pure PTC scopes and withdraw on presentation teardown', async () => {
+  const { ctx } = await bootHost()
+  try {
+    await executor(ctx)
+    await ctx.plugin(inner => inner.provide('ptcRuntime', { language: 'typescript' }))
+    const component = await ctx.plugin(ptc, { binaryPath: resolveWorker(), required: true })
+    const native = await agent(ctx, 'ptc-native')
+    const pure = await agent(ctx, 'ptc-only')
+    let lift
+    await pure.ctx.plugin({ inject: ['tools'], apply(inner) { lift = inner.tools.presentAs('ptc') } })
+    await visible(ctx, pure, ['ops_batch', 'ops_result'])
+    for (const name of ['ops_batch', 'ops_result']) {
+      assert.equal(registryNames(ctx).includes(name), false)
+      assert.equal(scopedToolNames(ctx, native).includes(name), false)
+    }
+    const stale = ctx.get('tools').get('ops_result', pure)
+    lift()
+    assert.equal(scopedToolNames(ctx, pure).includes('ops_result'), false)
+    assert.equal((await stale.execute({ action: 'page', id: 'unused' }, { agent: pure, signal: new AbortController().signal })).error.code, 'POLICY_DENIED')
+    await component.dispose()
+    assert.equal((await sections(ctx, pure)).has('tools:ptc-only'), false)
+    assert.equal(registryHasOwnRegister(ctx), false)
   } finally { await shutdown(ctx) }
 })
 await test('real native file calls return data and propagate errors promptly', async () => {
