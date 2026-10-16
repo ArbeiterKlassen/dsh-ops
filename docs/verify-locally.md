@@ -44,10 +44,11 @@ There is no exit code for "green with a surprise in it" — that is `1`.
 | `darwin-arm64` | 27 | none, same caveat |
 | `win32-x64` | 24 | `file-metadata` and `linux-attributes` (mode bits, POSIX ACLs, user xattrs, inode identity, sparse allocation) and `linux-shell` (the POSIX bash rung, which is its own subject) |
 
-**Current state:** on `5bf33d4` the POSIX side of the gate is red in `test/bin.test.mjs`
-(2 of 19 checks, Linux and macOS; Windows is green). This script therefore exits `1` on a
-POSIX host for that reason and no other — it reports the failure instead of smoothing over
-it, and `node test/run.mjs bin` reproduces it on its own.
+**A note on what "green" cost.** `5bf33d4` was red on Linux and macOS in `test/bin.test.mjs`
+(2 of 19 checks) because the ladder's worker stand-in was a non-executable text file and the
+ladder report had started going through the resolver's POSIX execute-bit check. The scripts
+here are what surfaced it — the gate reports a red host rather than smoothing over it, which is
+also why it names the failing step and the failing suite count when a host is red.
 
 Manifest checks are **59** on every platform. (Measured on `5bf33d4`, the commit that
 removed the FastCtx and background components: those numbers were 30/27 and 61 before it.) Those numbers are the ones the documents

@@ -26,9 +26,9 @@
  *   node scripts/verify-gate.mjs --json              # machine-readable summary
  *   node scripts/verify-gate.mjs --keep-going        # run every step, report all failures
  *
- * A red host is reported, not smoothed over. As of `5bf33d4` the POSIX side of the gate
- * fails in `test/bin.test.mjs` on both Linux and macOS (tracked upstream), so this script
- * exits 1 there for that reason and not for anything it did itself.
+ * A red host is reported, not smoothed over: both of `test/run.mjs`'s summary shapes are
+ * parsed (the green one and `N of M suite(s) failed`), so a failing run names the failing step
+ * and suite count instead of reading as "the runner did not finish".
  *
  * Exit codes: 0 all steps passed, 1 a step failed, 2 the host cannot answer this gate
  * (wrong target, missing toolchain) — never a green run for either.

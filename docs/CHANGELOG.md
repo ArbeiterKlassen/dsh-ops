@@ -238,6 +238,21 @@ directory names are matched case-insensitively on every host, and `sync_director
   path, `lib/profile-install.js`, already goes through `%ComSpec%` with `/d /s /c` and
   `windowsVerbatimArguments`. So this is a documentation change plus one test.
 
+### The ladder's POSIX worker stand-in has to be executable
+
+`test/bin.test.mjs` seeded its worker stand-in with a plain 0644 text file, on the stated grounds
+that "an explicit worker path is not provenance-checked". That holds for provenance but not for
+the execute bit: `resolveWorker` refuses a non-executable explicit `binaryPath` by mode on POSIX
+(report L12, unchanged by the refactor), and the ladder report now goes through it. The stand-in
+therefore resolved to `{resolved: false}`, which failed two expectations — `worker.resolved` and,
+through `ladderFor`'s publish rule, `levels.files`. Windows passed only because that check is
+`platform !== 'win32'`, so the gate was red on Linux and macOS alone.
+
+The two cases that assert the worker rung now seed an executable stand-in, and the report's
+refusal path gained the coverage the mistake had been hiding: on POSIX, a `binaryPath` naming a
+non-executable file must come back `resolved: false` with the resolver's own "is not executable
+(mode 0644)" reason and no file tools published.
+
 ## [0.3.0] — 2026-10-14 — Windows x64 native tools and PTC
 
 Release scope: **Windows x64 only**, targeting DSH 0.2.0-rc.2. macOS arm64 is

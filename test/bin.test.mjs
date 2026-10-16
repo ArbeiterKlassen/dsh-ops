@@ -218,8 +218,10 @@ function writeConfig(dir, config) {
  * Make one file that exists, so a config path can point at something.
  *
  * Nothing spawns it: `ladder` never probes, and an explicit worker path is not
- * provenance-checked, which is exactly why a text file is enough to stand in
- * for a worker here.
+ * provenance-checked. It *is* checked for the execute bit on POSIX, though
+ * (report L12), so a stand-in for a worker that has to **resolve** comes from
+ * `seedExecutable` below instead — a plain text file resolves to
+ * `{resolved: false, error: '... is not executable (mode 0644)'}`.
  * @param {string} file - the path to create.
  * @param {string} [contents] - the bytes.
  * @returns {string} the created path.
@@ -227,6 +229,24 @@ function writeConfig(dir, config) {
 function seedFile(file, contents = 'not an executable\n') {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, contents)
+  return file
+}
+
+/**
+ * Make one *executable* file, for a config path that has to resolve.
+ *
+ * `resolveWorker` refuses a non-executable explicit `binaryPath` by mode on
+ * POSIX, and the ladder reports that refusal as `resolved: false`, which turns
+ * every file-tool expectation below into a failure. Windows has no execute bit,
+ * so the resolver skips the check there — which is why this matters only on
+ * Linux and macOS.
+ * @param {string} file - the path to create.
+ * @returns {string} the created path.
+ */
+function seedExecutable(file) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, 'worker stand-in\n')
+  fs.chmodSync(file, 0o755)
   return file
 }
 
@@ -267,7 +287,7 @@ await test('ladder --json has a stable shape and lists exactly the rungs the ren
     const user = path.join(dir, 'user')
     fs.mkdirSync(home, { recursive: true })
     fs.mkdirSync(user, { recursive: true })
-    const runtime = seedFile(path.join(dir, 'worker-stub'))
+    const runtime = seedExecutable(path.join(dir, 'worker-stub'))
     const bash = seedFile(path.join(dir, 'bash-stub'))
     const args = ['--json', '--config', writeConfig(dir, { binaryPath: runtime, bashPath: bash })]
 
@@ -323,6 +343,19 @@ await test('ladder --json has a stable shape and lists exactly the rungs the ren
     assert.match(unresolved.worker.error, /Native worker unavailable/u)
     assert.equal(unresolved.levels.files, false)
     assertLadder(unresolved)
+
+    // A worker the configuration names, that exists, but that cannot be executed is refused by
+    // mode on POSIX — and refused by name, so the report says what to fix. Windows has no
+    // execute bit, so this host cannot answer the case and does not pretend to.
+    if (process.platform !== 'win32') {
+      const refusedRun = runCli({ home, user, args: ['--json', '--config', writeConfig(dir, { binaryPath: seedFile(path.join(dir, 'worker-0644')) })], command: 'ladder' })
+      assert.equal(refusedRun.status, 0, refusedRun.stderr)
+      const refused = JSON.parse(refusedRun.stdout)
+      assert.equal(refused.worker.resolved, false)
+      assert.match(refused.worker.error, /is not executable \(mode 0[0-7]{3}\)/u)
+      assert.equal(refused.levels.files, false)
+      assertLadder(refused)
+    }
   })
 })
 
@@ -389,7 +422,7 @@ await test('a rung that is off leaves no ops_bash heading and no numbered gap', 
     const home = path.join(dir, 'home')
     const user = path.join(dir, 'user')
     fs.mkdirSync(home, { recursive: true })
-    const runtime = seedFile(path.join(dir, 'worker-stub'))
+    const runtime = seedExecutable(path.join(dir, 'worker-stub'))
     const args = ['--json', '--config', writeConfig(dir, { binaryPath: runtime, publishBashTool: false })]
 
     const run = runCli({ home, user, args, command: 'ladder' })
