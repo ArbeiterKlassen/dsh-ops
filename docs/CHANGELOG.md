@@ -225,6 +225,75 @@ fix; see that entry for the `PSModulePath` scope note.
   the path it was given, and that path's ancestors, for reparse points, rather than comparing the
   given path with its resolved form: a short name changes one into the other with no link involved.
 
+### A host outside the matrix skips the worker-driven suites instead of crashing
+
+`lib/ptc/runtime.js` gains `tryResolveWorker()`, the non-throwing form of
+`resolveWorker()`: the support matrix is still checked in one place, and the result is
+either the resolved file or a complete reason clause. `test/permissions.test.mjs` and
+`test/ptc.test.mjs` use it to leave through `skipSuite` (exit 77) when the host cannot
+answer, where the first of them previously threw while the module was still loading and
+the second failed a load-time existence check. `DSH_OPS_REQUIRE_RUNTIME=1` turns either
+absence into a failure rather than a green run, and a supported host with the worker
+built runs every check exactly as before.
+
+### Windows verification follow-ups, and a lock-sidecar assertion
+
+A Windows x64 verification of the 0.3.1 boundary work (2026-10-16) closed most of its own
+findings in the release itself — the update lock no longer touches the target, credential
+directory names are matched case-insensitively on every host, and `sync_directory` is
+`#[cfg(unix)]`. What is still wrong here is the checklist, not the code:
+
+- **`docs/windows-verification.md` carried expectations the report disproved.** The manifest
+  count is 59, not 58 (the tree that removed the FastCtx and background components dropped two
+  checks); the PE path needs its `.exe`; the L2 hex text is space-separated; a Windows host
+  skips three suites rather than two (`linux-shell` joins the two POSIX-only ones) and reports
+  24 passed + 3 skipped out of 27, not 27 + 3 out of 30; W1e's measured code is `IO_ERROR`
+  (os error 32), not `ACCESS_DENIED`, so the expectation is the structured *shape* rather than
+  one code; and the update-lock note now describes the sidecar, which is what the code takes.
+  The note that a DSH sandbox cannot answer the checklist at all — `workspace-write` cannot
+  spawn the worker, `danger-full-access` cannot let it create its replacement — and the Windows
+  build prerequisites are recorded with it.
+- **The lock sidecar is asserted invisible.** `test/linux-args.test.mjs` plants a
+  `.dsh-ops-update-<hex>.lock` and checks that `glob`, `grep` and a directory-wide `replace`
+  never select or edit it — on every host, because the rule that keeps it out is
+  platform-independent.
+- **No product half remains.** The report's other finding was that a `.cmd` candidate was probed
+  with `CreateProcess`, which refuses a launcher script with `EINVAL`. That probe (`probeBinary`
+  in `lib/binary.js`) is gone with the background component, and the surviving `.cmd` launch
+  path, `lib/profile-install.js`, already goes through `%ComSpec%` with `/d /s /c` and
+  `windowsVerbatimArguments`. So this is a documentation change plus one test.
+
+### The ladder's POSIX worker stand-in has to be executable
+
+`test/bin.test.mjs` seeded its worker stand-in with a plain 0644 text file, on the stated grounds
+that "an explicit worker path is not provenance-checked". That holds for provenance but not for
+the execute bit: `resolveWorker` refuses a non-executable explicit `binaryPath` by mode on POSIX
+(report L12, unchanged by the refactor), and the ladder report now goes through it. The stand-in
+therefore resolved to `{resolved: false}`, which failed two expectations — `worker.resolved` and,
+through `ladderFor`'s publish rule, `levels.files`. Windows passed only because that check is
+`platform !== 'win32'`, so the gate was red on Linux and macOS alone.
+
+The two cases that assert the worker rung now seed an executable stand-in, and the report's
+refusal path gained the coverage the mistake had been hiding: on POSIX, a `binaryPath` naming a
+non-executable file must come back `resolved: false` with the resolver's own "is not executable
+(mode 0644)" reason and no file tools published.
+
+### The gate script, after review: Windows can be green, and a missing tool exits 2
+
+`scripts/verify-gate.mjs` set `DSH_OPS_REQUIRE_RUNTIME=1` on every host. `test/run.mjs` turns any
+skip into a failure under that variable, and Windows has three suites that skip by platform
+(`file-metadata`, `linux-attributes`, `linux-shell`), so the script could never be green there —
+its own allowed-skip table was unreachable. It is now set on the POSIX hosts only, and Windows
+keeps its protection through the skip set: anything skipped outside that list fails. The script
+also asserts the suite total it expects per platform (27), because a suite that stopped being
+collected is not a pass, and a tool that is not installed now exits `2` ("this host cannot answer
+the gate") instead of waiting on a `close` event that a failed `spawn` never emits.
+
+The documentation caught the same drift it exists to prevent: `docs/verify-locally.md` promised
+`61` manifest checks in two places, and `docs/windows-verification.md` still described the ladder
+as failing rather than skipping where no worker resolves, and credited the Windows numbers to a
+sandbox that cannot run the gate at all.
+
 ## [0.3.0] — 2026-10-14 — Windows x64 native tools and PTC
 
 Release scope: **Windows x64 only**, targeting DSH 0.2.0-rc.2. macOS arm64 is
