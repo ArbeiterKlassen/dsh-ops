@@ -1,132 +1,77 @@
 # dsh-ops
 
-[English](README.en.md) | **中文**
+**中文** | [English](README.en.md)
 
-Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Rust 重写文件检索与批处理，
-减少反复踩 PowerShell 报错所浪费的 token、时间和模型注意力。
+<div align="center" style="text-align: center;">
+  <a href="https://trendshift.io/repositories/296103" title="Trendshift · JavaScript 日榜">
+    <img src="https://trendshift.io/api/badge/trendshift/repositories/296103/daily?language=JavaScript" alt="Trendshift · JavaScript 日榜" width="250" height="55" style="vertical-align: middle;">
+  </a>
+  <br>
+  <a href="https://upstar.dev/r/T-Auto/dsh-ops" title="Upstar · JavaScript 周榜 #2">
+    <img src="https://upstar.dev/badge/T-Auto/dsh-ops.svg" alt="Upstar: #2 in JavaScript" height="28" style="vertical-align: middle;">
+  </a>
+</div>
+致力优化dsh插件token效率，提升ai性能，减少token消耗，减少任务总时间的插件，解决 Windows 下 DSH 反复使用 PowerShell 报错造成的 token、时间和模型注意力浪费，会持续更新。
 
-> tips：本项目的 ops 是广义 operations（运行操作）的缩写，代指本插件处于 dsh 和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
+本插件的主要功能：
 
-**0.3.1 支持 Windows x64、Linux x64 与 macOS Apple Silicon（`darwin-arm64`）**，目标宿主 DSH `0.2.0-rc.2`。原生 Rust 文件/PTC worker 按精确目标携带于 `runtime/<platform>-<arch>/`；PTC 默认关闭。Intel Mac、Windows ARM64 与 Linux ARM64 不在支持范围。Bash/PowerShell 7 二进制保持 Windows-only 可选依赖，Linux/macOS 使用宿主 Bash，不在 npm 安装时下载 Windows shell。见 [Linux 适配](#linux-适配)、[Apple Silicon](docs/macos-arm64.md) 与 [PTC](docs/native-ptc.md)。
+- 提供一组更高级的tools常驻工具，由rust编写。这些tools工具相对于原版，输入和输出token都更少，运行速度更快，且覆盖面更广，给ai造成的心智负担更低，同时附带简短的哈希校验、行数位置等消息以减少
+- 以渐进式纰漏的形式，为日常工作提供诸如doc/pdf操作，网页搜索，html转markdown类crawl4ai工具等日常工作常用的tools工具。这些工具可以使得ai不必重新编写代码或者脚本来实现自己的目标从而大大节省Token
+- 提供关闭原版tools以最大化节省ai心智负担和系统固定提示词的可选项
+- 在windows平台下额外提供tools：ops_bash的支持——ai使用bash远比ai使用pwsh更流畅。可选择使用ops自带的独立 **bash 5.3.15** ，也可以将ops_bash工具指定为git bash
 
----
+> tips：本项目的 ops 是广义 operations （运行操作）的缩写，代指本插件处于dsh和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
 
-## 核心特性
+## 安装、更新、卸载
 
-- （全平台）使用 Rust 编写的一组工具，用于改善 AI 报错循环、强迫思考不交付、注意力涣散的问题，并以渐进式披露减少系统 prompt 的工具定义占用：加速任务运行，减少不必要的输入输出，减少报错率，以及提供与 DSH 对齐的权限机制。
+### 官方插件市场
 
-  在自用 benchmark 中获得了
+在目标 DSH 应用的插件市场中输入 npm 包名 **`dsh-ops`**，选择自定义地址，输入https://mirrors.huaweicloud.com/repository/npm/，安装后选择启用。目前不推荐用npmmirror安装，有bug。
 
-  - 97% token 减免（开启 ops 插件的 PTC 专用工具 对比 Windows 原装标准模式）
-  - 65% token 减免（开启 ops 插件的 PTC 专用工具 对比 Linux 原装 PTC 模式）
+当然，如果你确定可以连接 npm 官方源那就选择官方源，如果你不确定那就按教程操作。
 
-  的成绩，并改善了在 DSH 运行的 AI 的智力表现。
+![在插件市场中选择自定义地址并填入华为云 npm 镜像](docs/assets/marketplace-huaweicloud-mirror.png)
 
-- （自带载荷仅 Windows）提供独立 **bash 5.3.15** 和独立 **PowerShell 7.6.6**：优先使用 bash，必要时回退 pwsh 7，让你的 AI 不再和 PowerShell 打架 —— **不修改系统默认终端、PATH 或宿主原有 shell 工具名称**，环境变量安全。macOS 没有对应载荷：bash 由配置项 `bashPath` 指向本机副本（如 Homebrew bash），pwsh 在 macOS 上不可用，见 [macOS arm64](docs/macos-arm64.md)。
 
-- 独立的 Rust 原生文件工具与安全批处理（**默认关闭**，须显式启用），见 [组件参考](docs/组件参考.md)。
 
-- 未来会加入一系列 docx、pdf 处理轻量化的好用 Rust 工具，均可开关，不占用上下文。
+### npm 一键安装
 
-<img width="1603" height="1028" alt="247c1326cca5b66e60d330c3f32150e2" src="https://github.com/user-attachments/assets/7c9ba485-5323-42a2-b5a8-6dcda07f91c4" />
-
-> 配图由作者自行更换或删除。
-
-执行顺序：**工具包 → bash → PowerShell 7**。
-
----
-
-## Linux 适配
-
-`dsh-ops` 在 **Linux x64** 上与 Windows 侧能力对齐（除下面明确列出的部分）：原生 Rust worker 以 ELF 随包携带，文件工具（`inspect_local_file` / `glob` / `grep` / `replace`）与可选 PTC 组件（`ops_batch` / `ops_result`）在 Linux 上同样可用。
-
-- **平台分野**：独立 Bash/pwsh 与 IPC 代理仅 Windows；Linux/macOS 的 `ops_bash` 使用宿主 Bash，受限调用仍须通过 DSH sandbox，缺沙箱不裸执行。
-- **构建与安装**：见 [Linux 构建与验证](docs/linux构建.md)（[English](docs/linux-build.md)）—— `npm run verify` → `npm run build:ptc` → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz`。
-- **平台差异已处理**：替换文件时保留 mode/owner/POSIX ACL/xattr；目录 `fsync` 按 POSIX 语义；`multiline` 搜索跨行匹配；读取按编码字节与行数双重设界。
-- **默认拒绝读取凭据**：文件工具（含 PTC 批处理）在 worker 被 spawn 之前就拒绝 `~/.ssh`、`~/.aws`、`~/.azure`、`~/.kube`、`.npmrc`、DSH 凭据库等位置，遍历也按路径身份跳过这些目录，所以 `glob` 连私钥文件名都不会列出、`grep` 不会在其中匹配到任何内容；写入根收窄为本会话自己的 `dsh-ops-session-<id>` 临时目录（`0700`）。该行可用 `denyCredentialReads: false` 关闭，`DSH_OPS_DENY_READ` 只能加严、不能放松。Windows 侧等价的安全描述符（DACL）处理见 [Windows 验证清单](docs/windows-verification.md)。
-- **验证记录**：早期 Linux PR 的 Debian 13 测量属于贡献者记录，不替代最终集成版门禁；本版三平台结果与发布产物以 [0.3.1 发布说明](docs/release-0.3.1.md) 及其链接的 Actions 运行为准。
-- 这些实测暴露并**已修复**的缺陷（Windows 同样受益）：替换丢失 mode/ACL/xattr、`multiline` 无法跨行、单行超长文件让读取整体失败、并发替换静默丢更新、硬杀残留临时文件、worker 无执行位时只报裸 `EACCES`。详见 [0.3.1 发布说明](docs/release-0.3.1.md) 与 [CHANGELOG](CHANGELOG.md)。
-
----
-
-## 快速开始
-
-### 前置条件
-
-- **Node.js `^22.19 || >=24`**（`package.json` 的 `engines` 要求）
-- Windows x64、Linux x64 或 macOS Apple Silicon；不支持 Intel Mac。pwsh 覆盖层仅 Windows，POSIX 使用宿主 Bash。
-- 目标 DSH 应用已初始化
-
-### 安装
-
-**方式一：官方插件市场（推荐）**
-
-在目标 DSH 应用的插件市场中输入 npm 包名 **`dsh-ops`**，安装后选择启用。安装归属于当前运行的 profile，桌面端为 `desktop`。
-
-**方式二：npm 一键安装**
+#### 安装方法
 
 ```console
 npx --yes dsh-ops@latest install --profile desktop
+npx --yes dsh-ops@latest install --profile web
+npx --yes dsh-ops@latest install --profile tui
 ```
 
-必须显式选择目标 profile；`tui` 映射到 **dsh-TUI 产品的 `dsh-tui` profile**，不是旧的 `tui` 目录。请先初始化目标应用。
+必须显式选择目标 profile；`tui` 映射到 **dsh-TUI 产品的 `dsh-tui` profile**，不是旧的 `tui` 目录。请先初始化目标应用。该入口委托官方 DSH CLI 安装，不另写一套 profile 锁与回滚逻辑。
 
-桌面端必须使用桌面应用自带的 CLI；默认探测 `%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`。安装在其它位置时加 `--dsh-cli "<安装目录>\resources\runtime\cli\bin\dsh.cmd"`。
+桌面端必须使用桌面应用自带的 CLI；默认探测 `%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`。安装在其它位置时加 `--dsh-cli "<安装目录>\resources\runtime\cli\bin\dsh.cmd"`。Web/TUI 需要可用的 DSH CLI，可同样显式指定。
 
-> ⚠️ **`node_modules/@dsh-ops/` 下没有 `bash-win32-x64` 不是安装损坏。** 三个载荷都是精确钉版的**可选依赖**（`optionalDependencies`）：若你的 registry 未同步该平台包的对应版本，包管理器会**静默跳过**它——安装仍以退出码 0 结束，且不打印任何指向缺包的警告。
+也可以直接使用官方命令：
 
-> **不要**用 `allowSystemShellFallback: true` 绕过：那是安全姿态降级（改用未固定摘要的系统 bash），且首次升级启动的配置迁移会把它改回 `false`。
+```console
+dsh plugin --profile web add dsh-ops
+dsh plugin --profile dsh-tui add dsh-ops
+"<桌面安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add dsh-ops
+```
 
-> **`bashPath` 仅在 `danger-full-access` 下生效**：只读/工作区内修改模式只运行固定摘要的随包或 provision 的 bash，自带 Git for Windows 会按设计返回 `EXECUTOR_UNAVAILABLE`，不要靠它绕过受限模式问题。见 [配置参考](docs/配置参考.md)。
+普通 DSH CLI 不能管理保留的 `desktop` profile；不要把它与桌面自带入口混淆。
 
-> 普通 DSH CLI 不能管理保留的 `desktop` profile；不要把它与桌面自带入口混淆。
+#### 更新方法
 
-详情与兜底办法见 [常见问题](docs/常见问题.md)。
+重新运行相同的 `npx --yes dsh-ops@latest install --profile ...`，或用官方 CLI `add dsh-ops@latest`。按应用提示重载；替换已加载代码时重启应用。
 
-### 卸载与查看状态
+#### 卸载与查看状态
 
 ```console
 npx --yes dsh-ops@latest status --profile desktop
 npx --yes dsh-ops@latest uninstall --profile desktop
 ```
 
-把 `desktop` 换成 `web` 或 `tui` 即可。
+把 `desktop` 换成 `web` 或 `tui` 即可。也可在市场卸载，或执行官方 `dsh plugin --profile ... remove dsh-ops`。二进制随 profile 的插件依赖管理；卸载移除依赖引用，不误删系统 shell、其它 profile 的副本或包管理器共享缓存。
 
----
-
-## 组件
-
-Bundle 声明四个组件，分别启停，首次安装默认开启前两个：
-
-| 组件 | 介绍 | 默认 | 发布的工具 |
-| --- | --- | --- | --- |
-| `dsh-ops/shell` | 将默认终端改为 bash，以及 bash 覆盖不到时提供 PowerShell 7 | 开 | `ops_bash`；宿主 `pwsh` 使用随包 PowerShell 7 |
-| `dsh-ops/file` | 更快、更高性能、输出更精简更省 token 的 Rust 文件检索 | 开 | 四个文件工具 |
-| `dsh-ops/background` | 为科研仿真、模型训练及其他长进程后台任务提供托管 | 关 | 启动、输出、列出、终止后台任务 |
-| `dsh-ops/ptc` | 独立 Rust 安全批处理和有界结果引用，仅纯 PTC 会话加载 | 关 | `ops_batch`、`ops_result` |
-
-“默认终端改为 bash”指模型提示优先使用 `ops_bash`，**不修改系统默认终端、PATH 或宿主原有 shell 工具名称**。
-
-工具的完整参数、配置项与权限要求见 [组件参考](docs/组件参考.md) 与 [配置参考](docs/配置参考.md)。
-
-> 配置迁移的完成标记：完成后重启/热加载不再覆盖；你之后主动改回 `true` 会被保留。不要删除迁移标记，否则会重新自检。
-
----
-
-## 详细文档
-
-| 想了解 | 看这里 |
-| --- | --- |
-| 安装、更新、卸载的完整流程与全部选项 | [docs/使用指南.md](docs/使用指南.md) |
-| 配置项逐个说明、哪个键属于哪个组件 | [docs/配置参考.md](docs/配置参考.md) |
-| 四个组件分别发布什么工具、参数与权限 | [docs/组件参考.md](docs/组件参考.md) |
-| 报错怎么读、装不上怎么办、常见问题 | [docs/常见问题.md](docs/常见问题.md) |
-| 原生 PTC 的设计与使用 | [docs/native-ptc.md](docs/native-ptc.md) |
-| 在 Linux x64 上构建、配置与故障排查 | [docs/linux构建.md](docs/linux构建.md) |
-| 版本变更历史 | [CHANGELOG.md](CHANGELOG.md) |
-| 来源与载荷许可记录 | [PROVENANCE.md](PROVENANCE.md) |
-
----
+旧版显式 provision 的 `<DSH_HOME>/dsh-ops/` 文件需单独清理：`npx --yes dsh-ops@latest uninstall --yes`。默认不删 `~/.fastctx/` 持久状态；需要时显式加 `--purge-fastctx`。关闭后台组件会等待已发出的调用，然后尝试终止该组件当前连接记住的自有任务；失败会告警。断线丢失归属的旧任务及单纯降权不保证终止，先处理自己的任务。
 
 ## 许可证
 
