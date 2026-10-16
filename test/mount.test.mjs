@@ -109,7 +109,7 @@ await test('real FastCtx calls return data and propagate server errors promptly'
       const agent = await agentForCall(ctx, dir)
       const result = await callTool(ctx, publicToolName('glob'), { pattern: ['*.txt'], path: dir }, undefined, agent)
       assert.match(result.text, /alpha\.txt/)
-      assert.equal(result.value.items[0], path.join(dir, 'alpha.txt'))
+      assert.equal(fs.realpathSync.native(result.value.items[0]), fs.realpathSync.native(path.join(dir, 'alpha.txt')))
       const missing = await callTool(ctx, publicToolName('inspect_local_file'), { path: path.join(dir, 'missing.txt') }, undefined, agent)
       assert.equal(missing.value.error.code, 'NOT_FOUND')
     })
@@ -124,7 +124,7 @@ await test('native file paths resolve from session cwd and enforce workspace-wri
       const workspace = await agentForCall(ctx, dir, 'workspace-write')
       const relative = await callTool(ctx, publicToolName('glob'), { pattern: ['cwd.txt'], path: '.' }, undefined, workspace)
       assert.equal(relative.value.status, 'completed')
-      assert.deepEqual(relative.value.items, [path.join(dir, 'cwd.txt')])
+      assert.deepEqual(relative.value.items.map(item => fs.realpathSync.native(item)), [fs.realpathSync.native(path.join(dir, 'cwd.txt'))])
       const outside = path.join(path.dirname(dir), 'outside-native.txt')
       fs.writeFileSync(outside, 'outside\n')
       try {
@@ -300,6 +300,7 @@ await test('the job lane resolves a bash the Windows way, so the shell component
   })
   try {
     await surface.start()
+    if (process.platform !== 'linux') return // /proc process-environment observation is Linux-specific.
     const env = fs.readFileSync(`/proc/${surface.client.child.pid}/environ`, 'utf8')
     assert.ok(!env.includes('FASTCTX_BASH=/bin/bash') && !env.includes('FASTCTX_BASH=/usr/bin/bash'),
       `the lane must not hand FastCtx a host bash: ${env.split('\0').filter(entry => entry.startsWith('FASTCTX_BASH=')).join(', ')}`)

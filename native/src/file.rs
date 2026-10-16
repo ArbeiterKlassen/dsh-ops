@@ -481,7 +481,8 @@ fn get_xattr(fd: &impl rustix::fd::AsFd, name: &str) -> Result<Option<Vec<u8>>> 
             buffer.truncate(written);
             Ok(Some(buffer))
         }
-        Err(error) if matches!(error, rustix::io::Errno::NODATA | rustix::io::Errno::NOTSUP) => Ok(None),
+        Err(error) if matches!(error, rustix::io::Errno::NODATA | rustix::io::Errno::NOTSUP)
+            || (cfg!(target_os = "macos") && error.raw_os_error() == 93) => Ok(None),
         Err(error) => Err(Failure::new("ACCESS_DENIED", format!("Read extended attribute {name}: {error}"))),
     }
 }

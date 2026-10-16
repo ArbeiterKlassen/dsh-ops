@@ -7,7 +7,7 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 
 > tips：本项目的 ops 是广义 operations（运行操作）的缩写，代指本插件处于 dsh 和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
 
-**0.3.1 支持 Windows x64 与 Linux x64，Linux 侧已在实机验证通过**，目标宿主 DSH `0.2.0-rc.2`。原生 Rust 文件/PTC worker 随包携带（各平台各自的 `runtime/<platform>-<arch>/`）；PTC 默认关闭，须显式启用。macOS/ARM64 留待后续版本；`ops_bash`/pwsh 所在的 shell 组件仍仅限 Windows。见 [Linux 适配](#linux-适配)、[PTC 设计与使用](docs/native-ptc.md)。
+**0.3.1 支持 Windows x64、Linux x64 与 macOS Apple Silicon（`darwin-arm64`）**，目标宿主 DSH `0.2.0-rc.2`。原生 Rust 文件/PTC worker 按精确目标携带于 `runtime/<platform>-<arch>/`；PTC 默认关闭。Intel Mac、Windows ARM64 与 Linux ARM64 不在支持范围。Bash/PowerShell 7 二进制保持 Windows-only 可选依赖，Linux/macOS 使用宿主 Bash，不在 npm 安装时下载 Windows shell。见 [Linux 适配](#linux-适配)、[Apple Silicon](docs/macos-arm64.md) 与 [PTC](docs/native-ptc.md)。
 
 ---
 
@@ -40,11 +40,11 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 
 `dsh-ops` 在 **Linux x64** 上与 Windows 侧能力对齐（除下面明确列出的部分）：原生 Rust worker 以 ELF 随包携带，文件工具（`inspect_local_file` / `glob` / `grep` / `replace`）与可选 PTC 组件（`ops_batch` / `ops_result`）在 Linux 上同样可用。
 
-- **仅 Windows**：shell 组件（`ops_bash` / pwsh 7）及其 Bash IPC 代理；以它为执行通道的后台组件在 Linux 上不可用。
+- **平台分野**：独立 Bash/pwsh 与 IPC 代理仅 Windows；Linux/macOS 的 `ops_bash` 使用宿主 Bash，受限调用仍须通过 DSH sandbox，缺沙箱不裸执行。
 - **构建与安装**：见 [Linux 构建与验证](docs/linux构建.md)（[English](docs/linux-build.md)）—— `npm run verify` → `npm run build:ptc` → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz`。
 - **平台差异已处理**：替换文件时保留 mode/owner/POSIX ACL/xattr；目录 `fsync` 按 POSIX 语义；`multiline` 搜索跨行匹配；读取按编码字节与行数双重设界。
 - **默认拒绝读取凭据**：文件工具（含 PTC 批处理）在 worker 被 spawn 之前就拒绝 `~/.ssh`、`~/.aws`、`~/.azure`、`~/.kube`、`.npmrc`、DSH 凭据库等位置，遍历也按路径身份跳过这些目录，所以 `glob` 连私钥文件名都不会列出、`grep` 不会在其中匹配到任何内容；写入根收窄为本会话自己的 `dsh-ops-session-<id>` 临时目录（`0700`）。该行可用 `denyCredentialReads: false` 关闭，`DSH_OPS_DENY_READ` 只能加严、不能放松。Windows 侧等价的安全描述符（DACL）处理见 [Windows 验证清单](docs/windows-verification.md)。
-- **实测状态**（Debian 13 x86_64）：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 30 个套件全通过、0 跳过；`npm run validate:manifest` → 61 项全通过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留元数据。
+- **验证记录**：早期 Linux PR 的 Debian 13 测量属于贡献者记录，不替代最终集成版门禁；本版三平台结果与发布产物以 [0.3.1 发布说明](docs/release-0.3.1.md) 及其链接的 Actions 运行为准。
 - 这些实测暴露并**已修复**的缺陷（Windows 同样受益）：替换丢失 mode/ACL/xattr、`multiline` 无法跨行、单行超长文件让读取整体失败、并发替换静默丢更新、硬杀残留临时文件、worker 无执行位时只报裸 `EACCES`。详见 [0.3.1 发布说明](docs/release-0.3.1.md) 与 [CHANGELOG](CHANGELOG.md)。
 
 ---
@@ -54,7 +54,7 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 ### 前置条件
 
 - **Node.js `^22.19 || >=24`**（`package.json` 的 `engines` 要求）
-- Windows x64 或 Linux x64（shell 组件的 `ops_bash`/pwsh 仅 Windows）
+- Windows x64、Linux x64 或 macOS Apple Silicon；不支持 Intel Mac。pwsh 覆盖层仅 Windows，POSIX 使用宿主 Bash。
 - 目标 DSH 应用已初始化
 
 ### 安装

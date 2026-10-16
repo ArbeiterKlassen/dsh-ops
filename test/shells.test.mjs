@@ -1656,7 +1656,7 @@ await test('an inherited LC_ALL cannot un-pin the message locale, and encoding s
   // that sets LC_ALL (`zh_CN.UTF-8` desktops commonly set nothing else) the English pin below was
   // silently ineffective, and a localized libc stopped matching the host's English
   // `denialSignatures`. Measured on this host before the fix: `LC_MESSAGES="zh_CN.UTF-8"`.
-  const pinned = shellEnvOverrides({ ...process.env, LC_ALL: 'zh_CN.UTF-8' }, {})
+  const pinned = shellEnvOverrides({ LC_ALL: 'zh_CN.UTF-8' }, {})
   assert.equal(pinned.LC_MESSAGES, 'C')
   assert.equal(pinned.LC_ALL, '', 'an empty value is "unset" to the C library, so the pin holds')
   assert.equal(pinned.LC_CTYPE, 'zh_CN.UTF-8', "the variable's encoding intent must survive")
@@ -1670,8 +1670,9 @@ await test('an inherited LC_ALL cannot un-pin the message locale, and encoding s
   if (process.platform === 'win32') return
   // Effective locale, read back from the C library rather than from the environment: `locale` prints
   // what libc resolved, and `wc -m` counts characters, which `LC_ALL=C` would break (6 for `中文`).
+  const utfLocale = process.platform === 'darwin' ? 'en_US.UTF-8' : 'C.UTF-8'
   const probe = spawnSync('/bin/sh', ['-c', 'locale 2>/dev/null | grep "^LC_MESSAGES="; printf "中文" | wc -m'], {
-    env: { ...process.env, ...pinned }, encoding: 'utf8',
+    env: { ...process.env, ...shellEnvOverrides({ LC_ALL: utfLocale }, {}), LC_CTYPE: utfLocale }, encoding: 'utf8',
   })
   assert.equal(probe.status, 0, probe.stderr)
   assert.match(probe.stdout, /LC_MESSAGES="?C"?/, `the effective message locale must be C: ${probe.stdout}`)

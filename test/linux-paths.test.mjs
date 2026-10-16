@@ -235,7 +235,7 @@ await test('a directory, a missing file and a NUL path each get a structured ref
 })
 
 await test('a non-UTF-8 filename survives without a protocol failure', async () => {
-  if (!POSIX) return
+  if (process.platform !== 'linux') return // APFS rejects invalid UTF-8 names before they reach the worker.
   await withTempDir('linux-paths-bytes', async workspace => {
     const raw = Buffer.concat([Buffer.from(`${workspace}/`), Buffer.from([0x62, 0x61, 0x64, 0xff, 0xfe, 0x2e, 0x74, 0x78, 0x74])])
     let created = true

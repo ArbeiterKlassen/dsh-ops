@@ -54,7 +54,7 @@ export const TEST_HOME = canonical(path.resolve(home))
  */
 export function canonical(file) {
   try {
-    return realpathSync(file)
+    return realpathSync.native(file)
   } catch {
     return file
   }

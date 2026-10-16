@@ -78,6 +78,8 @@ export function callWorker(input, { timeoutMs = 20_000 } = {}) {
       finish({ exitCode: null, signal: 'SIGKILL' })
     }, timeoutMs)
     timer.unref?.()
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
     child.stdout.on('data', chunk => { stdout += chunk })
     child.stderr.on('data', chunk => { stderr += chunk })
     child.on('error', error => finish({ spawnError: String(error?.message ?? error) }))

@@ -111,6 +111,15 @@ await test('a POSIX ACL comes back entry for entry', async () => {
 
 await test('user extended attributes come back with their values', async () => {
   await withTempDir('file-metadata-xattr', async workspace => {
+    if (process.platform === 'darwin') {
+      const target = seed(path.join(workspace, 'attrs.txt'), 0o644)
+      execFileSync('/usr/bin/xattr', ['-w', 'user.dsh-ops', 'kept', target])
+      const body = await replaceToken(target, workspace)
+      assert.equal(body.status, 'completed', JSON.stringify(body))
+      assert.ok(body.items[0].metadata.xattrs.includes('user.dsh-ops'))
+      assert.equal(execFileSync('/usr/bin/xattr', ['-p', 'user.dsh-ops', target], { encoding: 'utf8' }).trim(), 'kept')
+      return
+    }
     if (!PYTHON) {
       assert.ok(true, 'python3 is not installed, so the xattr case cannot be exercised on this host')
       return

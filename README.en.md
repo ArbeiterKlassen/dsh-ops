@@ -8,7 +8,7 @@ attention wasted on repeated PowerShell errors.
 
 > tips: "ops" here is short for the general sense of operations — the plugin sits at the base layer between dsh and system / code / file operations. It is not an operations (DevOps) plugin.
 
-**0.3.1 supports Windows x64 and Linux x64, with the Linux side verified on a real host**, targeting DSH `0.2.0-rc.2`. The independent Rust file/PTC worker ships for each supported platform (`runtime/<platform>-<arch>/`); PTC remains opt-in. macOS/ARM64 are future work, not release claims, and the shell component's pinned bash/pwsh payloads stay Windows-only: on Linux `ops_bash` runs the host distribution's own bash under a mandatory host sandbox. See [Linux support](#linux-support) and [Native PTC](docs/native-ptc.md).
+**0.3.1 supports Windows x64, Linux x64 and macOS Apple Silicon (`darwin-arm64`)**, targeting DSH `0.2.0-rc.2`. The independent Rust file/PTC worker ships for each exact supported target (`runtime/<platform>-<arch>/`); PTC remains opt-in. Intel Mac and other ARM64 targets are not supported. Windows-only pinned bash/pwsh payloads remain optional dependencies; macOS uses the operator's configured or host bash and does not expose pwsh. See [Linux support](#linux-support), [macOS arm64](docs/macos-arm64.md), and [Native PTC](docs/native-ptc.md).
 
 ---
 

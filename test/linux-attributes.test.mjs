@@ -66,7 +66,7 @@ await test('a successful replace writes the content, advances mtime and strands 
     const after = fs.statSync(target)
     assert.ok(after.mtimeMs >= before.mtimeMs, `mtime must not go backwards: ${before.mtimeMs} -> ${after.mtimeMs}`)
 
-    const debris = fs.readdirSync(workspace).filter(name => name.includes('.dsh-ops-'))
+    const debris = fs.readdirSync(workspace).filter(name => /^\..+\.dsh-ops-[0-9a-f-]+$/.test(name))
     assert.deepEqual(debris, [], 'a successful replace leaves no temp file')
   })
 })
