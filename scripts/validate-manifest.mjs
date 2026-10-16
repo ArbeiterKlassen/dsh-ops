@@ -501,15 +501,15 @@ const REQUIRED_ENTRIES = [
   'bin',
   'cordis.patch.yml',
   'dsh-plugin.json',
-  'icon.png',
+  'docs/assets/icon.png',
   'locale',
   'LICENSE',
   'NOTICE',
   'licenses',
   'README.md',
   'README.zh.md',
-  'PROVENANCE.md',
-  'CHANGELOG.md',
+  'docs/PROVENANCE.md',
+  'docs/CHANGELOG.md',
 ]
 const missingEntries = REQUIRED_ENTRIES.filter((entry) => !(pkg.files ?? []).includes(entry))
 check(
