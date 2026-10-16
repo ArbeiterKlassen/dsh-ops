@@ -76,3 +76,51 @@ jobs:
           path: runtime/${{ matrix.target }}/
           if-no-files-found: error
           retention-days: 7
+
+  # The tools trial: one platform is enough, because it exercises the tool surface itself rather
+  # than the platform. It is deliberately **not** required — `continue-on-error` keeps the run green
+  # — so a tool that breaks shows up in its own job and in the uploaded report without blocking a
+  # merge, while the `validate` matrix above stays the gate.
+  tools-trial:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: '3'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Set up pinned Rust
+        shell: bash
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+      - name: Reuse exact locked Rust build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/target
+          key: ops-031-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/Cargo.lock') }}
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+      - name: Build the native worker
+        shell: bash
+        run: npm run build:ptc
+      # The plugin reads and writes its own home; a trial must never touch the runner's real one.
+      - name: Prepare an isolated DSH home
+        shell: bash
+        run: |
+          mkdir -p "${{ runner.temp }}/dsh-home"
+          echo "DSH_HOME=${{ runner.temp }}/dsh-home" >> "$GITHUB_ENV"
+      - name: Try every published tool
+        shell: bash
+        run: node scripts/tools-trial.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tools-trial-report
+          path: tools-trial-report.md
+          if-no-files-found: warn
+          retention-days: 7
