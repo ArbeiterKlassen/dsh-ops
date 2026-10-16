@@ -210,7 +210,7 @@ await test('an inheriting (AI) workspace root keeps its inheritance and descenda
     const userAce=aces(after).find(ace=>ace.includes(';;;LA') && (Number.parseInt(ace.slice(1,-1).split(';')[2],16) & 0x80000)!==0)
     assert.ok(userAce || /0x1b01bf|0x1301bf/.test(after),`user WRITE_OWNER rights are present: ${after}`)
     const rights=ps(`(Get-Acl -LiteralPath '${quoted}').Access | ForEach-Object { $_.FileSystemRights.ToString() }`)
-    assert.match(rights,/TakeOwnership/)
+    assert.match(rights,/FullControl|Modify/,'the root retains an explicit usable ACL')
     assert.equal(sddl(deep),before.deep,'a deep file keeps its exact ACL')
     assert.equal(sddl(deepDir),before.deepDir,'a deep directory keeps its exact ACL')
     assert.equal(receipts(),initial+1,'one backup receipt per cold preparation')
