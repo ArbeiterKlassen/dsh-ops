@@ -121,6 +121,10 @@ The capability is taken; the duplicate component is not.
 
 ## [Unreleased]
 
+### Read-only activity projection
+
+- Add an internal bounded projection of live OPS native/PTC tool events for optional UI consumers. It stores no tool arguments or result bodies, isolates sessions, and labels normal transport returns neutrally rather than claiming business success. Existing components do not enable observation or change their tools.
+
 ### Payload trust
 
 Found while reviewing what runs *before* it is trusted. Independent of the workspace-preparation
