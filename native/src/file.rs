@@ -621,15 +621,14 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
         let source = crate::file_path::read_file(&crate::file_path::checked(raw)?)?;
         rustix::fs::fclonefileat(&source, &parent, temporary.as_str(), rustix::fs::CloneFlags::empty())
             .map_err(|error| Failure::new("ACCESS_DENIED", format!("Atomic replacement requires APFS metadata-preserving clone support: {error}")))?;
-        let cloned = parent.open_with(&temporary, cap_std::fs::OpenOptions::new().read(true).follow(FollowSymlinks::No))?;
+        let mut cloned_options = cap_std::fs::OpenOptions::new(); cloned_options.read(true).follow(FollowSymlinks::No);
+        let cloned = parent.open_with(&temporary, &cloned_options)?;
         rustix::fs::fchmod(&cloned, rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR).map_err(|error| Failure::new("ACCESS_DENIED", error))?;
     }
-    let mut options = cap_std::fs::OpenOptions::new();
-    options.write(true).follow(FollowSymlinks::No);
-    #[cfg(not(target_os = "macos"))]
-    options.create_new(true);
     #[cfg(target_os = "macos")]
-    options.truncate(true);
+    let mut options = { let mut value = cap_std::fs::OpenOptions::new(); value.write(true).truncate(true).follow(FollowSymlinks::No); value };
+    #[cfg(not(target_os = "macos"))]
+    let mut options = { let mut value = cap_std::fs::OpenOptions::new(); value.write(true).create_new(true).follow(FollowSymlinks::No); value };
     #[cfg(unix)]
     { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
     let mut file = parent.open_with(&temporary, &options).map_err(|e| Failure::new("ACCESS_DENIED", format!("Atomic replacement create: {e}")))?;

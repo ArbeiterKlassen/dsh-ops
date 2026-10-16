@@ -79,9 +79,9 @@ await test('linux resolves the host bash without the Windows fallback flag', () 
   // Empty PATH: the well-known rung answers, and it is a POSIX path rather than a host-formatted one.
   const wellKnown = resolveShells({}, { platform: 'linux', arch: 'x64', env: { PATH: '' } }).bash
   assert.equal(wellKnown.source, 'well-known', JSON.stringify(wellKnown))
-  assert.equal(wellKnown.file, '/bin/bash')
+  assert.ok(POSIX_BASH_WELL_KNOWN.includes(wellKnown.file), JSON.stringify(wellKnown))
   // An explicit executable still wins over discovery, and a missing one is still an error.
-  assert.equal(resolveShells({ bashPath: '/usr/bin/bash' }, { platform: 'linux', arch: 'x64', env }).bash.source, 'config')
+  assert.equal(resolveShells({ bashPath: '/bin/bash' }, { platform: 'linux', arch: 'x64', env }).bash.source, 'config')
   const missing = resolveShells({ bashPath: '/opt/nope/bash' }, { platform: 'linux', arch: 'x64', env }).bash
   assert.equal(missing.available, false)
   assert.match(missing.detail, /does not exist/)
@@ -96,7 +96,8 @@ await test('linux resolves the host bash without the Windows fallback flag', () 
 })
 
 await test('the POSIX rung is bash-only and does not change the Windows answer', () => {
-  assert.deepEqual([...POSIX_BASH_WELL_KNOWN], ['/bin/bash', '/usr/bin/bash', '/usr/local/bin/bash'])
+  assert.ok(POSIX_BASH_WELL_KNOWN.includes('/bin/bash'))
+  assert.ok(POSIX_BASH_WELL_KNOWN.includes('/opt/homebrew/bin/bash'))
   for (const candidate of POSIX_BASH_WELL_KNOWN) {
     assert.ok(candidate.startsWith('/'), `a POSIX candidate must be absolute: ${candidate}`)
     assert.ok(!candidate.includes('\\'), `a POSIX candidate must not carry a backslash: ${candidate}`)
@@ -123,7 +124,7 @@ await test('the POSIX rung is the shell component\'s, not the Windows-only FastC
   // one inheriting the other's answer.
   assert.equal(resolveShells({}, options).bash.available, true)
   // An explicit path is an operator choice in either lane.
-  assert.equal(resolveShells({ bashPath: '/usr/bin/bash' }, { ...options, posix: false }).bash.source, 'config')
+  assert.equal(resolveShells({ bashPath: '/bin/bash' }, { ...options, posix: false }).bash.source, 'config')
 })
 
 await test('the CLI refuses to provision shells on this host and says what to do instead', () => {

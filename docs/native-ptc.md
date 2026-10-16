@@ -1,4 +1,4 @@
-# Native PTC enhancement — 0.3.1 Windows x64 + Linux x64
+# Native PTC enhancement — 0.3.1 Windows x64, Linux x64, Apple Silicon
 
 Issues: [#3](https://github.com/T-Auto/dsh-ops/issues/3), [#8](https://github.com/T-Auto/dsh-ops/issues/8).
 The file and PTC components use an independent Rust worker. FastCtx remains only
@@ -6,19 +6,7 @@ behind the explicitly enabled background component.
 
 ## Runtime-bearing installation and original DSH permission linkage
 
-0.3.1 ships `runtime/win32-x64/dsh-ops-worker.exe` and
-`runtime/linux-x64/dsh-ops-worker`, each with its version/checksum receipt, plus
-the Bash IPC compatibility proxies of the Windows release. Package os/cpu,
-manifest and release checks agree on that scope: `verify:release` derives the
-declared set from `package.json` and asserts it equals the resolver's
-`PLATFORMS`, then rejects a corrupt worker or proxy artifact among the targets
-the package actually carries. `DSH_OPS_REQUIRE_ALL_TARGETS=1` requires every
-declared platform instead, which is what a cross-platform release must satisfy.
-macOS/ARM64 are not supported
-by this release, and the shell component remains Windows-only: `ops_bash`, its
-pwsh payload and the IPC proxies are Windows artifacts. No postinstall
-download/build or binaryPath override is required. Source builds use
-`npm run build:ptc`, plus `npm run build:bash-ipc` on Windows.
+0.3.1 ships native workers for `win32-x64`, `linux-x64` and `darwin-arm64`, each with a version/checksum receipt, plus the Windows Bash IPC proxies. Formal `verify:release` requires all three target pairs and validates every PE/ELF/Mach-O worker and the Windows IPC binary/source closure. Local `check --staged` verifies only local development outputs. Intel Mac and Windows/Linux ARM64 are not supported. Bash/pwsh payload packages remain Windows-only optional dependencies; POSIX uses host Bash. There is no postinstall download/build. Source builds use `npm run build:ptc`, plus `npm run build:bash-ipc` on Windows.
 
 PTC/Bash use original per-call sandboxPolicy and sandbox.confine, reporting the
 host's full/partial enforcement honestly. Read-only permits existing result pages
@@ -34,8 +22,7 @@ Real Windows provider and pure PTC SDK acceptance is covered in the release gate
 
 The fixed file component follows DSH fs-sandbox's trusted-operation policy fence,
 not arbitrary-code isolation; shell and PTC code still require confinement.
-Runtime binaries are shipped and claimed for Windows x64 and Linux x64; the IPC
-proxies remain Windows x64 only.
+Runtime binaries target Windows x64, Linux x64 and macOS Apple Silicon; IPC proxies remain Windows x64 only.
 
 In `workspace-write`, native batch/result operations and their audit records are
 permitted under the selected workspace root through DSH confinement. Read-only

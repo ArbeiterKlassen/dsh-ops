@@ -1,53 +1,46 @@
-# dsh-ops 0.3.1 — Linux x64 适配与原生 worker 边界修复
+# dsh-ops 0.3.1 — Windows x64、Linux x64 与 Apple Silicon
 
-## 发布范围
+## 精确支持范围
 
-- 平台范围：**Windows x64 与 Linux x64**，目标宿主 DSH `0.2.0-rc.2`。`0.3.0` 只发布 Windows x64；本版补上 Linux x64。
-- 本版把 Linux x64 做成**实测平台**：同一批测试套件、发布闭包与出厂 tarball 在 Linux x86_64 实机上跑通，这些运行暴露的缺陷在本版修复。修复本身与平台无关，Windows 同样受益。
-- macOS 与 ARM64 不在支持范围；不能把历史编译检查当作实机支持。**shell 组件在 Linux 上不随包提供 shell，而是解析发行版自带的 bash**（`ops_bash` 可用，受限模式由宿主沙箱落实）；随包固定摘要的 bash/pwsh 载荷、Bash IPC 代理，以及以 shell 为执行通道的后台组件仍仅 Windows。
-- `dsh-ops` 主包更新为 `0.3.1`；三个 Windows 可选载荷依赖仍固定 `0.2.1`，无需重复发布。
+- Windows x64：`win32-x64`。
+- Linux x64：`linux-x64`（GNU/Linux；ELF worker）。
+- macOS Apple Silicon：`darwin-arm64`（APFS；Mach-O worker）。
+- **不支持 Intel Mac、Windows ARM64、Linux ARM64 或 OpenHarmony。** npm 的 os/cpu 字段不能表达配对矩阵，实际支持以 runtime 白名单和组件 `targets` 为准。
+- 目标宿主 DSH `0.2.0-rc.2`；PTC 组件保持显式启用、仅纯 PTC 会话发布。
 
-## Linux 适配了什么
+## Shell 与安装载荷
 
-- **原生 worker**：`x86_64-unknown-linux-gnu` 上 `cargo build --release --locked`、`cargo test`、完整 `npm run verify`（`DSH_OPS_REQUIRE_RUNTIME=1` 下 30 个套件全过、0 跳过）与 `npm run verify:release` 全部实机通过。
-- **平台分支而非兼容层**：POSIX 侧走目录 `fsync` 与元数据重放，Windows 侧保持 `MoveFileExW`；同一份 Rust 代码用 `cfg` 分开，不做「两边都能跑」的折中。
-- **测试与发布校验按平台推导**：挂载点与文件系统夹具在运行时解析，不解析依赖 `LC_MESSAGES` 的工具措辞，整套跳过按平台显式声明（Linux 上 2 个）且从不计为通过。
-- **发布闭包**：只闭合本包实际 stage 的目标，因此只构建 Linux 的机器同样通过；要声明「发布包必须齐平台」设 `DSH_OPS_REQUIRE_ALL_TARGETS=1`。闭包信息点明当前 checkout 实际 stage 的平台，不再假定 Windows。
-- **文档**：[Linux 构建与验证](linux构建.md)（[English](linux-build.md)）覆盖 build → stage → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz` 全流程与门禁预期输出。
-- **shell 组件的 Linux 路线**：`shell` 组件在 POSIX 上解析 `bashPath` → `PATH` → `/bin/bash`、`/usr/bin/bash`、`/usr/local/bin/bash`，不 provision 第二份 shell，`ops_bash` 开箱可用；受限模式先过宿主沙箱，沙箱不可用或无法约束时返回错误信封且不执行任何命令；`dsh-ops provision-shells` 在 Linux 上明确拒绝并指向 `config.bashPath`。FastCtx 作业车道（仅 Windows）显式不采用该档位，`dsh-plugin.json` 也把每个组件的平台写进清单，由 `npm run validate:manifest` 把关。
-- **新增 11 个边界套件**，两个平台都跑：grep 跨行、替换元数据、输出字节预算、更新锁、hex 偏移、参数与运行时诊断、发布作用域、PTC 溯源、Linux 参数/属性。见 `test/`。
+- Bash、PowerShell 7 保留为 `@dsh-ops/bash-win32-x64@0.2.1`、`@dsh-ops/pwsh-win32-x64@0.2.1` 固定版本可选依赖；子包声明 `os: [win32]`、`cpu: [x64]`。
+- Linux/macOS 安装不落地这两个 Windows shell 包。没有 postinstall 下载器；#90 保持 open，二进制管理将另行制定方案。
+- POSIX 的 `ops_bash` 使用宿主 Bash；受限模式仍须通过 DSH sandbox，缺失或不可用时拒绝执行，不裸执行回退。macOS 优先支持显式 `bashPath`、PATH 和 Homebrew/system 位置。
+- Windows 的 IPC 私有兼容副本、固定摘要校验和宿主权限边界保持不变；macOS 不承诺 pwsh 工具。后台组件默认关闭，正式声明仍限 Windows。
 
-## 修掉的原生 worker 缺陷
+## 主要改动
 
-- **替换丢失文件身份**：`ops_replace` 发布的是新 inode，原先不读旧文件元数据 —— `0600` 的 `.env` 变 `0664` 全局可读、`0755` 脚本丢可执行位、ACL 与 xattr 一并消失。现在发布前捕获并重放 mode/owner/POSIX ACL/xattr，`items[].metadata` 报告保留了什么；mode 或 ACL 重放失败即不发布，owner 与其余属性重放失败进 `metadataWarnings`。
-- **`multiline` 无法跨行**：含 `\n` 的模式永远 0 匹配且不报错。现在整份文本匹配，`^`/`$` 仍按行；并修掉末尾换行之后多报一个不存在的第 N+1 行。
-- **读取只按行数设界**：单行超长的文件让「读」整体失败。现在按编码字节与行数双重设界，并报告 `bytesTotal` / `truncatedInLine`；hex 视图不再丢掉文件第一行。
-- **并发替换静默丢更新**：`revision` 守卫是 check-then-act 竞态，多个调用都报成功而只有最后一次存活。现在整个 read-check-publish 窗口持有排他锁，对端收到 `REVISION_CONFLICT`。
-- **硬杀残留隐藏临时文件**：下次写同一文件时回收自己的 `.<name>.dsh-ops-*` 残骸（此刻持锁，安全）；rename 成功之后目录 `fsync` 失败改为 `effectState: "applied"` 并说明不要重试。
-- **参数契约**：`maxReplacements` 触顶的报错原先把责任推给 pattern，现在点名命中数、上限与如何提高；`replace` 的 `pattern` 是字面量而 `grep` 的同名字段是正则，两者补上了从未有过的字段说明（行为不变）。
-- **诊断**：worker 无执行位时按路径与 mode 拒绝，而不是等到 `spawn` 报裸 `EACCES`；`unavailable` 列出尝试过的候选路径；缺失/畸形 receipt、半暂存目录、缺平台各有明确报错与出路。
+- 整合 Linux #81 和 macOS #67 的原始提交历史；Linux #70/#71/#72/#56 的工作由 #81 整合。#69 的 macOS `/tmp`、`/var` 父目录别名修复已包含在 #67。
+- native worker 的版本、receipt、SHA256、PE/ELF/Mach-O 架构检查与精确平台矩阵一致；正式 release gate 强制三个目标齐全并验证 Windows IPC。单机开发使用 `check --staged`，不得冒充完整发布检查。
+- Linux 目录句柄 `O_PATH` 导致的 `fsync EBADF` 保留真实持久化屏障，不吞错误。
+- 替换时私有临时 inode、Linux ACL 清理、mode/owner/xattr 恢复后再 fsync；macOS APFS clone 保留 Darwin 元数据，无法克隆的文件系统拒绝替换，不静默丢 ACL。
+- 稳定路径锁覆盖 cooperating replace 的读／revision 检查／发布窗口，避免 atomic rename 换 inode 后锁失效；隐藏锁文件持久保留，不能在并发写入时删除。
+- 凭据规则应用于遍历出来的文件和 batch 源树，不再只校验请求入口；显式关闭策略仍由 operator config 控制。
+- 修复 hex 首行、跨行 grep、长行输出预算与 UTF-8 收集分块边界；同步 macOS、Windows 8.3 路径和平台专属测试夹具。
+- 纳入 #107：工作区路径以实际 reparse ancestry 判定，不把 Windows 8.3 短名误当 junction；真实链接仍拒绝。
 
-## 安装与注意
+## 验证与分发
 
-从官方 npm registry 或 DSH 插件市场安装 `dsh-ops@0.3.1`；替换旧版后正常退出并重启 Desktop。
-无需 Rust/MSVC：发布包携带 Windows x64 与 Linux x64 worker、Windows IPC 代理、receipt 和匹配源码。
-PTC 组件需显式启用，使用纯 PTC-only 呈现；后台组件仍默认关闭、仅限完全权限。
-首次受限 Bash 调用会在 DSH_HOME 内建立私有载荷副本，有一次磁盘复制成本；之后复用同一校验身份（仅 Windows）。
-Windows 宿主仍报告 `partial` enforcement，本插件不将其冒充完整内核隔离。
-不匹配的自定义/升级 MSYS DLL 会拒绝兼容执行，不绕过沙箱。
-Linux 侧不提供 bash/pwsh 与 Bash IPC 代理，依赖它作为执行通道的后台组件在 Linux 上不可用。
+本次仅发布 **GitHub Release**，不执行 npm publish。Release 的源码/tag 与验证过的运行时产物相对应；正式消费者包须通过三平台产物闭包检查。
 
-## 发布验证
+- 使用手动触发、只读 contents 权限的三平台 Actions 工作流；它没有 npm 凭据或 npm publish 步骤。
+- 每个 runner 校验自身 `process.platform/process.arch`，构建和测试 native worker、构建可选 FastCtx、运行 manifest 与完整测试，并验证 Windows shell 平台过滤。
+- 平台不适用的 suite 明确记为 skip，不计为 pass；不能以 Linux 结果代替 macOS 或 Windows 结果。
+- 首轮验证暴露的 xattr、locale、8.3 路径和测试夹具差异被保留为修复依据；首轮失败不是最终通过证据。最终 run 链接、产物摘要和验收数字以 GitHub Release 正文为准。
+- 完成此次发布后恢复仓库 Actions 关闭；旧自动 Release workflow 在临时启用期间单独停用，不会因 tag push 运行。
 
-- Manifest、源码测试、真实 Windows x64 与 Linux x64 DSH provider、真实 Node PTC SDK command/script/pipeline 和权限切换测试。
-- Linux x86_64 实机：`DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 30 个套件全过、0 跳过；`npm run validate:manifest` → 61 项全过；`npm run verify:release` → 发布闭包 OK；`npm pack` 出的 tarball 解包后 receipt sha256 与二进制一致、可执行位在、替换保留 mode/ACL/xattr、跨行 grep 正确。
-- `npm run verify:release` 核验声明作用域与 `PLATFORMS` 一致、已 stage 目标的 worker PE/ELF 与 version/hash，并在包内携带 `win32-x64` 时核验 IPC 二进制与源码 hash 闭包。
-- GitHub Release 为源码/tag/说明；随后生成 npm tarball，核验包内容、凭据排除、哈希与独立安装。
-- npm 发布由维护者使用本机 `dist/publish.bat` 执行，不由 Actions 自动发布。GitHub Actions 保持既有关闭状态。
+## 使用注意与剩余边界
 
-## 仍未闭合
-
-- `ops_replace` 在 Windows 上重建 inode 时同样会丢安全描述符（DACL），需要用 `ReplaceFileW` 或显式复制 DACL；缺 Windows 实机数据，逐条清单见 [Windows 验证清单](windows-verification.md)。
-- 元数据「重放失败」分支、发布后 `fsync` 失败、`metadataWarnings` 三类路径在门禁里拿不到（需要特定文件系统或非特权上下文），由代码阅读守住，已在套件文件头注明。
-- macOS/ARM64 未验收；Linux x64（`x86_64-unknown-linux-gnu`）的 file 与 PTC 验收来自同一批测试套件在本机的运行结果。也不把用户特定任务的 token 统计当作通用性能保证。
-- 历史 PortableGit 载荷的完整 source-delivery 闭包限制见 [PROVENANCE](../PROVENANCE.md)；本插件不分发修改后的 MSYS DLL，私有修改仅在用户本机生成。
+- Git checkout 不携带生成的 worker；本机开发需 `npm ci`、`npm run build:ptc` 后测试。macOS 仅 Apple Silicon，替换需 APFS clone 支持。
+- 正常退出并重启 Desktop 后加载新模块；不自动更改已有 profile。
+- Windows restricted enforcement 仍按宿主报告的 partial，不冒充完整隔离。Windows 自定义 DACL/ADS 等文件元数据边界见 `windows-verification.md`，不宣称此次完成通用元数据保真。
+- advisory 路径锁只串行化采用本协议的写入者；外部编辑器不会被强行纳入锁协议。
+- token benchmark 不是跨任务通用性能保证。
+- 历史 PortableGit 完整 source-delivery 闭包限制见 PROVENANCE；不分发本机修改后的 MSYS DLL。

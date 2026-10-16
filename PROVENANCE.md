@@ -5,10 +5,7 @@ was not.
 
 ## 0.3.1 release scope and verification
 
-0.3.1 supports Windows x64 and Linux x64, explicitly approved by the maintainer
-for this release. Package os/cpu, component declarations and native target checks
-agree. macOS and ARM64 are future work; prior cross-compile checks are not release
-claims. The shell component and its Bash IPC proxies remain Windows-only.
+0.3.1 targets Windows x64, Linux x64 and macOS Apple Silicon (`darwin-arm64`). Intel Mac and other ARM64 targets are not supported. Exact target pairs live in `PLATFORMS` and component `targets`; npm os/cpu filters are only their coarse projection. Windows Bash/pwsh remain pinned Windows-only optional dependencies; POSIX uses host Bash. No postinstall downloader is included.
 
 The fixed file worker implements inspect/glob/grep/replace, receives session-cwd
 paths plus authoritative DSH write policy, and rechecks the writable-root allowlist
@@ -28,19 +25,7 @@ are identified in the local receipt; original licenses remain in the copy.
 This does not attest source-delivery closure for the historical PortableGit
 payload dependency (see the 0.2.1 historical limitation below).
 
-The Windows x64 Rust worker with its two IPC proxies, and the Linux x64 Rust
-worker, are staged with hash receipts. `npm run verify:release` includes 58
-manifest checks, 25 test suites, worker PE/ELF/version/hash checks and — when the
-package carries `win32-x64` — the IPC binary/source closure. It closes the
-targets the package actually stages; `DSH_OPS_REQUIRE_ALL_TARGETS=1` requires
-every declared platform instead. Real Node PTC runtime and SDK coverage includes
-Bash command/script/pipeline, workspace write, outside-write
-denial and downgrade to read-only. Native PTC copy/move/remove, read-only result
-pages and full-access external roots pass with original DSH providers. Linux x64
-(`x86_64-unknown-linux-gnu`) file and PTC acceptance is claimed from local runs
-of the same suites; macOS and ARM64 remain unclaimed. No benchmark is inferred
-from these gates. The npm tarball is built and checked after the GitHub Release;
-publication itself is performed separately by the maintainer.
+All three workers are staged with version/target/hash receipts. Formal release closure requires every exact target and the Windows IPC binary/source closure. Local `check --staged` is a development check, not release approval. Final verification is linked in `docs/release-0.3.1.md` and the GitHub Release; early contributor measurements are not substituted for the integrated revision. GitHub publication does not automatically publish npm.
 
 ## Historical development evidence
 

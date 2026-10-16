@@ -1,144 +1,42 @@
-# macOS arm64 support
+# macOS Apple Silicon (`darwin-arm64`)
 
-This branch extends `dsh-ops` from Windows x64 only to Windows x64 **and** macOS
-arm64 (`darwin-arm64`), targeting DSH `0.2.0-rc.2`.
+0.3.1 supports Apple Silicon, not Intel Mac. Exact native targets are `win32-x64`, `linux-x64` and `darwin-arm64`; the npm `os`/`cpu` projection is not a promise that every combination works.
 
-## Scope
+## Native worker and source build
 
-| Item | Windows x64 | macOS arm64 |
-| --- | --- | --- |
-| Status | Shipped by 0.3.0 | Added by this branch |
-| Native worker | `runtime/win32-x64/dsh-ops-worker.exe` | Built from `native/` on the target machine; not carried in git |
-| bash | Bundled payload (`@dsh-ops/bash-win32-x64`) | The operator's own bash, selected with `bashPath` |
-| PowerShell 7 | Bundled payload (`@dsh-ops/pwsh-win32-x64`) | The plugin can provision it, but the host exposes no pwsh row on macOS |
-
-The worker binary is not part of the repository on either platform: upstream
-ships `runtime/` through the `files` whitelist in `package.json`, and
-`.gitignore` keeps it out of git. A source checkout has to stage its own worker.
-
-## What changes on macOS
-
-| Area | Upstream behaviour | This branch |
-| --- | --- | --- |
-| Package scope | `os: ["win32"]`, `cpu: ["x64"]` | `["win32","darwin"]`, `["x64","arm64"]`; `@fastctx/darwin-arm64` added as an optional dependency |
-| Worker resolution | `PLATFORMS = ['win32-x64']` | `['win32-x64', 'darwin-arm64']` |
-| Profile commands | Reject any host other than win32-x64 | Accept win32-x64 and darwin, and discover the desktop application's CLI per platform |
-| Shell file names | `bash.exe` / `pwsh.exe` at every layout | `shellExecutable(kind, platform)`: the `.exe` name on Windows, the bare name elsewhere |
-| System discovery | Windows well-known locations only | Adds the Homebrew and system locations used on macOS and Linux |
-| Shell pins | PortableGit and PowerShell for win32-x64 | Adds a digest-pinned PowerShell 7.6.6 `tar.gz` for darwin-arm64 |
-| Archive extraction | `zip` and `sfx-7z` | Adds `tar.gz`, unpacked with the system `tar` |
-| pwsh overlay | Mounted on Windows only | Gated by `shells.pwsh.available` alone; see the capability matrix |
-
-The Windows branches keep their previous values: the new helpers derive a file
-name or a target from `process.platform`, and the two Windows pins are
-unchanged.
-
-## Building the native worker
-
-Rust >= 1.88 is required, the same requirement as `npm run build:ptc`. The crate
-is platform neutral, and its Windows-specific code sits behind
-`#[cfg(windows)]`.
+Published runtime-bearing packages use `runtime/darwin-arm64/dsh-ops-worker` with a version/target/executable/SHA256 receipt. A Git checkout does not contain generated workers.
 
 ```console
-cargo build --release --manifest-path native/Cargo.toml
-node bin/native-runtime.mjs stage --platform darwin-arm64
+npm ci --ignore-scripts
+cargo build --release --locked --manifest-path native/Cargo.toml
+node bin/native-runtime.mjs stage --platform darwin-arm64 --input native/target/release
 node bin/native-runtime.mjs check --platform darwin-arm64
+npm run verify
 ```
 
-`stage` copies the worker into `runtime/darwin-arm64/` and writes its receipt
-(`version`, `target`, `executable`, `sha256`). `check` verifies the Mach-O
-header and every digest. `resolveWorker` reads that receipt on each load, so a
-worker built from different source fails closed instead of running.
+Use a supported Rust toolchain (release validation pins 1.97.1). A custom `CARGO_TARGET_DIR` or `cargo --target` requires the matching explicit stage `--input`; never stage an old default-directory build by accident. The resolver refuses missing/corrupt receipts and Intel Mac targets.
 
-## Configuration
+## Shells
 
-macOS carries no bundled shell payload, so the bash rung has to be selected
-explicitly. `bashPath` is the first rung of the resolution ladder and only
-checks that the path exists:
+Bash and PowerShell npm binary payloads remain **Windows-only optional dependencies**. npm must not install them on a Mac; there is no postinstall downloader. macOS `ops_bash` selects explicit `bashPath`, then PATH and Homebrew/system locations. Example:
 
 ```yaml
 - id: dsh-ops-shell
   name: dsh-ops/shell
   config:
     bashPath: /opt/homebrew/bin/bash
-- id: dsh-ops-background
-  name: dsh-ops/background
-  disabled: false
-  config:
-    enableShellTools: true
-    bashPath: /opt/homebrew/bin/bash
 ```
 
-Two details matter:
+`/bin/bash` is usable when Homebrew Bash is not installed. Restricted calls still require DSH confinement; unavailable confinement is an executor failure, never permission to run unconfined. The host disables its pwsh tool on macOS, so provisioning a pwsh executable does not create that tool. Background remains disabled and outside the formally declared macOS component scope.
 
-- **Each component resolves its own row's configuration.** A `bashPath` set only
-  on `dsh-ops/shell` leaves `dsh-ops/background` without a resolvable bash: its
-  four tools are never published and nothing reports an error. Repeat the key on
-  every row that needs bash.
-- **The background component also needs FastCtx**, which is resolved from the
-  plugin's own `node_modules`. That is why `@fastctx/darwin-arm64` is an
-  optional dependency of this package rather than a choice made in a profile.
+## PTC and filesystem boundaries
 
-`allowSystemShellFallback: true` is not a substitute for `bashPath`: it selects
-an unpinned system shell, and the first-start migration writes it back to
-`false`.
+- file and opt-in PTC use the independent Rust worker, not FastCtx.
+- PTC tools publish only in pure PTC presentation. `batch.root` must be absolute when supplied; result paging of a batch audit must use the same root when it differs from the session root.
+- macOS `/tmp` and `/var` are system aliases. The file bridge canonicalizes the **parent chain**, preserving the final entry for no-follow checks. Descendants of those aliases work; directly naming a symlink still fails closed. Canonical write-root checks remain in force.
+- `replace` on macOS requires APFS clone support to preserve extended ACL metadata. Unsupported clone operations fail before publication rather than dropping a deny entry. Ordinary mode/owner/xattrs are restored before the final fsync and rename.
+- Hidden `.dsh-ops-update-*.lock` sidecars are stable cooperative path locks, not temporary debris. Do not delete them while writers may be active.
 
-Installing a source checkout into a profile can use the official profile
-manager directly, for example `dsh plugin --profile <name> add <path>`, or the
-one-command entry point with
-`DSH_OPS_INSTALL_SPEC=<package spec> dsh-ops install --profile <name>`.
+## Verification evidence
 
-## Capability matrix
-
-| Component | macOS arm64 | Notes |
-| --- | --- | --- |
-| `dsh-ops/file` | Available | Requires the staged `runtime/darwin-arm64/dsh-ops-worker`. 0.3.0 has no FastCtx fallback for this component, so a missing worker removes all four tools without reporting an error. |
-| `dsh-ops/shell` | Available | Requires `bashPath`. The host's `bash-sandbox` row is enabled on macOS, so confined modes keep host enforcement. |
-| `dsh-ops/background` | Available | Requires `bashPath` on its own row and `@fastctx/darwin-arm64`. Its tools are published per session and only under `danger-full-access`. |
-| `dsh-ops/ptc` | Available | The component is opt-in and publishes only while a session's presentation is PTC-only (the host's `ptc` agent preset), the same gate as on Windows. Driven end to end on darwin-arm64; see the note below. |
-| PowerShell 7 (`pwsh`) | Not available on macOS | `dsh-ops provision-shells --pwsh` installs the pinned 7.6.6 build and the ladder reports it as available, but the host's `pwsh-sandbox` and `tool-pwsh` rows are disabled outside Windows, so no pwsh tool appears. |
-
-### PTC on macOS
-
-PTC is not a Windows-only capability here. It was driven end to end in a real
-session on darwin-arm64, started under the host's `ptc` agent preset:
-
-- `ops_batch` `action=plan` returned `status:"planned"` with an audit id and
-  `total:2`, then `action=resume` with that id returned `status:"completed"`,
-  `done:2`, `failed:0` — and the file system matched the plan.
-- `ops_result` `put` returned a reference id, `page` with `equals` returned
-  exactly the matching row, and `release` returned `status:"released"`.
-- No call returned `POLICY_DENIED` or `EXECUTOR_UNAVAILABLE`.
-- `ps` sampled the process during the calls and caught
-  `runtime/darwin-arm64/dsh-ops-worker`, so the staged Mach-O worker is what
-  served them.
-
-The plugin-side gate has a second half that is easy to get wrong, and it is
-worth recording why it holds. `ptcOnly()` requires the assembled prompt to carry
-exactly one tool, `run_code`. The component registers `ops_batch` and
-`ops_result` into that same scope, so the gate could close on itself. It does not,
-because `reconcile()` withdraws the registered tools synchronously *before* it
-evaluates `ptcOnly()`, and every call re-evaluates the gate. Verified both ways:
-a PTC-only presentation publishes the two tools and a native presentation
-publishes neither.
-
-Two observations from driving it, neither worked around here: `ops_batch`
-rejects a relative `root` with `INVALID_ARGUMENT: root must be an absolute path`
-even though the description says the root defaults to the session cwd, and
-`ops_result` `page` needs the same `root` the batch used when reading its
-`detailsRef`, otherwise it answers `NOT_FOUND` from the session cwd while the
-`nextAction` text mentions only the id.
-
-## Known limitations
-
-- **`/tmp` is a symlink on macOS** (`/tmp` -> `/private/tmp`). The native file
-  worker refuses to traverse links, so the file tools reject paths below it with
-  `POLICY_DENIED: Links, reparse points and special objects are not traversed`.
-  Pass the canonical path (`/private/tmp/...`) instead. This is the intended
-  no-follow behaviour, not a defect.
-- **Replacing already-loaded code needs a host restart.** Editing a profile
-  patch file re-reads the bundle's composition and can remount or unmount a
-  component, but the host has already imported the plugin's modules: a package
-  swap keeps executing the old code until the application restarts.
-- **The worker is not in git**, so a clone of this repository cannot run the
-  file component until the build step above has been run once.
+The manually dispatched three-platform workflow builds and tests a native Apple Silicon worker on an actual arm64 macOS runner. Final run links and the shipped artifact digests are recorded in the GitHub v0.3.1 Release. Contributor PR #67's earlier real-session observations are useful history, not a substitute for final integrated-head validation. Desktop GUI sessions still require a normal app restart after replacing the package.
