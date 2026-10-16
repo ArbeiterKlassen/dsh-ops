@@ -58,8 +58,13 @@ jobs:
       - name: Windows IPC build
         if: runner.os == 'Windows'
         run: npm run build:bash-ipc
-      - name: Full verification
-        run: npm run verify
+      # The gate, not `npm run verify`: it runs the same suites with `DSH_OPS_REQUIRE_RUNTIME=1`
+      # on POSIX (a runtime-absence skip is a failure, not a pass), refuses any skip outside this
+      # platform's known set, fails when a suite file on disk was never collected, and checks the
+      # packed artifact. Build success is not behaviour.
+      - name: Functional gate (skips, suite inventory, packed artifact)
+        shell: bash
+        run: node scripts/verify-gate.mjs --skip-install
       - name: Verify native staged closure
         run: node bin/native-runtime.mjs check --platform ${{ matrix.target }}
       - name: Check shell payload platform filtering

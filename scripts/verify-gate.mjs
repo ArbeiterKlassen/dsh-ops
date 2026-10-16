@@ -204,6 +204,18 @@ async function main() {
 
   await run('staged runtime closure', 'node', ['bin/native-runtime.mjs', 'check', '--platform', TARGET])
 
+  // The artifact, not just the build. `npm pack` honours `files`, and a package that silently drops
+  // `runtime/` installs fine and then fails in the user's profile — so check the thing users get.
+  const packDir = mkdtempSync(path.join(tmpdir(), 'dsh-ops-pack-'))
+  await run('pack the release artifact', 'npm', ['pack', '--pack-destination', packDir])
+  const tarball = readdirSync(packDir).find(entry => entry.endsWith('.tgz'))
+  if (tarball === undefined) failures.push('npm pack produced no .tgz in the pack destination')
+  else {
+    await run('unpack the release artifact', 'tar', ['-xzf', path.join(packDir, tarball), '-C', packDir])
+    await run('packed runtime closure', 'node',
+      ['bin/native-runtime.mjs', 'check', '--root', path.join(packDir, 'package'), '--platform', TARGET])
+  }
+
   // The assertions. Failures here are the point of the script, not a detail of it.
   const failures = [...stepFailures]
   if (!(typeof manifestChecks === 'number' && manifestChecks >= MANIFEST_CHECK_FLOOR)) failures.push(`manifest checks: expected at least ${MANIFEST_CHECK_FLOOR}, got ${manifestChecks ?? 'none reported'}`)
