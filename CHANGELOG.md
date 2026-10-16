@@ -5,6 +5,120 @@ All notable changes to this package are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-10-15 — Linux x64 adaption verified, native worker boundary fixes
+
+Release scope: **Windows x64 and Linux x64**, targeting DSH 0.2.0-rc.2. 0.3.0
+shipped Windows x64 only; this release adds the Linux x64 half and makes it a measured
+platform rather than a declaration — the same suites, the release closure and the
+packaged artifact were run on a Linux host, and the defects those runs found are fixed
+here. Every fix below is platform-neutral, so Windows gains them too; the Windows half of
+the metadata work needs Windows measurements and is tracked in
+`docs/windows-verification.md`. macOS and ARM64 remain unclaimed, and the shell component
+(`ops_bash`/pwsh) with its Bash IPC proxies remains Windows-only.
+
+### Linux x64 adaption
+
+- Build and verify the native worker on `x86_64-unknown-linux-gnu` as a first-class target: `cargo build --release --locked`, `cargo test`, the full `npm run verify` with `DSH_OPS_REQUIRE_RUNTIME=1` (30 suites, no skip counted as a pass) and `npm run verify:release`. `npm run build:ptc` now stages the Linux worker beside the Windows one, each with its own receipt, and the release checks reject a missing or corrupt artifact for any target the package carries.
+- Keep the platform paths separate instead of compromising both: directory `fsync` and metadata reapplication on POSIX, `MoveFileExW` publication on Windows, chosen per `cfg` rather than papered over with one behaviour that would be wrong on both.
+- Derive platform facts when a suite runs instead of from the host it happens to be on: mount and filesystem fixtures are resolved at run time, no tool is parsed for `LC_MESSAGES`-dependent wording, and whole-suite skips are declared per platform (2 on Linux) rather than counted as passes.
+- Close the release gate over the targets a checkout actually staged, so a Linux-only build passes and `DSH_OPS_REQUIRE_ALL_TARGETS=1` states the multi-platform claim; the closure message names the staged platform instead of assuming Windows.
+- Document the Linux route end to end in `docs/linux-build.md` and `docs/linux构建.md`: build, stage, `npm pack`, `dsh plugin add ./dsh-ops-0.3.1.tgz`, and the gate commands with their expected output.
+- Add 11 boundary suites that run on both platforms: grep across lines, replace metadata, output byte budget, update lock, hex offsets, argument and runtime diagnostics, release scope, PTC provenance, and the Linux argument/attribute suites.
+
+### Credential reads are refused, and the write surface is the session's own
+
+Taken from WTStarMark's PR #40, which found that DSH's filesystem layer does not fence credential
+paths: a tool that reads any OS-readable file could hand a model the operator's keys and tokens.
+
+- The file tools now refuse to read a credential location, by default and before the worker is
+  spawned: `~/.ssh`, `~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `.docker/config.json`,
+  `.netrc`, `.git-credentials`, `.npmrc`, `.pypirc` and the DSH credential stores, plus
+  `id_rsa`/`id_ed25519`-style keys, `*credentials.{json,yaml,ini}` and `service-account*.json`
+  wherever they live. The refusal names the fence and the way out; a row can opt out with
+  `denyCredentialReads: false`, and `DSH_OPS_DENY_READ` can only ever *widen* the list (an absolute
+  entry is used as written, a relative one is resolved below the home).
+- A traversal skips those directories by identity, so `ops_glob` cannot name a private key below one
+  and `ops_grep` cannot match inside one — the match text never enters a result. Covered by
+  `test/credential-fence.test.mjs`, which runs the same call with and without the skip.
+- The shared system temp is no longer endorsed as a `replace`/batch write root: the session's own
+  `dsh-ops-session-<id>` directory is, created lazily with mode `0700`. The host sandbox grants the
+  whole of `/tmp` to workspace-write on Linux, so endorsing it here would let one session replace
+  another's temporary files; this fence is deliberately narrower than the kernel's grant.
+- A directory that holds one binary file no longer fails a whole `ops_replace`: the text files around
+  it are still edited, the binary is reported through `skipped` and `skippedPaths`, and the previous
+  behaviour (refusing the entire call with an error that named no file) is gone.
+
+### Review follow-ups (@Haoming9527, #81)
+
+- An inherited `LC_ALL` silently un-pinned the message locale. POSIX resolves `LC_ALL` before
+  `LC_MESSAGES`, so on a host that sets it — a `zh_CN.UTF-8` desktop commonly sets nothing else — the
+  English pin that keeps the host's `denialSignatures` matching never took effect, and a sandbox
+  refusal was reported as a generic command failure (measured here before the fix:
+  `LC_MESSAGES="zh_CN.UTF-8"`). `shellEnvOverrides` now neutralizes the inherited override (an empty
+  value is "unset" to the C library) and carries its **encoding** intent forward as `LC_CTYPE`, which
+  a host that stated its own ctype keeps. `LC_ALL=C` was not an option: it would make commands read
+  UTF-8 input as bytes.
+- The profile CLI fallback was Windows-only in shape: with no package-based CLI to resolve it
+  selected `dsh.cmd` and launched it through `cmd.exe`, so on Linux the call died as
+  `spawnSync cmd.exe ENOENT` even with an executable `dsh` on PATH. The fallback is now
+  platform-aware, and the `cmd.exe` wrapper is only used on Windows.
+- The Windows update lock blocked the worker's own read. Windows `LockFileEx` denies access to a
+  locked range through *any* other handle, including one the same process opens, and the revision
+  check re-read the target after taking the lock — so an ordinary, uncontended `replace` failed
+  there with a lock violation. Linux cannot show this, because `flock` is per open file description.
+  The worker now reads the current bytes through the lock handle, so nothing reopens the target
+  between the check and the publish. `docs/windows-verification.md` carries the W1g case.
+- Debris cleanup deleted files that merely shared a prefix. The sweep matched
+  `.<name>.dsh-ops-` and removed anything that began with it, which took an operator's
+  `.notes.txt.dsh-ops-personal-backup` and, for a target named `foo`, the *live* temporary file of a
+  different target (`foo.dsh-ops-bar`). A leftover must now be the whole shape this writer creates:
+  the tail has to parse as the v4 UUID `atomic_write` generates.
+- A single long line could exhaust the worker's memory. In the content modes the grep path built one
+  text item per match *before* `limit` was consulted, so a 32 KiB line matched by `pattern: "a"`
+  copied that line 32 768 times and the call aborted under a memory cap instead of returning its
+  first item. Matches are counted in one non-allocating pass and materialized in a second pass
+  bounded by the page; `matched`/`total` stay exact, because they report what was counted.
+
+### The shell component on Linux: the host's own bash, under a mandatory sandbox
+
+Taken from WTStarMark's PR #40, which designed the same capability as a separate opt-in
+`dsh-ops-linux` component. It lives in `dsh-ops/shell` here: `dsh-ops/file` already gives Linux the
+four file tools, so a second component publishing the same four would be two names for one surface.
+The capability is taken; the duplicate component is not.
+
+- On POSIX the resolver answers from `config.bashPath`, then `PATH`, then `/bin/bash`,
+  `/usr/bin/bash`, `/usr/local/bin/bash`, and never provisions a plugin-owned shell: a distribution
+  bash is tied to that distribution's libc and architecture, so a second copy would add supply-chain
+  and licensing burden without solving anything. `allowSystemShellFallback` is the Windows gate on
+  reaching past the pinned payload; with no payload on POSIX the host bash *is* the rung, so the flag
+  is not required there. Windows is unchanged — same config, same `disabled`.
+- `dsh-ops provision-shells` refuses on a POSIX host and names `config.bashPath`, instead of failing
+  on an empty pin table: the pinned payload is the Windows one.
+- Confinement is not weakened by the new rung. A confined command reaches the host sandbox first, and
+  an unavailable or unusable confinement result is refused with no command executed; read-only still
+  publishes no command tool.
+- The FastCtx job lane is **not** widened by it: `lib/tools.js` resolves that lane with `posix: false`,
+  because the lane is Windows-only in 0.3.1 (its payload and IPC proxies are), so a host bash cannot
+  make it publish job tools on a platform nothing here has verified.
+- The manifest now states each component's platforms — `dsh-ops-shell` and `dsh-ops-file`: win32 +
+  linux; `dsh-ops-background`: win32 only — and `npm run validate:manifest` fails if a Linux claim
+  rides along (61 checks).
+- Covered by `test/linux-shell.test.mjs` (a real `ops_bash` execution through the host bash, the
+  refusal under unusable confinement, and the two lanes being one decision apart), by a
+  spawn-environment assertion in `test/mount.test.mjs` that fails if the job-lane fence is removed,
+  and by `test/shells.test.mjs`, whose Windows-doctrine cases now name their platform instead of
+  inheriting the host's.
+
+### Native worker boundary fixes
+
+- Preserve file identity across `ops_replace`. The replacement is published as a new inode, so the target's mode, owner, POSIX ACL and user extended attributes are now captured before the write and reapplied before publication. Previously a `0600` file came back world-readable (typically `0664`) and a `0755` script lost its execute bit. A mode or ACL that cannot be reapplied aborts the call with nothing published; on restore, an owner or attribute that cannot be put back is reported in `items[].metadataWarnings`, while `items[].metadata` reports what was kept. Covered by `test/file-metadata.test.mjs`.
+- Make `ops_grep`'s `multiline` match across lines. It previously only changed what `^` and `$` anchored to while still matching one line at a time, so a pattern containing `\n` could never match and the call answered `matched: 0` without an error. `^`/`$` keep their per-line meaning, context lines still apply, and behaviour without the flag is unchanged. Matching the whole file at once also adds one zero-width match after a final newline, so that position is no longer reported as a line of its own: `$` answers once per line, not once per line plus one, and no match lands on a line the file does not have. Covered by `test/grep-multiline.test.mjs`.
+- State what the shared parameter names mean, without changing the behaviour they name: `replace`'s `pattern` is a literal substring while `grep`'s is a regular expression, and `maxReplacements` is a ceiling that refuses the whole operation rather than truncating it. The refusal now names the match count, the ceiling and how to raise it instead of blaming the pattern.
+- Bound every response by encoded bytes as well as by lines, so a single long line can no longer fail a read outright; `bytesTotal` and `truncatedInLine` report where that applies. The hex view of `ops_inspect_local_file` now reads the first row of the file instead of starting at the second.
+- Hold an exclusive lock across the read-check-publish window of `ops_replace`, so concurrent replacements cannot silently lose a write: a peer now receives `REVISION_CONFLICT` rather than reporting a change it did not keep. Covered by `test/replace-concurrency.test.mjs`.
+- Bound the debris a hard kill leaves behind. The next writer of a file reclaims its own `.<name>.dsh-ops-*` leftovers, which a `SIGKILL` cannot clean up at the point they are created, and a directory `fsync` that fails after a successful rename reports `effectState: "applied"` with a `nextAction` that says not to repeat it, rather than `"none"`.
+- Refuse a native worker that exists without its execute bit, naming the path and the mode, instead of failing later as a bare `EACCES` from `spawn`. The resolver's "unavailable" error lists the candidates it tried, a missing or malformed `provenance.json` is named as an incomplete stage, and `node bin/native-runtime.mjs check` on a package missing a declared platform explains both ways forward instead of raising a raw `ENOENT`.
+
 ## [Unreleased]
 
 ### Payload trust
@@ -33,6 +147,7 @@ fix; see that entry for the `PSModulePath` scope note.
   **substring**, so `…\RUNTIME\…` can no longer skip receipt verification.
 - Report a `PATH`-sourced FastCtx on the success path; behaviour is unchanged (same-user, not a
   privilege boundary).
+
 
 ## [0.3.0] — 2026-10-14 — Windows x64 native tools and PTC
 

@@ -487,7 +487,13 @@ async function commandProvision({ force, from, noBuild }) {
 
   const installed = probeBinary(target)
   if (!installed.ok) {
-    console.error(`the installed copy does not run: ${target} (${installed.detail})`)
+    // Resolution prefers the managed copy over every other rung, so leaving a copy that does not
+    // run here would shadow a working build on every later activation. Remove it so the next
+    // resolve falls through to a rung that does run (#30).
+    let removed = true
+    try { fs.rmSync(target, { force: true }) } catch { removed = false }
+    console.error(`the installed copy does not run: ${target} (${installed.detail})`
+      + (removed ? '; it was removed, so the next resolve falls through' : '; it could not be removed and will shadow the other rungs'))
     return 1
   }
 
@@ -988,6 +994,15 @@ function provisionShell(pin, { force, dryRun }) {
  * @returns {number} the exit code: 0 when every selected shell is in place, 1 otherwise.
  */
 function commandProvisionShells({ kinds, force, dryRun, pinFile }) {
+  // The pinned payload is the Windows one: a Windows host carries no POSIX shell, so this
+  // distribution provisions and digest-checks one there. A POSIX host already has its
+  // distribution's own bash, so there is nothing to install — say that instead of failing on an
+  // empty pin table (report: the shell component's POSIX rung).
+  if (process.platform !== 'win32') {
+    console.error(`dsh-ops provisions shells on Windows only; this host (${process.platform}-${process.arch}) already has its own bash,`
+      + " and the shell component resolves it (PATH, then /bin/bash, /usr/bin/bash, /usr/local/bin/bash). Use config.bashPath to pin an explicit executable instead.")
+    return 1
+  }
   let pins
   try {
     pins = pinTable(pinFile)

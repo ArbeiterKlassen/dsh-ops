@@ -219,7 +219,11 @@ await test('ops reads and writes reach the host read-before-edit table (#17)', a
 })
 await test('owned Modify-only workspace starts real DSH sandbox; three modes and explicit denials', async () => {
   await withTempDir('permission-matrix',async root => {
-    const outside=path.join(path.dirname(root),'permission-outside-'+path.basename(root))
+    // The local sandbox grants the platform temporary area on Linux, so a
+    // non-Windows denial must be probed outside both the workspace and it.
+    const outside = process.platform === 'win32'
+      ? path.join(path.dirname(root),'permission-outside-'+path.basename(root))
+      : path.join(path.resolve('.'),'.tmp-permission-outside-'+path.basename(root))
     fs.mkdirSync(outside); fs.writeFileSync(path.join(outside,'keep.txt'),'outside')
     fs.writeFileSync(path.join(root,'data.txt'),'before')
     // Strip broad inherited grants only on this test-owned directory. Recreate
@@ -372,7 +376,15 @@ await test('preparation hands the spawned interpreter the scrubbed environment',
   const pathKey = pick(spec.options.env, 'PATH')
   assert.notEqual(pathKey, undefined)
   assert.equal(spec.options.env[pathKey], process.env.PATH)
-  assert.equal(spec.executable.toLowerCase().endsWith('windows\\system32\\windowspowershell\\v1.0\\powershell.exe'), true)
+  // The interpreter path is a Windows fact: `preparationSpawnSpec` builds it from `SystemRoot` and
+  // joins it with the *host's* separator, so the full `…\System32\WindowsPowerShell\v1.0\powershell.exe`
+  // spelling can only hold on win32 — the same line yields `C:\Windows/System32/…` on POSIX. The
+  // environment assertions above are the regression this case exists to catch, and the flags below are
+  // set unconditionally, so both keep running on every platform.
+  const interpreter = process.platform === 'win32'
+    ? 'windows\\system32\\windowspowershell\\v1.0\\powershell.exe'
+    : 'powershell.exe'
+  assert.equal(spec.executable.toLowerCase().endsWith(interpreter), true)
   assert.deepEqual(spec.args.slice(0, 5), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'])
   assert.equal(spec.args.includes('C:\\work\\scratch'), true)
 })

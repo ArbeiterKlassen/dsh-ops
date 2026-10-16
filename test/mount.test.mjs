@@ -4,8 +4,9 @@ import path from 'node:path'
 import { resolveConfig } from '../lib/config.js'
 import { BASH_TOOL, FILE_TOOLS, BACKGROUND_TOOLS, TOOLING_SECTION, publicToolName } from '../lib/policy.js'
 import { FastCtxTools, childEnv } from '../lib/tools.js'
+import { resolveShells } from '../lib/shells.js'
 import { applyComponent } from '../lib/index.js'
-import { assert, report, skipSuite, test, waitFor, withTempDir } from './lib/harness.mjs'
+import { PACKAGE_ROOT, assert, report, skipSuite, test, waitFor, withTempDir } from './lib/harness.mjs'
 import { bootHost, callTool, mountPlugin, mountScopedToolPlugin, preExecute, publicToolNames,
   registryHasOwnRegister, registryNames, renderSections, resolveRuntime, scopedToolNames,
   shutdown, tryResolveRuntime } from './lib/host.mjs'
@@ -245,7 +246,15 @@ await test('file/background share runtime, but command tools never leak into glo
   try {
     await executor(ctx)
     const file = await fileMount(ctx)
-    const background = await component(ctx, 'background')
+    // The background lane publishes its command tools only when a bash executor
+    // is resolvable (`FastCtxTools.shellAllowed`), and the shipped default
+    // refuses an unpinned system shell. Resolve a real bash for this host the
+    // way an operator would, then hand it over explicitly, so the scoping
+    // assertions below are exercised on every platform instead of only where a
+    // bundled Windows payload happens to exist.
+    const hostShells = resolveShells({ allowSystemShellFallback: true })
+    assert.ok(hostShells.bash.available, 'this fixture drives real command tools and needs a real bash on this host')
+    const background = await component(ctx, 'background', { bashPath: hostShells.bash.file })
     const full = await agent(ctx, 'background-full')
     const jobs = BACKGROUND_TOOLS.map(publicToolName)
     await visible(ctx, full, jobs)
@@ -261,6 +270,41 @@ await test('file/background share runtime, but command tools never leak into glo
     assert.equal(jobs.some(name => scopedToolNames(ctx, full).includes(name)), false)
     assert.equal((await sections(ctx, full)).has(BG_SECTION), false)
   } finally { await shutdown(ctx) }
+})
+await test('the job lane resolves a bash the Windows way, so the shell component rung never reaches it', async () => {
+  // `lib/tools.js` asks with `posix: false`: the FastCtx job lane is Windows-only in 0.3.1 (the
+  // pinned payload and the IPC proxies are, and `dsh-plugin.json` declares that). Without the fence
+  // the shell component's POSIX rung would hand this lane a host bash and publish job tools on Linux
+  // in danger-full-access — a surface nothing has verified.
+  const windowsWay = resolveShells({}, { posix: false }).bash
+  const componentWay = resolveShells({}).bash
+  if (process.platform === 'win32') {
+    // Where a pinned payload exists the two are the same question, so the lane is unchanged there.
+    assert.deepEqual(windowsWay, componentWay)
+    return
+  }
+  assert.equal(componentWay.available, true, 'the shell component resolves this host bash')
+  assert.equal(windowsWay.available, false, JSON.stringify(windowsWay))
+  assert.equal(windowsWay.source, 'disabled')
+  // `allowSystemShellFallback: true` remains the operator's explicit opt-in for an unpinned system
+  // shell, and it already reached a PATH bash on Linux before this rung existed. That is unchanged
+  // and deliberate: the fence is on the *implicit* answer, not on the documented opt-in.
+  // And the lane really spawns that way: `#connect` pins the executor it chose into the child's
+  // environment, so reading it back is the observation that the fence reached the spawn rather than
+  // stopping at the resolver.
+  const surface = new FastCtxTools({
+    ctx: { tools: { register() { return () => {} } } },
+    config: resolveConfig({ toolCallTimeoutMs: 5000 }),
+    runtime: resolveRuntime(),
+    report: () => {},
+  })
+  try {
+    await surface.start()
+    const env = fs.readFileSync(`/proc/${surface.client.child.pid}/environ`, 'utf8')
+    assert.ok(!env.includes('FASTCTX_BASH=/bin/bash') && !env.includes('FASTCTX_BASH=/usr/bin/bash'),
+      `the lane must not hand FastCtx a host bash: ${env.split('\0').filter(entry => entry.startsWith('FASTCTX_BASH=')).join(', ')}`)
+    assert.ok(env.includes('FASTCTX_BASH='), 'the lane must still pin its executor explicitly')
+  } finally { await surface.stop() }
 })
 await test('a dead server withdraws and republishes real file tools', async () => {
   const registered = new Map(), messages = []

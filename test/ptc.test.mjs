@@ -208,12 +208,16 @@ try {
   fs.copyFileSync('package.json',path.join(isolatedPackage,'package.json'))
   const runtimeDir = path.resolve('runtime',`${process.platform}-${process.arch}`)
   fs.cpSync(runtimeDir,path.join(isolatedPackage,'runtime',`${process.platform}-${process.arch}`),{recursive:true})
-  assert.throws(() => resolveWorker({}, {platform:'linux',arch:'x64'}), /Windows x64 only/)
-  assert.throws(() => resolveWorker({}, {platform:'win32',arch:'arm64'}), /Windows x64 only/)
+  assert.throws(() => resolveWorker({}, {platform:'linux',arch:'arm64'}), /Windows x64 and Linux x64 only/)
+  assert.throws(() => resolveWorker({}, {platform:'win32',arch:'arm64'}), /Windows x64 and Linux x64 only/)
   assert.ok(resolveWorker({}, {packageRoot:isolatedPackage}).startsWith(isolatedPackage))
   console.log('ok: installed runtime resolves without binaryPath or source build tree')
   const real = new Context(); real.logger.level = 0
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(),'ops-outside-'))
+  // The local sandbox grants the platform temporary area on Linux, so the
+  // outside-workspace fixture must sit outside that area as well as the root.
+  const outside = process.platform === 'win32'
+    ? fs.mkdtempSync(path.join(os.tmpdir(),'ops-outside-'))
+    : fs.mkdtempSync(path.join(path.resolve('.'),'.tmp-outside-'))
   const external = path.join(outside,'protected.txt'); fs.writeFileSync(external,'keep')
   try {
     await real.plugin(Subprocess)
@@ -231,7 +235,9 @@ try {
     assert.deepEqual(fs.readdirSync(path.join(dir,'.dsh-ops')).sort(),beforeStore)
     agent.session.mode='workspace-write'
     const denied=await call('batch',{root:outside,action:'run',operations:[{op:'remove',path:'protected.txt'}]})
-    assert.equal(denied.status,'error',JSON.stringify(denied)); assert.ok(fs.existsSync(external))
+    assert.equal(denied.status === 'error' || denied.status === 'rejected',true,JSON.stringify(denied))
+    assert.equal(denied.error?.code ?? denied.permission?.code,'POLICY_DENIED',JSON.stringify(denied))
+    assert.ok(fs.existsSync(external))
     agent.session.mode='danger-full-access'
     const unrestricted=await call('batch',{root:outside,action:'run',operations:[{op:'remove',path:'protected.txt'}]})
     assert.equal(unrestricted.status,'completed',JSON.stringify(unrestricted)); assert.equal(fs.existsSync(external),false)
@@ -243,6 +249,40 @@ try {
     const runtime = path.dirname(resolveWorker({}, {packageRoot:path.resolve('.')}))
     fs.cpSync(runtime,path.join(staged,'runtime',`${process.platform}-${process.arch}`),{recursive:true})
     assert.ok(resolveWorker({}, {packageRoot:staged}).startsWith(staged))
+
+    // L12: a worker that exists but cannot be executed is refused here, by name and
+    // mode, instead of being accepted and failing later as a bare EACCES from spawn.
+    // POSIX-only: Windows has no execute bit.
+    if (process.platform !== 'win32') {
+      const flat = path.join(dir,'flat-worker')
+      const flatTarget = path.join(flat,'runtime',`${process.platform}-${process.arch}`)
+      fs.mkdirSync(flatTarget,{recursive:true})
+      fs.copyFileSync('package.json',path.join(flat,'package.json'))
+      fs.copyFileSync(path.join(runtime,path.basename(file)),path.join(flatTarget,path.basename(file)))
+      fs.copyFileSync(path.join(runtime,'provenance.json'),path.join(flatTarget,'provenance.json'))
+      fs.chmodSync(path.join(flatTarget,path.basename(file)),0o644)
+      assert.throws(() => resolveWorker({}, {packageRoot:flat}), /not executable \(mode 0644\)/)
+    }
+
+    // A missing receipt must be named as an incomplete stage, not leak a raw ENOENT
+    // from inside readFileSync.
+    const noReceipt = path.join(dir,'no-receipt')
+    const noReceiptTarget = path.join(noReceipt,'runtime',`${process.platform}-${process.arch}`)
+    fs.mkdirSync(noReceiptTarget,{recursive:true})
+    fs.copyFileSync('package.json',path.join(noReceipt,'package.json'))
+    fs.copyFileSync(path.join(runtime,path.basename(file)),path.join(noReceiptTarget,path.basename(file)))
+    fs.chmodSync(path.join(noReceiptTarget,path.basename(file)),0o755)
+    // The receipt error names the artifact *inside the package* and reports only the error code:
+    // it must stay actionable without disclosing the operator's install path (#30).
+    assert.throws(() => resolveWorker({}, {packageRoot:noReceipt}), error => {
+      assert.match(error.message, /provenance receipt at runtime\/[^/]+\/provenance\.json could not be read \(ENOENT\)/)
+      assert.ok(!error.message.includes(noReceipt), `the message leaked the install path: ${error.message}`)
+      return true
+    })
+
+    // An unavailable runtime must say what was tried, so it is debuggable without
+    // reading the resolver.
+    assert.throws(() => resolveWorker({}, {packageRoot:path.join(dir,'nothing-here')}), /unavailable[\s\S]*runtime[\s\S]*native[\s\S]*build:ptc/)
     console.log('ok: original DSH native sandbox, readonly pages, outside-root denial and full-access outside-root execution')
   } finally { await real.fiber.dispose(); fs.rmSync(outside,{recursive:true,force:true}) }
 } finally { fs.rmSync(dir, { recursive: true, force: true }) }

@@ -1,5 +1,15 @@
 # Local release artifacts and credentials
 dist/
+# Credential material that must never be committed, whatever a scratch tree contains (#30)
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+credentials.json
+service-account*.json
 
 # Native worker build output and local audit stores
 runtime/
