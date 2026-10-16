@@ -5,16 +5,16 @@ All notable changes to this package are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.1] — 2026-10-15 — Linux x64 adaption verified, native worker boundary fixes
+## [0.3.1] — 2026-10-16 — Cross-platform native tools
 
-Release scope: **Windows x64 and Linux x64**, targeting DSH 0.2.0-rc.2. 0.3.0
-shipped Windows x64 only; this release adds the Linux x64 half and makes it a measured
-platform rather than a declaration — the same suites, the release closure and the
-packaged artifact were run on a Linux host, and the defects those runs found are fixed
-here. Every fix below is platform-neutral, so Windows gains them too; the Windows half of
-the metadata work needs Windows measurements and is tracked in
-`docs/windows-verification.md`. macOS and ARM64 remain unclaimed, and the shell component
-(`ops_bash`/pwsh) with its Bash IPC proxies remains Windows-only.
+Exact release targets: **win32-x64, linux-x64, darwin-arm64 (Apple Silicon)**. Intel Mac, Windows ARM64 and Linux ARM64 are not supported. Bash/PowerShell binary payloads remain pinned Windows-only optional dependencies. POSIX uses host Bash; PTC remains opt-in. Final build/test evidence is linked in docs/release-0.3.1.md.
+
+### Integrated macOS and release hardening
+
+- Merge #67 and #81 with their commit histories; include #69 path-alias handling and #107 Windows short-path validation.
+- Keep strict release closure over all three worker targets, receipt/hash/architecture checks and mandatory Windows IPC.
+- Create replacement temporary files privately, clear inherited Linux ACLs when absent on the original, sync after metadata restoration, and serialize cooperating updates with a stable path lock.
+- Enforce credential policy per traversed file and batch source, not only on the initial path.
 
 ### Linux x64 adaption
 
@@ -148,6 +148,14 @@ fix; see that entry for the `PSModulePath` scope note.
 - Report a `PATH`-sourced FastCtx on the success path; behaviour is unchanged (same-user, not a
   privilege boundary).
 
+### Workspace preparation
+
+- Prepare a `workspace-write` root whose path is an **8.3 short name** instead of refusing it as a
+  junction or symlink. Windows generates a short name wherever a path component does not fit 8.3, so
+  a host whose temporary directory is one — GitHub's `windows-latest`, or any machine whose user name
+  is longer than eight characters — could not prepare any workspace under it. The check now judges
+  the path it was given, and that path's ancestors, for reparse points, rather than comparing the
+  given path with its resolved form: a short name changes one into the other with no link involved.
 
 ## [0.3.0] — 2026-10-14 — Windows x64 native tools and PTC
 

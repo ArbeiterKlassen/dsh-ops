@@ -73,6 +73,41 @@ await test('preparation coalesces one trusted workspace and retries only failed 
     assert.equal(calls,1)
   })
 })
+await test('an 8.3 short-name workspace root is prepared, not refused as a link', async () => {
+  if(process.platform!=='win32')return
+  await withTempDir('prepare-short-name',async root => {
+    // A second spelling of the same directory: an 8.3 short name is not a link, but realpath
+    // expands it, so comparing the given path with its resolved form used to reject it. On a host
+    // whose TEMP is already short (the hosted runner) `root` itself is that case.
+    const short=ps(`(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${root.replaceAll("'","''")}').ShortPath`)
+    const candidate=short.toLowerCase()===root.toLowerCase()?root:short
+    if(fs.realpathSync.native(candidate).toLowerCase()===path.resolve(candidate).toLowerCase()) {
+      console.log('  (no 8.3 short name is in play for this root; nothing to exercise)')
+      return
+    }
+    await prepareWorkspace({mode:'workspace-write',workspaceRoot:candidate})
+  })
+})
+await test('a workspace root that is itself a junction is refused before any ACL work', async () => {
+  if(process.platform!=='win32')return
+  await withTempDir('prepare-link-root',async dir => {
+    const target=path.join(dir,'target'); fs.mkdirSync(target)
+    const link=path.join(dir,'link'); fs.symlinkSync(target,link,'junction')
+    await assert.rejects(prepareWorkspace({mode:'workspace-write',workspaceRoot:link}),/must not resolve through a junction or symlink/)
+  })
+})
+await test('a junction above the workspace root is refused although the resolved path looks clean', async () => {
+  if(process.platform!=='win32')return
+  await withTempDir('prepare-link-above',async dir => {
+    const target=path.join(dir,'target'); fs.mkdirSync(path.join(target,'ws'),{recursive:true})
+    const link=path.join(dir,'link'); fs.symlinkSync(target,link,'junction')
+    const root=path.join(link,'ws')
+    // Only the given path shows the junction; the resolved one has a clean ancestry, which is why
+    // this question cannot be answered after resolving.
+    assert.equal(fs.realpathSync.native(root).toLowerCase(),fs.realpathSync.native(path.join(target,'ws')).toLowerCase())
+    await assert.rejects(prepareWorkspace({mode:'workspace-write',workspaceRoot:root}),/must not resolve through a junction or symlink/)
+  })
+})
 await test('preparation failures always say why, including a timeout (#43)', async () => {
   const node=code=>({executable:process.execPath,args:['-e',code]})
   const failure=async options=>{ try { await runPreparation('C:\\ws',options); return '' } catch(error) { return error.message } }
