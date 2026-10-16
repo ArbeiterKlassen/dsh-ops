@@ -1,4 +1,5 @@
-# Three independent components. PTC is opt-in, scoped to pure PTC sessions.
+
+# Four independent components. PTC and the read-only TUI panel are opt-in.
 # Legacy shell and file stay enabled; neither is required by the PTC component.
 # The former dsh-ops/background row is no longer inserted; existing rows load as a no-op stub.
 - insert:
@@ -19,3 +20,10 @@
       disabled: true
       config:
         required: false
+    - id: dsh-ops-tui
+      name: dsh-ops/tui
+      disabled: true
+      config:
+        maxSessions: 32
+        maxActive: 128
+        recentLimit: 8
