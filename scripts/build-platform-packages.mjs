@@ -1,20 +1,19 @@
 #!/usr/bin/env node
 /**
- * Build and verify the three platform packages this plugin publishes.
+ * Build and verify the two platform packages this plugin publishes.
  *
- * All three packages carry ready-to-run Windows payloads. FastCtx is built from
- * vendored source; bash and pwsh are complete, digest-verified upstream runtime
- * trees with their licenses preserved. All are injected as exact optional deps.
- * Downloads happen during release assembly, never in an install lifecycle hook.
+ * Both packages carry ready-to-run Windows payloads: bash and pwsh are complete,
+ * digest-verified upstream runtime trees with their licenses preserved. Both are
+ * injected as exact optional deps. Downloads happen during release assembly,
+ * never in an install lifecycle hook.
  *
  * `--verify-upstream` keeps the packages honest: it downloads the pinned assets,
  * checks each one against the sha256 recorded here, and deletes them again. It
  * never runs as part of `all`.
  *
  * NAMES AND PINS ARE NOT DEFINED HERE WHEN SOMETHING ELSE OWNS THEM. The scope
- * and the shell package names come from `lib/shells.js` (`PLATFORM_PACKAGES`);
- * the FastCtx package name comes from `lib/binary.js` (`opsFastctxPackage`, a
- * frozen name constructor). The shell pins are read from `lib/shells.js` too
+ * and the shell package names come from `lib/shells.js` (`PLATFORM_PACKAGES`).
+ * The shell pins are read from `lib/shells.js` too
  * when that module exports a pin table or a pin function (see
  * {@link resolveShellPin} for the shapes accepted); a module that exports
  * neither is an error, never a silent second copy of the pins in this file.
@@ -23,14 +22,13 @@
  *
  * PIPELINE. Each step is re-runnable on its own:
  *
- *   build         `cargo build --release --locked` over the vendored FastCtx
- *   assemble      the three package directories, from the committed skeletons
- *                 in `packages/<kind>-<platform>-<arch>/` plus the payload (for
- *                 fastctx) and a per-package `provenance.json` (for all three)
+ *   assemble      the two package directories, from the committed skeletons
+ *                 in `packages/<kind>-<platform>-<arch>/` plus the verified
+ *                 upstream tree and a per-package `provenance.json`
  *   pack          `npm pack` each directory, then write `SHA256SUMS` and the
  *                 release-wide `provenance.json`
  *   publish-dir   copy the main package into a temporary publish directory,
- *                 inject all three platform payload packages and pack it
+ *                 inject both platform payload packages and pack it
  *   check         verify every artifact without downloading or building
  *   fetch         download the pinned upstream assets and keep them
  *   verify-upstream  download them, verify the digests, delete them again
@@ -42,18 +40,16 @@
  *   node scripts/build-platform-packages.mjs [command] [flags]
  *
  * Commands (default: `all`):
- *   all | build | assemble | pack | publish-dir | check | fetch | verify-upstream
+ *   all | assemble | pack | publish-dir | check | fetch | verify-upstream
  *
  * Flags:
  *   --platform <p>     target platform (default: win32 — the only one published)
  *   --arch <a>         target architecture (default: x64)
  *   --dist <path>      artifact directory (default: ../dist)
- *   --cargo <path>     cargo executable (default: $DSH_OPS_CARGO, then PATH)
  *   --proxy <url>      HTTP proxy for downloads (default: $HTTPS_PROXY/$HTTP_PROXY)
  *   --no-proxy         ignore the proxy environment
  *   --verify-upstream  alias for the `verify-upstream` command
  *   --force            re-download assets and rebuild stages
- *   --rebuild          run cargo even when a release binary already exists
  *   --check            alias for the `check` command
  *
  * @module dsh-ops/build-platform-packages
@@ -68,28 +64,12 @@ import tls from 'node:tls'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import * as shellsModule from '../lib/shells.js'
-import * as binaryModule from '../lib/binary.js'
 
 /** This checkout's root: this script lives in `scripts/`. */
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 /** The shell package prefixes, the only source of the release's names. */
 const PLATFORM_PACKAGES = shellsModule.PLATFORM_PACKAGES
-
-/**
- * The one derivation of every published name in this file.
- *
- * `PLATFORM_PACKAGES.bash.prefix` is the shell package prefix — the shared name
- * root followed by `bash-`. Removing that trailer leaves the root every package
- * of this release shares (`<scope>/` when the release is scoped, a bare
- * `dsh-ops-` when it is not), which is the only thing this file needs when
- * naming a package the code half does not name for it. There is deliberately no
- * scope literal anywhere below.
- */
-const NAME_ROOT = PLATFORM_PACKAGES.bash.prefix.slice(0, PLATFORM_PACKAGES.bash.prefix.length - 'bash-'.length)
-
-/** The payload package's kind; its name comes from `lib/binary.js`. */
-const FASTCTX_KIND = 'fastctx'
 
 /**
  * The digest of this script's own bytes.
@@ -152,8 +132,8 @@ const SHELL_PIN_ANNOTATIONS = Object.freeze({
   },
 })
 
-/** The three packages one release publishes, in publish order. */
-const KINDS = Object.freeze([FASTCTX_KIND, 'bash', 'pwsh'])
+/** The two packages one release publishes, in publish order. */
+const KINDS = Object.freeze(['bash', 'pwsh'])
 
 // ---------------------------------------------------------------------------
 // Small utilities
@@ -700,27 +680,6 @@ function shellPackageName(kind, platform, arch) {
 }
 
 /**
- * The published name of the FastCtx package, from the module that owns it.
- * @param {string} platform - `process.platform`.
- * @param {string} arch - `process.arch`.
- * @returns {string} the package name.
- */
-function fastctxPackageName(platform, arch) {
-  const owned = binaryModule.opsFastctxPackage
-  if (typeof owned === 'function') {
-    const value = owned(platform, arch)
-    if (typeof value === 'string' && value !== '') return value
-    if (value !== null && typeof value === 'object') {
-      const name = value.package ?? value.name
-      if (typeof name === 'string' && name !== '') return name
-    }
-    throw new Error(`lib/binary.js opsFastctxPackage(${platform}, ${arch}) returned ${JSON.stringify(value)}`)
-  }
-  warn('names', 'lib/binary.js does not export opsFastctxPackage yet; deriving the FastCtx package name from the shared root')
-  return `${NAME_ROOT}${FASTCTX_KIND}-${platform}-${arch}`
-}
-
-/**
  * Describe every package this run builds.
  * @param {string} platform - `process.platform`.
  * @param {string} arch - `process.arch`.
@@ -730,20 +689,6 @@ function fastctxPackageName(platform, arch) {
 function describePackages(platform, arch, dist) {
   const version = mainManifest().version
   return [
-    {
-      kind: FASTCTX_KIND,
-      name: fastctxPackageName(platform, arch),
-      version,
-      platform,
-      arch,
-      dist,
-      executable: `bin/${binaryModule.executableName(platform)}`,
-      payload: {
-        type: 'cargo',
-        directory: path.join(REPO_ROOT, 'vendor', 'fastctx'),
-        file: path.join(REPO_ROOT, 'vendor', 'fastctx', 'target', 'release', binaryModule.executableName(platform)),
-      },
-    },
     {
       kind: 'bash',
       name: shellPackageName('bash', platform, arch),
@@ -785,124 +730,18 @@ function stageDir(pkg) {
 }
 
 // ---------------------------------------------------------------------------
-// Step: build (the vendored FastCtx release binary)
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve the cargo executable and the rustup environment around it.
- * @param {string|undefined} explicit - `--cargo`, when given.
- * @param {object} context - the run context.
- * @returns {{command: string, env: NodeJS.ProcessEnv, version: string}} the invocation.
- */
-function cargoInvocation(explicit, context) {
-  const candidates = [
-    explicit,
-    process.env.DSH_OPS_CARGO,
-    process.env.CARGO,
-    'cargo',
-    process.platform === 'win32'
-      ? path.join(process.env.USERPROFILE ?? '', '.cargo', 'bin', 'cargo.exe')
-      : path.join(process.env.HOME ?? '', '.cargo', 'bin', 'cargo'),
-  ].filter((candidate) => typeof candidate === 'string' && candidate !== '')
-  const command = candidates.find((candidate) => candidate === 'cargo' || fs.existsSync(candidate))
-  if (command === undefined) {
-    throw new Error('no cargo found: pass --cargo <path>, set DSH_OPS_CARGO, or put cargo on PATH')
-  }
-  // rustup keeps its toolchains beside CARGO_HOME; deriving both from the
-  // executable's own location is what makes a non-PATH cargo work.
-  const env = { ...process.env }
-  const cargoHome = path.resolve(path.dirname(command), '..')
-  if (env.CARGO_HOME === undefined && command !== 'cargo' && fs.existsSync(cargoHome)) env.CARGO_HOME = cargoHome
-  const rustupHome = path.join(path.dirname(cargoHome), '.rustup')
-  if (env.RUSTUP_HOME === undefined && fs.existsSync(rustupHome)) env.RUSTUP_HOME = rustupHome
-  const probe = run(command, ['--version'], { env })
-  context.log('build', `cargo: ${probe.stdout.trim()} (${command})`)
-  return { command, env, version: probe.stdout.trim() }
-}
-
-/**
- * Build the vendored FastCtx in release mode.
- * @param {object} context - the run context.
- * @returns {Promise<object>} where the executable is and how it was built.
- */
-async function stepBuild(context) {
-  const pkg = context.packages.find((candidate) => candidate.kind === FASTCTX_KIND)
-  const file = pkg.payload.file
-  if (fs.existsSync(file) && !context.rebuild) {
-    log('build', `reusing ${path.relative(REPO_ROOT, file)}`)
-  } else {
-    const cargo = cargoInvocation(context.cargo, context)
-    log('build', `cargo build --release --locked in ${path.relative(REPO_ROOT, pkg.payload.directory)}`)
-    run(cargo.command, ['build', '--release', '--locked'], { cwd: pkg.payload.directory, env: cargo.env, inherit: true })
-    context.cargoVersion = cargo.version
-  }
-  if (!fs.existsSync(file)) throw new Error(`cargo finished without producing ${file}`)
-  const sha256 = await sha256File(file)
-  const bytes = fs.statSync(file).size
-  log('build', `${path.relative(REPO_ROOT, file)}: ${bytes} bytes, sha256 ${sha256}`)
-  return { file, bytes, sha256 }
-}
-
-// ---------------------------------------------------------------------------
 // Step: assemble
 // ---------------------------------------------------------------------------
 
 /**
- * The upstream facts recorded in `vendor/fastctx/UPSTREAM.md`.
- * @returns {{upstream: string, cargoVersion: string, tag: string, commit: string}} the facts.
- */
-function readUpstreamFacts() {
-  const notes = fs.readFileSync(path.join(REPO_ROOT, 'vendor', 'fastctx', 'UPSTREAM.md'), 'utf8')
-  const row = (label) => notes.split('\n').find((line) => line.startsWith(`| ${label} `))?.split('|')[2]?.trim()
-  // The table's cells are markdown, so the version is taken as the semver-shaped
-  // token inside one instead of by stripping a prefix.
-  const cargoCell = row('Cargo package') ?? ''
-  return {
-    upstream: row('Upstream') ?? 'https://github.com/yc-duan/fastctx',
-    cargoVersion: /(\d+\.\d+\.\d+(?:[-+][\w.-]+)?)/u.exec(cargoCell)?.[1] ?? 'unknown',
-    tag: /upstream release tag `([^`]+)`/u.exec(notes)?.[1] ?? 'unknown',
-    commit: (row('Source commit') ?? '').replace(/`/gu, ''),
-  }
-}
-
-/**
- * How the FastCtx payload was built, as a provenance source record.
- * @param {object} context - the run context.
- * @returns {object} the record.
- */
-function sourcesOfCargo(context) {
-  const upstream = readUpstreamFacts()
-  return {
-    kind: 'vendored-source-build',
-    label: 'vendored FastCtx source',
-    source: 'vendor/fastctx',
-    upstream: upstream.upstream,
-    upstreamVersion: upstream.cargoVersion,
-    release: upstream.tag,
-    revision: upstream.commit,
-    toolchain: context.cargoVersion ?? 'prebuilt',
-    profile: 'release',
-    locked: true,
-    license: 'Apache-2.0',
-    sha256: context.build.sha256,
-    bytes: context.build.bytes,
-  }
-}
-
-/**
- * The `provenance.json` one package carries.
- *
- * For the payload package this is a record of a build; for a pin package it is
- * the pin itself — everything a deployment needs to fetch, verify, and unpack
- * the upstream asset without this package forwarding a byte of it.
+ * The `provenance.json` one package carries: the pin itself — everything a
+ * deployment needs to fetch, verify, and unpack the upstream asset.
  * @param {object} pkg - the package.
- * @param {object} context - the run context.
- * @param {object[]} sources - the upstream sources this package names.
  * @param {string} license - the SPDX expression of what the package carries.
  * @param {string} skeletonSha256 - the digest of the skeleton it was built from.
  * @returns {object} the provenance record.
  */
-function provenanceFor(pkg, context, sources, license, skeletonSha256) {
+function provenanceFor(pkg, license, skeletonSha256) {
   const common = {
     package: pkg.name,
     version: pkg.version,
@@ -914,58 +753,47 @@ function provenanceFor(pkg, context, sources, license, skeletonSha256) {
     builtFromCommit: gitRevision(),
     builtAt: new Date().toISOString(),
   }
-  if (pkg.payload.type === 'archive') {
-    const pin = pkg.payload.pin
-    return {
-      ...common,
-      license,
-      redistributesUpstreamBytes: true,
-      notice: 'Complete upstream Windows runtime, redistributed without changes. Included licenses apply to their respective components.',
-      payloadSha256: pin.entrySha256,
-      payloadBytes: pin.entryBytes,
-      skeletonSha256,
-      entryPoint: pkg.executable,
-      entrySha256: pin.entrySha256,
-      entryBytes: pin.entryBytes,
-      entryNote: pin.entryNote,
-      upstream: {
-        repository: pin.upstream,
-        version: pin.upstreamVersion,
-        releaseTag: pin.releaseTag,
-        asset: {
-          name: pin.assetName,
-          url: pin.assetUrl,
-          sha256: pin.assetSha256,
-          bytes: pin.assetBytes,
-        },
-        extractor: pin.extractor,
-        unpacked: {
-          files: pin.unpackedFiles,
-          bytes: pin.unpackedBytes,
-          bytesAsSumOfFileSizes: pin.unpackedBytesSumOfFileSizes,
-          layout: pin.unpackedLayout,
-          note: pin.unpackedNote,
-        },
-        license: pin.license,
-        copyright: pin.copyright,
-      },
-      pinSource: pin.pinSource,
-    }
-  }
+  if (pkg.payload.type !== 'archive') throw new Error(`${pkg.name}: unsupported payload type ${pkg.payload.type}`)
+  const pin = pkg.payload.pin
   return {
     ...common,
     license,
     redistributesUpstreamBytes: true,
-    entryPoint: pkg.executable,
-    payloadSha256: context.build.sha256,
-    payloadBytes: context.build.bytes,
+    notice: 'Complete upstream Windows runtime, redistributed without changes. Included licenses apply to their respective components.',
+    payloadSha256: pin.entrySha256,
+    payloadBytes: pin.entryBytes,
     skeletonSha256,
-    sources,
+    entryPoint: pkg.executable,
+    entrySha256: pin.entrySha256,
+    entryBytes: pin.entryBytes,
+    entryNote: pin.entryNote,
+    upstream: {
+      repository: pin.upstream,
+      version: pin.upstreamVersion,
+      releaseTag: pin.releaseTag,
+      asset: {
+        name: pin.assetName,
+        url: pin.assetUrl,
+        sha256: pin.assetSha256,
+        bytes: pin.assetBytes,
+      },
+      extractor: pin.extractor,
+      unpacked: {
+        files: pin.unpackedFiles,
+        bytes: pin.unpackedBytes,
+        bytesAsSumOfFileSizes: pin.unpackedBytesSumOfFileSizes,
+        layout: pin.unpackedLayout,
+        note: pin.unpackedNote,
+      },
+      license: pin.license,
+      copyright: pin.copyright,
+    },
+    pinSource: pin.pinSource,
   }
 }
 
 /**
- * Assemble the three package directories: payload or pin, skeleton, manifest, provenance.
+ * Assemble the two package directories: pinned upstream tree, skeleton, manifest, provenance.
  * @param {object} context - the run context.
  * @returns {Promise<object>} the assembled package facts.
  */
@@ -990,9 +818,7 @@ async function stepAssemble(context) {
     if (!force && complete !== undefined && complete.skeletonSha256 === digest
       && complete.builtBySha256 === SCRIPT_SHA256
       && complete.version === pkg.version
-      && (pkg.payload.type === 'archive'
-        ? (complete.payloadSha256 === pkg.payload.pin.entrySha256 && fs.existsSync(path.join(stage, pkg.executable)))
-        : (complete.payloadSha256 === context.build.sha256 && fs.existsSync(path.join(stage, pkg.executable))))) {
+      && complete.payloadSha256 === pkg.payload.pin.entrySha256 && fs.existsSync(path.join(stage, pkg.executable))) {
       log('assemble', `reusing ${pkg.name} (${pkg.payload.type})`)
       results.push({ pkg, stage, provenance: complete })
       continue
@@ -1029,34 +855,7 @@ async function stepAssemble(context) {
       }
     }
 
-    if (pkg.payload.type === 'cargo') {
-      const target = path.join(stage, pkg.executable)
-      fs.mkdirSync(path.dirname(target), { recursive: true })
-      fs.copyFileSync(pkg.payload.file, target)
-      // Apache-2.0 obligations for a redistributed binary: the licence, the
-      // upstream NOTICE, the record of what this fork changed, and the
-      // third-party licence inventory all travel with the executable.
-      const vendor = path.join(REPO_ROOT, 'vendor', 'fastctx')
-      for (const [from, to] of [
-        ['LICENSE-APACHE', 'LICENSE'],
-        ['NOTICE', 'NOTICE'],
-        ['FORK.md', 'FORK.md'],
-        ['UPSTREAM.md', 'UPSTREAM.md'],
-        ['THIRD_PARTY_LICENSES_RUST.md', 'THIRD_PARTY_LICENSES_RUST.md'],
-        ['THIRD_PARTY_LICENSES.md', 'THIRD_PARTY_LICENSES.md'],
-      ]) {
-        const source = path.join(vendor, from)
-        if (fs.existsSync(source)) fs.copyFileSync(source, path.join(stage, to))
-      }
-    }
-
-    const provenance = provenanceFor(
-      pkg,
-      context,
-      pkg.payload.type === 'cargo' ? [sourcesOfCargo(context)] : [],
-      fragment.license,
-      digest,
-    )
+    const provenance = provenanceFor(pkg, fragment.license, digest)
     writeJson(path.join(stage, 'provenance.json'), provenance)
 
     // The skeleton's own files land last: the payload never overwrites a
@@ -1072,12 +871,7 @@ async function stepAssemble(context) {
     writeJson(path.join(stage, 'package.json'), { name: pkg.name, version: pkg.version, ...fragment })
 
     log('assemble', `${pkg.name}@${pkg.version}: ${pkg.executable} sha256 ${provenance.payloadSha256}`)
-    if (pkg.payload.type === 'cargo') {
-      const provenanceWithPayload = readJsonIfExists(path.join(stage, 'provenance.json'))
-      results.push({ pkg, stage, provenance: provenanceWithPayload ?? provenance })
-    } else {
-      results.push({ pkg, stage, provenance: readJsonIfExists(path.join(stage, 'provenance.json')) ?? provenance })
-    }
+    results.push({ pkg, stage, provenance: readJsonIfExists(path.join(stage, 'provenance.json')) ?? provenance })
   }
   return results
 }
@@ -1147,18 +941,16 @@ async function writeReleaseRecords(context, assembled) {
     const provenance = entry.provenance ?? {}
     const upstream = provenance.upstream ?? {}
     const asset = upstream.asset ?? {}
-    const isPin = pkg.payload.type === 'archive'
     packages.push({
       name: pkg.name,
       kind: pkg.kind,
       version: pkg.version,
-      // Where the bytes come from: an upstream release asset for a pin, the
-      // vendored source tree for the payload package.
-      sourceUrl: isPin ? asset.url : provenance.sources?.[0]?.upstream,
-      sourceSha256: isPin ? asset.sha256 : provenance.sources?.[0]?.sha256,
-      sourceBytes: isPin ? asset.bytes : provenance.sources?.[0]?.bytes,
-      upstreamVersion: isPin ? upstream.version : provenance.sources?.[0]?.upstreamVersion,
-      upstreamRelease: isPin ? upstream.releaseTag : provenance.sources?.[0]?.release,
+      // Where the bytes come from: the pinned upstream release asset.
+      sourceUrl: asset.url,
+      sourceSha256: asset.sha256,
+      sourceBytes: asset.bytes,
+      upstreamVersion: upstream.version,
+      upstreamRelease: upstream.releaseTag,
       // What the pinned asset unpacks to, measured rather than estimated: this
       // is the footprint a deployment takes on when it resolves the shell.
       upstreamUnpackedFiles: upstream.unpacked?.files,
@@ -1292,8 +1084,7 @@ function printInjection(context) {
     console.log(`  ${own ? '+' : ' '} ${name}: ${range}`)
   }
   console.log('  (+ marks a platform package this release injects; the rest came from the committed manifest)')
-  console.log('  (all three platform packages carry ready-to-run Windows binaries)')
-  console.log('  (lib/binary.js resolves this plugin\'s own FastCtx package ahead of the upstream @fastctx/* fallbacks)\n')
+  console.log('  (both platform packages carry ready-to-run Windows binaries)\n')
 }
 
 /**
@@ -1476,30 +1267,7 @@ async function stepCheck(context) {
     ok('download', `downloads/sources.json records ${(recorded.assets ?? []).length} verified asset(s)`)
   }
 
-  // The payload package's own pin: where its source came from, what built it,
-  // and the digest of the executable. Printed beside the shell pins so one list
-  // answers "what is in this release, and where did every byte come from".
-  for (const pkg of context.packages) {
-    if (pkg.payload.type !== 'cargo') continue
-    const provenance = readJsonIfExists(path.join(stageDir(pkg), 'provenance.json'))
-    const source = provenance?.sources?.[0] ?? {}
-    console.log(`    ${pkg.name} -> ${source.upstream ?? 'vendor/fastctx'} ${source.release ?? ''}`.trimEnd())
-    console.log(`      source  ${source.source ?? 'vendor/fastctx'} (profile ${source.profile ?? 'release'}, `
-      + `locked ${String(source.locked ?? true)}, toolchain ${source.toolchain ?? 'not recorded'})`)
-    console.log(`      sha256  ${provenance?.payloadSha256 ?? '(not assembled)'} (${String(provenance?.payloadBytes ?? '?')} bytes)`)
-    console.log(`      revision ${source.revision ?? 'not recorded'}`)
-  }
-
-  // 2. The payload package's executable.
-  const buildFile = context.packages[0].payload.file
-  const build = fs.existsSync(buildFile)
-    ? { file: buildFile, sha256: await sha256File(buildFile), bytes: fs.statSync(buildFile).size }
-    : undefined
-  if (build === undefined) missing('build', `${path.relative(REPO_ROOT, buildFile)} does not exist`)
-  else ok('build', `${path.relative(REPO_ROOT, buildFile)} (${size(build.bytes)}, sha256 ${build.sha256})`)
-
-  // 3. Every stage: digests for the payload package, and the no-bytes invariant
-  //    for the pins.
+  // 2. Every stage: the executable's digest, and the upstream archive against its pin.
   const assembled = []
   for (const pkg of context.packages) {
     const stage = stageDir(pkg)
@@ -1531,7 +1299,7 @@ async function stepCheck(context) {
     assembled.push({ pkg, stage, provenance })
   }
 
-  // 4. The tarballs, against the checksum manifest.
+  // 3. The tarballs, against the checksum manifest.
   const sumsFile = path.join(dist, 'SHA256SUMS')
   const sums = new Map()
   if (!fs.existsSync(sumsFile)) {
@@ -1582,7 +1350,7 @@ async function stepCheck(context) {
     }
   }
 
-  // 5. The publish directory and the main tarball.
+  // 4. The publish directory and the main tarball.
   const manifest = mainManifest()
   const publishDir = path.join(dist, 'publish', `${manifest.name}-${manifest.version}`)
   const publishManifest = readJsonIfExists(path.join(publishDir, 'package.json'))
@@ -1614,7 +1382,7 @@ async function stepCheck(context) {
     ok('publish', `${path.basename(mainTarball)} (${size(fs.statSync(mainTarball).size)})`)
   }
 
-  // 6. The release-wide record.
+  // 5. The release-wide record.
   const releaseProvenance = readJsonIfExists(path.join(dist, 'provenance.json'))
   if (releaseProvenance === undefined) missing('provenance', 'provenance.json is not written')
   else if ((releaseProvenance.packages ?? []).length !== context.packages.length) {
@@ -1645,17 +1413,15 @@ async function stepCheck(context) {
  * @returns {object} the parsed options.
  */
 function parseArgs(argv) {
-  const commands = new Set(['all', 'build', 'assemble', 'pack', 'publish-dir', 'check', 'fetch', 'verify-upstream'])
+  const commands = new Set(['all', 'assemble', 'pack', 'publish-dir', 'check', 'fetch', 'verify-upstream'])
   const options = {
     command: 'all',
     platform: 'win32',
     arch: 'x64',
     dist: path.resolve(REPO_ROOT, '..', 'dist'),
-    cargo: undefined,
     proxy: undefined,
     noProxy: false,
     force: false,
-    rebuild: false,
   }
   const flags = new Set()
   for (let index = 0; index < argv.length; index += 1) {
@@ -1682,11 +1448,9 @@ function parseArgs(argv) {
       case '--platform': options.platform = value(); break
       case '--arch': options.arch = value(); break
       case '--dist': options.dist = path.resolve(value()); break
-      case '--cargo': options.cargo = value(); break
       case '--proxy': options.proxy = value(); break
       case '--no-proxy': options.noProxy = true; break
       case '--force': options.force = true; break
-      case '--rebuild': options.rebuild = true; break
       case '--check': options.command = 'check'; break
       case '--verify-upstream': options.command = 'verify-upstream'; break
       case '--help': flags.add('help'); break
@@ -1747,9 +1511,6 @@ async function main() {
   }
 
   let assembled = []
-  if (['all', 'build', 'assemble', 'pack', 'publish-dir'].includes(options.command)) {
-    context.build = await runStep('build', () => stepBuild(context))
-  }
   if (['all', 'assemble', 'pack', 'publish-dir'].includes(options.command)) {
     await runStep('fetch', () => downloadPins(context, { keep: true }))
     assembled = await runStep('assemble', () => stepAssemble(context))

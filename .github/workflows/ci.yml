@@ -37,8 +37,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             native/target
-            vendor/fastctx/target
-          key: ops-031-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/Cargo.lock', 'vendor/fastctx/Cargo.lock') }}
+          key: ops-031-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/Cargo.lock') }}
       - name: Linux ACL test dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y acl
@@ -52,9 +51,6 @@ jobs:
       - name: Windows IPC build
         if: runner.os == 'Windows'
         run: npm run build:bash-ipc
-      - name: Build optional FastCtx backend
-        if: runner.os == 'Linux'
-        run: cargo build --release --locked --manifest-path vendor/fastctx/Cargo.toml
       - name: Full verification
         run: npm run verify
       - name: Verify native staged closure

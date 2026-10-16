@@ -194,10 +194,14 @@ await test('an inheriting (AI) workspace root keeps its inheritance and descenda
     for(let d=0;d<10;d++) { const dir=path.join(ws,`d${d}`,'deep'); fs.mkdirSync(dir,{recursive:true}); for(let f=0;f<30;f++) fs.writeFileSync(path.join(dir,`f${f}.txt`),'x') }
     const sddl=target=>ps(`(Get-Acl -LiteralPath '${target.replaceAll("'","''")}').GetSecurityDescriptorSddlForm('Access')`)
     const aces=text=>text.match(/\([^)]*\)/g) ?? []
+    // SDDL names the current user by SID, except the built-in Administrator (RID 500), which it
+    // prints as the alias LA (as on hosted CI runners). Match either, not one machine's identity.
+    const trustees=[sid, ...(sid.endsWith('-500') ? ['LA'] : [])]
+    const mine=ace=>trustees.some(trustee=>ace.endsWith(`;;;${trustee})`))
     const deep=path.join(ws,'d9','deep','f29.txt'), deepDir=path.join(ws,'d9','deep')
     const before={root:sddl(ws),deep:sddl(deep),deepDir:sddl(deepDir)}
     assert.ok(before.root.startsWith('D:AI('),`fixture root must be auto-inherited, not protected: ${before.root}`)
-    assert.ok(aces(before.root).some(ace=>ace.includes(';;;LA') && ace.split(';')[1].includes('ID')),`fixture must carry an inherited user ACE: ${before.root}`)
+    assert.ok(aces(before.root).some(ace=>mine(ace) && ace.split(';')[1].includes('ID')),`fixture must carry an inherited user ACE: ${before.root}`)
     const backups=path.join(process.env.DSH_HOME,'dsh-ops','acl-backups')
     const receipts=()=>fs.existsSync(backups) ? fs.readdirSync(backups).length : 0
     const initial=receipts()
@@ -205,9 +209,9 @@ await test('an inheriting (AI) workspace root keeps its inheritance and descenda
     const after=sddl(ws)
     assert.ok(after.startsWith('D:AI('),`auto-inherited flag kept: ${before.root} -> ${after}`)
     for(const ace of aces(before.root)) assert.ok(aces(after).includes(ace),`inherited ACE kept: ${ace} in ${after}`)
-    const added=aces(after).filter(ace=>!aces(before.root).includes(ace) && ace.includes(';;;LA'))
+    const added=aces(after).filter(ace=>!aces(before.root).includes(ace) && mine(ace))
     assert.ok(added.length<=1,`at most one user ACE added: ${after}`)
-    const userAce=aces(after).find(ace=>ace.includes(';;;LA') && (Number.parseInt(ace.slice(1,-1).split(';')[2],16) & 0x80000)!==0)
+    const userAce=aces(after).find(ace=>mine(ace) && (Number.parseInt(ace.slice(1,-1).split(';')[2],16) & 0x80000)!==0)
     assert.ok(userAce || /0x1b01bf|0x1301bf/.test(after),`user WRITE_OWNER rights are present: ${after}`)
     const rights=ps(`(Get-Acl -LiteralPath '${quoted}').Access | ForEach-Object { $_.FileSystemRights.ToString() }`)
     assert.match(rights,/FullControl|Modify/,'the root retains an explicit usable ACL')

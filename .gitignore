@@ -19,9 +19,6 @@ native/target/
 # Dependencies
 node_modules/
 
-# Vendored FastCtx build output (source is committed; the binary is not)
-vendor/fastctx/target/
-
 # Scratch trees used by the suites and by hand
 .tmp-*
 *.scratch.*

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * `dsh-ops` — operator commands for the FastCtx runtime this plugin hosts.
+ * `dsh-ops` — operator commands for the dsh-ops plugin.
  *
- * The plugin resolves its runtime automatically, so these commands are not
- * required for a normal install. They exist for what automatic resolution
- * cannot do: build the runtime from the vendored source, install that build
- * into a stable per-user location that survives package upgrades, turn the
- * pinned upstream shell releases into local copies, and report what this
+ * The plugin resolves its native worker and shells automatically, so these
+ * commands are not required for a normal install. They exist for what automatic
+ * resolution cannot do: install into a DSH profile, build the native worker from
+ * source, turn the pinned upstream shell releases into local copies, clean up
+ * files older versions left outside the profile, and report what this
  * deployment resolves and which rungs the prompt ladder renders.
  *
  * @module dsh-ops/cli
@@ -18,28 +18,18 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
-import {
-  BINARY_ENV,
-  PACKAGE_ROOT,
-  dshHome,
-  executableName,
-  managedBinaryFile,
-  managedRuntimeDir,
-  probeBinary,
-  resolveBinary,
-} from '../lib/binary.js'
+import { PACKAGE_ROOT, dshHome } from '../lib/paths.js'
 import { profileCommand } from '../lib/profile-install.js'
 import { resolveConfig } from '../lib/config.js'
-import { McpStdioClient } from '../lib/handshake.js'
 import {
   BASH_TOOL,
   FILE_TOOLS,
-  SHELL_TOOLS,
   ladderLevels,
   publicToolName,
   renderToolingPolicy,
 } from '../lib/policy.js'
-import { VENDOR_DIR, buildFreshness, builtBinary, cargoBuild, findCargo } from '../lib/rust.js'
+import { cargoBuild, findCargo } from '../lib/rust.js'
+import { resolveWorker } from '../lib/ptc/runtime.js'
 import { restrictedCompatibility } from '../lib/bash-ipc.js'
 import {
   PLATFORM_PACKAGES,
@@ -50,26 +40,24 @@ import {
   shellExecutable,
 } from '../lib/shells.js'
 
-/** Receipt schema written beside a provisioned runtime. */
-const RECEIPT_VERSION = 1
-
 /**
- * The directory `provision` installs into, and the unit `uninstall` removes:
- * `<DSH_HOME>/dsh-ops`, holding `bin/<executable>` and `runtime.json`.
+ * The unit `uninstall` removes: `<DSH_HOME>/dsh-ops`, holding what older
+ * versions installed outside the profile (the former FastCtx runtime under
+ * `bin/` with its `runtime.json`) and the shells `provision-shells` installed.
  * @returns {string} the absolute directory.
  */
 function managedDir() {
-  return path.dirname(managedRuntimeDir())
+  return path.join(dshHome(), 'dsh-ops')
 }
 
 /**
- * FastCtx's own per-user state directory.
+ * The per-user state directory the removed FastCtx background backend used.
  *
- * FastCtx resolves this from the environment the host process received —
+ * FastCtx resolved this from the environment the host process received —
  * `~/.fastctx`, holding `config.toml` and the background-job registry under
- * `jobs/` — and nothing this plugin does creates it. It is reported here, and
- * removed only when the operator asks for it, because a previous FastCtx
- * install may still own it.
+ * `jobs/`. This version never creates or reads it; `uninstall` only reports it,
+ * and removes it when the operator asks (`--purge-fastctx`), so leftovers from
+ * an older version can be cleaned up. Another FastCtx install may still own it.
  * @returns {string} the absolute directory.
  */
 function fastctxDataDir() {
@@ -81,7 +69,7 @@ function fastctxDataDir() {
  * @returns {void}
  */
 function usage() {
-  console.log(`dsh-ops — FastCtx runtime management for the dsh-ops plugin
+  console.log(`dsh-ops — operator commands for the dsh-ops plugin
 
 Usage:
   dsh-ops install --profile <desktop|web|tui> [--dsh-cli <path>]
@@ -90,15 +78,13 @@ Usage:
                                   Remove the profile plugin and its binary dependency references
   dsh-ops status --profile <desktop|web|tui>
                                   Report target-profile installation (tui maps to dsh-tui)
-  dsh-ops resolve                 Print the FastCtx executable the plugin will host
-  dsh-ops status                  Resolve, probe, and list the MCP tools it publishes
-  dsh-ops build-ptc              Build the independent native Rust PTC worker (all platforms)
-  dsh-ops build [--force]         Build the vendored FastCtx source with cargo (release)
-  dsh-ops provision [--force]     Build if needed, then install into the managed runtime dir
+  dsh-ops build-ptc              Build the independent native Rust worker (all platforms)
   dsh-ops uninstall [--yes] [--purge-fastctx]
-                                  Report the runtime this plugin owns and, with --yes, remove it
+                                  Report files older versions left under <DSH_HOME>/dsh-ops and,
+                                  with --yes, remove them; --purge-fastctx also removes leftover
+                                  ~/.fastctx state from the removed background component
   dsh-ops ladder [--json] [--config <file>]
-                                  Report the FastCtx executable, both shells, and the rungs the
+                                  Report the native worker, both shells, and the rungs the
                                   prompt ladder actually renders; nothing is spawned
   dsh-ops provision-shells [--bash] [--pwsh] [--force] [--dry-run] [--pin <file>]
                                   Download the pinned upstream bash and/or PowerShell 7, verify
@@ -106,12 +92,11 @@ Usage:
   dsh-ops help                    This text
 
 Environment:
-  ${BINARY_ENV}       Explicit FastCtx executable (wins over the managed copy)
+  DSH_OPS_WORKER_BIN   Explicit native worker executable
   DSH_OPS_CARGO        Explicit cargo executable
   CARGO_HOME           Rust toolchain home (.cargo)
   DSH_OPS_RUST_HOME    Directory containing a relocated .cargo toolchain
-  DSH_HOME             DSH home; the managed runtime lives in <DSH_HOME>/dsh-ops/bin,
-                       the provisioned shells in <DSH_HOME>/dsh-ops/shells
+  DSH_HOME             DSH home; the provisioned shells live in <DSH_HOME>/dsh-ops/shells
   HTTPS_PROXY          Proxy handed to curl explicitly by provision-shells
 
 With --profile, install/uninstall delegate to the official DSH profile manager.
@@ -121,64 +106,16 @@ use --yes to confirm that separate cleanup. No system shell or shared npm cache 
 }
 
 /**
- * Resolve and describe the executable, without starting it.
- * @returns {{file: string, source: string}|undefined} the resolution, or undefined after reporting.
+ * Commands removed together with the FastCtx background backend, and what replaces each.
+ * They fail with that answer instead of the generic unknown-command text, so an old script
+ * or habit gets told where to go.
  */
-function reportResolution() {
-  try {
-    const resolved = resolveBinary({ packageRoot: PACKAGE_ROOT })
-    console.log(`executable: ${resolved.file}`)
-    console.log(`source:     ${resolved.source}`)
-    return resolved
-  } catch (error) {
-    console.error(error.message)
-    if (typeof error.report === 'function') console.error(error.report())
-    return undefined
-  }
-}
-
-/**
- * `resolve`.
- * @returns {number} the exit code.
- */
-function commandResolve() {
-  return reportResolution() === undefined ? 1 : 0
-}
-
-/**
- * `status`: prove the resolved executable starts and publishes the tool surface
- * the plugin's prompt policy advertises.
- * @returns {Promise<number>} the exit code.
- */
-async function commandStatus() {
-  const resolved = reportResolution()
-  if (resolved === undefined) return 1
-
-  const probe = probeBinary(resolved.file)
-  console.log(`version:    ${probe.ok ? probe.version : `UNUSABLE (${probe.detail})`}`)
-  if (!probe.ok) return 1
-
-  const client = McpStdioClient.start({
-    file: resolved.file,
-    args: ['serve', '--enable-shell'],
-    timeoutMs: 60_000,
-  })
-  try {
-    const handshake = await client.initialize('dsh-ops-status')
-    const tools = (await client.listTools()).filter(tool => FILE_TOOLS.includes(tool.name))
-    console.log(`server:     ${handshake.serverInfo?.name} ${handshake.serverInfo?.version}`)
-    console.log('scope:      standalone diagnostic; command tools need an authorized host session')
-    console.log(`tools:      ${tools.length}`)
-    for (const tool of tools) console.log(`  - ${publicToolName(tool.name)}`)
-    return tools.length === 0 ? 1 : 0
-  } catch (error) {
-    console.error(`MCP handshake failed: ${error.message}`)
-    for (const line of client.stderrLines.slice(-20)) console.error(`  server: ${line}`)
-    return 1
-  } finally {
-    await client.close()
-  }
-}
+const REMOVED_COMMANDS = Object.freeze({
+  resolve: 'use `dsh-ops ladder` to see what this deployment resolves',
+  status: 'use `dsh-ops ladder` for this deployment, or `dsh-ops status --profile <desktop|web|tui>` for a profile install',
+  build: 'use `dsh-ops build-ptc` to build the native worker',
+  provision: 'the native worker ships in the package (or `dsh-ops build-ptc` from a checkout); use `dsh-ops provision-shells` for the shells',
+})
 
 /**
  * Read the `dsh-ops` row config a report should describe.
@@ -214,35 +151,21 @@ function readRowConfig(file) {
 }
 
 /**
- * The FastCtx resolution as a report value.
- *
- * This is resolution and nothing more: the plugin's own mount also probes the
- * executable before hosting it, but a diagnostic must not spawn anything, so an
- * executable that resolves is reported as resolved and its usability is left to
- * `status`. The search log comes along either way, which is what makes a miss
- * readable.
+ * The native worker resolution as a report value — the same `resolveWorker` the
+ * file component runs at mount, including the packaged runtime's provenance
+ * check. Nothing is spawned; the resolver's own error text explains a miss.
  * @param {import('../lib/config.js').ResolvedConfig} config - the plugin configuration.
- * @returns {{resolved: boolean, executable: string|null, source: string|null, error: string|null,
- *   tried: {file: string, source: string, detail: string}[]}} the report value.
+ * @returns {{resolved: boolean, executable: string|null, source: string|null, error: string|null}} the report value.
  */
-function runtimeReport(config) {
+function workerReport(config) {
   try {
-    const resolved = resolveBinary({ binaryPath: config.binaryPath, packageRoot: PACKAGE_ROOT })
-    return {
-      resolved: true,
-      executable: resolved.file,
-      source: resolved.source,
-      error: null,
-      tried: resolved.tried,
-    }
+    const file = resolveWorker(config)
+    const source = config.binaryPath !== undefined ? 'config.binaryPath'
+      : process.env.DSH_OPS_WORKER_BIN !== undefined ? 'DSH_OPS_WORKER_BIN'
+        : path.relative(PACKAGE_ROOT, file).split(path.sep)[0] === 'runtime' ? 'packaged runtime' : 'source-tree build'
+    return { resolved: true, executable: file, source, error: null }
   } catch (error) {
-    return {
-      resolved: false,
-      executable: null,
-      source: null,
-      error: String(error?.message ?? error),
-      tried: Array.isArray(error?.tried) ? error.tried : [],
-    }
+    return { resolved: false, executable: null, source: null, error: String(error?.message ?? error) }
   }
 }
 
@@ -281,20 +204,20 @@ function restrictedReport(resolution) {
  * The rungs this deployment can reach, from the same derivation the plugin's
  * prompt uses.
  *
- * The plugin asks the live registry; this command has no registry and does no
- * MCP handshake, so it answers from resolution instead: a resolved FastCtx
- * executable stands in for a connected server, and a resolved bash stands in
- * for the published `ops_bash` tool (which also needs the host's `subprocess`
- * service). `ladderLevels` still decides, so the rungs and their numbering come
- * from the renderer that ships them rather than from a second copy here.
+ * The plugin asks the live registry; this command has no registry, so it
+ * answers from resolution instead: a resolved native worker stands in for the
+ * published file tools, and a resolved bash stands in for the published
+ * `ops_bash` tool (which also needs the host's `subprocess` service).
+ * `ladderLevels` still decides, so the rungs and their numbering come from the
+ * renderer that ships them rather than from a second copy here.
  * @param {object} options - the ladder input.
- * @param {{resolved: boolean}} options.runtime - the FastCtx report value.
+ * @param {{resolved: boolean}} options.worker - the native worker report value.
  * @param {{bash: {available: boolean}, pwsh: {available: boolean}}} options.shells - the shell resolutions.
  * @param {import('../lib/config.js').ResolvedConfig} options.config - the plugin configuration.
  * @returns {import('../lib/policy.js').LadderLevels} the rungs.
  */
-function ladderFor({ runtime, shells, config }) {
-  const published = runtime.resolved ? FILE_TOOLS.map(publicToolName) : []
+function ladderFor({ worker, shells, config }) {
+  const published = worker.resolved ? FILE_TOOLS.map(publicToolName) : []
   if (config.publishBashTool && shells.bash.available) published.push(BASH_TOOL)
   if (shells.pwsh.available) published.push('pwsh')
   return ladderLevels({ published, pwsh: shells.pwsh.available })
@@ -320,16 +243,13 @@ function renderedRungs(text) {
  * @returns {void}
  */
 function printLadder(report) {
-  console.log('FastCtx runtime')
-  if (report.fastctx.resolved) {
-    console.log(`  executable: ${report.fastctx.executable}`)
-    console.log(`  source:     ${report.fastctx.source}`)
+  console.log('Native worker (file tools)')
+  if (report.worker.resolved) {
+    console.log(`  executable: ${report.worker.executable}`)
+    console.log(`  source:     ${report.worker.source}`)
   } else {
     console.log('  executable: missing')
-    console.log(`  reason:     ${report.fastctx.error}`)
-    for (const candidate of report.fastctx.tried) {
-      console.log(`    - ${candidate.source}: ${candidate.file} (${candidate.detail})`)
-    }
+    for (const line of report.worker.error.split('\n')) console.log(`  ${line}`)
   }
 
   console.log('\nShell rungs (lib/shells.js resolveShells)')
@@ -357,7 +277,7 @@ function printLadder(report) {
  * actually told it can reach — the three questions a missing bundled shell
  * would otherwise need a fresh session to answer.
  *
- * Nothing is spawned: no probe, no MCP handshake. Missing rungs are the report,
+ * Nothing is spawned. Missing rungs are the report,
  * not a failure, so the exit code is 0 whenever a report was produced and 1 only
  * for a config this command cannot honour.
  * @param {object} options - ladder inputs.
@@ -374,17 +294,17 @@ function commandLadder({ json, configFile }) {
     return 1
   }
 
-  const runtime = runtimeReport(config)
+  const worker = workerReport(config)
   const shells = resolveShells(config)
-  const levels = ladderFor({ runtime, shells, config })
+  const levels = ladderFor({ worker, shells, config })
   const report = {
-    fastctx: runtime,
+    worker,
     shells: { bash: { ...shellReport(shells.bash), restricted: restrictedReport(shells.bash) }, pwsh: shellReport(shells.pwsh) },
     levels,
     rungs: [],
     policy: renderToolingPolicy({
       published: [
-        ...(runtime.resolved ? FILE_TOOLS.map(publicToolName) : []),
+        ...(worker.resolved ? FILE_TOOLS.map(publicToolName) : []),
         ...(levels.bash ? [BASH_TOOL] : []),
         ...(levels.pwsh ? ['pwsh'] : []),
       ],
@@ -397,125 +317,6 @@ function commandLadder({ json, configFile }) {
     return 0
   }
   printLadder(report)
-  return 0
-}
-
-/**
- * `build`.
- * @param {boolean} force - rebuild even when the existing binary is newer than the source.
- * @returns {Promise<number>} the exit code.
- */
-async function commandBuild(force) {
-  let cargo
-  try {
-    cargo = findCargo()
-  } catch (error) {
-    console.error(error.message)
-    if (Array.isArray(error.tried)) for (const line of error.tried) console.error(`  - ${line}`)
-    return 1
-  }
-  console.log(`cargo:      ${cargo.version} (${cargo.source}: ${cargo.file})`)
-  console.log(`source:     ${VENDOR_DIR}`)
-
-  const freshness = buildFreshness({ sourceDir: VENDOR_DIR })
-  if (!force && freshness !== undefined && !freshness.stale) {
-    console.log('up to date: target/release is newer than the vendored source; use --force to rebuild')
-    return 0
-  }
-
-  const started = Date.now()
-  const result = await cargoBuild({ cargo, sourceDir: VENDOR_DIR })
-  if (result.code !== 0) {
-    console.error(`cargo build failed with exit code ${result.code}`)
-    for (const line of result.output.split('\n').slice(-30)) if (line !== '') console.error(`  ${line}`)
-    return 1
-  }
-  const built = builtBinary({ sourceDir: VENDOR_DIR })
-  console.log(`built:      ${built?.file ?? '(missing)'} in ${Math.round((Date.now() - started) / 1000)}s`)
-  return built === undefined ? 1 : 0
-}
-
-/**
- * `provision`: put one known-good executable into the managed runtime directory
- * and record where it came from.
- * @param {object} options - provision inputs.
- * @param {boolean} options.force - rebuild and reinstall even when current.
- * @param {string|undefined} options.from - install this file instead of building.
- * @param {boolean} options.noBuild - refuse to build; fail when no source build exists.
- * @returns {Promise<number>} the exit code.
- */
-async function commandProvision({ force, from, noBuild }) {
-  let source
-  if (from !== undefined) {
-    const file = path.resolve(from)
-    if (!fs.existsSync(file)) {
-      console.error(`--from does not name an existing file: ${file}`)
-      return 1
-    }
-    source = { file, origin: 'from --from' }
-  } else {
-    let existing = builtBinary({ sourceDir: VENDOR_DIR })
-    const freshness = buildFreshness({ sourceDir: VENDOR_DIR })
-    const needsBuild = force || existing === undefined || freshness?.stale === true
-    if (needsBuild && noBuild) {
-      console.error(existing === undefined
-        ? 'no release build exists and --no-build was given; run `dsh-ops build` first'
-        : 'the release build is older than the vendored source and --no-build was given')
-      return 1
-    }
-    if (needsBuild) {
-      const code = await commandBuild(true)
-      if (code !== 0) return code
-      existing = builtBinary({ sourceDir: VENDOR_DIR })
-    }
-    if (existing === undefined) {
-      console.error('no release build found after building; nothing to provision')
-      return 1
-    }
-    source = { file: existing.file, origin: 'vendored source build' }
-  }
-
-  const probe = probeBinary(source.file)
-  if (!probe.ok) {
-    console.error(`refusing to install an unusable executable: ${source.file} (${probe.detail})`)
-    return 1
-  }
-
-  const target = managedBinaryFile()
-  fs.mkdirSync(path.dirname(target), { recursive: true })
-  fs.copyFileSync(source.file, target)
-  if (process.platform !== 'win32') fs.chmodSync(target, 0o755)
-
-  const installed = probeBinary(target)
-  if (!installed.ok) {
-    // Resolution prefers the managed copy over every other rung, so leaving a copy that does not
-    // run here would shadow a working build on every later activation. Remove it so the next
-    // resolve falls through to a rung that does run (#30).
-    let removed = true
-    try { fs.rmSync(target, { force: true }) } catch { removed = false }
-    console.error(`the installed copy does not run: ${target} (${installed.detail})`
-      + (removed ? '; it was removed, so the next resolve falls through' : '; it could not be removed and will shadow the other rungs'))
-    return 1
-  }
-
-  const receipt = {
-    schemaVersion: RECEIPT_VERSION,
-    executable: target,
-    origin: source.origin,
-    sourceFile: source.file,
-    version: installed.version,
-    sha256: createHash('sha256').update(fs.readFileSync(target)).digest('hex'),
-    provisionedAt: new Date().toISOString(),
-    dshHome: dshHome(),
-    executableName: executableName(),
-  }
-  const receiptFile = path.join(path.dirname(path.dirname(target)), 'runtime.json')
-  fs.writeFileSync(receiptFile, `${JSON.stringify(receipt, null, 2)}\n`)
-
-  console.log(`installed:  ${target}`)
-  console.log(`version:    ${installed.version}`)
-  console.log(`sha256:     ${receipt.sha256}`)
-  console.log(`receipt:    ${receiptFile}`)
   return 0
 }
 
@@ -1128,13 +929,14 @@ function reportDirectory(label, dir) {
 }
 
 /**
- * `uninstall`: remove the runtime this plugin installed outside the profile, and
- * report the state it does not own.
+ * `uninstall`: remove what this plugin (and older versions of it) installed
+ * outside the profile, and report the state it does not own.
  *
  * Removing the plugin itself is a profile operation — `dsh plugin --profile
  * <profile> remove dsh-ops`, or the `plugin_manager` `remove_bundle` tool — and
- * stays outside this command. What is inside: the managed runtime under
- * `<DSH_HOME>/dsh-ops`, and, only on request, FastCtx's own `~/.fastctx` state.
+ * stays outside this command. What is inside: `<DSH_HOME>/dsh-ops` (provisioned
+ * shells, and the FastCtx runtime older versions provisioned), and, only on
+ * request, the leftover `~/.fastctx` state of the removed background component.
  *
  * Nothing is deleted without `--yes`, so a bare invocation is the report.
  *
@@ -1149,7 +951,7 @@ function commandUninstall({ yes, purgeFastctx, dryRun }) {
   console.log(`dsh-ops uninstall — ${removing ? 'removing' : 'report only (dry run; pass --yes to delete)'}`)
 
   const managed = managedDir()
-  const managedReport = reportDirectory(`managed runtime (<DSH_HOME>/dsh-ops)`, managed)
+  const managedReport = reportDirectory(`managed files (<DSH_HOME>/dsh-ops)`, managed)
   if (managedReport.missing) {
     console.log('  action:    nothing to remove')
   } else if (!removing) {
@@ -1165,7 +967,7 @@ function commandUninstall({ yes, purgeFastctx, dryRun }) {
   }
 
   const fastctx = fastctxDataDir()
-  const fastctxReport = reportDirectory("FastCtx user data (not owned by this plugin)", fastctx)
+  const fastctxReport = reportDirectory("FastCtx user data (not owned by this plugin; left over from the removed background component)", fastctx)
   if (fastctxReport.missing) {
     console.log('  action:    nothing to remove')
   } else if (!purgeFastctx) {
@@ -1202,8 +1004,6 @@ async function main() {
       profile: { type: 'string' },
       'dsh-cli': { type: 'string' },
       force: { type: 'boolean', default: false },
-      from: { type: 'string' },
-      'no-build': { type: 'boolean', default: false },
       yes: { type: 'boolean', default: false },
       'purge-fastctx': { type: 'boolean', default: false },
       'dry-run': { type: 'boolean', default: false },
@@ -1219,11 +1019,11 @@ async function main() {
   if (command === 'install' || (['uninstall', 'status'].includes(command) && values.profile !== undefined)) {
     return profileCommand(command, { profile: values.profile, dshCli: values['dsh-cli'], dryRun: values['dry-run'] === true })
   }
+  if (Object.hasOwn(REMOVED_COMMANDS, command)) {
+    console.error(`dsh-ops: \`${command}\` was removed together with the FastCtx background component; ${REMOVED_COMMANDS[command]}.`)
+    return 2
+  }
   switch (command) {
-    case 'resolve':
-      return commandResolve()
-    case 'status':
-      return commandStatus()
     case 'ladder':
       return commandLadder({ json: values.json === true, configFile: values.config })
     case 'build-ptc': {
@@ -1235,14 +1035,6 @@ async function main() {
       if (staged.error) throw staged.error
       return staged.status ?? 1
     }
-    case 'build':
-      return commandBuild(values.force === true)
-    case 'provision':
-      return commandProvision({
-        force: values.force === true,
-        from: values.from,
-        noBuild: values['no-build'] === true,
-      })
     case 'provision-shells': {
       /** No shell flag means both, so a bare invocation is "make this deployment whole". */
       const kinds = []

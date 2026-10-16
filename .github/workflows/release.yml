@@ -7,7 +7,7 @@ name: Release
 # Pushing a v* tag does not trigger this workflow.
 
 # Windows payload packages are built and published before the main package.
-# All three carry runtime files and are injected as exact optionalDependencies.
+# Both carry runtime files and are injected as exact optionalDependencies.
 # Repository tests are intentionally not a publishing prerequisite.
 #
 # `workflow_dispatch` re-runs this pipeline for an existing tag ref (use "Run
@@ -74,9 +74,9 @@ jobs:
       # Steps start in the workspace root, so this is a directory of the checkout
       # on an ephemeral runner.
       DIST: dist-release
-    # FastCtx is a native binary and only Windows payloads are published
+    # Only Windows shell payloads are published
     # (`scripts/build-platform-packages.mjs` refuses another platform), so the
-    # release job has to run where those binaries can be built.
+    # release job runs on Windows.
     runs-on: windows-latest
     steps:
       - name: Check out
@@ -92,9 +92,7 @@ jobs:
       - name: Set up the Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
         with:
-          # Pinned rather than `stable`: the released FastCtx binary must be
-          # reproducible from the tag, and the vendored crate needs edition 2024
-          # (rust-version 1.88).
+          # Pinned rather than `stable`, matching the native worker build above.
           toolchain: 1.97.1
 
       - name: Install dependencies
@@ -173,7 +171,7 @@ jobs:
             Write-Host "already published, skipping: $spec"
             exit 0
           }
-          # All three runtime payload packages are exact optional dependencies.
+          # Both runtime payload packages are exact optional dependencies.
           Write-Host "publishing $spec from $($plan.mainPublishDir)"
           npm publish $plan.mainPublishDir --access public
           if ($LASTEXITCODE -ne 0) { throw "npm publish failed for $spec" }
@@ -188,7 +186,7 @@ jobs:
             exit 0
           }
           $plan = Get-Content "$env:DIST/publish-plan.json" -Raw | ConvertFrom-Json
-          # Four installable assets plus the checksum manifest the offline
+          # Three installable assets plus the checksum manifest the offline
           # instructions verify them against.
           $assets = @($plan.mainTarball) + @($plan.platformTarballs) + @("$env:DIST/$($plan.sha256sums)")
           gh release view "$env:GITHUB_REF_NAME" 2>$null | Out-Null

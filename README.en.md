@@ -86,7 +86,9 @@ npx --yes dsh-ops@latest uninstall --profile desktop
 
 Replace `desktop` with `web` or `tui` as needed. You can also uninstall from the marketplace, or run the official `dsh plugin --profile ... remove dsh-ops`. Binaries are managed as part of the profile's plugin dependencies; uninstalling removes the dependency reference without deleting the system shell, copies in other profiles, or the package manager's shared cache.
 
-Old files explicitly provisioned by earlier versions under `<DSH_HOME>/dsh-ops/` need separate cleanup: `npx --yes dsh-ops@latest uninstall --yes`. Persistent state under `~/.fastctx/` is not deleted by default; add `--purge-fastctx` when needed. Disabling the background component waits for in-flight calls, then tries to terminate the component's own remembered tasks on its current connection; failure raises a warning. Old tasks whose ownership was lost on disconnect, and purely demoted tasks, are not guaranteed to be terminated — handle your own tasks first.
+Old files explicitly provisioned by earlier versions under `<DSH_HOME>/dsh-ops/` (provisioned shells, and the FastCtx runtime earlier versions could provision) need separate cleanup: `npx --yes dsh-ops@latest uninstall --yes`. The `~/.fastctx/` state left by the removed background component is not deleted by default; add `--purge-fastctx` when needed.
+
+The former `dsh-ops/background` component (FastCtx background jobs) has been removed. A profile that still has its row keeps loading: the row publishes nothing and logs one warning, and can be deleted.
 
 ## Documentation
 
@@ -96,13 +98,13 @@ Old files explicitly provisioned by earlier versions under `<DSH_HOME>/dsh-ops/`
 
 ## License
 
-Plugin source is distributed under **`MIT AND Apache-2.0`**: everything outside `vendor/fastctx/` is MIT; the vendored FastCtx is Apache-2.0. See [NOTICE](NOTICE), `vendor/fastctx/LICENSE-APACHE`, and `vendor/fastctx/NOTICE`.
+Plugin source is distributed under **`MIT AND Apache-2.0`**: everything outside `licenses/fastctx/` is MIT; FastCtx is Apache-2.0. See [NOTICE](NOTICE), `licenses/fastctx/LICENSE-APACHE`, and `licenses/fastctx/NOTICE`.
 
 The separate Windows payload packages are distributed under their upstream components' licenses: Git for Windows includes GPL and other licensed components, and PowerShell includes MIT and third-party components. Their original licenses, notices, and provenance records are kept with the payloads; the plugin's MIT license does not replace those. See [PROVENANCE.md](docs/PROVENANCE.md).
 
 ## Acknowledgements
 
-The Rust tools are based on [yc-duan](https://github.com/yc-duan)'s Codex plugin FastCtx and use its source code. Vendor marking and deletion-only distribution changes are recorded in [vendor/fastctx/FORK.md](vendor/fastctx/FORK.md) and [vendor/fastctx/UPSTREAM.md](vendor/fastctx/UPSTREAM.md). The FastCtx notice that must be reproduced follows:
+The Rust tools are based on [yc-duan](https://github.com/yc-duan)'s Codex plugin FastCtx and use its source code. Vendor marking and deletion-only distribution changes were recorded in `vendor/fastctx/FORK.md` and `vendor/fastctx/UPSTREAM.md`, which remain in the repository history and in earlier published versions; the vendored source itself was removed with the background component. The FastCtx notice that must be reproduced follows:
 
 > This product includes FastCtx
 > (https://github.com/yc-duan/fastctx), Copyright (c) 2026 yc-duan,

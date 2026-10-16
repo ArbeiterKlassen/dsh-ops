@@ -1,6 +1,6 @@
 /** One-time per-row update self-check and owning-loader persistence. */
 import { updatedConfig, mountConfigUpdates, CONFIG_UPDATE_VERSION } from '../lib/config-updates.js'
-import { resolveConfig } from '../lib/config.js'
+import { LEGACY_FASTCTX_KEYS, resolveConfig } from '../lib/config.js'
 import { assert, report, test, tick, waitFor } from './lib/harness.mjs'
 
 function fixture(config, { name = 'dsh-ops/shell', failWrite = false } = {}) {
@@ -15,39 +15,74 @@ function fixture(config, { name = 'dsh-ops/shell', failWrite = false } = {}) {
 }
 
 await test('first run disables explicit true, marks completion, and preserves unrelated raw config', () => {
-  const raw = { allowSystemShellFallback: true, bashPath: 'operator-choice', extraGuidance: 'keep', toolCallTimeoutMs: { __jsExpr: '1000' } }
+  const raw = { allowSystemShellFallback: true, bashPath: 'operator-choice', extraGuidance: 'keep', promptPolicy: { __jsExpr: 'true' } }
   const next = updatedConfig(raw)
   assert.equal(next.allowSystemShellFallback, false)
   assert.equal(next.configUpdateVersion, CONFIG_UPDATE_VERSION)
-  assert.equal(next.toolCallTimeoutMs, raw.toolCallTimeoutMs)
+  assert.equal(next.promptPolicy, raw.promptPolicy)
   assert.equal(next.bashPath, raw.bashPath)
   assert.equal(raw.allowSystemShellFallback, true, 'never mutate input')
 })
 await test('evaluated true expressions are replaced but unrelated raw expressions survive write-back', async () => {
   const expression = { __jsExpr: 'true' }
-  const other = { __jsExpr: '1000' }
-  const f = fixture({ allowSystemShellFallback: expression, toolCallTimeoutMs: other })
+  const other = { __jsExpr: 'true' }
+  const f = fixture({ allowSystemShellFallback: expression, promptPolicy: other })
   mountConfigUpdates(f.ctx, { allowSystemShellFallback: true })
   await tick(); await tick()
   assert.equal(f.entry.options.config.allowSystemShellFallback, false)
-  assert.equal(f.entry.options.config.toolCallTimeoutMs, other)
-  assert.equal(f.entry.options.config.configUpdateVersion, 1)
+  assert.equal(f.entry.options.config.promptPolicy, other)
+  assert.equal(f.entry.options.config.configUpdateVersion, CONFIG_UPDATE_VERSION)
 })
 
 await test('self-check records first run even when fallback is absent or already false', () => {
   for (const raw of [{}, { allowSystemShellFallback: false }]) {
     const next = updatedConfig(raw)
-    assert.equal(next.configUpdateVersion, 1)
+    assert.equal(next.configUpdateVersion, CONFIG_UPDATE_VERSION)
     assert.equal(next.allowSystemShellFallback, raw.allowSystemShellFallback)
   }
 })
 await test('subsequent manual true and future version markers are not overwritten', () => {
-  for (const configUpdateVersion of [1, 2]) {
+  for (const configUpdateVersion of [CONFIG_UPDATE_VERSION, CONFIG_UPDATE_VERSION + 1]) {
     const raw = { configUpdateVersion, allowSystemShellFallback: true }
     assert.equal(updatedConfig(raw), raw)
     assert.equal(resolveConfig(updatedConfig(raw)).allowSystemShellFallback, true)
   }
+  // A row already past step 1 keeps a later manual opt-in: step 1 never re-runs.
+  const afterStepOne = updatedConfig({ configUpdateVersion: 1, allowSystemShellFallback: true }, true)
+  assert.equal(afterStepOne.allowSystemShellFallback, true)
+  assert.equal(afterStepOne.configUpdateVersion, CONFIG_UPDATE_VERSION)
   for (const value of [-1, '1', 1.5, true]) assert.throws(() => resolveConfig({ configUpdateVersion: value }), /configUpdateVersion/)
+})
+await test('update 2 drops the removed FastCtx keys from rows at version 0 and 1, and nothing else', () => {
+  assert.equal(CONFIG_UPDATE_VERSION, 2)
+  const legacy = { serverName: 'fastctx', enableShellTools: false, toolCallTimeoutMs: 300000 }
+  for (const configUpdateVersion of [undefined, 0, 1]) {
+    const raw = { ...(configUpdateVersion === undefined ? {} : { configUpdateVersion }), ...legacy, promptPolicy: true, required: false, binaryPath: 'C:\\w.exe' }
+    const next = updatedConfig(raw)
+    for (const key of LEGACY_FASTCTX_KEYS) assert.equal(Object.hasOwn(next, key), false, `${key} removed from version ${configUpdateVersion}`)
+    assert.deepEqual({ promptPolicy: next.promptPolicy, required: next.required, binaryPath: next.binaryPath }, { promptPolicy: true, required: false, binaryPath: 'C:\\w.exe' })
+    assert.equal(next.configUpdateVersion, 2)
+    assert.equal(raw.serverName, 'fastctx', 'never mutate input')
+  }
+})
+await test('an unmigrated row carrying the legacy keys still validates, and they are never returned', () => {
+  // Exactly what the bundle patch wrote into every existing file row.
+  const fileRow = { promptPolicy: true, enableShellTools: false, required: false, toolCallTimeoutMs: 300000 }
+  const config = resolveConfig(fileRow)
+  for (const key of LEGACY_FASTCTX_KEYS) assert.equal(Object.hasOwn(config, key), false)
+  assert.equal(config.promptPolicy, true)
+  assert.doesNotThrow(() => resolveConfig({ serverName: 'ops-tools' }))
+  // Malformed legacy values still fail loud, as before.
+  assert.throws(() => resolveConfig({ serverName: 'bad name!' }), /serverName/)
+  assert.throws(() => resolveConfig({ enableShellTools: 'yes' }), /enableShellTools/)
+  assert.throws(() => resolveConfig({ toolCallTimeoutMs: -1 }), /toolCallTimeoutMs/)
+})
+await test('a version-1 file row is written once with the legacy keys removed', async () => {
+  const f = fixture({ configUpdateVersion: 1, promptPolicy: true, enableShellTools: false, required: false, toolCallTimeoutMs: 300000 }, { name: 'dsh-ops/file' })
+  mountConfigUpdates(f.ctx, f.entry.options.config)
+  await tick(); await tick()
+  assert.equal(f.writes.length, 1)
+  assert.deepEqual(f.writes[0], { configUpdateVersion: 2, promptPolicy: true, required: false })
 })
 await test('write-back is deferred, once only, persistent across recreated contexts', async () => {
   const f = fixture({ allowSystemShellFallback: true, extraGuidance: 'keep' })
@@ -87,15 +122,20 @@ await test('write failure does not retain a completion marker and warns without 
   assert.equal(f.logs.some(message => message.includes('extraGuidance')), false)
 })
 await test('each component owns its marker, and concurrent config edits are preserved', async () => {
-  for (const name of ['dsh-ops', 'dsh-ops/shell', 'dsh-ops/file', 'dsh-ops/background']) {
+  for (const name of ['dsh-ops', 'dsh-ops/shell', 'dsh-ops/file']) {
     const f = fixture({ allowSystemShellFallback: true }, { name })
     mountConfigUpdates(f.ctx, f.entry.options.config)
     f.entry.options.config = { allowSystemShellFallback: false, extraGuidance: 'new edit' }
     await tick(); await tick()
     assert.equal(f.writes.length, 1)
     assert.equal(f.writes[0].extraGuidance, 'new edit')
-    assert.equal(f.writes[0].configUpdateVersion, 1)
+    assert.equal(f.writes[0].configUpdateVersion, CONFIG_UPDATE_VERSION)
   }
+  // The removed background row is a no-op stub; its saved config is never rewritten.
+  const background = fixture({ enableShellTools: true }, { name: 'dsh-ops/background' })
+  mountConfigUpdates(background.ctx, background.entry.options.config)
+  await tick(); await tick()
+  assert.equal(background.writes.length, 0)
 })
 await test('real component mount migrates before publication and preserves manual opt-in after restart', async () => {
   const { bootHost, shutdown, scopedToolNames } = await import('./lib/host.mjs')
@@ -120,7 +160,7 @@ await test('real component mount migrates before publication and preserves manua
     await waitFor(() => snapshots.length === 1 && effective.length >= 1, { timeoutMs: 5000 })
     assert.deepEqual(effective, [false])
     assert.equal(snapshots[0].allowSystemShellFallback, false)
-    assert.equal(snapshots[0].configUpdateVersion, 1)
+    assert.equal(snapshots[0].configUpdateVersion, CONFIG_UPDATE_VERSION)
     // The component remains mounted and scoped tools remain available after
     // migration; the fix removes the redundant remount, not the mount itself.
     const agent = { id: 'migrated-agent', session: { header: { cwd: process.cwd() } } }

@@ -3,6 +3,22 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
+## Unreleased: FastCtx removed
+
+The FastCtx-backed `dsh-ops/background` component was removed together with the
+vendored FastCtx source (`vendor/fastctx/`), this fork's FastCtx payload package
+(`@dsh-ops/fastctx-<platform>-<arch>`, no longer a dependency or a release
+artifact), the optional `@fastctx/darwin-arm64` dependency, and the CLI commands
+that resolved, built or provisioned FastCtx. No FastCtx code or binary is part of
+this distribution any more. FastCtx's Apache License 2.0 text and upstream notice
+are kept in `licenses/fastctx/`, and its required attribution is kept verbatim in
+`NOTICE` and the READMEs; the composite license statement is unchanged.
+
+The sections below are records of the releases they name. Where they describe
+FastCtx, `vendor/fastctx/`, the background component, or the FastCtx payload
+package, they describe those releases, not this one; those files remain in the
+repository history and in the published tarballs of the versions that carried them.
+
 ## 0.3.1 release scope and verification
 
 0.3.1 targets Windows x64, Linux x64 and macOS Apple Silicon (`darwin-arm64`). Intel Mac and other ARM64 targets are not supported. Exact target pairs live in `PLATFORMS` and component `targets`; npm os/cpu filters are only their coarse projection. Windows Bash/pwsh remain pinned Windows-only optional dependencies; POSIX uses host Bash. No postinstall downloader is included.
@@ -44,15 +60,15 @@ version/target/executable/SHA-256 receipt. `cargo check`, `cargo build --release
 local JavaScript suites passed. The six-target release matrix and Linux/macOS
 runtime acceptance were not claimed at that point; Linux x64 file and PTC
 acceptance was added afterwards and is claimed above. FastCtx source/vendor
-remains unchanged and is retained only for the explicitly disabled background
-component.
+remained unchanged and was retained only for the explicitly disabled background
+component, until both were removed (see "Unreleased: FastCtx removed").
 
 
 The independent MIT Rust core in `native/` is original dsh-ops code. It uses
 cap-std/cap-fs-ext handle-relative filesystem operations, serde, SHA-256, UUIDs,
 regex and fs2 workspace locking. No FastCtx source was modified or linked by the
-file component; legacy FastCtx remains only behind the disabled background
-component and all applicable notices remain intact.
+file component; legacy FastCtx remained only behind the disabled background
+component until its removal, and all applicable notices remain intact.
 
 Host contract source (DSH 0.2.0-rc.2):
 
@@ -275,13 +291,14 @@ This pass changes only plugin presentation, registration, and result projection;
 | | Author | License | Where |
 | --- | --- | --- | --- |
 | The dsh-ops plugin | this repository | MIT | `lib/`, `bin/`, `scripts/`, `test/`, `cordis.patch.yml`, `dsh-plugin.json`, docs |
-| FastCtx, vendored | [yc-duan](https://github.com/yc-duan) | Apache-2.0 | `vendor/fastctx/` |
+| FastCtx | [yc-duan](https://github.com/yc-duan) | Apache-2.0 | license text and upstream notice only, in `licenses/fastctx/`; the vendored source was removed |
 
-`vendor/fastctx/UPSTREAM.md` records the exact upstream revision;
-`vendor/fastctx/FORK.md` records every difference from it — the distribution
-machinery removed, the standalone-only code removed, and every source file this
-fork touches (each carries its own Apache-2.0 §4(b) notice at the top). The
-composite licensing statement is in `NOTICE`.
+While FastCtx was vendored, `vendor/fastctx/UPSTREAM.md` recorded the exact
+upstream revision and `vendor/fastctx/FORK.md` every difference from it — the
+distribution machinery removed, the standalone-only code removed, and every source
+file this fork touched (each carried its own Apache-2.0 §4(b) notice at the top).
+Both remain in the repository history. The composite licensing statement is in
+`NOTICE`.
 
 ## Distribution and binary sources
 

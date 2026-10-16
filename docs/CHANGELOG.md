@@ -5,6 +5,50 @@ All notable changes to this package are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking: the FastCtx background component is removed
+
+The `dsh-ops/background` component and everything that existed only for it are gone. The file,
+shell and PTC components behave exactly as before.
+
+- **Removed tools**: `ops_run`, `ops_run_background`, `ops_job_output`, `ops_job_list`,
+  `ops_job_kill`. For a long-running process, use the host `pwsh` tool's `run_in_background`, or
+  detach inside an `ops_bash` command (`nohup ... & disown`).
+- **Existing profiles keep loading.** A `dsh-ops/background` row left in a profile loads as a no-op
+  stub: it accepts any config, publishes nothing, and logs one warning that the row can be deleted.
+  The bundle patch no longer inserts the row, and the manifest no longer declares the component,
+  its prompt section, or the `fastctx` tool namespace.
+- **Configuration update 2.** `serverName`, `enableShellTools` and `toolCallTimeoutMs` were read
+  only by FastCtx. They stay accepted and type-checked, so rows written by earlier bundles (every
+  file row carried `enableShellTools: false` and `toolCallTimeoutMs: 300000`) keep validating, but
+  they are no longer resolved, and `configUpdateVersion: 2` removes them from each saved
+  `dsh-ops`, `dsh-ops/shell` and `dsh-ops/file` row once. A row already at version 1 keeps a later
+  manual `allowSystemShellFallback: true`; the bundle patch no longer writes the keys.
+- **CLI**: `resolve`, `status` without `--profile`, `build` and `provision` are removed and exit 2
+  with the command that replaces each. `ladder` now reports the native worker (`worker` in
+  `--json`, resolved by the same `resolveWorker()` the file component uses) instead of a FastCtx
+  runtime, and its `levels` are `{ files, bash, pwsh }`. `uninstall --yes` still removes
+  `<DSH_HOME>/dsh-ops` (including a FastCtx runtime an earlier version provisioned), and
+  `--purge-fastctx` still removes the leftover `~/.fastctx` state.
+- **Public `dsh-ops/policy` exports**: `BACKGROUND_TOOLS` and `SHELL_TOOLS` are removed;
+  `ladderLevels()` returns `{ files, bash, pwsh }`, and `renderToolingPolicy()` no longer takes
+  `enableShellTools`.
+- **Packaging**: `vendor/fastctx/`, `packages/fastctx-win32-x64/`, the optional dependencies
+  `@dsh-ops/fastctx-win32-x64` and `@fastctx/darwin-arm64`, the `build:rust`, `provision` and
+  `status` npm scripts, `scripts/measure-schemas.mjs`, and the FastCtx build in CI and in
+  `scripts/build-platform-packages.mjs` are removed; a release now publishes the two shell payload
+  packages. `lib/paths.js` now holds `PACKAGE_ROOT` and `dshHome()`.
+- **Licensing is unchanged.** The composite `MIT AND Apache-2.0` statement and FastCtx's required
+  attribution are kept verbatim; FastCtx's license text and upstream notice moved from
+  `vendor/fastctx/` to `licenses/fastctx/`.
+
+### Fixed
+
+- The inherited-root workspace-preparation test (#43) matched only the built-in Administrator's
+  SDDL alias `LA`, so it failed for any other account; it now matches the current user's SID, or
+  `LA` when that user is RID 500.
+
 ## [0.3.1] — 2026-10-16 — Cross-platform native tools
 
 Exact release targets: **win32-x64, linux-x64, darwin-arm64 (Apple Silicon)**. Intel Mac, Windows ARM64 and Linux ARM64 are not supported. Bash/PowerShell binary payloads remain pinned Windows-only optional dependencies. POSIX uses host Bash; PTC remains opt-in. Final build/test evidence is linked in docs/release-0.3.1.md.

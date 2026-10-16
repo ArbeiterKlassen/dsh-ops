@@ -1,6 +1,6 @@
 # Component reference
 
-What each of the four components publishes, with parameters and permission requirements.
+What each of the three components publishes, with parameters and permission requirements.
 
 ---
 
@@ -10,8 +10,9 @@ What each of the four components publishes, with parameters and permission requi
 | --- | --- | --- | --- |
 | `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
 | `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Four file tools |
-| `dsh-ops/background` | Managed background tasks for scientific simulations, model training and other long-running processes | Off | Start, read output, list and terminate background jobs |
 | `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
+
+The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) has been removed. A profile row that still names it loads as a no-op: it accepts any config, publishes nothing, and logs one warning that the row can be deleted.
 
 ---
 
@@ -24,9 +25,6 @@ What each of the four components publishes, with parameters and permission requi
 | `ops_glob` | Multiple path patterns with exclusions | No command permission gate¹ |
 | `ops_replace` | Mechanical cross-file replacement; use host edit for precise changes | No command permission gate¹ |
 | `ops_bash` | Preferred general bash command executor; `command` for short commands, `script_path` for long scripts | Confined in restricted modes; matched Windows x64 private IPC runtime |
-| `ops_run` | Bounded bash command result (full access only) | Yes |
-| `ops_run_background` | Start background jobs | Yes |
-| `ops_job_output` / `ops_job_list` / `ops_job_kill` | Read, list and stop jobs started by the current session | Yes |
 | `ops_batch` | Preflight and execute copy / move / remove with audit and recovery | See the PTC notes |
 | `ops_result` | Bounded result references: put, page, release | See the PTC notes |
 | Host `pwsh` | Windows-native operations using bundled PowerShell 7 | Host policy |
@@ -136,21 +134,6 @@ Bounded session-owned result references: put object rows, page with top-level `e
 | `maxBytes` | integer 512–65536 | Byte budget per page |
 | `fields` | string[], ≤32 items | Projected fields |
 | `equals` | object | Top-level filter |
-
----
-
-## `dsh-ops/background` — background jobs
-
-Off by default. Once enabled, session `danger-full-access` is still required to publish the tools.
-
-| Tool | Purpose |
-| --- | --- |
-| `ops_run_background` | Start a background job |
-| `ops_job_output` | Read job output |
-| `ops_job_list` | List jobs |
-| `ops_job_kill` | Stop a job |
-
-Background command layers follow authoritative per-session permission; `ops_run` (a bounded foreground result) is also provided by this component and published in full access only.
 
 ---
 
