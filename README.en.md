@@ -1,6 +1,10 @@
-# dsh-ops
+<p align="center">
+  <img src="docs/assets/readme/dsh-ops-header-dark.png" alt="dsh-ops header" width="640">
+</p>
 
-**English** | [中文](README.md)
+<p align="center">
+  <strong>English</strong> | <a href="README.zh.md">简体中文</a>
+</p>
 
 <div align="center" style="text-align: center;">
   <a href="https://trendshift.io/repositories/296103" title="Trendshift · JavaScript daily list">
@@ -11,6 +15,17 @@
     <img src="https://upstar.dev/badge/T-Auto/dsh-ops.svg" alt="Upstar: #2 in JavaScript" height="28" style="vertical-align: middle;">
   </a>
 </div>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/dsh-ops"><img alt="npm" src="https://img.shields.io/npm/v/dsh-ops?style=flat-square&color=4b6fff"></a>
+  <a href="https://www.npmjs.com/package/dsh-ops"><img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-ops?style=flat-square&color=4b6fff"></a>
+  <a href="https://github.com/T-Auto/dsh-ops/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT%20AND%20Apache--2.0-263146?style=flat-square"></a>
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-7da1de?style=flat-square">
+  <a href="https://github.com/T-Auto/dsh-ops/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/T-Auto/dsh-ops?style=flat-square&color=4b6fff"></a>
+</p>
+
+# dsh-ops
+
 A plugin dedicated to improving the token efficiency of DSH plugins, boosting AI performance, reducing token consumption, and cutting total task time. It removes the token, time, and model-attention waste caused by DSH repeatedly hitting PowerShell errors on Windows, and will keep being updated.
 
 Main features of this plugin:

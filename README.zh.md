@@ -1,6 +1,10 @@
-# dsh-ops
+<p align="center">
+  <img src="docs/assets/readme/dsh-ops-header-dark.png" alt="dsh-ops 表头" width="640">
+</p>
 
-**中文** | [English](README.en.md)
+<p align="center">
+  <strong>中文</strong> | <a href="README.md">English</a>
+</p>
 
 <div align="center" style="text-align: center;">
   <a href="https://trendshift.io/repositories/296103" title="Trendshift · JavaScript 日榜">
@@ -11,6 +15,17 @@
     <img src="https://upstar.dev/badge/T-Auto/dsh-ops.svg" alt="Upstar: #2 in JavaScript" height="28" style="vertical-align: middle;">
   </a>
 </div>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/dsh-ops"><img alt="npm" src="https://img.shields.io/npm/v/dsh-ops?style=flat-square&color=4b6fff"></a>
+  <a href="https://www.npmjs.com/package/dsh-ops"><img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-ops?style=flat-square&color=4b6fff"></a>
+  <a href="https://github.com/T-Auto/dsh-ops/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT%20AND%20Apache--2.0-263146?style=flat-square"></a>
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-7da1de?style=flat-square">
+  <a href="https://github.com/T-Auto/dsh-ops/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/T-Auto/dsh-ops?style=flat-square&color=4b6fff"></a>
+</p>
+
+# dsh-ops
+
 致力优化dsh插件token效率，提升ai性能，减少token消耗，减少任务总时间的插件，解决 Windows 下 DSH 反复使用 PowerShell 报错造成的 token、时间和模型注意力浪费，会持续更新。
 
 本插件的主要功能：
