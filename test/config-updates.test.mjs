@@ -13,16 +13,28 @@ import { assert, report, test, tick, waitFor } from './lib/harness.mjs'
  * Build a fixture row plus the two persistence surfaces the code may reach.
  * `tree.write` is a tripwire: the suite fails loudly if anything calls it.
  */
-function fixture(config, { name = 'dsh-ops/shell', failEdit = false, noEditor = false, noEntry = false, logger = null } = {}) {
+function fixture(config, { name = 'dsh-ops/shell', failEdit = false, noEditor = false, noEntry = false, logger = null, authoritative = null, mutateThenThrow = false } = {}) {
   const edits = [], updates = [], logs = [], infos = [], warns = [], cleanup = [], treeWrites = []
+  let editCalls = 0
   const entry = { options: { name, config },
     parent: { tree: { write() { treeWrites.push(true); throw new Error('EntryTree.write() must not be used (#91/#108)') } } },
     async update({ config: next }) { entry.options.config = next; updates.push(next) } }
   // Stand-in for @deepseek-ai/dsh-config-editor: hand the candidate back to the row
   // exactly like the service's loader reconciliation does.
   const editor = { async edit(target, change) {
+    editCalls += 1
+    if (mutateThenThrow) {
+      // The real editor reconciles the row before it rethrows; whatever it leaves
+      // behind must not make the migration look saved.
+      target.options.config = { ...(target.options.config ?? {}), extraGuidance: 'reconciled before failure' }
+      throw new Error('write failed after reconcile')
+    }
     if (failEdit) throw new Error('read-only profile')
-    const next = change(structuredClone(target.options.config ?? {}), {})
+    // `edit()` re-reads the row under the profile lock and hands *that* value to the
+    // callback. `authoritative` lets a test make it differ from the row as the
+    // scheduler saw it — the window these cases exist to pin.
+    const current = structuredClone(authoritative ?? target.options.config ?? {})
+    const next = change(current, {})
     target.options.config = next
     edits.push(structuredClone(next))
   } }
@@ -35,7 +47,7 @@ function fixture(config, { name = 'dsh-ops/shell', failEdit = false, noEditor = 
   const ctx = { fiber: noEntry ? {} : { entry }, logger: stream,
     effect(body) { cleanup.push(body()) },
     get: key => (noEditor ? undefined : key === 'configEditor' ? editor : undefined) }
-  return { entry, ctx, edits, updates, logs, infos, warns, cleanup, treeWrites }
+  return { entry, ctx, edits, updates, logs, infos, warns, cleanup, treeWrites, get editCalls() { return editCalls } }
 }
 
 await test('first run disables explicit true, marks completion, and preserves unrelated raw config', () => {
@@ -58,7 +70,10 @@ await test('evaluated true expressions are replaced but unrelated raw expression
   assert.deepEqual(f.edits[0].promptPolicy, other)
   assert.equal(f.edits[0].configUpdateVersion, CONFIG_UPDATE_VERSION)
   assert.equal(f.entry.options.config.allowSystemShellFallback, false)
-  assert.equal(f.entry.options.config.promptPolicy, other)
+  // Structural, not referential: the editor re-reads the row (so it hands the callback, and
+  // writes back, a fresh object). Asserting reference identity here only ever described the
+  // fixture, which is the false confidence the #138 review called out.
+  assert.deepEqual(f.entry.options.config.promptPolicy, other)
 })
 
 await test('self-check records first run even when fallback is absent or already false', () => {
@@ -252,5 +267,32 @@ await test('a context with no owning row migrates in memory and is not an error 
   assert.equal(f.infos.filter(message => message.includes('applied in memory only')).length, 1)
   assert.equal(f.warns.length, 0, 'a missing owning row is information, not a warning')
   assert.equal(f.logs.some(message => message.includes('no owning loader row')), true)
+})
+await test('the candidate comes from the editor\'s authoritative current, not the scheduled snapshot', async () => {
+  // The row changes between scheduling and the write. `edit()` re-reads it and hands
+  // that value to the callback, so a candidate captured earlier would drop the edit.
+  const f = fixture({ allowSystemShellFallback: true },
+    { authoritative: { allowSystemShellFallback: true, extraGuidance: 'concurrent edit' } })
+  mountConfigUpdates(f.ctx, f.entry.options.config)
+  await tick(); await tick()
+  assert.equal(f.edits.length, 1)
+  assert.equal(f.edits[0].extraGuidance, 'concurrent edit', 'a concurrent edit must survive the marker write')
+  assert.equal(f.edits[0].allowSystemShellFallback, false)
+  assert.equal(f.edits[0].configUpdateVersion, CONFIG_UPDATE_VERSION)
+  assert.deepEqual(f.treeWrites, [])
+})
+await test('a save that fails after the editor reconciled the row is retried, never remembered', async () => {
+  const f = fixture({ allowSystemShellFallback: true }, { mutateThenThrow: true })
+  const raw = f.entry.options.config
+  mountConfigUpdates(f.ctx, raw)
+  await tick(); await tick()
+  assert.equal(f.editCalls, 1)
+  assert.deepEqual(f.edits, [])
+  assert.equal(f.entry.options.config.configUpdateVersion, undefined, 'a failed save must not leave a success marker behind')
+  assert.ok(f.logs.some(message => message.includes('could not be saved')))
+  // Nothing in this plugin remembers the attempt, so the next activation retries.
+  mountConfigUpdates(f.ctx, raw)
+  await tick(); await tick()
+  assert.equal(f.editCalls, 2)
 })
 report('config-updates')
