@@ -102,10 +102,10 @@ const steps = []
 const stepFailures = []
 
 /** Run one step, stream its output, and return `{code, output}`. */
-async function run(title, command, args, { env = {}, optional = false } = {}) {
+async function run(title, command, args, { env = {}, optional = false, cwd = PACKAGE_ROOT } = {}) {
   const shown = [command, ...args].join(' ')
   process.stdout.write(`\n=== ${title}\n$ ${shown}\n`)
-  const child = spawn(command, args, { cwd: PACKAGE_ROOT, env: { ...process.env, ...env }, shell: process.platform === 'win32' })
+  const child = spawn(command, args, { cwd, env: { ...process.env, ...env }, shell: process.platform === 'win32' })
   // The listeners go on before the streams are touched. A `spawn` that cannot find its tool emits
   // `error` immediately, and an `error` event with no listener takes the whole runner down with a
   // stack trace instead of reporting "this host cannot answer the gate" (exit 2).
@@ -211,7 +211,9 @@ async function main() {
   const tarball = readdirSync(packDir).find(entry => entry.endsWith('.tgz'))
   if (tarball === undefined) failures.push('npm pack produced no .tgz in the pack destination')
   else {
-    await run('unpack the release artifact', 'tar', ['-xzf', path.join(packDir, tarball), '-C', packDir])
+    // Relative to the pack directory on purpose: Git for Windows ships GNU tar, which reads a
+    // `C:\...` argument as a remote host ("Cannot connect to C: resolve failed").
+    await run('unpack the release artifact', 'tar', ['-xzf', tarball], { cwd: packDir })
     await run('packed runtime closure', 'node',
       ['bin/native-runtime.mjs', 'check', '--root', path.join(packDir, 'package'), '--platform', TARGET])
   }
