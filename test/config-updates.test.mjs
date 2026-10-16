@@ -13,8 +13,8 @@ import { assert, report, test, tick, waitFor } from './lib/harness.mjs'
  * Build a fixture row plus the two persistence surfaces the code may reach.
  * `tree.write` is a tripwire: the suite fails loudly if anything calls it.
  */
-function fixture(config, { name = 'dsh-ops/shell', failEdit = false, noEditor = false } = {}) {
-  const edits = [], updates = [], logs = [], cleanup = [], treeWrites = []
+function fixture(config, { name = 'dsh-ops/shell', failEdit = false, noEditor = false, noEntry = false, logger = null } = {}) {
+  const edits = [], updates = [], logs = [], infos = [], warns = [], cleanup = [], treeWrites = []
   const entry = { options: { name, config },
     parent: { tree: { write() { treeWrites.push(true); throw new Error('EntryTree.write() must not be used (#91/#108)') } } },
     async update({ config: next }) { entry.options.config = next; updates.push(next) } }
@@ -26,10 +26,16 @@ function fixture(config, { name = 'dsh-ops/shell', failEdit = false, noEditor = 
     target.options.config = next
     edits.push(structuredClone(next))
   } }
-  const ctx = { fiber: { entry }, logger: { info: message => logs.push(message), warn: message => logs.push(message) },
+  // Severity is kept apart from the combined transcript: #136's discipline is that the in-memory
+  // degradation is information, while only a refused save is worth a warning.
+  const stream = logger ?? {
+    info: message => { logs.push(message); infos.push(message) },
+    warn: message => { logs.push(message); warns.push(message) },
+  }
+  const ctx = { fiber: noEntry ? {} : { entry }, logger: stream,
     effect(body) { cleanup.push(body()) },
     get: key => (noEditor ? undefined : key === 'configEditor' ? editor : undefined) }
-  return { entry, ctx, edits, updates, logs, cleanup, treeWrites }
+  return { entry, ctx, edits, updates, logs, infos, warns, cleanup, treeWrites }
 }
 
 await test('first run disables explicit true, marks completion, and preserves unrelated raw config', () => {
@@ -220,5 +226,31 @@ await test('real component mount migrates before publication and preserves manua
     // Migration itself does not trigger a second mount or another persisted edit.
     assert.equal(snapshots.length, 1)
   } finally { await shutdown(ctx) }
+})
+await test('an unavailable editor is noted once per logger, not once per activation (#136)', async () => {
+  // Two rows of the same process share one logger, which is what makes the deduplication
+  // observable: the second activation may not repeat the first one's line.
+  const logs = []
+  const logger = { info: message => logs.push(message), warn: message => logs.push(message) }
+  const first = fixture({ allowSystemShellFallback: true }, { noEditor: true, logger })
+  const second = fixture({ allowSystemShellFallback: true }, { noEditor: true, logger })
+  mountConfigUpdates(first.ctx, first.entry.options.config)
+  mountConfigUpdates(second.ctx, second.entry.options.config)
+  await tick(); await tick()
+  assert.equal(logs.filter(message => message.includes('applied in memory only')).length, 1)
+  assert.deepEqual([...first.edits, ...second.edits], [])
+  assert.deepEqual([...first.treeWrites, ...second.treeWrites], [])
+  assert.equal(first.entry.options.config.allowSystemShellFallback, true)
+  assert.equal(second.entry.options.config.allowSystemShellFallback, true)
+})
+await test('a context with no owning row migrates in memory and is not an error (#136)', async () => {
+  const f = fixture({ allowSystemShellFallback: true }, { noEntry: true })
+  mountConfigUpdates(f.ctx, { allowSystemShellFallback: true })
+  await tick(); await tick()
+  assert.deepEqual(f.edits, [])
+  assert.deepEqual(f.treeWrites, [])
+  assert.equal(f.infos.filter(message => message.includes('applied in memory only')).length, 1)
+  assert.equal(f.warns.length, 0, 'a missing owning row is information, not a warning')
+  assert.equal(f.logs.some(message => message.includes('no owning loader row')), true)
 })
 report('config-updates')
