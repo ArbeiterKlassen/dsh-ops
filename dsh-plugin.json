@@ -23,12 +23,12 @@
     {
       "name": "dsh-ops.process.spawn",
       "scope": "subprocess",
-      "reason": "Start fixed trusted native file operations through DSH subprocess and policy checks, or confined Bash/PTC execution; FastCtx background is explicitly opt-in and full-access-only."
+      "reason": "Start fixed trusted native file operations through DSH subprocess and policy checks, or confined Bash/PTC execution."
     },
     {
       "name": "dsh-ops.fs.read",
       "scope": "filesystem-read",
-      "reason": "Read the native worker executable and runtime provenance, plus the optional FastCtx background runtime."
+      "reason": "Read the native worker executable and runtime provenance."
     },
     {
       "name": "dsh-ops.fs.write",
@@ -58,11 +58,6 @@
         "name": "dsh-ops:repository-tooling:shell",
         "order": 3251,
         "summary": "Prefer bash; use the bundled PowerShell 7 for Windows-native functionality where that payload exists; removed when the shell component is off."
-      },
-      {
-        "name": "dsh-ops:repository-tooling:background",
-        "order": 3252,
-        "summary": "Owned background tasks only; absent by default."
       }
     ],
     "x-tool-namespaces": [
@@ -78,19 +73,6 @@
           "replace"
         ],
         "shellPermission": "Per-call DSH sandbox policy and native subprocess"
-      },
-      {
-        "serverName": "fastctx",
-        "transport": "stdio",
-        "source": "optional FastCtx background backend",
-        "publicPrefix": "ops_",
-        "tools": [
-          "run_background",
-          "job_output",
-          "job_list",
-          "job_kill"
-        ],
-        "shellPermission": "background component enabled AND enableShellTools AND per-session sandboxPolicy danger-full-access"
       },
       {
         "serverName": "dsh-ops",
@@ -112,7 +94,7 @@
         "architectures": ["x64", "arm64"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
         "presentation": "PTC-only",
-        "runtime": "independent native Rust file worker; no FastCtx dependency",
+        "runtime": "independent native Rust file worker",
         "tools": ["ops_batch", "ops_result"],
         "permissions": "Per-call original DSH sandboxPolicy and sandbox.confine (host full/partial enforcement reported); full access bypasses confinement and permits explicit operation roots; subprocess owns cancellation and credential scrub"
       },
@@ -129,12 +111,6 @@
         "defaultEnabled": true,
         "platforms": ["win32", "linux", "darwin"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"]
-      },
-      {
-        "id": "dsh-ops-background",
-        "entry": "dsh-ops/background",
-        "defaultEnabled": false,
-        "platforms": ["win32"]
       }
     ]
   },

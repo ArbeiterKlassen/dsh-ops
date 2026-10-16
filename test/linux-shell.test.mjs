@@ -52,7 +52,7 @@ if (process.platform === 'win32') {
 /** Mount one component into a host context, the way the bundle row does. */
 const mountComponent = (ctx, name, config) => ctx.plugin({
   name: `fixture-${name}`,
-  apply(inner) { return applyComponent(inner, { toolCallTimeoutMs: 5000, ...config }, name) },
+  apply(inner) { return applyComponent(inner, { ...config }, name) },
 })
 
 /** A scoped agent whose session policy this suite controls. */
@@ -113,18 +113,14 @@ await test('the POSIX rung is bash-only and does not change the Windows answer',
   assert.match(windows.detail, /allowSystemShellFallback is false/)
 })
 
-await test('the POSIX rung is the shell component\'s, not the Windows-only FastCtx job lane\'s', () => {
+await test('the POSIX rung is decided by the platform alone, and an explicit path still wins', () => {
   const env = { PATH: '/usr/bin:/bin' }
   const options = { platform: 'linux', arch: 'x64', env }
-  // The job lane asks with `posix: false`: it is Windows-only in 0.3.1, so a host bash must not make
-  // it publish job tools on a platform whose payload nothing here has verified.
-  assert.equal(resolveShells({}, { ...options, posix: false }).bash.available, false)
-  assert.equal(resolveShells({}, { ...options, posix: false }).bash.source, 'disabled')
-  // The shell component (default) gets the rung, so the two lanes are one decision apart rather than
-  // one inheriting the other's answer.
+  // The resolver no longer takes a caller override: the platform decides, so a stray `posix: false`
+  // (once passed by the removed FastCtx job lane) cannot turn the shell component's rung off.
   assert.equal(resolveShells({}, options).bash.available, true)
-  // An explicit path is an operator choice in either lane.
-  assert.equal(resolveShells({ bashPath: '/bin/bash' }, { ...options, posix: false }).bash.source, 'config')
+  assert.equal(resolveShells({}, { ...options, posix: false }).bash.available, true)
+  assert.equal(resolveShells({ bashPath: '/bin/bash' }, options).bash.source, 'config')
 })
 
 await test('the CLI refuses to provision shells on this host and says what to do instead', () => {

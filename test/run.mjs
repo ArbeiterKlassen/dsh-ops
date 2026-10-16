@@ -10,8 +10,8 @@
  *
  * THREE OUTCOMES, NOT TWO. A suite that cannot answer in this environment exits
  * with {@link SKIPPED_EXIT} (`skipSuite` in `test/lib/harness.mjs`) and is
- * counted as skipped, never as passed: a machine without a FastCtx build must
- * not be able to report a green runtime gate. `DSH_OPS_REQUIRE_RUNTIME=1` turns
+ * counted as skipped, never as passed: a machine without a native worker build
+ * must not be able to report a green runtime gate. `DSH_OPS_REQUIRE_RUNTIME=1` turns
  * such a skip into a failure here as well as in the suite, so the integration
  * job cannot silently lose the thing it exists to test.
  *

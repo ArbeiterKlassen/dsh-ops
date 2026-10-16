@@ -41,7 +41,7 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 
 `dsh-ops` 在 **Linux x64** 上与 Windows 侧能力对齐（除下面明确列出的部分）：原生 Rust worker 以 ELF 随包携带，文件工具（`inspect_local_file` / `glob` / `grep` / `replace`）与可选 PTC 组件（`ops_batch` / `ops_result`）在 Linux 上同样可用。
 
-- **shell 组件的平台分野**：Windows 上是随包固定摘要的 bash 5.3.15 / PowerShell 7.6.6 载荷与 Bash IPC 代理；Linux 上改为解析**宿主发行版自带的 bash**（`config.bashPath` → `PATH` → `/bin/bash`、`/usr/bin/bash`、`/usr/local/bin/bash`），不随包提供第二份 shell，也不提供 pwsh 覆盖层 —— 发行版的 bash 与其 libc/架构绑定，再塞一份反而多出供应链和许可负担。`ops_bash` 在两端都可用；受限模式必须由宿主沙箱（bwrap / Landlock）落实，沙箱缺失或无法约束时**拒绝执行**，不会退化成无约束运行。以 shell 为执行通道的后台组件仍仅 Windows；`dsh-ops provision-shells` 也仅 Windows，Linux 上会明确拒绝并指向 `config.bashPath`。
+- **shell 组件的平台分野**：Windows 上是随包固定摘要的 bash 5.3.15 / PowerShell 7.6.6 载荷与 Bash IPC 代理；Linux 上改为解析**宿主发行版自带的 bash**（`config.bashPath` → `PATH` → `/bin/bash`、`/usr/bin/bash`、`/usr/local/bin/bash`），不随包提供第二份 shell，也不提供 pwsh 覆盖层 —— 发行版的 bash 与其 libc/架构绑定，再塞一份反而多出供应链和许可负担。`ops_bash` 在两端都可用；受限模式必须由宿主沙箱（bwrap / Landlock）落实，沙箱缺失或无法约束时**拒绝执行**，不会退化成无约束运行。`dsh-ops provision-shells` 仍仅 Windows，Linux 上会明确拒绝并指向 `config.bashPath`。
 - **构建与安装**：见 [Linux 构建与验证](docs/linux构建.md)（[English](docs/linux-build.md)）—— `npm run verify` → `npm run build:ptc` → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz`。
 - **平台差异已处理**：替换文件时保留 mode/owner/POSIX ACL/xattr；目录 `fsync` 按 POSIX 语义；`multiline` 搜索跨行匹配；读取按编码字节与行数双重设界。
 - **默认拒绝读取凭据**：文件工具（含 PTC 批处理）在 worker 被 spawn 之前就拒绝 `~/.ssh`、`~/.aws`、`~/.azure`、`~/.kube`、`.npmrc`、DSH 凭据库等位置，遍历也按路径身份跳过这些目录，所以 `glob` 连私钥文件名都不会列出、`grep` 不会在其中匹配到任何内容；写入根收窄为本会话自己的 `dsh-ops-session-<id>` 临时目录（`0700`）。该行可用 `denyCredentialReads: false` 关闭，`DSH_OPS_DENY_READ` 只能加严、不能放松。Windows 侧等价的安全描述符（DACL）处理见 [Windows 验证清单](docs/windows-verification.md)。
@@ -97,14 +97,15 @@ npx --yes dsh-ops@latest uninstall --profile desktop
 
 ## 组件
 
-Bundle 声明四个组件，分别启停，首次安装默认开启前两个：
+Bundle 声明三个组件，分别启停，首次安装默认开启前两个：
 
 | 组件 | 介绍 | 默认 | 发布的工具 |
 | --- | --- | --- | --- |
 | `dsh-ops/shell` | 将默认终端改为 bash，以及 bash 覆盖不到时提供 PowerShell 7 | 开 | `ops_bash`；宿主 `pwsh` 使用随包 PowerShell 7 |
 | `dsh-ops/file` | 更快、更高性能、输出更精简更省 token 的 Rust 文件检索 | 开 | 四个文件工具 |
-| `dsh-ops/background` | 为科研仿真、模型训练及其他长进程后台任务提供托管 | 关 | 启动、输出、列出、终止后台任务 |
 | `dsh-ops/ptc` | 独立 Rust 安全批处理和有界结果引用，仅纯 PTC 会话加载 | 关 | `ops_batch`、`ops_result` |
+
+原 `dsh-ops/background` 组件（FastCtx 后台任务）已移除。仍保留该行的 profile 照常加载：该行不发布任何工具，只记录一条警告，可直接删除。
 
 “默认终端改为 bash”指模型提示优先使用 `ops_bash`，**不修改系统默认终端、PATH 或宿主原有 shell 工具名称**。
 
@@ -120,7 +121,7 @@ Bundle 声明四个组件，分别启停，首次安装默认开启前两个：
 | --- | --- |
 | 安装、更新、卸载的完整流程与全部选项 | [docs/使用指南.md](docs/使用指南.md) |
 | 配置项逐个说明、哪个键属于哪个组件 | [docs/配置参考.md](docs/配置参考.md) |
-| 四个组件分别发布什么工具、参数与权限 | [docs/组件参考.md](docs/组件参考.md) |
+| 三个组件分别发布什么工具、参数与权限 | [docs/组件参考.md](docs/组件参考.md) |
 | 报错怎么读、装不上怎么办、常见问题 | [docs/常见问题.md](docs/常见问题.md) |
 | 原生 PTC 的设计与使用 | [docs/native-ptc.md](docs/native-ptc.md) |
 | 在 Linux x64 上构建、配置与故障排查 | [docs/linux构建.md](docs/linux构建.md) |
@@ -131,13 +132,13 @@ Bundle 声明四个组件，分别启停，首次安装默认开启前两个：
 
 ## 许可证
 
-插件源码分发采用 **`MIT AND Apache-2.0`**：`vendor/fastctx/` 之外为 MIT；vendored FastCtx 为 Apache-2.0。见 [NOTICE](NOTICE)、`vendor/fastctx/LICENSE-APACHE` 与 `vendor/fastctx/NOTICE`。
+插件源码分发采用 **`MIT AND Apache-2.0`**：`licenses/fastctx/` 之外为 MIT；FastCtx 为 Apache-2.0。见 [NOTICE](NOTICE)、`licenses/fastctx/LICENSE-APACHE` 与 `licenses/fastctx/NOTICE`。
 
 独立的 Windows 载荷包另按上游组件许可证分发：Git for Windows 包含 GPL 等许可组件，PowerShell 包含 MIT 与第三方组件。其原始许可证、声明及来源记录随载荷保留；插件的 MIT 许可不替代这些许可。详见 [PROVENANCE.md](PROVENANCE.md)。
 
 ## 致谢
 
-Rust 工具基于 [yc-duan](https://github.com/yc-duan) 的 Codex 插件 FastCtx 并使用其源代码。vendor 标识与删除型分发改动记在 [vendor/fastctx/FORK.md](vendor/fastctx/FORK.md) 和 [vendor/fastctx/UPSTREAM.md](vendor/fastctx/UPSTREAM.md)。需要转载的 FastCtx 声明如下：
+Rust 工具基于 [yc-duan](https://github.com/yc-duan) 的 Codex 插件 FastCtx 并使用其源代码。vendor 标识与删除型分发改动曾记在 `vendor/fastctx/FORK.md` 和 `vendor/fastctx/UPSTREAM.md`，它们保留在仓库历史和早期发布版本中；vendored 源码本身已随后台组件一并移除。需要转载的 FastCtx 声明如下：
 
 > This product includes FastCtx
 > (https://github.com/yc-duan/fastctx), Copyright (c) 2026 yc-duan,

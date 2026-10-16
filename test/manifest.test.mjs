@@ -10,11 +10,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  BACKGROUND_TOOLS,
   FILE_TOOLS,
   HOST_SHELL_SECTION,
   IN_PROCESS_TOOLS,
-  SHELL_TOOLS,
   TOOLING_SECTION,
   TOOL_PREFIX,
   publicToolName,
@@ -58,13 +56,11 @@ await test('every declared tool is one the policy actually names', () => {
   // shell is named only when it resolved, and a level left off would hide a
   // declared tool from this check.
   const policy = renderToolingPolicy({
-    enableShellTools: true,
     mounted: true,
-    levels: { fastctx: true, bash: true, pwsh: true },
+    levels: { files: true, bash: true, pwsh: true },
   })
 
-  // Index 0 is the native file namespace. FastCtx is deliberately confined
-  // to the disabled background component at index 1.
+  // Index 0 is the native file namespace.
   const hosted = namespaces[0]
   assert.deepEqual(
     [...hosted.tools].sort(),
@@ -72,21 +68,16 @@ await test('every declared tool is one the policy actually names', () => {
     'the native namespace declares exactly the four file tools',
   )
   assert.equal(hosted.transport, 'in-process')
-  assert.deepEqual(
-    [...namespaces[1].tools].sort(),
-    [...BACKGROUND_TOOLS].sort(),
-    'the optional FastCtx namespace is background-only',
-  )
   for (const tool of hosted.tools) {
     assert.ok(policy.includes(publicToolName(tool)), `the policy never names ${publicToolName(tool)}`)
   }
+  // The FastCtx background backend was removed: no namespace may still advertise it.
+  assert.equal(namespaces.some((entry) => entry.serverName === 'fastctx' || entry.transport === 'stdio'), false)
 
   // Every further namespace is this plugin's own in-process surface, so its
-  // names are checked against `IN_PROCESS_TOOLS` and against the policy, never
-  // against the FastCtx list. Vacuously true while no such entry exists, so the
-  // suite is green before and after that entry lands.
-  for (const [offset, entry] of namespaces.slice(2).entries()) {
-    const index = offset + 2
+  // names are checked against `IN_PROCESS_TOOLS` and against the policy.
+  for (const [offset, entry] of namespaces.slice(1).entries()) {
+    const index = offset + 1
     assert.ok(
       Array.isArray(entry.tools) && entry.tools.length > 0,
       `the namespace at index ${index} must declare its tools`,
@@ -121,7 +112,9 @@ await test('the declared namespace documents the upstream names and the public p
 
 await test('the declared prompt sections are the registered ones', () => {
   const declared = raw.contributes['x-prompt-sections'].map((section) => section.name)
-  assert.deepEqual([...declared].sort(), ['file', 'shell', 'background'].map(name => `${TOOLING_SECTION}:${name}`).sort())
+  assert.deepEqual([...declared].sort(), ['file', 'shell'].map(name => `${TOOLING_SECTION}:${name}`).sort())
+  // The background stub still loads for existing rows but is no longer a declared component.
+  assert.equal(raw.contributes['x-components'].some((component) => component.entry === 'dsh-ops/background'), false)
 })
 
 await test('the manifest license states the composite this repository ships', () => {
@@ -129,8 +122,23 @@ await test('the manifest license states the composite this repository ships', ()
   assert.equal(pkg.license, raw.license)
   assert.ok(fs.existsSync(path.join(PACKAGE_ROOT, 'LICENSE')))
   assert.ok(fs.existsSync(path.join(PACKAGE_ROOT, 'NOTICE')))
-  assert.ok(fs.existsSync(path.join(PACKAGE_ROOT, 'vendor', 'fastctx', 'LICENSE-APACHE')))
-  assert.ok(fs.existsSync(path.join(PACKAGE_ROOT, 'vendor', 'fastctx', 'NOTICE')))
+  // The FastCtx attribution is kept with its license text, outside the removed vendor tree.
+  assert.ok(fs.existsSync(path.join(PACKAGE_ROOT, 'licenses', 'fastctx', 'LICENSE-APACHE')))
+  assert.ok(fs.existsSync(path.join(PACKAGE_ROOT, 'licenses', 'fastctx', 'NOTICE')))
+  assert.ok(pkg.files.includes('licenses'), 'the license texts ship in the package')
+})
+
+await test('the bundle patch inserts no background row and writes no removed FastCtx key', async () => {
+  const { parse } = await import('yaml')
+  const { LEGACY_FASTCTX_KEYS } = await import('../lib/config.js')
+  const patch = parse(fs.readFileSync(path.join(PACKAGE_ROOT, pkg.dsh.bundle.patch), 'utf8'))
+  const rows = patch.flatMap((entry) => entry.insert ?? [])
+  assert.deepEqual(rows.map((row) => row.name), ['dsh-ops/shell', 'dsh-ops/file', 'dsh-ops/ptc'])
+  for (const row of rows) {
+    for (const key of LEGACY_FASTCTX_KEYS) assert.equal(Object.hasOwn(row.config ?? {}, key), false, `${row.name} still writes ${key}`)
+  }
+  // The stub stays exported so profiles that still name the row keep loading.
+  assert.ok(pkg.exports['./background'])
 })
 
 await test('the declared host entry is the shipped module', () => {

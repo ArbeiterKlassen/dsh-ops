@@ -41,7 +41,7 @@ Routing: **toolkit → bash → PowerShell 7**.
 
 On **Linux x64** `dsh-ops` does what it does on Windows, except where noted below: the independent Rust worker ships as an ELF binary, and the file tools (`inspect_local_file` / `glob` / `grep` / `replace`) plus the opt-in PTC component (`ops_batch` / `ops_result`) work the same way there.
 
-- **Where the shell component splits**: on Windows it is the digest-pinned bash 5.3.15 / PowerShell 7.6.6 payload plus the Bash IPC proxies; on Linux it resolves the **host distribution's own bash** (`config.bashPath` → `PATH` → `/bin/bash`, `/usr/bin/bash`, `/usr/local/bin/bash`) and ships neither a second shell nor the pwsh overlay — a distribution bash is tied to that distribution's libc and architecture, so a second copy would add supply-chain and licensing burden without solving anything. `ops_bash` works on both; a confined mode must be enforced by a host sandbox (bwrap / Landlock), and when no sandbox can confine the call it is **refused** rather than run unrestricted. The background component, which executes through the shell component, stays Windows-only, and so does `dsh-ops provision-shells` — on Linux it refuses and points at `config.bashPath`.
+- **Where the shell component splits**: on Windows it is the digest-pinned bash 5.3.15 / PowerShell 7.6.6 payload plus the Bash IPC proxies; on Linux it resolves the **host distribution's own bash** (`config.bashPath` → `PATH` → `/bin/bash`, `/usr/bin/bash`, `/usr/local/bin/bash`) and ships neither a second shell nor the pwsh overlay — a distribution bash is tied to that distribution's libc and architecture, so a second copy would add supply-chain and licensing burden without solving anything. `ops_bash` works on both; a confined mode must be enforced by a host sandbox (bwrap / Landlock), and when no sandbox can confine the call it is **refused** rather than run unrestricted. `dsh-ops provision-shells` stays Windows-only — on Linux it refuses and points at `config.bashPath`.
 - **Build and install**: see [Building and verifying on Linux](docs/linux-build.md) — `npm run verify` → `npm run build:ptc` → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz`.
 - **Platform differences handled**: replacing a file keeps its mode/owner/POSIX ACL/xattrs; directory `fsync` follows POSIX semantics; `multiline` search reaches across lines; reads are bounded by encoded bytes as well as by lines. The Windows-side equivalent (the security descriptor) is tracked in the [Windows verification checklist](docs/windows-verification.md).
 - **Credential reads are refused by default**: the file tools (including PTC batches) refuse `~/.ssh`, `~/.aws`, `~/.azure`, `~/.kube`, `.npmrc` and the DSH credential stores before the worker is spawned, and a traversal skips those directories by identity, so `glob` cannot even list a private key's name and `grep` matches nothing inside one. Write roots are narrowed to the session's own `dsh-ops-session-<id>` temporary directory (`0700`). A row can opt out with `denyCredentialReads: false`; `DSH_OPS_DENY_READ` can only widen the fence.
@@ -97,14 +97,15 @@ Replace `desktop` with `web` or `tui` as appropriate.
 
 ## Components
 
-The bundle declares four independently toggled components. On first installation, the first two are enabled by default:
+The bundle declares three independently toggled components. On first installation, the first two are enabled by default:
 
 | Component | Description | Default | Published tools |
 | --- | --- | --- | --- |
 | `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
 | `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Four file tools |
-| `dsh-ops/background` | Managed background tasks for scientific simulations, model training and other long-running processes | Off | Start, read output, list and terminate background jobs |
 | `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
+
+The former `dsh-ops/background` component (FastCtx background jobs) has been removed. A profile that still has its row keeps loading: the row publishes nothing and logs one warning, and can be deleted.
 
 "Prefer bash as the terminal" means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**.
 
@@ -120,7 +121,7 @@ Full tool parameters, configuration keys and permission requirements: [Component
 | --- | --- |
 | The complete install, update and remove flow with every option | [docs/usage.md](docs/usage.md) |
 | Every configuration key, and which component owns it | [docs/configuration-reference.md](docs/configuration-reference.md) |
-| What tools each of the four components publishes, with parameters and permissions | [docs/component-reference.md](docs/component-reference.md) |
+| What tools each of the three components publishes, with parameters and permissions | [docs/component-reference.md](docs/component-reference.md) |
 | How to read the errors, what to do when installation fails | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | The native PTC design and usage | [docs/native-ptc.md](docs/native-ptc.md) |
 | How to build, configure and troubleshoot Linux x64 | [docs/linux-build.md](docs/linux-build.md) |
@@ -131,13 +132,13 @@ Full tool parameters, configuration keys and permission requirements: [Component
 
 ## License
 
-Plugin source distribution uses **`MIT AND Apache-2.0`**: files outside `vendor/fastctx/` are MIT; vendored FastCtx is Apache-2.0. See [NOTICE](NOTICE), `vendor/fastctx/LICENSE-APACHE` and `vendor/fastctx/NOTICE`.
+Plugin source distribution uses **`MIT AND Apache-2.0`**: files outside `licenses/fastctx/` are MIT; FastCtx is Apache-2.0. See [NOTICE](NOTICE), `licenses/fastctx/LICENSE-APACHE` and `licenses/fastctx/NOTICE`.
 
 Independent Windows payload packages are distributed under their upstream component licenses: Git for Windows includes GPL and other licensed components; PowerShell includes MIT and third-party components. Original licenses, notices and provenance records are retained with the payloads; the plugin's MIT license does not replace them. See [PROVENANCE.md](PROVENANCE.md).
 
 ## Acknowledgements
 
-The Rust tools are based on [yc-duan](https://github.com/yc-duan)'s FastCtx Codex plugin and use its source code. Vendor identification and deletion-only distribution changes are recorded in [vendor/fastctx/FORK.md](vendor/fastctx/FORK.md) and [vendor/fastctx/UPSTREAM.md](vendor/fastctx/UPSTREAM.md). The required FastCtx notice follows:
+The Rust tools are based on [yc-duan](https://github.com/yc-duan)'s FastCtx Codex plugin and use its source code. Vendor identification and deletion-only distribution changes were recorded in `vendor/fastctx/FORK.md` and `vendor/fastctx/UPSTREAM.md`, which remain in the repository history and in earlier published versions; the vendored source itself was removed with the background component. The required FastCtx notice follows:
 
 > This product includes FastCtx
 > (https://github.com/yc-duan/fastctx), Copyright (c) 2026 yc-duan,

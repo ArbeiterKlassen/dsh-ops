@@ -1,8 +1,8 @@
 # Native PTC enhancement — 0.3.1 Windows x64, Linux x64, Apple Silicon
 
 Issues: [#3](https://github.com/T-Auto/dsh-ops/issues/3), [#8](https://github.com/T-Auto/dsh-ops/issues/8).
-The file and PTC components use an independent Rust worker. FastCtx remains only
-behind the explicitly enabled background component.
+The file and PTC components use an independent Rust worker. The FastCtx-backed
+background component has been removed.
 
 ## Runtime-bearing installation and original DSH permission linkage
 
@@ -89,14 +89,6 @@ The native schemas deliberately do not expose `root`, `workspace`, `cwd`, or
 `file_path` aliases. `ops_bash` accepts the host-compatible optional
 `description` field but remains foreground-only; it does not accept
 `run_in_background` or create job IDs.
-
-
-The legacy `ops_glob`, `ops_grep`, `ops_inspect_local_file` and `ops_replace`
-interfaces are not the new Rust PTC core. Their relative-path base is FastCtx's
-own session cwd, which can be the Desktop profile directory rather than DSH's
-agent workspace. For deterministic comparisons, pass absolute paths. Do not pass
-`path: "."` as a workspace shorthand; the legacy server may reject it or resolve
-it against the wrong cwd.
 
 Their important fields are:
 
@@ -290,4 +282,4 @@ live Desktop upgrade, npm release or GitHub push is claimed.
 Architecture: `native/src/{contract,paths,batch,store,results}.rs` is the shared
 Rust operation core; `main.rs` is bounded single-call JSON transport;
 `lib/ptc/{contract,worker,index}.js` is only DSH registration/authority/transport.
-Tests do not enter published business code; FastCtx sources are untouched.
+Tests do not enter published business code.

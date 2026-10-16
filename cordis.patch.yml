@@ -1,5 +1,6 @@
-# Four independent components. PTC is opt-in, scoped to pure PTC sessions.
+# Three independent components. PTC is opt-in, scoped to pure PTC sessions.
 # Legacy shell and file stay enabled; neither is required by the PTC component.
+# The former dsh-ops/background row is no longer inserted; existing rows load as a no-op stub.
 - insert:
     - id: dsh-ops-shell
       name: dsh-ops/shell
@@ -12,17 +13,7 @@
       name: dsh-ops/file
       config:
         promptPolicy: true
-        enableShellTools: false
         required: false
-        toolCallTimeoutMs: 300000
-    - id: dsh-ops-background
-      name: dsh-ops/background
-      disabled: true
-      config:
-        promptPolicy: true
-        enableShellTools: true
-        required: false
-        toolCallTimeoutMs: 300000
     - id: dsh-ops-ptc
       name: dsh-ops/ptc
       disabled: true

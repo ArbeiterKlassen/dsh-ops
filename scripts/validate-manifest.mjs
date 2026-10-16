@@ -22,8 +22,6 @@ import { parse as parseYaml } from 'yaml'
 import {
   FILE_TOOLS,
   IN_PROCESS_TOOLS,
-  SHELL_TOOLS,
-  BACKGROUND_TOOLS,
   TOOLING_SECTION,
   TOOL_PREFIX,
   publicToolName,
@@ -31,7 +29,7 @@ import {
 } from '../lib/policy.js'
 import { resolvePtcConfig } from '../lib/ptc/index.js'
 import { PTC_TOOLS, definition } from '../lib/ptc/contract.js'
-import { DEFAULT_SERVER_NAME, resolveConfig } from '../lib/config.js'
+import { resolveConfig } from '../lib/config.js'
 
 /** The repository root (`scripts/`'s parent). */
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -225,12 +223,13 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
     const rows = Array.isArray(document)
       ? document.flatMap((entry) => (Array.isArray(entry?.insert) ? entry.insert : []))
       : []
-    check(rows.length === 4, 'the bundle declares exactly four components')
-    for (const component of ['shell', 'file', 'background', 'ptc']) {
+    check(rows.length === 3, 'the bundle declares exactly three components')
+    check(!rows.some(candidate => candidate?.name === `${pkg.name}/background`), 'the bundle no longer inserts the removed background component')
+    for (const component of ['shell', 'file', 'ptc']) {
       const row = rows.find(candidate => candidate?.name === `${pkg.name}/${component}`)
       check(row?.id === `${pkg.name}-${component}`, `the ${component} component has a stable row id`)
       if (!row) continue
-      check((row.disabled === true) === ['background', 'ptc'].includes(component), `${component} has its documented enablement default`)
+      check((row.disabled === true) === (component === 'ptc'), `${component} has its documented enablement default`)
       try { (component === 'ptc' ? resolvePtcConfig : resolveConfig)(row.config); check(true, `${component} config is valid`) }
       catch (error) { check(false, `${component} config is valid`, String(error?.message ?? error)) }
     }
@@ -241,7 +240,10 @@ const namespaces = Array.isArray(manifestRaw.contributes?.['x-tool-namespaces'])
   ? manifestRaw.contributes['x-tool-namespaces']
   : []
 const hostedNamespace = namespaces[0]
-const backgroundNamespace = namespaces[1]
+check(
+  !namespaces.some((entry) => entry?.serverName === 'fastctx' || entry?.transport === 'stdio'),
+  'no namespace advertises the removed FastCtx backend',
+)
 if (hostedNamespace === undefined) {
   check(false, 'contributes.x-tool-namespaces declares the hosted tool namespace')
 } else {
@@ -263,14 +265,6 @@ if (hostedNamespace === undefined) {
     `got ${JSON.stringify(hostedNamespace.transport)}`,
   )
   check(
-    Array.isArray(backgroundNamespace?.tools)
-      && backgroundNamespace.serverName === 'fastctx'
-      && backgroundNamespace.tools.length === BACKGROUND_TOOLS.length
-      && BACKGROUND_TOOLS.every((toolName) => backgroundNamespace.tools.includes(toolName)),
-    'the optional FastCtx namespace is background-only',
-    `manifest ${JSON.stringify(backgroundNamespace?.tools)} vs background ${BACKGROUND_TOOLS.join(',')}`,
-  )
-  check(
     hostedNamespace.publicPrefix === TOOL_PREFIX,
     `the declared namespace publishes its tools under ${TOOL_PREFIX}`,
     `got ${JSON.stringify(hostedNamespace.publicPrefix)}`,
@@ -280,29 +274,26 @@ if (hostedNamespace === undefined) {
 // The tooling policy as a deployment that resolved every rung renders it: the
 // text both tool-namespace checks below are read against.
 const equippedPolicy = renderToolingPolicy({
-  enableShellTools: true,
   mounted: true,
-  levels: { fastctx: true, bash: true, pwsh: true },
+  levels: { files: true, bash: true, pwsh: true },
 })
 
-// Every namespace after the first describes tools this plugin registers itself
-// rather than FastCtx tools, so those names are checked against
-// `IN_PROCESS_TOOLS` and against the policy text that has to name them —
-// never against the FastCtx tool list. Written against whatever the manifest
-// declares, so the gate is green both before and after such an entry lands.
+// Every namespace after the first describes tools this plugin registers itself,
+// so those names are checked against `IN_PROCESS_TOOLS` and against the policy
+// text that has to name them. Written against whatever the manifest declares.
 check(
   IN_PROCESS_TOOLS.every((toolName) => equippedPolicy.includes(publicToolName(toolName))),
   'the tools this plugin registers itself are named by the tooling policy',
   `policy never names ${IN_PROCESS_TOOLS.filter((name) => !equippedPolicy.includes(publicToolName(name))).map(publicToolName).join(', ')}`,
 )
-for (const [index, entry] of namespaces.slice(2).entries()) {
+for (const [index, entry] of namespaces.slice(1).entries()) {
   const declared = Array.isArray(entry?.tools) ? entry.tools : []
   const identified = declared.filter((toolName) => typeof toolName === 'string'
     && IN_PROCESS_TOOLS.includes(toolName)
     && equippedPolicy.includes(publicToolName(toolName)))
   check(
     declared.length > 0 && identified.length === declared.length,
-    `every tool of the namespace at index ${index + 2} is published under ${TOOL_PREFIX} by this plugin itself`,
+    `every tool of the namespace at index ${index + 1} is published under ${TOOL_PREFIX} by this plugin itself`,
     `declared ${JSON.stringify(entry?.tools)} vs in-process ${IN_PROCESS_TOOLS.map(publicToolName).join(', ') || '(none)'}`,
   )
 }
@@ -310,7 +301,7 @@ for (const [index, entry] of namespaces.slice(2).entries()) {
 const sections = manifestRaw.contributes?.['x-prompt-sections'] ?? []
 const sectionNames = sections.map((section) => section.name)
 check(
-  sectionNames.length === 3 && ['file', 'shell', 'background'].every(component => sectionNames.includes(`${TOOLING_SECTION}:${component}`)),
+  sectionNames.length === 2 && ['file', 'shell'].every(component => sectionNames.includes(`${TOOLING_SECTION}:${component}`)),
   'the declared prompt sections match lib/policy.js',
   `declared ${sectionNames.join(', ')} vs policy ${TOOLING_SECTION}`,
 )
@@ -498,8 +489,8 @@ check(JSON.stringify(platformClaims('dsh-ops-shell')) === '["win32","linux","dar
   'the shell component supports the declared targets using host bash on POSIX')
 check(JSON.stringify(platformClaims('dsh-ops-file')) === '["win32","linux","darwin"]',
   'the file component supports the exact worker target matrix')
-check(JSON.stringify(platformClaims('dsh-ops-background')) === '["win32"]',
-  'the background component stays Windows-only: it executes through the pinned bash IPC proxies')
+check(platformClaims('dsh-ops-background') === undefined,
+  'the removed background component is no longer declared')
 const REQUIRED_ENTRIES = [
   'native/Cargo.toml',
   'native/Cargo.lock',
@@ -514,21 +505,11 @@ const REQUIRED_ENTRIES = [
   'locale',
   'LICENSE',
   'NOTICE',
+  'licenses',
   'README.md',
   'README.zh.md',
   'PROVENANCE.md',
   'CHANGELOG.md',
-  'vendor/fastctx/Cargo.toml',
-  'vendor/fastctx/Cargo.lock',
-  'vendor/fastctx/build.rs',
-  'vendor/fastctx/src',
-  'vendor/fastctx/third-party',
-  'vendor/fastctx/LICENSE-APACHE',
-  'vendor/fastctx/NOTICE',
-  'vendor/fastctx/THIRD_PARTY_LICENSES.md',
-  'vendor/fastctx/THIRD_PARTY_LICENSES_RUST.md',
-  'vendor/fastctx/FORK.md',
-  'vendor/fastctx/UPSTREAM.md',
 ]
 const missingEntries = REQUIRED_ENTRIES.filter((entry) => !(pkg.files ?? []).includes(entry))
 check(
