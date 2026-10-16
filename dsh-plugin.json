@@ -87,7 +87,11 @@
         "source": "the plugin's bash layer via host subprocess",
         "publicPrefix": "ops_",
         "tools": [
-          "bash"
+          "bash",
+          "process_start",
+          "process_output",
+          "process_list",
+          "process_kill"
         ],
         "shellPermission": "shell component enabled AND publishBashTool AND authoritative per-session DSH policy; restricted modes require host confinement"
       }
