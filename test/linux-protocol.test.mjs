@@ -108,6 +108,10 @@ await test('concurrent replaces of one file are atomic: apply or conflict, never
     const jobs = Array.from({ length: 6 }, (_, index) =>
       callTool('replace', { path: target, pattern: 'seed', replacement: `v${index}` }, { root: workspace, writeRoots: [workspace], timeoutMs: 20_000 }))
     const settled = await Promise.all(jobs)
+    if (process.platform === 'win32') {
+      for (const value of settled) assert.equal(envelopeOf(value, assert).error.code, 'METADATA_UNSUPPORTED')
+      assert.equal(fs.readFileSync(target, 'utf8'), 'seed\n'); return
+    }
     let applied = 0
     let unchanged = 0
     let conflicts = 0

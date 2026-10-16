@@ -199,6 +199,11 @@ await test('one binary file no longer fails a whole replace, and is reported as 
     assert.equal(observed.skipped, 1, `the binary must be reported, got ${JSON.stringify(observed)}`)
     assert.deepEqual(observed.skippedPaths.map(file => path.basename(file)), ['icon.bin'], `skippedPaths must name it: ${JSON.stringify(observed.skippedPaths)}`)
 
+    if (process.platform === 'win32') {
+      const refused = envelopeOf(await callWorker(JSON.stringify({ ...request('replace', { path: workspace, pattern: 'OLD', replacement: 'NEW' }, options) })), assert)
+      assert.equal(refused.error.code, 'METADATA_UNSUPPORTED')
+      return
+    }
     const applied = envelopeOf(await callWorker(JSON.stringify({ ...request('replace', { path: workspace, pattern: 'OLD', replacement: 'NEW' }, options) })), assert)
     assert.equal(applied.changed, 1, JSON.stringify(applied))
     assert.equal(fs.readFileSync(path.join(workspace, 'text.txt'), 'utf8'), 'NEW\n')

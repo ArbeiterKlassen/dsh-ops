@@ -113,6 +113,7 @@ await test('CJK content survives read, replace and grep without shifting a line 
     assert.equal(refused.error?.code, 'POLICY_DENIED', JSON.stringify(refused))
     assert.equal(fs.readFileSync(at('待改.txt'), 'utf8'), '旧值\n', 'the refused write changed nothing')
     const applied = envelopeOf(await callTool('replace', { path: at('待改.txt'), pattern: '旧值', replacement: '新值' }, { root: workspace, writeRoots: [workspace] }), assert)
+    if (process.platform === 'win32') { assert.equal(applied.error.code, 'METADATA_UNSUPPORTED'); assert.equal(fs.readFileSync(at('待改.txt'), 'utf8'), '旧值\n'); return }
     assert.equal(applied.changed, 1)
     assert.equal(fs.readFileSync(at('待改.txt'), 'utf8'), '新值\n')
   })

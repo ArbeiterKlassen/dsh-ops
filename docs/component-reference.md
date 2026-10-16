@@ -7,7 +7,7 @@ What each of the four components publishes, with parameters and permission requi
 | Row `name` | Description | Default | Published tools |
 | --- | --- | --- | --- |
 | `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
-| `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Four file tools |
+| `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Eleven native file tools |
 | `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
 | `dsh-ops/tui` | Read-only current-session OPS sidebar | Off | None; see [sidebar guide](tui-panel.md) |
 
@@ -19,24 +19,27 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 
 | Tool | Purpose | Full-access requirement |
 | --- | --- | --- |
-| `ops_inspect_local_file` | Batch text ranges, encoding, PDF text and hex | No command permission gate¹ |
+| `ops_inspect_local_file` | Bounded UTF-8 lines and hex | No command permission gate¹ |
 | `ops_grep` | Rust regex search, multiple file filters, counts/summaries | No command permission gate¹ |
 | `ops_glob` | Multiple path patterns with exclusions | No command permission gate¹ |
-| `ops_replace` | Mechanical cross-file replacement; use host edit for precise changes | No command permission gate¹ |
+| `ops_replace` | Mechanical cross-file literal replacement | No command permission gate¹ |
+| `ops_write_file` / `ops_edit_file` | Full UTF-8 write / exact original-text patch with explicit CAS | DSH file policy¹ |
+| `ops_stat` / `ops_diff` | SHA-256 metadata / bounded proposed-content comparison | Read-only allowed |
+| `ops_copy` / `ops_move` / `ops_remove` | One regular file, source CAS; destination absent | DSH file policy¹ |
 | `ops_bash` | Preferred general bash command executor; `command` for short commands, `script_path` for long scripts | Confined in restricted modes; matched Windows x64 private IPC runtime |
 | `ops_batch` | Preflight and execute copy / move / remove with audit and recovery | See the PTC notes |
 | `ops_result` | Bounded result references: put, page, release | See the PTC notes |
 | Host `pwsh` | Windows-native operations using bundled PowerShell 7 | Host policy |
 
-¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes; read-only rejects replacement, workspace-write permits writes under the workspace and DSH temporary areas, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes. That preparation runs the package's own script as the current user before sandbox confinement applies, only in workspace-write, with `-ExecutionPolicy Bypass` (Group Policy still wins).
+¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes; read-only rejects every mutation (including mutation dry-runs), workspace-write permits writes under the workspace and this session’s private temporary directory, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes. That preparation runs the package's own script as the current user before sandbox confinement applies, only in workspace-write, with `-ExecutionPolicy Bypass` (Group Policy still wins).
 
 ---
 
 ## `dsh-ops/file` — file tools
 
-All four resolve relative paths against the DSH session cwd, accept a single `path`, and expose no `root`, `workspace`, `cwd` or `file_path` alias. All are UTF-8 first with bounded output; glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
+All file tools resolve relative paths against the DSH session cwd, accept a single `path`, and expose no `root`, `workspace`, `cwd` or `file_path` alias. All are UTF-8 first with bounded output; glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
 
-When the host provides its `fs` service, `ops_inspect_local_file` reads and real `ops_replace` writes are recorded in the host's read-before-edit table (`fs/observed`) exactly like host `read`/`edit`: a file read with ops can be edited with host `edit` directly, and an ops write does not make the host's earlier read look like an external change. `ops_grep`, `ops_glob` and `dryRun` record nothing.
+When the host provides its `fs` service, `ops_inspect_local_file`/`ops_stat` observations and completed mutations (including removed-path absence) are recorded in the host's read-before-edit table (`fs/observed`) exactly like host `read`/`edit`: a file read with ops can be edited with host `edit` directly, and an ops write does not make the host's earlier read look like an external change. `ops_grep`, `ops_glob` and `dryRun` record nothing.
 
 ### `ops_inspect_local_file`
 
@@ -91,6 +94,19 @@ Perform a deterministic UTF-8 replacement under `path`. `pattern` is **literal t
 | `glob` | string[] | Restrict files |
 | `maxReplacements` | integer 1–100000 | Hard replacement limit |
 | `dryRun` | boolean | Never writes |
+
+### Single-file writes, edits, metadata and transfers
+
+- `ops_stat {path}` returns `exists`, SHA-256 `revision`, `bytes`, UTF-8 `lineCount` (empty=0; trailing newline adds no phantom line; binary=null), `modifiedMs`, `readonly`, and POSIX `mode`. An absent leaf returns `revision:"absent"`. Parents must exist. Inspect returns the same whole-file revision/bytes/lineCount even on a partial page.
+- `ops_write_file {path, content, expectedRevision, dryRun?}` creates or fully overwrites UTF-8 bytes. `expectedRevision` is the observed lowercase SHA-256; `"absent"` is create-only, never an overwrite wildcard. Empty content is valid. Parent directories are not created implicitly.
+- `ops_edit_file {path, expectedRevision, edits:[{oldText,newText}], dryRun?}` applies 1–100 exact patches against the **same original bytes**, not sequential intermediate text. Every nonempty `oldText` must occur exactly once (overlapping occurrences are ambiguous); overlapping edits reject the entire request. `newText:""` deletes. CRLF, Unicode and BOM are literal, never normalized.
+- `ops_diff {path, content, offset?, limit?}` is read-only: one prefix/suffix-trimmed replacement hunk, **not** a minimal/unified diff. Items identify added/removed lines (including terminators); 0-based `offset`, default limit 100, maximum 1000. `before`/`after` carry exact hash/bytes/lineCount. Follow `nextOffset` and `truncated`; a truncated long line requires a narrower proposal, not blind inference from missing text.
+- `ops_copy` / `ops_move` take `{path,to,expectedRevision}`. Both paths resolve against session cwd. Only regular files are supported; parents must exist, destination must be absent (atomic no-clobber). Copy reads the source under CAS and publishes an independent inode. Move uses a same-filesystem hard-link publish followed by source unlink; cross-device move is `CROSS_DEVICE`, with **no** copy/delete fallback. A published destination followed by source-unlink/sync failure reports `effectState:"applied"`; inspect both paths, never repeat blindly.
+- `ops_remove {path,expectedRevision}` atomically unlinks one regular file; no trash or recursive directory removal. Directory batching belongs to `ops_batch` when available.
+
+Write/edit receipts are short and content-free: `revision`, `bytes`, `lineCount`, `changed`, `dryRun`, `items` with previous revision/bytes and metadata. Source revision checks and stable per-path sidecar locks serialize cooperating native writers across atomic inode replacement; advisory locks do not stop unrelated external writers. New files use private preparation and atomic no-clobber publication; POSIX overwrite preserves mode/ACL and reports owner/xattr restore warnings. Copy fails rather than publish if captured metadata cannot be restored (timestamps retained). Move retains inode metadata. Requests are capped at 2 MiB, file reads at 32 MiB, responses at roughly 96 KiB; host cancellation/deadlines remain authoritative. No shell fallback exists.
+
+**Windows migration / safety boundary:** actual overwrite via `ops_write_file`, `ops_edit_file`, legacy `ops_replace`, and `ops_copy` fails closed with `METADATA_UNSUPPORTED` until Windows DACL/security-metadata preservation is proven. No file is changed; dry-run previews still work in writable modes. Create-only write, stat/diff/read/search, same-filesystem move and remove remain supported. This is an implementation availability limitation, **not** user authorization; switching permission mode cannot fix it. Do not hide all host mutation tools based solely on OPS tool-name presence. Darwin copy also fails closed pending proven ACL clone support; Darwin overwrite uses the existing metadata-preserving APFS clone path.
 
 ### Results and errors
 
@@ -152,11 +168,14 @@ The routing table the model sees is rendered by the plugin from what it actually
 
 | Task | Tool |
 | --- | --- |
-| Text / multiple ranges / encoding / PDF text / hex | ops_inspect_local_file |
+| Bounded UTF-8 lines / hex | ops_inspect_local_file |
 | Images | read_image (host) |
 | Search contents | ops_grep |
 | Find paths | ops_glob |
-| Batch replacement; use host edit for precise edits | ops_replace |
+| Batch literal replacement | ops_replace |
+| Full UTF-8 write / precise patch (CAS) | ops_write_file / ops_edit_file |
+| Revision / metadata / proposed-content comparison | ops_stat / ops_diff |
+| Single regular-file copy / move / unlink (CAS) | ops_copy / ops_move / ops_remove |
 | General commands / builds / git / pipelines / scripts — preferred command executor | ops_bash |
 | Windows-native cmdlets / registry / services only | pwsh (bundled PowerShell 7 via host) |
 ```

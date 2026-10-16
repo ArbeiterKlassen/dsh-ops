@@ -106,6 +106,7 @@ pub fn dispatch(request: &Request) -> Result<Value> {
         "glob" => glob(request),
         "grep" => grep(request),
         "replace" => replace(request),
+        "stat" | "diff" | "write_file" | "edit_file" | "copy" | "move" | "remove" => single::run(request),
         _ => Err(Failure::new("INVALID_ARGUMENT", "Unknown file capability")),
     }
 }
@@ -230,16 +231,12 @@ fn segment_match(pattern: &str, value: &str) -> bool {
     while pi < p.len() && p[pi] == b'*' { pi += 1; }
     pi == p.len()
 }
-fn hash_file(path: &Path) -> Result<String> {
-    let bytes = read_bytes(path)?;
-    Ok(format!("{:x}", Sha256::digest(&bytes)))
-}
 fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     let raw = path.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;
     let target = crate::file_path::checked(raw)?;
     let mut file = crate::file_path::read_file(&target)?;
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
+    std::io::Read::by_ref(&mut file).take(MAX_FILE_BYTES + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_FILE_BYTES { return Err(Failure::new("OUTPUT_LIMIT", "File exceeds the bounded read budget")); }
     Ok(bytes)
 }
@@ -304,6 +301,7 @@ fn inspect(request: &Request) -> Result<Value> {
     let path = target(&args.path, false)?;
     if !path.is_file() { return Err(Failure::new("INVALID_ARGUMENT", "path is a directory; use ops_glob or ops_grep")); }
     let bytes = read_bytes(&path)?;
+    let facts = content_facts(&bytes);
     if bytes.len() as u64 > MAX_FILE_BYTES { return Err(Failure::new("OUTPUT_LIMIT", "file exceeds the inspect size budget")); }
     if args.view == "hex" {
         // `offset` means the same thing in both views: the 1-based unit to start
@@ -313,14 +311,16 @@ fn inspect(request: &Request) -> Result<Value> {
         // `minimum: 1` left no way to ask for it back: any file of at most 16
         // bytes read back as an empty string. In this view `skipped` and the item
         // `offset` are byte counts, not row counts.
-        let start = args.offset.saturating_sub(1).saturating_mul(16).min(bytes.len()); let end = (start + args.limit * 16).min(bytes.len());
+        let start = args.offset.saturating_sub(1).saturating_mul(16).min(bytes.len()); let end = (start + args.limit.min(1900) * 16).min(bytes.len());
         let text = bytes[start..end].iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
-        return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":1,"skipped":start,"failed":0,"complete":end == bytes.len(),"omitted":bytes.len().saturating_sub(end),"bytesTotal":bytes.len(),"items":[{"path":path,"view":"hex","offset":start,"text":text}]}));
+        return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":1,"skipped":start,"failed":0,"complete":end == bytes.len(),"truncated":end < bytes.len(),"nextOffset":end.div_ceil(16)+1,"omitted":bytes.len().saturating_sub(end),"bytesTotal":bytes.len(),"revision":facts["revision"],"bytes":facts["bytes"],"lineCount":facts["lineCount"],"items":[{"path":path,"view":"hex","offset":start,"text":text}]}));
     }
     if args.view != "text" { return Err(Failure::new("INVALID_ARGUMENT", "view must be text or hex")); }
     let text = String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "file is not valid UTF-8"))?;
     let lines: Vec<_> = text.lines().enumerate().skip(args.offset.saturating_sub(1)).take(args.limit).map(|(i, line)| json!({"path":path,"line":i+1,"text":line})).collect();
-    Ok(result(lines, text.lines().count(), args.offset.saturating_sub(1), args.offset, text.lines().count(), false))
+    let mut output = result(lines, text.lines().count(), args.offset.saturating_sub(1), args.offset, text.lines().count(), false);
+    for key in ["revision", "bytes", "lineCount"] { output[key] = facts[key].clone(); }
+    Ok(output)
 }
 fn glob(request: &Request) -> Result<Value> {
     let args: GlobArgs = serde_json::from_value(request.args.clone())?;
@@ -410,11 +410,15 @@ fn replace(request: &Request) -> Result<Value> {
     // impossible, and the error named no file, so the caller could not even narrow the request.
     for file in walked.files { let bytes=read_bytes(&file)?; match String::from_utf8(bytes.clone()) { Ok(text) => { let count=text.match_indices(&args.pattern).count(); if count>0 { total += count; plans.push((file, bytes, text, count)); } } Err(_) => binary.push(file) } }
     let skipped = binary.len();
-    let skipped_paths: Vec<Value> = binary.iter().take(16).map(|file| json!(relative_display(&request.root_path(), file))).collect();
+    let skipped_paths: Vec<Value> = binary.iter().take(8).map(|file| json!(relative_display(&request.root_path(), file))).collect();
     if total > args.max_replacements { return Err(Failure::new("OUTPUT_LIMIT", format!("{total} matches exceed maxReplacements ({}); no file was changed. maxReplacements is a ceiling, not a truncation: raise it to {total} or more and retry.", args.max_replacements))); }
-    let mut items=Vec::new(); for (file, original, text, count) in plans { let revision=hash_file(&file)?; let next=text.replace(&args.pattern,&args.replacement); items.push(json!({"path":file,"replacements":count,"revision":revision,"bytesBefore":original.len(),"bytesAfter":next.len()})); }
+    let mut items=Vec::new(); for (file, original, text, count) in plans { let revision=format!("{:x}", Sha256::digest(&original)); let next=text.replace(&args.pattern,&args.replacement); items.push(json!({"path":file,"replacements":count,"revision":revision,"revisionAfter":format!("{:x}", Sha256::digest(next.as_bytes())),"bytesBefore":original.len(),"bytesAfter":next.len(),"lineCountBefore":text.lines().count(),"lineCount":next.lines().count()})); }
+    if serde_json::to_vec(&items)?.len() > MAX_OUTPUT_BYTES / 2 { return Err(Failure::new("OUTPUT_LIMIT", "Replacement receipts exceed the bounded output budget; narrow path/glob. No files changed.")); }
     if args.dry_run { return Ok(json!({"status":"completed","phase":"observe","changed":0,"matched":total,"skipped":skipped,"failed":0,"complete":true,"omitted":0,"dryRun":true,"items":items,"skippedPaths":skipped_paths})); }
-    let mut changed=0usize; for item in &mut items { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
+    for item in &items { single::authorize_write(request, item["path"].as_str().unwrap_or(""))?; }
+    if cfg!(windows) { return Err(Failure::new("METADATA_UNSUPPORTED", "Overwrite requires proven Windows DACL/metadata preservation; dryRun is available but no file was changed.")); }
+    let mut changed=0usize; for item in &mut items {
+        let applied = (|| -> Result<()> { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
         // Trusted transport owns this allowlist. Re-check every selected file,
         // not only the initial search root, immediately before publication.
         if let Some(roots) = &request.write_roots {
@@ -434,8 +438,18 @@ fn replace(request: &Request) -> Result<Value> {
         // Report what the replacement kept. The fields are additive, so a caller
         // that ignores them sees exactly the envelope it saw before.
         if let Some((metadata,warnings))=atomic_write(&file,next.as_bytes())? { item["metadata"]=metadata; if !warnings.is_empty() { item["metadataWarnings"]=json!(warnings); } }
+        Ok(()) })();
+        if let Err(mut error) = applied {
+            if changed > 0 { error.effect_state = "applied".into(); error.next_action = "Earlier files were already replaced. Inspect postconditions; do not repeat the batch blindly.".into(); }
+            return Err(error);
+        }
         changed += item["replacements"].as_u64().unwrap_or(0) as usize; }
-    Ok(json!({"status":"completed","phase":"verify","changed":changed,"matched":total,"skipped":skipped,"failed":0,"complete":true,"omitted":0,"items":items,"skippedPaths":skipped_paths}))
+    let count = items.len();
+    let mut output = result(items, count, 0, 0, total, walked.truncated);
+    output["changed"] = json!(changed); output["skipped"] = json!(skipped);
+    // Do not let optional skipped path names defeat the serialized receipt budget.
+    output["skippedPaths"] = if serde_json::to_vec(&output)?.len() < MAX_OUTPUT_BYTES / 2 { json!(skipped_paths) } else { json!([]) };
+    Ok(output)
 }
 /// A POSIX ACL is exposed as this attribute, so preserving ACLs needs no libacl.
 #[cfg(unix)]
@@ -548,7 +562,10 @@ impl PreservedMetadata {
         for (name, value) in &self.xattrs {
             match rustix::fs::fsetxattr(file, name.as_str(), value, rustix::fs::XattrFlags::empty()) { Ok(()) => restored.push(name.clone()), Err(error) => warnings.push(format!("extended attribute {name} was not restored ({error})")) }
         }
-        Ok((json!({"mode": format!("{:04o}", self.mode & 0o7777), "owner": owner, "acl": acl, "xattrs": restored}), warnings))
+        let omitted = restored.len().saturating_sub(16); restored.truncate(16);
+        let omitted_warnings = warnings.len().saturating_sub(16); warnings.truncate(16);
+        if omitted_warnings > 0 { warnings.push(format!("{omitted_warnings} additional metadata warnings omitted")); }
+        Ok((json!({"mode": format!("{:04o}", self.mode & 0o7777), "owner": owner, "acl": acl, "xattrs": restored, "xattrsOmitted": omitted}), warnings))
     }
 }
 
@@ -564,7 +581,7 @@ fn lock_and_read_for_update(file: &Path) -> Result<(std::fs::File, Vec<u8>)> {
     // The lock inode must survive replacement of the target inode. Keep a
     // persistent, hidden sidecar per path; unlinking it after unlock would let
     // another process lock a different inode under the same lock name.
-    let key = format!("{:x}", Sha256::digest(checked.name.as_bytes()));
+    let key = format!("{:x}", Sha256::digest(checked.name.to_lowercase().as_bytes()));
     let lock_name = format!(".dsh-ops-update-{key}.lock");
     let mut options = cap_std::fs::OpenOptions::new();
     options.read(true).write(true).create(true).follow(FollowSymlinks::No);
@@ -628,6 +645,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     #[cfg(target_os = "macos")]
     let mut options = { let mut value = cap_std::fs::OpenOptions::new(); value.write(true).truncate(true).follow(FollowSymlinks::No); value };
     #[cfg(not(target_os = "macos"))]
+    #[allow(unused_mut)] // mode is applied only on Unix
     let mut options = { let mut value = cap_std::fs::OpenOptions::new(); value.write(true).create_new(true).follow(FollowSymlinks::No); value };
     #[cfg(unix)]
     { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
@@ -669,3 +687,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     }
     Ok(report)
 }
+
+#[path = "file_single.rs"]
+mod single;
+use single::content_facts;

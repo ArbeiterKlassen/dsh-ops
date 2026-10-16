@@ -180,6 +180,7 @@ await test('replace treats its pattern as a literal while grep treats the same s
     assert.equal(grepped.matched, 1, 'grep interprets a+ as a regex quantifier')
 
     const replaced = envelopeOf(await callTool('replace', { path: target, pattern: 'a+', replacement: 'X' }, { root: workspace, writeRoots: [workspace] }), assert)
+    if (process.platform === 'win32') { assert.equal(replaced.error.code, 'METADATA_UNSUPPORTED'); assert.equal(fs.readFileSync(target, 'utf8'), 'aaa a+ bbb\n'); return }
     assert.equal(replaced.changed, 1)
     assert.equal(fs.readFileSync(target, 'utf8'), 'aaa X bbb\n', 'replace matched the literal a+, not the regex')
 
@@ -227,6 +228,7 @@ await test('maxReplacements refuses by naming the count and the ceiling, and wri
 
     // Raising the ceiling past the count is the documented way forward.
     const raised = envelopeOf(await callTool('replace', { path: target, pattern: 'TOKEN', replacement: 'DONE', maxReplacements: 101 }, { root: workspace }), assert)
+    if (process.platform === 'win32') { assert.equal(raised.error.code, 'METADATA_UNSUPPORTED'); assert.equal(fs.readFileSync(target, 'utf8'), original); return }
     assert.equal(raised.changed, 101)
     assert.equal(fs.readFileSync(target, 'utf8'), 'DONE\n'.repeat(101))
   })
@@ -245,6 +247,7 @@ await test('a leftover from a killed writer is reclaimed by the next replace of 
     fs.writeFileSync(unrelated, 'belongs to another file')
 
     const body = envelopeOf(await callTool('replace', { path: target, pattern: 'TOKEN', replacement: 'DONE' }, { root: workspace }), assert)
+    if (process.platform === 'win32') { assert.equal(body.error.code, 'METADATA_UNSUPPORTED'); assert.equal(fs.existsSync(leftover), true); return }
     assert.equal(body.changed, 1)
     assert.equal(fs.existsSync(leftover), false, 'the next writer must reclaim the debris for its own name')
     assert.deepEqual(fs.readdirSync(workspace).filter(entry => entry.startsWith('.debris.txt.dsh-ops-')), [], 'and leave none of its own')

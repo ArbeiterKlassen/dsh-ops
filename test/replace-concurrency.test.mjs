@@ -66,6 +66,11 @@ await test('concurrent replaces never claim a change that did not survive', asyn
         ),
       )
 
+      if (process.platform === 'win32') {
+        for (const value of results) assert.equal(value.body.error.code, 'METADATA_UNSUPPORTED')
+        assert.equal(fs.readFileSync(target, 'utf8'), `${filler}TOKEN
+${filler}`); continue
+      }
       const final = fs.readFileSync(target, 'utf8')
       const present = []
       for (let writer = 1; writer <= WRITERS; writer += 1) if (final.includes(`TOKEN-${writer}`)) present.push(writer)
@@ -111,6 +116,9 @@ await test('debris cleanup removes only this file\'s own temporary names', async
     for (const [file, text] of [[operator, 'operator backup'], [otherTarget, "another target's live temporary"], [own, 'this writer was killed']]) fs.writeFileSync(file, text)
 
     const result = await callTool('replace', { path: target, pattern: 'two', replacement: 'three' }, { root: workspace, timeoutMs: 60_000 })
+    if (process.platform === 'win32') {
+      assert.equal(result.body.error.code, 'METADATA_UNSUPPORTED'); assert.equal(fs.readFileSync(target, 'utf8'), 'one two\n'); assert.equal(fs.existsSync(own), true); return
+    }
     assert.equal(result.body?.status, 'completed', JSON.stringify(result.body ?? result.stdout))
     assert.equal(fs.readFileSync(target, 'utf8'), 'one three\n')
     for (const [file, text] of [[operator, 'operator backup'], [otherTarget, "another target's live temporary"]]) {

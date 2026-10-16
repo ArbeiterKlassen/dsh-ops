@@ -8,6 +8,10 @@ use std::path::{Component, Path, PathBuf};
 
 pub struct Target { pub parent: Dir, pub name: String, pub display: PathBuf }
 pub fn checked(raw: &str) -> Result<Target> {
+    checked_leaf(raw, false)
+}
+/// Missing final entries are allowed only for create/no-clobber operations.
+pub fn checked_leaf(raw: &str, allow_missing: bool) -> Result<Target> {
     let path = Path::new(raw);
     if !path.is_absolute() || raw.len() > 4096 || raw.contains('\0') {
         return Err(Failure::new("INVALID_ARGUMENT", "Expected one absolute, bounded host-resolved path"));
@@ -37,7 +41,11 @@ pub fn checked(raw: &str) -> Result<Target> {
         parent = parent.open_dir_nofollow(&component)?;
     }
     regular(&parent.dir_metadata()?, true)?;
-    regular(&parent.symlink_metadata(&name)?, false)?;
+    match parent.symlink_metadata(&name) {
+        Ok(metadata) => regular(&metadata, false)?,
+        Err(error) if allow_missing && error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => return Err(error.into()),
+    }
     Ok(Target { parent, name, display: path.to_path_buf() })
 }
 pub fn validate_name(name: &str) -> Result<()> {

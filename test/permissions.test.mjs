@@ -75,8 +75,11 @@ await test('the real worker behaves as the file-tool descriptions say (#44)', as
       assert.deepEqual(names(grep),['sub/nested.md','top.md'])
       // replace matches literal text: "a.b" does not match "axb".
       const replaced=await call('replace',{path:'a.txt',pattern:'a.b',replacement:'Z'})
-      assert.equal(replaced.changed,1,JSON.stringify(replaced))
-      assert.equal(fs.readFileSync(path.join(root,'a.txt'),'utf8'),'Z axb\n')
+      if (process.platform === 'win32') {
+        assert.equal(replaced.error.code,'METADATA_UNSUPPORTED'); assert.equal(fs.readFileSync(path.join(root,'a.txt'),'utf8'),'a.b axb\n')
+      } else {
+        assert.equal(replaced.changed,1,JSON.stringify(replaced)); assert.equal(fs.readFileSync(path.join(root,'a.txt'),'utf8'),'Z axb\n')
+      }
     } finally { await shutdown(ctx) }
   })
 })
@@ -273,6 +276,9 @@ await test('ops reads and writes reach the host read-before-edit table (#17)', a
       // Keep the size identical so the version change is not a size-only artifact.
       await new Promise(r=>setTimeout(r,20))
       const replaced=await fileCall(ctx,worker,'replace',{path:'a.txt',pattern:'alpha',replacement:'delta'},exec,exec.signal)
+      if (process.platform === 'win32') {
+        assert.equal(replaced.error.code,'METADATA_UNSUPPORTED'); assert.deepEqual(await intent(),{version:before}); return
+      }
       assert.equal(replaced.changed,1,JSON.stringify(replaced))
       const after=await current()
       assert.notEqual(after,before)
@@ -327,7 +333,8 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       assert.notEqual(badEncoding.status,'completed',JSON.stringify(badEncoding))
       assert.equal(badEncoding.error.code,'INVALID_ARGUMENT',JSON.stringify(badEncoding))
       const replaced=await fileCall(ctx,worker,'replace',{path:'data.txt',pattern:'before',replacement:'after'},exec,exec.signal)
-      assert.equal(replaced.changed,1,JSON.stringify(replaced))
+      if (process.platform === 'win32') assert.equal(replaced.error.code,'METADATA_UNSUPPORTED')
+      else assert.equal(replaced.changed,1,JSON.stringify(replaced))
       const batch=await ptcCall(ctx,worker,'batch',{root,action:'run',operations:[{op:'copy',path:'data.txt',to:'copy.txt'}]},exec,exec.signal)
       assert.equal(batch.status,'completed',JSON.stringify(batch))
       const move=await ptcCall(ctx,worker,'batch',{root,action:'run',operations:[{op:'move',path:'copy.txt',to:'moved.txt'}]},exec,exec.signal)
@@ -335,7 +342,8 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       const remove=await ptcCall(ctx,worker,'batch',{root,action:'run',operations:[{op:'remove',path:'moved.txt'}]},exec,exec.signal)
       assert.equal(remove.status,'completed',JSON.stringify(remove))
       const afterGrant=await fileCall(ctx,worker,'replace',{path:'data.txt',pattern:'after',replacement:'after-grant'},exec,exec.signal)
-      assert.equal(afterGrant.changed,1,JSON.stringify(afterGrant))
+      if (process.platform === 'win32') assert.equal(afterGrant.error.code,'METADATA_UNSUPPORTED')
+      else assert.equal(afterGrant.changed,1,JSON.stringify(afterGrant))
       // Use a non-temp external root for the host preflight fence; no file is accessed.
       const denied=await ptcCall(ctx,worker,'batch',{root:path.parse(root).root,action:'plan',operations:[{op:'remove',path:'never-accessed'}]},exec,exec.signal)
       assert.equal(denied.error.code,'POLICY_DENIED')
@@ -406,7 +414,7 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       assert.equal(result.exitCode,0); assert.equal(result.sandbox.mode,'danger-full-access')
       const full=await ptcCall(ctx,worker,'batch',{root:outside,action:'run',operations:[{op:'copy',path:'keep.txt',to:'full-copy.txt'}]},exec,exec.signal)
       assert.equal(full.status,'completed',JSON.stringify(full))
-      assert.equal(fs.readFileSync(path.join(root,'data.txt'),'utf8'),'after-grant')
+      assert.equal(fs.readFileSync(path.join(root,'data.txt'),'utf8'),process.platform === 'win32' ? 'before' : 'after-grant')
     } finally { await shutdown(ctx); fs.rmSync(outside,{recursive:true,force:true}) }
   })
 })

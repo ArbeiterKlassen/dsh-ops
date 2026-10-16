@@ -69,7 +69,7 @@ async function sections(ctx, currentAgent) { return renderSections(ctx, currentA
 async function visible(ctx, currentAgent, expected) {
   await waitFor(() => expected.every(name => scopedToolNames(ctx, currentAgent).includes(name)), { timeoutMs: 5000, what: expected.join(', ') })
 }
-await test('file mount owns exactly four tools and never overrides the registry', async () => {
+await test('file mount owns exactly the declared native tools and never overrides the registry', async () => {
   const { ctx } = await bootHost()
   try {
     const { tools } = await fileMount(ctx)
@@ -113,6 +113,10 @@ await test('real native file calls return data and propagate errors promptly', a
     await withTempDir('glob', async dir => {
       fs.writeFileSync(path.join(dir, 'alpha.txt'), 'alpha\n')
       const agent = await agentForCall(ctx, dir)
+      const created = await callTool(ctx, publicToolName('write_file'), { path: 'created.txt', expectedRevision: 'absent', content: 'created' }, undefined, agent)
+      assert.equal(created.value.status, 'completed', JSON.stringify(created.value))
+      const stat = await callTool(ctx, publicToolName('stat'), { path: 'created.txt' }, undefined, agent)
+      assert.equal(stat.value.revision, created.value.revision)
       const result = await callTool(ctx, publicToolName('glob'), { pattern: ['*.txt'], path: dir }, undefined, agent)
       assert.match(result.text, /alpha\.txt/)
       assert.equal(fs.realpathSync.native(result.value.items[0]), fs.realpathSync.native(path.join(dir, 'alpha.txt')))

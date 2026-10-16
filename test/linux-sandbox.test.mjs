@@ -67,6 +67,7 @@ await test('read_only and an empty write-root list both refuse a replace and cha
     assert.equal(fs.readFileSync(target, 'utf8'), 'a\n')
 
     const admitted = envelopeOf(await callTool('replace', { path: target, pattern: 'a', replacement: 'b' }, { root: workspace, writeRoots: [workspace] }), assert)
+    if (process.platform === 'win32') { assert.equal(admitted.error.code, 'METADATA_UNSUPPORTED'); assert.equal(fs.readFileSync(target, 'utf8'), 'a\n'); return }
     assert.equal(admitted.status, 'completed')
     assert.equal(admitted.changed, 1)
     assert.equal(fs.readFileSync(target, 'utf8'), 'b\n')
@@ -87,6 +88,7 @@ await test('write_roots containment: a target outside every root is refused, a t
     assert.equal(fs.readFileSync(outsideFile, 'utf8'), 'a\n', 'the refused target is untouched')
 
     const applied = envelopeOf(await callTool('replace', { path: insideFile, pattern: 'a', replacement: 'b' }, { root: workspace, writeRoots: [inside] }), assert)
+    if (process.platform === 'win32') { assert.equal(applied.error.code, 'METADATA_UNSUPPORTED'); assert.equal(fs.readFileSync(insideFile, 'utf8'), 'a\n'); return }
     assert.equal(applied.status, 'completed')
     assert.equal(fs.readFileSync(insideFile, 'utf8'), 'b\n')
   })
