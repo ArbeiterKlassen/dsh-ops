@@ -55,8 +55,10 @@ Both engines use the same fixture paths and bytes, with read-only native request
 
 Grep/glob always specify `outputMode`. Inspect does not accept that parameter;
 it specifies `view: "hex"` instead. No hidden defaults are sent as unsupported
-native fields. Hex offset is deliberately `1`, retaining the baseline semantics;
-PR #81's proposed correction must appear as a result difference.
+native fields. Hex offset is deliberately `1`, which is the declared default.
+#81's hex correction is part of the base this branch sits on, so it is no longer
+a difference to expect from a base-versus-head run; the recorded baseline evidence
+predates it and names its own source commit.
 
 ## Measurement and interpretation
 
