@@ -63,7 +63,12 @@
     "./ptc/locale/*.json": "./lib/components/ptc/locale/*.json",
     "./tui": { "default": "./lib/components/tui/index.js" },
     "./tui/package.json": "./lib/components/tui/package.json",
-    "./tui/locale/*.json": "./lib/components/tui/locale/*.json"
+    "./tui/locale/*.json": "./lib/components/tui/locale/*.json",
+    "./hide-official": {
+      "default": "./lib/components/hide-official/index.js"
+    },
+    "./hide-official/package.json": "./lib/components/hide-official/package.json",
+    "./hide-official/locale/*.json": "./lib/components/hide-official/locale/*.json"
   },
   "bin": {
     "dsh-ops": "bin/dsh-ops.mjs"

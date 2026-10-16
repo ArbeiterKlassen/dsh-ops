@@ -1,10 +1,10 @@
-
-# Four independent components. PTC and the read-only TUI panel are opt-in.
-# Legacy shell and file stay enabled; neither is required by the PTC component.
-# The former dsh-ops/background row is no longer inserted; existing rows load as a no-op stub.
+# Five independent components. The shell defaults on only on Windows; TUI is opt-in.
+# Strict official-tool hiding is independent and enabled by default.
+# Existing dsh-ops/background rows load as a no-op stub.
 - insert:
     - id: dsh-ops-shell
       name: dsh-ops/shell
+      disabled: !!js process.platform !== "win32"
       config:
         promptPolicy: true
         publishBashTool: true
@@ -27,3 +27,8 @@
         maxSessions: 32
         maxActive: 128
         recentLimit: 8
+    - id: dsh-ops-hide-official
+      name: dsh-ops/hide-official
+      config:
+        strict: true
+        additionalOfficialTools: []

@@ -12,6 +12,10 @@ import { bootHost, callTool, mountPlugin, mountScopedToolPlugin, preExecute, pub
   shutdown } from './lib/host.mjs'
 import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import Subprocess from '@deepseek-ai/dsh-subprocess-local'
+import { officialToolHidingMountChecks } from './lib/official-tool-hiding.mjs'
+
+// Component 4 has no native runtime dependency; always exercise its real mounts.
+await officialToolHidingMountChecks()
 const EXPECTED = FILE_TOOLS.map(publicToolName).sort()
 const FILE_SECTION = `${TOOLING_SECTION}:file`
 const SHELL_SECTION = `${TOOLING_SECTION}:shell`

@@ -113,6 +113,7 @@
         "id": "dsh-ops-shell",
         "entry": "dsh-ops/shell",
         "defaultEnabled": true,
+        "defaultEnabledPlatforms": ["win32"],
         "platforms": ["win32", "linux", "darwin"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"]
       },
@@ -129,6 +130,15 @@
         "defaultEnabled": false,
         "presentation": "Optional read-only dsh-TUI panel API v1",
         "tools": []
+      },
+      {
+        "id": "dsh-ops-hide-official",
+        "entry": "dsh-ops/hide-official",
+        "defaultEnabled": true,
+        "platforms": ["win32", "linux", "darwin"],
+        "strict": true,
+        "retainedOfficialCommand": { "win32": "pwsh", "linux": "bash", "darwin": "bash" },
+        "readiness": "All visible official capabilities require reviewed implemented OPS equivalents before any restriction is installed. run_code is not exempt; unhideable transports and own-scope registrations fail prompt assembly and execution closed."
       }
     ]
   },
