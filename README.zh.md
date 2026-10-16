@@ -33,3 +33,77 @@
 > tips：本项目的 ops 是广义 operations （运行操作）的缩写，代指本插件处于dsh和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
 
 ## 安装、更新、卸载
+
+### 官方插件市场
+
+在目标 DSH 应用的插件市场中输入 npm 包名 **`dsh-ops`**，选择自定义地址，输入https://mirrors.huaweicloud.com/repository/npm/，安装后选择启用。目前不推荐用npmmirror安装，有bug。
+
+当然，如果你确定可以连接 npm 官方源那就选择官方源，如果你不确定那就按教程操作。
+
+![在插件市场中选择自定义地址并填入华为云 npm 镜像](docs/assets/marketplace-huaweicloud-mirror.png)
+
+
+
+### npm 一键安装
+
+#### 安装方法
+
+```console
+npx --yes dsh-ops@latest install --profile desktop
+npx --yes dsh-ops@latest install --profile web
+npx --yes dsh-ops@latest install --profile tui
+```
+
+必须显式选择目标 profile；`tui` 映射到 **dsh-TUI 产品的 `dsh-tui` profile**，不是旧的 `tui` 目录。请先初始化目标应用。该入口委托官方 DSH CLI 安装，不另写一套 profile 锁与回滚逻辑。
+
+桌面端必须使用桌面应用自带的 CLI；默认探测 `%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`。安装在其它位置时加 `--dsh-cli "<安装目录>\resources\runtime\cli\bin\dsh.cmd"`。Web/TUI 需要可用的 DSH CLI，可同样显式指定。
+
+也可以直接使用官方命令：
+
+```console
+dsh plugin --profile web add dsh-ops
+dsh plugin --profile dsh-tui add dsh-ops
+"<桌面安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add dsh-ops
+```
+
+普通 DSH CLI 不能管理保留的 `desktop` profile；不要把它与桌面自带入口混淆。
+
+#### 更新方法
+
+重新运行相同的 `npx --yes dsh-ops@latest install --profile ...`，或用官方 CLI `add dsh-ops@latest`。按应用提示重载；替换已加载代码时重启应用。
+
+#### 卸载与查看状态
+
+```console
+npx --yes dsh-ops@latest status --profile desktop
+npx --yes dsh-ops@latest uninstall --profile desktop
+```
+
+把 `desktop` 换成 `web` 或 `tui` 即可。也可在市场卸载，或执行官方 `dsh plugin --profile ... remove dsh-ops`。二进制随 profile 的插件依赖管理；卸载移除依赖引用，不误删系统 shell、其它 profile 的副本或包管理器共享缓存。
+
+旧版显式 provision 的 `<DSH_HOME>/dsh-ops/` 文件需单独清理：`npx --yes dsh-ops@latest uninstall --yes`。默认不删 `~/.fastctx/` 持久状态；需要时显式加 `--purge-fastctx`。关闭后台组件会等待已发出的调用，然后尝试终止该组件当前连接记住的自有任务；失败会告警。断线丢失归属的旧任务及单纯降权不保证终止，先处理自己的任务。
+
+## 许可证
+
+插件源码分发采用 **`MIT AND Apache-2.0`**：`vendor/fastctx/` 之外为 MIT；vendored FastCtx 为 Apache-2.0。见 [NOTICE](NOTICE)、`vendor/fastctx/LICENSE-APACHE` 与 `vendor/fastctx/NOTICE`。
+
+独立的 Windows 载荷包另按上游组件许可证分发：Git for Windows 包含 GPL 等许可组件，PowerShell 包含 MIT 与第三方组件。其原始许可证、声明及来源记录随载荷保留；插件的 MIT 许可不替代这些许可。详见 [PROVENANCE.md](PROVENANCE.md)。
+
+## 致谢
+
+Rust 工具基于 [yc-duan](https://github.com/yc-duan) 的 Codex 插件 FastCtx 并使用其源代码。vendor 标识与删除型分发改动记在 [vendor/fastctx/FORK.md](vendor/fastctx/FORK.md) 和 [vendor/fastctx/UPSTREAM.md](vendor/fastctx/UPSTREAM.md)。需要转载的 FastCtx 声明如下：
+
+> This product includes FastCtx
+> (https://github.com/yc-duan/fastctx), Copyright (c) 2026 yc-duan,
+> used under the Apache License 2.0.
+>
+> FastCtx is redistributed and/or modified here by the maintainer of
+> this distribution. Any such change is that maintainer's own work
+> and their sole responsibility. It is not endorsed by, not
+> supported by, and not attributable to the author of FastCtx, who
+> accepts no liability of any kind arising from this distribution or
+> from anything built on top of it.
+
+## Star 趋势
+
+[![Star 趋势图](https://api.star-history.com/svg?repos=T-Auto/dsh-ops&type=Date)](https://star-history.com/#T-Auto/dsh-ops&Date)
