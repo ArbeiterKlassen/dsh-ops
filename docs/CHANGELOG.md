@@ -211,6 +211,32 @@ answer, where the first of them previously threw while the module was still load
 the second failed a load-time existence check. `DSH_OPS_REQUIRE_RUNTIME=1` turns either
 absence into a failure rather than a green run, and a supported host with the worker
 built runs every check exactly as before.
+### Windows verification follow-ups, and a lock-sidecar assertion
+
+A Windows x64 verification of the 0.3.1 boundary work (2026-10-16) closed most of its own
+findings in the release itself — the update lock no longer touches the target, credential
+directory names are matched case-insensitively on every host, and `sync_directory` is
+`#[cfg(unix)]`. What is still wrong here is the checklist, not the code:
+
+- **`docs/windows-verification.md` carried expectations the report disproved.** The manifest
+  count is 59, not 58 (the tree that removed the FastCtx and background components dropped two
+  checks); the PE path needs its `.exe`; the L2 hex text is space-separated; a Windows host
+  skips three suites rather than two (`linux-shell` joins the two POSIX-only ones) and reports
+  24 passed + 3 skipped out of 27, not 27 + 3 out of 30; W1e's measured code is `IO_ERROR`
+  (os error 32), not `ACCESS_DENIED`, so the expectation is the structured *shape* rather than
+  one code; and the update-lock note now describes the sidecar, which is what the code takes.
+  The note that a DSH sandbox cannot answer the checklist at all — `workspace-write` cannot
+  spawn the worker, `danger-full-access` cannot let it create its replacement — and the Windows
+  build prerequisites are recorded with it.
+- **The lock sidecar is asserted invisible.** `test/linux-args.test.mjs` plants a
+  `.dsh-ops-update-<hex>.lock` and checks that `glob`, `grep` and a directory-wide `replace`
+  never select or edit it — on every host, because the rule that keeps it out is
+  platform-independent.
+- **No product half remains.** The report's other finding was that a `.cmd` candidate was probed
+  with `CreateProcess`, which refuses a launcher script with `EINVAL`. That probe (`probeBinary`
+  in `lib/binary.js`) is gone with the background component, and the surviving `.cmd` launch
+  path, `lib/profile-install.js`, already goes through `%ComSpec%` with `/d /s /c` and
+  `windowsVerbatimArguments`. So this is a documentation change plus one test.
 
 ## [0.3.0] — 2026-10-14 — Windows x64 native tools and PTC
 
