@@ -488,9 +488,18 @@ const ptc = manifestRaw.contributes?.['x-components']?.find(c => c.id === 'dsh-o
 check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === false, 'native PTC component is opt-in')
 check(JSON.stringify(ptc?.tools) === JSON.stringify(PTC_TOOLS.map(publicToolName)), 'PTC declaration matches the generated tool contract')
 check(PTC_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
-check(JSON.stringify(pkg.os) === '["win32"]' && JSON.stringify(pkg.cpu) === '["x64"]' &&
-  JSON.stringify(ptc?.platforms) === '["win32"]' && JSON.stringify(ptc?.architectures) === '["x64"]',
-  '0.3.0 package and PTC declarations support Windows x64 only')
+check(JSON.stringify(pkg.os) === '["win32","linux","darwin"]' && JSON.stringify(pkg.cpu) === '["x64","arm64"]' &&
+  JSON.stringify(ptc?.platforms) === '["win32","linux","darwin"]' && JSON.stringify(ptc?.architectures) === '["x64","arm64"]' &&
+  JSON.stringify(ptc?.targets) === '["win32-x64","linux-x64","darwin-arm64"]',
+  '0.3.1 exact targets are Windows x64, Linux x64 and macOS Apple Silicon; Intel Mac is unsupported')
+/** Every component states the platforms it really serves, so a Linux claim cannot ride along. */
+const platformClaims = id => manifestRaw.contributes?.['x-components']?.find(c => c.id === id)?.platforms
+check(JSON.stringify(platformClaims('dsh-ops-shell')) === '["win32","linux","darwin"]',
+  'the shell component supports the declared targets using host bash on POSIX')
+check(JSON.stringify(platformClaims('dsh-ops-file')) === '["win32","linux","darwin"]',
+  'the file component supports the exact worker target matrix')
+check(JSON.stringify(platformClaims('dsh-ops-background')) === '["win32"]',
+  'the background component stays Windows-only: it executes through the pinned bash IPC proxies')
 const REQUIRED_ENTRIES = [
   'native/Cargo.toml',
   'native/Cargo.lock',

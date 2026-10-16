@@ -3,11 +3,9 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
-## 0.3.0 release scope and verification
+## 0.3.1 release scope and verification
 
-0.3.0 is Windows x64 only, explicitly approved by the maintainer for this release.
-Package os/cpu, component declarations and native target checks agree. Linux,
-macOS and ARM64 are future work; prior cross-compile checks are not release claims.
+0.3.1 targets Windows x64, Linux x64 and macOS Apple Silicon (`darwin-arm64`). Intel Mac and other ARM64 targets are not supported. Exact target pairs live in `PLATFORMS` and component `targets`; npm os/cpu filters are only their coarse projection. Windows Bash/pwsh remain pinned Windows-only optional dependencies; POSIX uses host Bash. No postinstall downloader is included.
 
 The fixed file worker implements inspect/glob/grep/replace, receives session-cwd
 paths plus authoritative DSH write policy, and rechecks the writable-root allowlist
@@ -22,20 +20,12 @@ Restricted Bash uses an installation-relative private MSYS copy: only import DLL
 names are redirected to original MIT IPC proxies, preserving the token and disk
 API paths. Original payload/proxy/source hashes are recorded and checked.
 Only the original GPL payload is an existing dependency; no modified MSYS DLL
-or complete private copy is included in the 0.3.0 tarball. Runtime modifications
+or complete private copy is included in the 0.3.1 tarball. Runtime modifications
 are identified in the local receipt; original licenses remain in the copy.
 This does not attest source-delivery closure for the historical PortableGit
 payload dependency (see the 0.2.1 historical limitation below).
 
-The Windows x64 Rust worker and two IPC proxies are staged with hash receipts.
-`npm run verify:release` includes 58 manifest checks, 13 test suites, worker
-PE/version/hash checks and IPC binary/source closure. Real Node PTC runtime and
-SDK coverage includes Bash command/script/pipeline, workspace write, outside-write
-denial and downgrade to read-only. Native PTC copy/move/remove, read-only result
-pages and full-access external roots pass with original DSH providers. No Linux,
-macOS or ARM64 binary/runtime acceptance is claimed. No benchmark is inferred
-from these gates. The npm tarball is built and checked after the GitHub Release;
-publication itself is performed separately by the maintainer.
+All three workers are staged with version/target/hash receipts. Formal release closure requires every exact target and the Windows IPC binary/source closure. Local `check --staged` is a development check, not release approval. Final verification is linked in `docs/release-0.3.1.md` and the GitHub Release; early contributor measurements are not substituted for the integrated revision. GitHub publication does not automatically publish npm.
 
 ## Historical development evidence
 
@@ -47,13 +37,15 @@ cwd and sandbox policy, forwards cancellation, and maps worker JSON into the DSH
 structured output contract. The initial exact-argv file confinement below was
 superseded by the fixed trusted-operation fence described above.
 
-The Windows x64 worker was built with the managed Rust `1.97.1` toolchain and
-staged under `runtime/win32-x64` with a version/target/executable/SHA-256 receipt.
-`cargo check`, `cargo build --release --locked`, `cargo clippy --all-targets
--D warnings`, manifest validation, and all ten local JavaScript suites pass.
-The six-target release matrix and Linux/macOS runtime and sandbox acceptance are
-not claimed. FastCtx source/vendor remains unchanged and is retained only for
-the explicitly disabled background component.
+At the time of the Windows-only 0.3.0 development, the worker was built with the
+managed Rust `1.97.1` toolchain and staged under `runtime/win32-x64` with a
+version/target/executable/SHA-256 receipt. `cargo check`, `cargo build --release
+--locked`, `cargo clippy --all-targets -D warnings`, manifest validation and the
+local JavaScript suites passed. The six-target release matrix and Linux/macOS
+runtime acceptance were not claimed at that point; Linux x64 file and PTC
+acceptance was added afterwards and is claimed above. FastCtx source/vendor
+remains unchanged and is retained only for the explicitly disabled background
+component.
 
 
 The independent MIT Rust core in `native/` is original dsh-ops code. It uses

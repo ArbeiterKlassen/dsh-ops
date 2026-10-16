@@ -47,6 +47,7 @@ import {
   provisionedShellStore,
   provisionedShellVersionDir,
   resolveShells,
+  shellExecutable,
 } from '../lib/shells.js'
 
 /** Receipt schema written beside a provisioned runtime. */
@@ -487,7 +488,13 @@ async function commandProvision({ force, from, noBuild }) {
 
   const installed = probeBinary(target)
   if (!installed.ok) {
-    console.error(`the installed copy does not run: ${target} (${installed.detail})`)
+    // Resolution prefers the managed copy over every other rung, so leaving a copy that does not
+    // run here would shadow a working build on every later activation. Remove it so the next
+    // resolve falls through to a rung that does run (#30).
+    let removed = true
+    try { fs.rmSync(target, { force: true }) } catch { removed = false }
+    console.error(`the installed copy does not run: ${target} (${installed.detail})`
+      + (removed ? '; it was removed, so the next resolve falls through' : '; it could not be removed and will shadow the other rungs'))
     return 1
   }
 
@@ -523,7 +530,7 @@ const SHELL_RECEIPT_VERSION = 1
 const SHELL_RECEIPT_FILE = '.provisioned.json'
 
 /** The archive shapes a pin may name, and how each is opened. */
-const PIN_EXTRACTORS = Object.freeze(['zip', 'sfx-7z'])
+const PIN_EXTRACTORS = Object.freeze(['zip', 'sfx-7z', 'tar.gz'])
 
 /** The fields every pin must carry; `executableSha256` and the labels are optional. */
 const PIN_REQUIRED_FIELDS = Object.freeze([
@@ -689,8 +696,9 @@ function unpackAsset({ pin, asset, target }) {
       return {
         error: 'no zip-capable tar found',
         stderr: [
-          'a zip archive needs Windows\' own bsdtar (%SystemRoot%\\System32\\tar.exe); the tar a Git '
-          + 'installation puts on PATH is GNU tar, which cannot read a zip',
+          'reading a zip needs a libarchive-based tar: on Windows that is the bsdtar shipped at '
+          + '%SystemRoot%\\System32\\tar.exe, because the tar a Git installation puts on PATH is GNU tar, '
+          + 'which cannot read a zip. Prefer a `tar.gz` pin on platforms that have one.',
         ],
       }
     }
@@ -700,6 +708,12 @@ function unpackAsset({ pin, asset, target }) {
     // PortableGit's archive IS a 7-Zip self-extractor: `-o<dir>` names where it
     // unpacks and `-y` answers its own prompts.
     return runTool(asset, [`-o${into}`, '-y'], { cwd: path.dirname(asset) })
+  }
+  if (pin.extractor === 'tar.gz') {
+    // What every POSIX upstream publishes. `tar` here is libarchive's bsdtar on
+    // macOS and GNU tar on Linux; both read a gzipped tar, and both keep the
+    // mode bits that make the payload spawnable.
+    return runTool('tar', ['-xzf', asset, '-C', into])
   }
   return { error: `unknown extractor ${JSON.stringify(pin.extractor)}`, stderr: [] }
 }
@@ -779,8 +793,12 @@ function validatePin(value, index) {
     throw new Error(`${at}.bytes must be a positive whole number, got ${JSON.stringify(pin.bytes)}`)
   }
   const executableRelativePath = relative('executableRelativePath')
-  if (path.basename(executableRelativePath) !== PLATFORM_PACKAGES[name].executable) {
-    throw new Error(`${at}.executableRelativePath must end in ${PLATFORM_PACKAGES[name].executable}, `
+  // The expected file name follows the pin's own platform, not the host's: a pin
+  // table is validated on whatever machine runs the provisioner, and a `darwin`
+  // pin's payload has no `.exe`.
+  const expectedExecutable = shellExecutable(name, text('platform'))
+  if (path.basename(executableRelativePath) !== expectedExecutable) {
+    throw new Error(`${at}.executableRelativePath must end in ${expectedExecutable}, `
       + `got ${JSON.stringify(executableRelativePath)}`)
   }
   if (pin.executableSha256 !== undefined && !/^[0-9a-f]{64}$/u.test(String(pin.executableSha256))) {
@@ -988,6 +1006,15 @@ function provisionShell(pin, { force, dryRun }) {
  * @returns {number} the exit code: 0 when every selected shell is in place, 1 otherwise.
  */
 function commandProvisionShells({ kinds, force, dryRun, pinFile }) {
+  // The pinned payload is the Windows one: a Windows host carries no POSIX shell, so this
+  // distribution provisions and digest-checks one there. A POSIX host already has its
+  // distribution's own bash, so there is nothing to install — say that instead of failing on an
+  // empty pin table (report: the shell component's POSIX rung).
+  if (process.platform !== 'win32') {
+    console.error(`dsh-ops provisions shells on Windows only; this host (${process.platform}-${process.arch}) already has its own bash,`
+      + " and the shell component resolves it (PATH, then /bin/bash, /usr/bin/bash, /usr/local/bin/bash). Use config.bashPath to pin an explicit executable instead.")
+    return 1
+  }
   let pins
   try {
     pins = pinTable(pinFile)
@@ -1004,7 +1031,12 @@ function commandProvisionShells({ kinds, force, dryRun, pinFile }) {
     if (pin === undefined) {
       const covered = [...new Set(pins.map((candidate) => `${candidate.platform}-${candidate.arch}`))].join(', ')
       console.error(`no upstream pin for ${kind} on ${process.platform}-${process.arch}`
-        + (covered === '' ? '' : `; the pin table covers ${covered}`))
+        + (covered === '' ? '' : `; the pin table covers ${covered}`)
+        + (kind === 'bash'
+          ? '. No upstream project publishes a portable bash for every platform: on macOS and Linux '
+            + 'point the shell component at the copy the machine already has with `bashPath` '
+            + '(for example /opt/homebrew/bin/bash).'
+          : '.'))
       return 1
     }
     selected.push(pin)

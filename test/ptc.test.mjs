@@ -1,6 +1,7 @@
 /** Three end-to-end scenarios: real Rust worker + real Cordis/tools/prompt;
  * simulated workspace and confinement provider, no business code in tests.
  */
+import { ownWindowsFixture } from './lib/harness.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -16,9 +17,27 @@ import { resolveWorker } from '../lib/ptc/runtime.js'
 import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import { invoke } from '../lib/ptc/worker.js'
-const file = process.env.DSH_OPS_WORKER_BIN ?? path.resolve('native/target/release', process.platform === 'win32' ? 'dsh-ops-worker.exe' : 'dsh-ops-worker')
-assert.ok(fs.existsSync(file), 'Build the independent worker with npm run build:ptc; this suite never silently skips.')
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-ptc-'))
+import { invoke as invokeFile } from '../lib/file/worker.js'
+/**
+ * `npm run build:ptc` builds a host binary into `native/target/release`, but a
+ * `--target <triple>` build — what the release matrix and any cross-check run —
+ * lands in `native/target/<triple>/release` instead. Accept either so the suite
+ * tests the worker rather than the build invocation.
+ */
+const workerTriples = { 'darwin-arm64': 'aarch64-apple-darwin', 'darwin-x64': 'x86_64-apple-darwin',
+  'linux-arm64': 'aarch64-unknown-linux-gnu', 'linux-x64': 'x86_64-unknown-linux-gnu',
+  'win32-arm64': 'aarch64-pc-windows-msvc', 'win32-x64': 'x86_64-pc-windows-msvc' }
+const workerName = process.platform === 'win32' ? 'dsh-ops-worker.exe' : 'dsh-ops-worker'
+const workerCandidates = [
+  ...(process.env.DSH_OPS_WORKER_BIN !== undefined ? [process.env.DSH_OPS_WORKER_BIN] : [
+    path.resolve('native/target/release', workerName),
+    ...(workerTriples[`${process.platform}-${process.arch}`] ? [path.resolve('native/target', workerTriples[`${process.platform}-${process.arch}`], 'release', workerName)] : []),
+  ]),
+].filter(candidate => candidate !== undefined)
+const file = workerCandidates.find(candidate => fs.existsSync(candidate))
+assert.ok(file, `Build the independent worker with npm run build:ptc; this suite never silently skips. Looked in: ${workerCandidates.join(', ')}`)
+const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ops-ptc-')))
+ownWindowsFixture(dir)
 const request = (tool, args, scope = 'scenario') => {
   const result = spawnSync(file, [], { input: JSON.stringify({ root: dir, scope, tool, args }), encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)
@@ -90,6 +109,38 @@ try {
   assert.equal(request('result', { action: 'page', id: huge.id, fields: ['payload'], maxBytes: 4096 }).items[0].payload.length, 2000)
   const schemaBytes = Buffer.byteLength(JSON.stringify(['batch','result'].map(n => definition(n, () => {})).map(({name,description,parameters}) => ({name,description,parameters}))))
   console.log(`ok: 1000-row round trip and byte-bounded projection; schemas=${schemaBytes} bytes, summary=${Buffer.byteLength(JSON.stringify(run))} bytes vs audit=${Buffer.byteLength(JSON.stringify(page))} bytes`)
+  // Driving PTC on macOS exposed two facts the schema text must not omit: a
+  // relative root is rejected at preflight, and paging a detailsRef needs the
+  // batch's root. Assert the wording so it cannot silently regress.
+  const batchText = definition('batch', () => ({})).description
+  const resultText = definition('result', () => ({})).description
+  assert.match(batchText, /absolute path/)
+  assert.match(batchText, /INVALID_ARGUMENT/)
+  assert.match(resultText, /NOT_FOUND/)
+
+  // Host-resolved absolute paths, spelled the way the caller sees them. On macOS
+  // `os.tmpdir()` sits under `/var`, a symlink to `/private/var`, so an absolute
+  // path handed straight through carries an alias in its directory chain; the
+  // worker opens every component with no-follow and refuses such a path before
+  // doing any work. `lib/file/worker.js` resolves the parent chain, so a request
+  // must succeed from the caller's spelling while a link the caller *names* stays
+  // refused. It has to go through the host bridge: at the worker level the alias
+  // reaches the no-follow walk and is refused either way.
+  const bridge = new Context(); bridge.logger.level = 0
+  await bridge.plugin(Subprocess)
+  await bridge.plugin(inner => { inner.provide('sandboxPolicy', { resolve: () => ({ mode: 'read-only', workspaceRoot: dir, sessionId: 'alias' }) }) })
+  try {
+    const aliasRoot = fs.realpathSync.native(dir) !== dir
+    const fileCall = (tool, args) => invokeFile(bridge, file, tool, args,
+      { agent: { session: { id: 'alias', mode: 'read-only', header: { cwd: dir } } } }, new AbortController().signal)
+    const observed = await fileCall('inspect_local_file', { path: path.join(dir, 'main/keep') })
+    assert.equal(observed.status, 'completed', JSON.stringify(observed))
+    assert.equal(observed.items[0]?.text, 'protected', JSON.stringify(observed))
+    fs.symlinkSync(path.join(dir, 'main'), path.join(dir, 'named-link'), process.platform === 'win32' ? 'junction' : 'dir')
+    const linked = await fileCall('inspect_local_file', { path: path.join(dir, 'named-link') })
+    assert.equal(linked.error?.code, 'POLICY_DENIED', JSON.stringify(linked))
+    console.log(`ok: host-bridge absolute paths work${aliasRoot ? ' through the /var -> /private/var alias' : ''}; a named link stays POLICY_DENIED`)
+  } finally { await bridge.fiber.dispose() }
 
   // 3. Actual host registration scopes and presentation with a simulated enforcing
   // provider; subprocess still starts the real worker. Never claim this is an OS sandbox test.
@@ -208,13 +259,23 @@ try {
   fs.copyFileSync('package.json',path.join(isolatedPackage,'package.json'))
   const runtimeDir = path.resolve('runtime',`${process.platform}-${process.arch}`)
   fs.cpSync(runtimeDir,path.join(isolatedPackage,'runtime',`${process.platform}-${process.arch}`),{recursive:true})
-  assert.throws(() => resolveWorker({}, {platform:'linux',arch:'x64'}), /Windows x64 only/)
-  assert.throws(() => resolveWorker({}, {platform:'win32',arch:'arm64'}), /Windows x64 only/)
+  assert.throws(() => resolveWorker({}, {platform:'linux',arch:'arm64'}), /unsupported runtime target/)
+  assert.throws(() => resolveWorker({}, {platform:'win32',arch:'arm64'}), /unsupported runtime target/)
+  assert.throws(() => resolveWorker({}, {platform:'darwin',arch:'x64'}), /unsupported runtime target/)
   assert.ok(resolveWorker({}, {packageRoot:isolatedPackage}).startsWith(isolatedPackage))
   console.log('ok: installed runtime resolves without binaryPath or source build tree')
   const real = new Context(); real.logger.level = 0
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(),'ops-outside-'))
+  // The local sandbox grants the platform temporary area on Linux, so the
+  // outside-workspace fixture must sit outside that area as well as the root.
+  const outside = process.platform === 'win32'
+    ? fs.mkdtempSync(path.join(os.tmpdir(),'ops-outside-'))
+    : fs.mkdtempSync(path.join(path.resolve('.'),'.tmp-outside-'))
   const external = path.join(outside,'protected.txt'); fs.writeFileSync(external,'keep')
+  // A second root that is outside the workspace AND outside the DSH temporary
+  // areas. `workspace-write` grants `/tmp` and `os.tmpdir()` on purpose, so a
+  // temp sibling is authorized by the policy rather than caught by it.
+  const nonTemp = fs.mkdtempSync(path.join(os.homedir(),'ops-outside-'))
+  const externalNonTemp = path.join(nonTemp,'protected.txt'); fs.writeFileSync(externalNonTemp,'keep')
   try {
     await real.plugin(Subprocess)
     await real.plugin(Sandbox, {})
@@ -231,7 +292,9 @@ try {
     assert.deepEqual(fs.readdirSync(path.join(dir,'.dsh-ops')).sort(),beforeStore)
     agent.session.mode='workspace-write'
     const denied=await call('batch',{root:outside,action:'run',operations:[{op:'remove',path:'protected.txt'}]})
-    assert.equal(denied.status,'error',JSON.stringify(denied)); assert.ok(fs.existsSync(external))
+    assert.equal(denied.status === 'error' || denied.status === 'rejected',true,JSON.stringify(denied))
+    assert.equal(denied.error?.code ?? denied.permission?.code,'POLICY_DENIED',JSON.stringify(denied))
+    assert.ok(fs.existsSync(external))
     agent.session.mode='danger-full-access'
     const unrestricted=await call('batch',{root:outside,action:'run',operations:[{op:'remove',path:'protected.txt'}]})
     assert.equal(unrestricted.status,'completed',JSON.stringify(unrestricted)); assert.equal(fs.existsSync(external),false)
@@ -243,6 +306,40 @@ try {
     const runtime = path.dirname(resolveWorker({}, {packageRoot:path.resolve('.')}))
     fs.cpSync(runtime,path.join(staged,'runtime',`${process.platform}-${process.arch}`),{recursive:true})
     assert.ok(resolveWorker({}, {packageRoot:staged}).startsWith(staged))
+
+    // L12: a worker that exists but cannot be executed is refused here, by name and
+    // mode, instead of being accepted and failing later as a bare EACCES from spawn.
+    // POSIX-only: Windows has no execute bit.
+    if (process.platform !== 'win32') {
+      const flat = path.join(dir,'flat-worker')
+      const flatTarget = path.join(flat,'runtime',`${process.platform}-${process.arch}`)
+      fs.mkdirSync(flatTarget,{recursive:true})
+      fs.copyFileSync('package.json',path.join(flat,'package.json'))
+      fs.copyFileSync(path.join(runtime,path.basename(file)),path.join(flatTarget,path.basename(file)))
+      fs.copyFileSync(path.join(runtime,'provenance.json'),path.join(flatTarget,'provenance.json'))
+      fs.chmodSync(path.join(flatTarget,path.basename(file)),0o644)
+      assert.throws(() => resolveWorker({}, {packageRoot:flat}), /not executable \(mode 0644\)/)
+    }
+
+    // A missing receipt must be named as an incomplete stage, not leak a raw ENOENT
+    // from inside readFileSync.
+    const noReceipt = path.join(dir,'no-receipt')
+    const noReceiptTarget = path.join(noReceipt,'runtime',`${process.platform}-${process.arch}`)
+    fs.mkdirSync(noReceiptTarget,{recursive:true})
+    fs.copyFileSync('package.json',path.join(noReceipt,'package.json'))
+    fs.copyFileSync(path.join(runtime,path.basename(file)),path.join(noReceiptTarget,path.basename(file)))
+    fs.chmodSync(path.join(noReceiptTarget,path.basename(file)),0o755)
+    // The receipt error names the artifact *inside the package* and reports only the error code:
+    // it must stay actionable without disclosing the operator's install path (#30).
+    assert.throws(() => resolveWorker({}, {packageRoot:noReceipt}), error => {
+      assert.match(error.message, /provenance receipt at runtime\/[^/]+\/provenance\.json could not be read \(ENOENT\)/)
+      assert.ok(!error.message.includes(noReceipt), `the message leaked the install path: ${error.message}`)
+      return true
+    })
+
+    // An unavailable runtime must say what was tried, so it is debuggable without
+    // reading the resolver.
+    assert.throws(() => resolveWorker({}, {packageRoot:path.join(dir,'nothing-here')}), /unavailable[\s\S]*runtime[\s\S]*native[\s\S]*build:ptc/)
     console.log('ok: original DSH native sandbox, readonly pages, outside-root denial and full-access outside-root execution')
-  } finally { await real.fiber.dispose(); fs.rmSync(outside,{recursive:true,force:true}) }
+  } finally { await real.fiber.dispose(); fs.rmSync(outside,{recursive:true,force:true}); fs.rmSync(nonTemp,{recursive:true,force:true}) }
 } finally { fs.rmSync(dir, { recursive: true, force: true }) }

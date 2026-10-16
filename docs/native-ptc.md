@@ -1,4 +1,4 @@
-# Native PTC enhancement — 0.3.0 Windows x64
+# Native PTC enhancement — 0.3.1 Windows x64, Linux x64, Apple Silicon
 
 Issues: [#3](https://github.com/T-Auto/dsh-ops/issues/3), [#8](https://github.com/T-Auto/dsh-ops/issues/8).
 The file and PTC components use an independent Rust worker. FastCtx remains only
@@ -6,12 +6,7 @@ behind the explicitly enabled background component.
 
 ## Runtime-bearing installation and original DSH permission linkage
 
-0.3.0 ships Windows x64 only: `runtime/win32-x64/dsh-ops-worker.exe`, its
-version/checksum receipt, and Bash IPC compatibility proxies. Package os/cpu,
-manifest and release checks agree on that scope. `npm run verify:release`
-rejects missing/corrupt worker or proxy artifacts. Linux/macOS/ARM64 are not
-supported by this release. No postinstall download/build or binaryPath override
-is required. Source builds use `npm run build:ptc` and `npm run build:bash-ipc`.
+0.3.1 ships native workers for `win32-x64`, `linux-x64` and `darwin-arm64`, each with a version/checksum receipt, plus the Windows Bash IPC proxies. Formal `verify:release` requires all three target pairs and validates every PE/ELF/Mach-O worker and the Windows IPC binary/source closure. Local `check --staged` verifies only local development outputs. Intel Mac and Windows/Linux ARM64 are not supported. Bash/pwsh payload packages remain Windows-only optional dependencies; POSIX uses host Bash. There is no postinstall download/build. Source builds use `npm run build:ptc`, plus `npm run build:bash-ipc` on Windows.
 
 PTC/Bash use original per-call sandboxPolicy and sandbox.confine, reporting the
 host's full/partial enforcement honestly. Read-only permits existing result pages
@@ -27,7 +22,7 @@ Real Windows provider and pure PTC SDK acceptance is covered in the release gate
 
 The fixed file component follows DSH fs-sandbox's trusted-operation policy fence,
 not arbitrary-code isolation; shell and PTC code still require confinement.
-Only Windows x64 runtime/proxy binaries are shipped and claimed by 0.3.0.
+Runtime binaries target Windows x64, Linux x64 and macOS Apple Silicon; IPC proxies remain Windows x64 only.
 
 In `workspace-write`, native batch/result operations and their audit records are
 permitted under the selected workspace root through DSH confinement. Read-only
@@ -58,7 +53,10 @@ session toolchain before building; do not add multi-version toolchains to global
 Enable the opt-in `dsh-ops/ptc` bundle row. Its only config keys are `required`
 (default false) and an optional absolute `binaryPath`. `DSH_OPS_WORKER_BIN` can
 select a build; otherwise the component uses `runtime/<platform>-<arch>/dsh-ops-worker[.exe]` before `native/target/release`.
-The component remains opt-in. Published 0.3.0 packages include Windows x64 runtime bytes; source checkouts stage them explicitly. There is no automatic compilation or download during installation.
+The component remains opt-in. Published 0.3.1 packages include the runtime bytes
+of every supported platform; source checkouts stage them explicitly with
+`node bin/native-runtime.mjs stage --platform <target>`. There is no automatic
+compilation or download during installation.
 
 The session must already use DSH's **PTC-only** presentation. The component does
 not force presentation, replace the registry, or create a REPL. It recognizes the
@@ -279,12 +277,13 @@ all `native/src` and `lib/ptc` business code:
 
 Windows x64: release build, clippy `-D warnings`, full `npm run verify` and original
 DSH process sandbox acceptance executed.
-macOS/Linux: `cargo check --locked` passes for Linux x64
-(`x86_64-unknown-linux-gnu`) and macOS arm64 (`aarch64-apple-darwin`), using the
-Windows Rust toolchain's target standard libraries. These checks compile the
-platform-specific code but do not link or execute binaries. Actual on-platform
-run and real sandbox denial tests **still required before release**. This machine's
-WSL lacks cargo/rustc/node; no WSL environment was silently installed.
+Linux x64 (`x86_64-unknown-linux-gnu`): release build, `cargo test`, full
+`npm run verify` (every suite that does not need a FastCtx runtime, i.e. 28 passed
+and 2 skipped) and the native worker scenarios executed on the platform, including
+the DSH local sandbox's workspace/temporary-area policy fence.
+macOS arm64 (`aarch64-apple-darwin`) is `cargo check --locked` only: compiling the
+platform-specific code is not a run, and macOS is not a release claim. Actual
+on-platform macOS run and real sandbox denial tests **still required before release**.
 No fixed token/time saving percentage, actual model-turn benchmark,
 live Desktop upgrade, npm release or GitHub push is claimed.
 

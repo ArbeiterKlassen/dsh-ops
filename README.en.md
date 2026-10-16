@@ -8,7 +8,7 @@ attention wasted on repeated PowerShell errors.
 
 > tips: "ops" here is short for the general sense of operations — the plugin sits at the base layer between dsh and system / code / file operations. It is not an operations (DevOps) plugin.
 
-**0.3.0 supports Windows x64 only**, targeting DSH `0.2.0-rc.2`. The independent Rust file/PTC worker is included; PTC remains opt-in. Linux/macOS/ARM64 are future work, not release claims. See [Native PTC](docs/native-ptc.md).
+**0.3.1 supports Windows x64, Linux x64 and macOS Apple Silicon (`darwin-arm64`)**, targeting DSH `0.2.0-rc.2`. The independent Rust file/PTC worker ships for each exact supported target (`runtime/<platform>-<arch>/`); PTC remains opt-in. Intel Mac and other ARM64 targets are not supported. Windows-only pinned bash/pwsh payloads remain optional dependencies; macOS uses the operator's configured or host bash and does not expose pwsh. See [Linux support](#linux-support), [macOS arm64](docs/macos-arm64.md), and [Native PTC](docs/native-ptc.md).
 
 ---
 
@@ -23,7 +23,7 @@ attention wasted on repeated PowerShell errors.
 
   and improved model performance on DSH.
 
-- (Windows only) Independent **bash 5.3.15** and independent **PowerShell 7.6.6**: bash is preferred, and pwsh 7 is the fallback when it is needed, so your AI no longer fights PowerShell — **it does not change the system default terminal, PATH or existing host shell tool names**, and environment variables stay safe.
+- (Bundled payloads are Windows only) Independent **bash 5.3.15** and independent **PowerShell 7.6.6**: bash is preferred, and pwsh 7 is the fallback when it is needed, so your AI no longer fights PowerShell — **it does not change the system default terminal, PATH or existing host shell tool names**, and environment variables stay safe. macOS ships no such payload: bash comes from the configured `bashPath`, and pwsh is unavailable there; see [macOS arm64](docs/macos-arm64.md).
 
 - Independent native Rust file tools and safe batch operations (**off by default**, opt-in), see [Component reference](docs/component-reference.md).
 
@@ -37,12 +37,25 @@ Routing: **toolkit → bash → PowerShell 7**.
 
 ---
 
+## Linux support
+
+On **Linux x64** `dsh-ops` does what it does on Windows, except where noted below: the independent Rust worker ships as an ELF binary, and the file tools (`inspect_local_file` / `glob` / `grep` / `replace`) plus the opt-in PTC component (`ops_batch` / `ops_result`) work the same way there.
+
+- **Where the shell component splits**: on Windows it is the digest-pinned bash 5.3.15 / PowerShell 7.6.6 payload plus the Bash IPC proxies; on Linux it resolves the **host distribution's own bash** (`config.bashPath` → `PATH` → `/bin/bash`, `/usr/bin/bash`, `/usr/local/bin/bash`) and ships neither a second shell nor the pwsh overlay — a distribution bash is tied to that distribution's libc and architecture, so a second copy would add supply-chain and licensing burden without solving anything. `ops_bash` works on both; a confined mode must be enforced by a host sandbox (bwrap / Landlock), and when no sandbox can confine the call it is **refused** rather than run unrestricted. The background component, which executes through the shell component, stays Windows-only, and so does `dsh-ops provision-shells` — on Linux it refuses and points at `config.bashPath`.
+- **Build and install**: see [Building and verifying on Linux](docs/linux-build.md) — `npm run verify` → `npm run build:ptc` → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz`.
+- **Platform differences handled**: replacing a file keeps its mode/owner/POSIX ACL/xattrs; directory `fsync` follows POSIX semantics; `multiline` search reaches across lines; reads are bounded by encoded bytes as well as by lines. The Windows-side equivalent (the security descriptor) is tracked in the [Windows verification checklist](docs/windows-verification.md).
+- **Credential reads are refused by default**: the file tools (including PTC batches) refuse `~/.ssh`, `~/.aws`, `~/.azure`, `~/.kube`, `.npmrc` and the DSH credential stores before the worker is spawned, and a traversal skips those directories by identity, so `glob` cannot even list a private key's name and `grep` matches nothing inside one. Write roots are narrowed to the session's own `dsh-ops-session-<id>` temporary directory (`0700`). A row can opt out with `denyCredentialReads: false`; `DSH_OPS_DENY_READ` can only widen the fence.
+- **Measured state** (Debian 13 x86_64): `DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` → 30 suites passed, no skips; `npm run validate:manifest` → all 61 checks passed; `npm run verify:release` → release closure OK; a `npm pack` tarball unpacks to a worker whose receipt sha256 matches, with its execute bit intact and metadata preserved across a replace.
+- The defects those runs found are **fixed here**, and Windows gains them too: a replace no longer loses mode/ACL/xattrs, `multiline` reaches across lines, one long line no longer fails a read outright, concurrent replaces no longer lose a write silently, a hard kill leaves no unbounded debris, and an unexecutable worker is named by path and mode instead of a bare `EACCES`. See the [0.3.1 release notes](docs/release-0.3.1.md) and the [CHANGELOG](CHANGELOG.md).
+
+---
+
 ## Quick start
 
 ### Prerequisites
 
 - **Node.js `^22.19 || >=24`** (the `engines` requirement in `package.json`)
-- Windows x64
+- Windows x64 or Linux x64 (`ops_bash` works on both; the pwsh 7 overlay is Windows-only and Linux uses the distribution's own bash)
 - The target DSH application initialized
 
 ### Install
@@ -110,6 +123,7 @@ Full tool parameters, configuration keys and permission requirements: [Component
 | What tools each of the four components publishes, with parameters and permissions | [docs/component-reference.md](docs/component-reference.md) |
 | How to read the errors, what to do when installation fails | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | The native PTC design and usage | [docs/native-ptc.md](docs/native-ptc.md) |
+| How to build, configure and troubleshoot Linux x64 | [docs/linux-build.md](docs/linux-build.md) |
 | Version history | [CHANGELOG.md](CHANGELOG.md) |
 | Provenance and payload license records | [PROVENANCE.md](PROVENANCE.md) |
 

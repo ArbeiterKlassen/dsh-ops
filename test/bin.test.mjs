@@ -669,4 +669,33 @@ await test('provision-shells fails loud on a pin it cannot honour', async () => 
   })
 })
 
+await test('on POSIX the profile CLI fallback launches dsh, not the Windows cmd wrapper', async () => {
+  if (process.platform === 'win32') return // This fixture exercises a POSIX shell launcher, not cmd.exe.
+  // Reported by @Haoming9527 in review of #81: with no package-based CLI to resolve, the fallback
+  // selected `dsh.cmd` and spawned it through `cmd.exe` — `spawnSync cmd.exe ENOENT` on Linux even
+  // with an executable `dsh` on PATH. This case puts exactly that `dsh` on PATH and asserts it is the
+  // program that ran, so the platform-aware fallback is what makes the call work rather than fail
+  // differently.
+  await withTempDir('install-cli-fallback', (dir) => {
+    const home = path.join(dir, 'home')
+    const user = path.join(dir, 'user')
+    fs.mkdirSync(path.join(home, 'profiles', 'web'), { recursive: true })
+    fs.writeFileSync(path.join(home, 'profiles', 'web', 'package.json'), '{}\n')
+    const bin = path.join(dir, 'bin')
+    fs.mkdirSync(bin, { recursive: true })
+    const marker = path.join(dir, 'called.txt')
+    const cli = path.join(bin, 'dsh')
+    fs.writeFileSync(cli, `#!/bin/sh\nprintf '%s\\n' "$*" > ${JSON.stringify(marker)}\n`)
+    fs.chmodSync(cli, 0o755)
+    const run = spawnSync(process.execPath, [CLI, 'install', '--profile', 'web'], {
+      cwd: PACKAGE_ROOT, encoding: 'utf8', timeout: 60_000,
+      env: { DSH_HOME: home, HOME: user, PATH: bin, DSH_OPS_DSH_CLI: '' },
+    })
+    assert.match(run.stdout, /Official CLI: dsh;/, `${run.stdout}${run.stderr}`)
+    assert.equal(fs.existsSync(marker), true, `the POSIX CLI must have been launched: ${run.stdout}${run.stderr}`)
+    assert.equal(fs.readFileSync(marker, 'utf8').trim(), 'plugin --profile web add dsh-ops@0.3.1')
+    assert.equal(run.status, 0, `${run.stdout}${run.stderr}`)
+  })
+})
+
 report('bin')

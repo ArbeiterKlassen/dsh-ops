@@ -117,12 +117,13 @@ dependencies = [
 
 [[package]]
 name = "dsh-ops-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
  "fs2",
  "regex",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",

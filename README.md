@@ -7,7 +7,7 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 
 > tips：本项目的 ops 是广义 operations（运行操作）的缩写，代指本插件处于 dsh 和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
 
-**0.3.0 仅支持 Windows x64**，目标宿主 DSH `0.2.0-rc.2`。原生 Rust 文件/PTC worker 随包携带；PTC 默认关闭，须显式启用。Linux/macOS/ARM64 留待后续版本。见 [PTC 设计与使用](docs/native-ptc.md)。
+**0.3.1 支持 Windows x64、Linux x64 与 macOS Apple Silicon（`darwin-arm64`）**，目标宿主 DSH `0.2.0-rc.2`。原生 Rust 文件/PTC worker 按精确目标携带于 `runtime/<platform>-<arch>/`；PTC 默认关闭。Intel Mac、Windows ARM64 与 Linux ARM64 不在支持范围。Bash/PowerShell 7 二进制保持 Windows-only 可选依赖，Linux/macOS 使用宿主 Bash，不在 npm 安装时下载 Windows shell。见 [Linux 适配](#linux-适配)、[Apple Silicon](docs/macos-arm64.md) 与 [PTC](docs/native-ptc.md)。
 
 有问题可以加qq群：1127808570
 
@@ -25,7 +25,7 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 
   的成绩，并改善了在 DSH 运行的 AI 的智力表现。
 
-- （仅 Windows）提供独立 **bash 5.3.15** 和独立 **PowerShell 7.6.6**：优先使用 bash，必要时回退 pwsh 7，让你的 AI 不再和 PowerShell 打架 —— **不修改系统默认终端、PATH 或宿主原有 shell 工具名称**，环境变量安全。
+- （仅 Windows）提供独立 **bash 5.3.15** 和独立 **PowerShell 7.6.6**：优先使用 bash，必要时回退 pwsh 7，让你的 AI 不再和 PowerShell 打架 —— **不修改系统默认终端、PATH 或宿主原有 shell 工具名称**，环境变量安全。Linux 上不随包提供 shell，直接使用发行版自带的 bash。
 
 - 独立的 Rust 原生文件工具与安全批处理（**默认关闭**，须显式启用），见 [组件参考](docs/组件参考.md)。
 
@@ -37,12 +37,25 @@ Windows DSH 的性能工具插件：提供独立 bash / PowerShell 7，并用 Ru
 
 ---
 
+## Linux 适配
+
+`dsh-ops` 在 **Linux x64** 上与 Windows 侧能力对齐（除下面明确列出的部分）：原生 Rust worker 以 ELF 随包携带，文件工具（`inspect_local_file` / `glob` / `grep` / `replace`）与可选 PTC 组件（`ops_batch` / `ops_result`）在 Linux 上同样可用。
+
+- **shell 组件的平台分野**：Windows 上是随包固定摘要的 bash 5.3.15 / PowerShell 7.6.6 载荷与 Bash IPC 代理；Linux 上改为解析**宿主发行版自带的 bash**（`config.bashPath` → `PATH` → `/bin/bash`、`/usr/bin/bash`、`/usr/local/bin/bash`），不随包提供第二份 shell，也不提供 pwsh 覆盖层 —— 发行版的 bash 与其 libc/架构绑定，再塞一份反而多出供应链和许可负担。`ops_bash` 在两端都可用；受限模式必须由宿主沙箱（bwrap / Landlock）落实，沙箱缺失或无法约束时**拒绝执行**，不会退化成无约束运行。以 shell 为执行通道的后台组件仍仅 Windows；`dsh-ops provision-shells` 也仅 Windows，Linux 上会明确拒绝并指向 `config.bashPath`。
+- **构建与安装**：见 [Linux 构建与验证](docs/linux构建.md)（[English](docs/linux-build.md)）—— `npm run verify` → `npm run build:ptc` → `npm pack` → `dsh plugin add ./dsh-ops-0.3.1.tgz`。
+- **平台差异已处理**：替换文件时保留 mode/owner/POSIX ACL/xattr；目录 `fsync` 按 POSIX 语义；`multiline` 搜索跨行匹配；读取按编码字节与行数双重设界。
+- **默认拒绝读取凭据**：文件工具（含 PTC 批处理）在 worker 被 spawn 之前就拒绝 `~/.ssh`、`~/.aws`、`~/.azure`、`~/.kube`、`.npmrc`、DSH 凭据库等位置，遍历也按路径身份跳过这些目录，所以 `glob` 连私钥文件名都不会列出、`grep` 不会在其中匹配到任何内容；写入根收窄为本会话自己的 `dsh-ops-session-<id>` 临时目录（`0700`）。该行可用 `denyCredentialReads: false` 关闭，`DSH_OPS_DENY_READ` 只能加严、不能放松。Windows 侧等价的安全描述符（DACL）处理见 [Windows 验证清单](docs/windows-verification.md)。
+- **验证记录**：早期 Linux PR 的 Debian 13 测量属于贡献者记录，不替代最终集成版门禁；本版三平台结果与发布产物以 [0.3.1 发布说明](docs/release-0.3.1.md) 及其链接的 Actions 运行为准。
+- 这些实测暴露并**已修复**的缺陷（Windows 同样受益）：替换丢失 mode/ACL/xattr、`multiline` 无法跨行、单行超长文件让读取整体失败、并发替换静默丢更新、硬杀残留临时文件、worker 无执行位时只报裸 `EACCES`。详见 [0.3.1 发布说明](docs/release-0.3.1.md) 与 [CHANGELOG](CHANGELOG.md)。
+
+---
+
 ## 快速开始
 
 ### 前置条件
 
 - **Node.js `^22.19 || >=24`**（`package.json` 的 `engines` 要求）
-- Windows x64
+- Windows x64、Linux x64 或 macOS Apple Silicon；不支持 Intel Mac。pwsh 覆盖层仅 Windows，POSIX 使用宿主 Bash。
 - 目标 DSH 应用已初始化
 
 ### 安装
@@ -110,6 +123,7 @@ Bundle 声明四个组件，分别启停，首次安装默认开启前两个：
 | 四个组件分别发布什么工具、参数与权限 | [docs/组件参考.md](docs/组件参考.md) |
 | 报错怎么读、装不上怎么办、常见问题 | [docs/常见问题.md](docs/常见问题.md) |
 | 原生 PTC 的设计与使用 | [docs/native-ptc.md](docs/native-ptc.md) |
+| 在 Linux x64 上构建、配置与故障排查 | [docs/linux构建.md](docs/linux构建.md) |
 | 版本变更历史 | [CHANGELOG.md](CHANGELOG.md) |
 | 来源与载荷许可记录 | [PROVENANCE.md](PROVENANCE.md) |
 
