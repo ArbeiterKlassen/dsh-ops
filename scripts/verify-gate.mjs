@@ -37,7 +37,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -70,11 +70,32 @@ const ALLOWED_SKIPS = TARGET === 'win32-x64'
   ? ['file-metadata', 'linux-attributes', 'linux-shell']
   : ['mount']
 
-/** The manifest check count the docs promise. */
-const MANIFEST_CHECKS = 59
+/**
+ * Suites that need an *optional external* checkout (`DSH_OPS_TUI_ROOT`, and for the native one also
+ * `DSH_OPS_TUI_WORKER`). They may legitimately skip on a machine that has neither, so their names go
+ * to the runner as `DSH_OPS_ALLOW_SKIPS` and to the skip assertion below as allowed. A suite that
+ * really breaks is not a skip, so it still fails the run; runtime-absence skips (`permissions`,
+ * `ptc`) are deliberately not on this list.
+ */
+const EXTERNAL_SUITE_DEPS = ['tui-host', 'tui-native']
 
-/** The suite count `test/run.mjs` discovers on each platform. */
-const EXPECTED_SUITES = { 'win32-x64': 27, 'linux-x64': 27, 'darwin-arm64': 27 }
+/** The manifest check count the docs promise. */
+/**
+ * A floor, not the current size. `validate-manifest.mjs` gains checks as the manifest grows, and a
+ * pinned number goes stale the moment `main` moves (#134 shipped `59` while the tree was at `62`).
+ * The floor still catches a validator that collapses and reports nothing.
+ */
+const MANIFEST_CHECK_FLOOR = 59
+
+/**
+ * The suite inventory is the source of truth, discovered exactly as `test/run.mjs` does: every
+ * `test/*.test.mjs`, in name order, on every platform — platform gating happens inside a suite as a
+ * skip, never as a discovery filter. Deriving the expectation from that same directory keeps the
+ * assertion meaningful (a suite whose file is still on disk but which stops being collected is a
+ * failure) without pinning a number that every new suite invalidates.
+ */
+const EXPECTED_SUITES = readdirSync(new URL('../test/', import.meta.url))
+  .filter((name) => name.endsWith('.test.mjs')).length
 
 const steps = []
 /** Steps that exited non-zero; only populated under `--keep-going`. */
@@ -121,7 +142,12 @@ async function run(title, command, args, { env = {}, optional = false } = {}) {
  * has to be readable — "the runner did not finish" would hide which suite broke.
  */
 function parseSummary(output) {
-  const skipped = [...new Set([...output.matchAll(/^dsh-ops ([a-z-]+): skipped \(/gm)].map(match => match[1]))]
+  // Parse the *runner's* line, not the suites' own: the runner names the suite file it skipped, in
+  // both the green form and the `DSH_OPS_REQUIRE_RUNTIME=1` form, while a suite's own message is a
+  // human label ("dsh-ops TUI host: skipped …") that does not identify the suite for the checks
+  // below.
+  const skipped = [...new Set([...output.matchAll(/^--- (\S+) skipped(?: while DSH_OPS_REQUIRE_RUNTIME=1)?/gm)]
+    .map(match => match[1].replace(/\.test\.mjs$/, '')))]
   const green = /dsh-ops test: (\d+) suite\(s\) passed(?:, (\d+) skipped)?/.exec(output)
   if (green !== null) {
     return { passed: Number(green[1]), failed: 0, skippedCount: green[2] === undefined ? 0 : Number(green[2]), skipped, reported: true }
@@ -170,6 +196,9 @@ async function main() {
   // that was never built (`permissions`, `ptc`) are not in it.
   const env = { DSH_HOME: mkdtempSync(path.join(tmpdir(), 'dsh-ops-gate-')) }
   if (TARGET !== 'win32-x64') env.DSH_OPS_REQUIRE_RUNTIME = '1'
+  // Keep the external-checkout suites as skips: `DSH_OPS_REQUIRE_RUNTIME=1` would otherwise
+  // count them as failures and make this gate permanently red on a machine without that checkout.
+  env.DSH_OPS_ALLOW_SKIPS = EXTERNAL_SUITE_DEPS.join(',')
   const verify = await run('full suite verification', 'npm', ['run', 'verify'], { env })
   const summary = parseSummary(verify.output)
 
@@ -177,14 +206,14 @@ async function main() {
 
   // The assertions. Failures here are the point of the script, not a detail of it.
   const failures = [...stepFailures]
-  if (manifestChecks !== MANIFEST_CHECKS) failures.push(`manifest checks: expected ${MANIFEST_CHECKS}, got ${manifestChecks ?? 'none reported'}`)
+  if (!(typeof manifestChecks === 'number' && manifestChecks >= MANIFEST_CHECK_FLOOR)) failures.push(`manifest checks: expected at least ${MANIFEST_CHECK_FLOOR}, got ${manifestChecks ?? 'none reported'}`)
   if (!summary.reported) failures.push('no suite summary line; the runner did not finish')
   if (summary.failed > 0) failures.push(`the runner reported ${summary.failed} failing suite(s); see its output above for the check names`)
   // A suite that stopped being collected, or a file that stopped being discovered, still exits 0.
   const discovered = summary.reported ? summary.passed + summary.skippedCount : null
-  if (discovered !== null && summary.failed === 0 && discovered !== EXPECTED_SUITES[TARGET]) failures.push(`the runner discovered ${discovered} suite(s); ${EXPECTED_SUITES[TARGET]} are expected on ${TARGET}`)
+  if (discovered !== null && summary.failed === 0 && discovered !== EXPECTED_SUITES) failures.push(`the runner discovered ${discovered} suite(s); ${EXPECTED_SUITES} test file(s) are on disk (a suite that stops being collected still exits 0)`)
   if (verify.code !== 0 && stepFailures.length === 0) failures.push(`the verification step exited ${verify.code}`)
-  const unexpected = summary.skipped.filter(name => !ALLOWED_SKIPS.includes(name))
+  const unexpected = summary.skipped.filter(name => !ALLOWED_SKIPS.includes(name) && !EXTERNAL_SUITE_DEPS.includes(name))
   if (unexpected.length > 0) failures.push(`suites skipped that must not skip on ${TARGET}: ${unexpected.join(', ')} (a skip is not a pass)`)
   if (summary.reported && summary.skippedCount !== summary.skipped.length) failures.push(`the runner counted ${summary.skippedCount} skip(s) but ${summary.skipped.length} were named`)
 
@@ -203,8 +232,8 @@ async function main() {
   else {
     process.stdout.write('\n=== summary\n')
     for (const step of steps) process.stdout.write(`  ${step.code === 0 ? 'ok  ' : 'FAIL'} ${step.title}\n`)
-    process.stdout.write(`  ${summary.passed ?? '?'} suites passed${summary.failed === null || summary.failed === 0 ? '' : `, ${summary.failed} failed`}; skipped: ${summary.skipped.join(', ') || 'none'} (allowed: ${ALLOWED_SKIPS.join(', ')})\n`)
-    process.stdout.write(`  manifest: ${manifestChecks ?? '?'}/${MANIFEST_CHECKS} checks\n`)
+    process.stdout.write(`  ${summary.passed ?? '?'} suites passed${summary.failed === null || summary.failed === 0 ? '' : `, ${summary.failed} failed`}; skipped: ${summary.skipped.join(', ') || 'none'} (allowed: ${[...ALLOWED_SKIPS, ...EXTERNAL_SUITE_DEPS].join(', ')})\n`)
+    process.stdout.write(`  manifest: ${manifestChecks ?? '?'}/${MANIFEST_CHECK_FLOOR} checks\n`)
     for (const failure of failures) process.stdout.write(`  FAIL ${failure}\n`)
   }
 

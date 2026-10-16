@@ -60,6 +60,17 @@ if (selected.length === 0) {
 let failed = 0
 let skipped = 0
 const requireRuntime = process.env.DSH_OPS_REQUIRE_RUNTIME === '1'
+
+/**
+ * Suites whose skip says something about *this machine*, not about the runtime being absent: they
+ * need an optional external checkout (`DSH_OPS_TUI_ROOT`, plus `DSH_OPS_TUI_WORKER` for the native
+ * one). Naming them in `DSH_OPS_ALLOW_SKIPS` keeps them skips even under
+ * `DSH_OPS_REQUIRE_RUNTIME=1`, whose whole point is to catch a *runtime* that is missing while a
+ * build claims otherwise. Unset means "no exceptions", so the default stays strict.
+ */
+const allowedSkips = new Set((process.env.DSH_OPS_ALLOW_SKIPS ?? '')
+  .split(',').map((name) => name.trim()).filter(Boolean))
+const isAllowedSkip = (label) => allowedSkips.has(label) || allowedSkips.has(label.replace(/\.test\.mjs$/, ''))
 const started = Date.now()
 
 for (const suite of selected) {
@@ -86,7 +97,7 @@ for (const suite of selected) {
   clearTimeout(timer)
   rmSync(home, { recursive: true, force: true })
   if (status === SKIPPED_EXIT && !timedOut) {
-    if (requireRuntime) {
+    if (requireRuntime && !isAllowedSkip(label)) {
       // A skip is the suite's way of saying "this environment cannot answer".
       // When the caller has said the runtime is required, that is a failure —
       // at both layers, so neither one alone can turn it back into a pass.
