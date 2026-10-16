@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/readme/dsh-ops-header-dark.png" alt="dsh-ops 表头" width="640">
+  <img src="docs/assets/readme/dsh-ops-header.svg" alt="dsh-ops 表头" width="640">
 </p>
 
 <p align="center">
