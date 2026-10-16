@@ -42,6 +42,17 @@ There is no exit code for "green with a surprise in it" — that is `1`.
 | suites | `DSH_HOME=<temp> DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` | Every suite on this host. `DSH_OPS_REQUIRE_RUNTIME=1` turns a runtime-absence skip into a failure, and `DSH_HOME` must be a temporary directory or `test/lib/harness.mjs` refuses to run |
 | closure | `node bin/native-runtime.mjs check --platform <target>` | The staged runtime is complete and its receipt matches the worker byte for byte |
 
+## The tools trial (separate, not part of the gate)
+
+`DSH_HOME=$(mktemp -d) node scripts/tools-trial.mjs` boots a real host, mounts the plugin, and
+**calls every tool this build publishes** against real files in a temporary workspace, printing a
+table (`tools-trial-report.md`). Tools the build does not publish, and published tools without a
+scenario yet, are reported as `skipped` with the reason, never silently.
+
+It is not a suite on purpose: `test/*.test.mjs` is the inventory the gate asserts was collected, and
+this trial is not a gate. CI runs it in its own `tools-trial` job with `continue-on-error`, so a tool
+that breaks is visible without blocking a merge.
+
 ## Expected numbers
 
 | Host | Suites | Skipped, and why |

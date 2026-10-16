@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Tools trial: `node scripts/tools-trial.mjs` calls every published tool on a real host and prints a
+  per-tool table; CI runs it in a separate, non-required `tools-trial` job.
+
 ### The config-update marker goes to the profile patch, and never to the composed tree
 
 `mountConfigUpdates()` persisted its one-time marker with `entry.parent.tree.write()`, an API that
