@@ -15,6 +15,7 @@
  */
 
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -90,8 +91,23 @@ export { assert }
  * @param {(dir: string) => unknown | Promise<unknown>} body - the work.
  * @returns {Promise<unknown>} whatever the body returned.
  */
+let fixtureOwner
+function ownWindowsFixture(directory) {
+  if (process.platform !== 'win32') return
+  const system32 = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32')
+  if (!fixtureOwner) {
+    const probe = spawnSync(path.join(system32, 'whoami.exe'), ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8' })
+    fixtureOwner = probe.stdout?.match(/S-1-5-[0-9-]+/)?.[0]
+    if (!fixtureOwner) throw new Error(`Cannot identify fixture owner: ${probe.stderr}`)
+  }
+  // Elevated hosted runners default to Administrators as owner. Change only the
+  // directory this test created; never repair a user's workspace to make a test pass.
+  const result = spawnSync(path.join(system32, 'icacls.exe'), [directory, '/setowner', `*${fixtureOwner}`], { encoding: 'utf8' })
+  if (result.status !== 0) throw new Error(`Cannot set fixture owner: ${result.stdout}${result.stderr}`)
+}
 export async function withTempDir(prefix, body) {
-  const dir = mkdtempSync(path.join(TEST_HOME, `${prefix}-`))
+  const dir = canonical(mkdtempSync(path.join(TEST_HOME, `${prefix}-`)))
+  ownWindowsFixture(dir)
   try {
     return await body(dir)
   } finally {

@@ -125,14 +125,15 @@ await test('special objects are refused in milliseconds rather than opened', asy
     const { execFileSync } = await import('node:child_process')
     execFileSync('mkfifo', [fifo])
 
-    const socketPath = path.join(workspace, 's.sock')
+    const socketRoot = process.platform === 'darwin' ? fs.mkdtempSync('/private/tmp/dsh-sock-') : workspace
+    const socketPath = path.join(socketRoot, 's.sock')
     const server = net.createServer()
     await new Promise((resolve, reject) => {
       server.once('error', reject)
       server.listen(socketPath, resolve)
     })
     try {
-      for (const target of ['/dev/null', '/dev/zero', '/proc/self/status', fifo, socketPath]) {
+      for (const target of ['/dev/null', '/dev/zero', ...(process.platform === 'linux' ? ['/proc/self/status'] : []), fifo, socketPath]) {
         const started = Date.now()
         const refused = envelopeOf(await callTool('inspect_local_file', { path: target }, { root: workspace, timeoutMs: 8_000 }), assert)
         assert.equal(refused.status, 'error', `${target} was opened: ${JSON.stringify(refused)}`)
@@ -142,6 +143,7 @@ await test('special objects are refused in milliseconds rather than opened', asy
       }
     } finally {
       await new Promise(resolve => server.close(resolve))
+      if (socketRoot !== workspace) fs.rmSync(socketRoot, { recursive: true, force: true })
     }
   })
 })

@@ -105,6 +105,7 @@ impl Request {
     pub fn denies_path(&self, path: &std::path::Path) -> bool {
         let normalize = |value: &std::path::Path| {
             let text = value.to_string_lossy().replace('\\', "/");
+            let text = text.strip_prefix("//?/").unwrap_or(&text).to_owned();
             if cfg!(windows) { text.to_lowercase() } else { text }
         };
         let target = normalize(path);

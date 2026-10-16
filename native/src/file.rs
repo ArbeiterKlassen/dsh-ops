@@ -482,7 +482,7 @@ fn get_xattr(fd: &impl rustix::fd::AsFd, name: &str) -> Result<Option<Vec<u8>>> 
             Ok(Some(buffer))
         }
         Err(error) if matches!(error, rustix::io::Errno::NODATA | rustix::io::Errno::NOTSUP)
-            || (cfg!(target_os = "macos") && error.raw_os_error() == 93) => Ok(None),
+            || (cfg!(target_os = "macos") && error == rustix::io::Errno::from_raw_os_error(93)) => Ok(None),
         Err(error) => Err(Failure::new("ACCESS_DENIED", format!("Read extended attribute {name}: {error}"))),
     }
 }
@@ -613,8 +613,23 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     let name = checked.name;
     sweep_debris(&parent, &name);
     let temporary = format!(".{name}.dsh-ops-{}", uuid::Uuid::new_v4());
+    #[cfg(target_os = "macos")]
+    {
+        // APFS cloning preserves Darwin's extended ACL (not the Linux POSIX
+        // ACL xattr). Fail closed on filesystems without clone support rather
+        // than silently publishing an inode that lost a deny entry.
+        let source = crate::file_path::read_file(&crate::file_path::checked(raw)?)?;
+        rustix::fs::fclonefileat(&source, &parent, temporary.as_str(), rustix::fs::CloneFlags::empty())
+            .map_err(|error| Failure::new("ACCESS_DENIED", format!("Atomic replacement requires APFS metadata-preserving clone support: {error}")))?;
+        let cloned = parent.open_with(&temporary, cap_std::fs::OpenOptions::new().read(true).follow(FollowSymlinks::No))?;
+        rustix::fs::fchmod(&cloned, rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR).map_err(|error| Failure::new("ACCESS_DENIED", error))?;
+    }
     let mut options = cap_std::fs::OpenOptions::new();
-    options.write(true).create_new(true).follow(FollowSymlinks::No);
+    options.write(true).follow(FollowSymlinks::No);
+    #[cfg(not(target_os = "macos"))]
+    options.create_new(true);
+    #[cfg(target_os = "macos")]
+    options.truncate(true);
     #[cfg(unix)]
     { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
     let mut file = parent.open_with(&temporary, &options).map_err(|e| Failure::new("ACCESS_DENIED", format!("Atomic replacement create: {e}")))?;
