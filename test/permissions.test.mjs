@@ -4,7 +4,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import Subprocess from '@deepseek-ai/dsh-subprocess-local'
-import { assert, test, report, withTempDir } from './lib/harness.mjs'
+import { assert, test, report, withTempDir, ownWindowsFixture } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
 import { prepareWorkspace, mountWorkspacePreparation, runPreparation, preparationEnvironment, preparationSpawnSpec } from '../lib/workspace-preparation.js'
 import { invoke as fileCall } from '../lib/file/worker.js'
@@ -182,9 +182,12 @@ await test('an inheriting (AI) workspace root keeps its inheritance and descenda
   // The expensive real-world shape: a root with no explicit ACEs that inherits from its parent.
   if(process.platform!=='win32')return
   await withTempDir('prepare-inherited',async parent => {
-    ps(`$p='${parent.replaceAll("'","''")}'; $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $a=[Security.AccessControl.DirectorySecurity]::new(); $a.SetOwner($sid); $a.SetAccessRuleProtection($true,$false); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Modify','ContainerInherit,ObjectInherit','None','Allow')); Set-Acl -LiteralPath $p -AclObject $a`)
     const ws=path.join(parent,'ws')
     fs.mkdirSync(ws)
+    // Set the child owner while the parent still has the runner's default ACL;
+    // the fixture then receives the intentionally inheriting DACL below.
+    ownWindowsFixture(ws)
+    ps(`$p='${parent.replaceAll("'","''")}'; $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $a=[Security.AccessControl.DirectorySecurity]::new(); $a.SetOwner($sid); $a.SetAccessRuleProtection($true,$false); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Modify','ContainerInherit,ObjectInherit','None','Allow')); Set-Acl -LiteralPath $p -AclObject $a`)
     const quoted=ws.replaceAll("'","''")
     // Owner-only write: the script refuses roots the user does not own, and this leaves the DACL untouched.
     const sid=ps(`$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $o=[Security.AccessControl.DirectorySecurity]::new(); $o.SetOwner($sid); [IO.Directory]::SetAccessControl('${quoted}',$o); $sid.Value`)
