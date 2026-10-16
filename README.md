@@ -117,6 +117,26 @@ Rust 工具基于 [yc-duan](https://github.com/yc-duan) 的 Codex 插件 FastCtx
 > accepts no liability of any kind arising from this distribution or
 > from anything built on top of it.
 
+## 维护团队
+
+<table>
+  <tbody>
+    <tr>
+      <td align="center" width="150"><a href="https://github.com/T-Auto"><img src="https://github.com/T-Auto.png?size=160" width="96" height="96" alt="T-Auto"></a><br><a href="https://github.com/T-Auto"><b>T-Auto</b></a></td>
+      <td align="center" width="150"><a href="https://github.com/Haoming9527"><img src="https://github.com/Haoming9527.png?size=160" width="96" height="96" alt="Haoming9527"></a><br><a href="https://github.com/Haoming9527"><b>Haoming9527</b></a></td>
+      <td align="center" width="150"><a href="https://github.com/Thatgfsj"><img src="https://github.com/Thatgfsj.png?size=160" width="96" height="96" alt="Thatgfsj"></a><br><a href="https://github.com/Thatgfsj"><b>Thatgfsj</b></a></td>
+    </tr>
+  </tbody>
+</table>
+
+※ 排名不分先后
+
+---
+
+## 贡献者
+
+[![Contributors](https://contrib.rocks/image?repo=T-Auto/dsh-ops)](https://github.com/T-Auto/dsh-ops)
+
 ## Star 趋势
 
 [![Star 趋势图](https://api.star-history.com/svg?repos=T-Auto/dsh-ops&type=Date)](https://star-history.com/#T-Auto/dsh-ops&Date)
