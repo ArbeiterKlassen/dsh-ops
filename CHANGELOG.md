@@ -34,6 +34,15 @@ fix; see that entry for the `PSModulePath` scope note.
 - Report a `PATH`-sourced FastCtx on the success path; behaviour is unchanged (same-user, not a
   privilege boundary).
 
+### Workspace preparation
+
+- Prepare a `workspace-write` root whose path is an **8.3 short name** instead of refusing it as a
+  junction or symlink. Windows generates a short name wherever a path component does not fit 8.3, so
+  a host whose temporary directory is one — GitHub's `windows-latest`, or any machine whose user name
+  is longer than eight characters — could not prepare any workspace under it. The check now judges
+  the path it was given, and that path's ancestors, for reparse points, rather than comparing the
+  given path with its resolved form: a short name changes one into the other with no link involved.
+
 ## [0.3.0] — 2026-10-14 — Windows x64 native tools and PTC
 
 Release scope: **Windows x64 only**, targeting DSH 0.2.0-rc.2. Linux/macOS/ARM64
