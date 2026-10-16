@@ -1,13 +1,18 @@
 # Running the whole gate on a host (and reading what it says)
 
-`node scripts/verify-gate.mjs` runs the release gate the way
-`.github/workflows/ci.yml` runs it, in the same order, and then **asserts the numbers
-instead of printing them**: the manifest check count and the set of suites allowed to
-skip on this platform. Two properties are the reason it exists:
+`node scripts/verify-gate.mjs` **is** the release gate: `.github/workflows/ci.yml` invokes this
+exact script on every platform, so what you run locally is what gates a merge. It runs the steps in
+order — native worker unit tests, build and stage, the suite set, the staged closure, and the packed
+artifact — and then **asserts instead of printing**: the manifest floor, the suite inventory on
+disk, and the set of suites allowed to skip on this platform. Three properties are the reason it
+exists:
 
 - **A skip is never a pass.** `test/run.mjs` already counts skips apart from passes,
   but a host that silently skips a suite still exits 0. This script knows which suites
   may skip on this platform, names any other one, and fails on it.
+- **The artifact, not just the build.** `npm pack` honours `files`, so a package that silently drops
+  `runtime/` installs fine and only fails inside the user's profile. The gate therefore packs,
+  unpacks and runs the closure check against the unpacked package.
 - **The numbers in the docs cannot go stale.** The suite total is *derived* from `test/*.test.mjs`
   (the same inventory `test/run.mjs` discovers) rather than pinned, and the manifest validator's
   count is asserted against a floor. The per-platform skip set is asserted here, so a newly guarded
