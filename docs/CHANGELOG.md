@@ -7,6 +7,25 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### The config-update marker goes to the profile patch, and never to the composed tree
+
+`mountConfigUpdates()` persisted its one-time marker with `entry.parent.tree.write()`, an API that
+writes the **whole composed tree** back into the profile root file. The loader documents that file
+as an empty entry list and resets it on boot, so the baked copy carried other plugins' rows —
+`ui-theme`'s `preference`/`fontSize` above all — which echoed the previous value back into the
+settings scope and made the theme and font size bounce (dark → system → dark); on a desktop profile
+the baked rows made the whole bundle fail to mount on the next start, silently (#91, #108).
+
+The marker now goes through `configEditor.edit()`, so it lands in the active profile's patch layer,
+leaves every other row alone, is validated as a whole candidate before anything reaches disk, and
+preserves comments and `!!js` expressions. `EntryTree.write()` is never called again, and the suite
+installs it as a tripwire that throws if anything reaches for it.
+
+When the editor is unavailable, or refuses the save, the migration simply stays in effect for that
+activation: no tree write, no fallback write, no error in the boot path, and the notice is emitted
+once per process rather than once per activation. Combines #138 (the patch-layer channel) with #136
+(the in-memory-only discipline).
+
 ### Breaking: the FastCtx background component is removed
 
 The `dsh-ops/background` component and everything that existed only for it are gone. The file,
