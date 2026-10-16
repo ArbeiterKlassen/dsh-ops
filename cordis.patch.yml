@@ -17,7 +17,6 @@
         required: false
     - id: dsh-ops-ptc
       name: dsh-ops/ptc
-      disabled: true
       config:
         required: false
     - id: dsh-ops-tui

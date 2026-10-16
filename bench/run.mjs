@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { measure, surfaceAccounting, writeReports } from './lib/measure.mjs'
+import { FILE_TOOLS } from '../lib/file/contract.js'
 
 if (process.env.GITHUB_ACTIONS === 'true' || process.env.GITHUB_ACTIONS === '1') {
   console.error('dsh-ops benchmark: refusing to run in GitHub Actions; this lane is local-only')
@@ -66,7 +67,7 @@ try {
 
 function nativeRequest(tool, requestArgs, { readOnly = false } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(workerPath, [], { cwd: workspace, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    const child = spawn(workerPath, [], { cwd: workspace, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, timeout: 15000 })
     let stdout = ''
     let stderr = ''
     child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
@@ -75,7 +76,11 @@ function nativeRequest(tool, requestArgs, { readOnly = false } = {}) {
     child.once('error', reject)
     child.once('close', code => {
       if (code !== 0) return reject(new Error(`worker exited ${code}: ${stderr.slice(0, 300)}`))
-      try { resolve(JSON.parse(stdout)) } catch { reject(new Error(`worker returned invalid JSON: ${stdout.slice(0, 300)}`)) }
+      try {
+        const value = JSON.parse(stdout)
+        if (!readOnly && value.status !== 'completed') throw new Error(`worker operation failed: ${JSON.stringify(value.error ?? value)}`)
+        resolve(value)
+      } catch (error) { reject(error) }
     })
     child.stdin.end(JSON.stringify({
       root: workspace, scope: 'local-benchmark', tool, args: requestArgs,
@@ -102,6 +107,7 @@ if (workerPath) {
   await scenario('native-large-output', 'native worker', async () => ({
     measurements: [await measure('large bounded inspect', iterations, async () => {
       const value = await nativeRequest('inspect_local_file', { path: large, offset: 1, limit: 10000 })
+      if (value.complete !== false || JSON.stringify(value).length > 128 * 1024) throw new Error('large output lost its bound/paging contract')
       return { bytes: JSON.stringify(value).length }
     })],
   }))
@@ -132,7 +138,7 @@ if (host && workerPath) {
     await ctx.plugin(inner => inner.provide('sandboxPolicy', {
       resolve: ({ session }) => ({ mode: session.mode, workspaceRoot: session.header.cwd, sessionId: session.id }),
     }))
-    const mounted = await host.mountPlugin({ ctx, config: { toolCallTimeoutMs: 10000 }, expectTools: 4 })
+    const mounted = await host.mountPlugin({ ctx, config: { toolCallTimeoutMs: 10000 }, expectTools: FILE_TOOLS.length })
     return { ctx, tools, prompt, fiber: mounted.fiber }
   }
   let mounted
@@ -160,12 +166,14 @@ if (host && workerPath) {
   await scenario('plugin-tool-surface', 'plugin wrapper / host', async () => ({
     measurements: [await measure('ops_glob tool call', iterations, async () => {
       const value = await host.callTool(mounted.ctx, 'ops_glob', { path: workspace, pattern: ['*.txt'], outputMode: 'paths' }, undefined, agent)
+      if (value.value?.status !== 'completed' || value.value.items?.length !== 2) throw new Error('plugin glob failed or missed fixture files')
       return { bytes: JSON.stringify(value.value).length }
     })],
   }))
   await scenario('plugin-large-output', 'plugin wrapper / host', async () => ({
     measurements: [await measure('ops_inspect_local_file large bounded output', iterations, async () => {
       const value = await host.callTool(mounted.ctx, 'ops_inspect_local_file', { path: large, offset: 1, limit: 10000 }, undefined, agent)
+      if (value.value?.status !== 'completed' || value.value.complete !== false || JSON.stringify(value.value).length > 128 * 1024) throw new Error('plugin inspect failed or exceeded paging budget')
       return { bytes: JSON.stringify(value.value).length }
     })],
   }))

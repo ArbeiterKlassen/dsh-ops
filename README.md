@@ -21,23 +21,15 @@
 
 # dsh-ops
 
-致力优化dsh插件token效率，提升ai性能，减少token消耗，减少任务总时间的插件，解决 Windows 下 DSH 反复使用 PowerShell 报错造成的 token、时间和模型注意力浪费，会持续更新。
+## 当前集成契约（仅本地，未发布）
 
-本插件的主要功能：
+Bundle 有**五个独立组件**，只读 TUI 侧栏默认关闭，以下四个默认开启：终端（仅 Windows）、文件、PTC、严格隐藏官方工具。Linux/macOS 默认不激活组件 1，保留官方 `bash`；Windows 提供前台 `ops_bash`，官方命令工具只保留 `pwsh`。组件 3 仅在公开组装结果证实纯 PTC 时发布 `ops_batch` / `ops_result`。
 
-- 提供一组更高级的tools常驻工具，由rust编写。这些tools工具相对于原版，输入和输出token都更少，运行速度更快，且覆盖面更广，给ai造成的心智负担更低，同时附带简短的哈希校验、行数位置等消息以减少
-- 以渐进式纰漏的形式，为日常工作提供诸如doc/pdf操作，网页搜索，html转markdown类crawl4ai工具等日常工作常用的tools工具。这些工具可以使得ai不必重新编写代码或者脚本来实现自己的目标从而大大节省Token
-- 提供关闭原版tools以最大化节省ai心智负担和系统固定提示词的可选项
-- 在windows平台下额外提供tools：ops_bash的支持——ai使用bash远比ai使用pwsh更流畅。可选择使用ops自带的独立 **bash 5.3.15** ，也可以将ops_bash工具指定为git bash
+文件 worker 实现十一个有界工具：读取、glob、grep、stat、diff、字面替换、CAS 创建/覆盖、精确编辑、单文件 copy/move/remove。Windows 已有文件覆盖/edit/replace 和 Windows/macOS copy 在无法证明安全元数据保留时返回 `METADATA_UNSUPPORTED`，不会静默降级。未实现目录/递归修改、DOC/PDF、网页/UI、编排替代。当前不注册 `ops_process_*`；不安全的后台进程 lane 已撤回。旧 FastCtx background 入口仅兼容保留，不在五行默认 bundle 内。
 
-插件特点：
+**全栈接管被 readiness 阻断，不是已完成能力**：仅官方 read/glob/grep 有已审核映射。官方能力缺少真实替代、OPS 工具缺失、当前作用域官方工具无法隐藏，或保留 transport `run_code` 无法隐藏时，返回 `READINESS_BLOCKED`（执行基础设施问题，非用户权限拒绝）。插件撤销所有自有隐藏限制，保持官方 surface 不变，同时阻止 agent 提示词组装与执行，不允许混用继续。要使用未完整接管的部署，必须由操作者显式关闭整个隐藏组件，不会自动 fallback。当前固定宿主无法隐藏 `run_code`，所以隐藏开启时纯 PTC 也被阻断。
 
-- 低侵入性，高兼容性，不改运行逻辑，不注入系统提示词，不改系统变量，只提供新的易用高级工具，从而几乎可以和任何插件兼容
-
-> [!NOTE]
-> 关于token节省和性能提升的严谨benchmark与具体测试方案将在下个版本推出，其将会覆盖大多数通用场景。上个版本的97% token减免仅代表 **“提示词全面，明确，具体的单次复杂任务交付”** 这一场景————简短提示词让ai发散性的寻找结论的随机性太大，很难控制变量
-
-> tips：本项目的 ops 是广义 operations （运行操作）的缩写，代指本插件处于dsh和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
+所有操作服从 DSH sandboxPolicy、宿主 subprocess 治理、取消和凭据清理。固定数据式文件操作走可信文件权限围栏及 no-follow/CAS worker，不执行任意代码。提示词按当前作用域实时生成，输出有界；实际实现的回执/分页携带 hash、字节、行数或源计数。详见[组件参考](docs/组件参考.md)、[配置参考](docs/配置参考.md)、[本地 benchmark](docs/benchmark.md)。benchmark token 数仅估算，不代表端到端节省；尚未进行 Desktop GUI 或 POSIX 实机验收。
 
 ## 安装、更新、卸载
 

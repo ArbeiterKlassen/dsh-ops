@@ -233,7 +233,7 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
       check(row?.id === `${pkg.name}-${component}`, `the ${component} component has a stable row id`)
       if (!row) continue
       const disabled = component === 'shell' ? Function(`return (${row.disabled})`)() : row.disabled === true
-      check(disabled === (component === 'shell' ? !platformSurface().shellDefaultEnabled : ['ptc', 'tui'].includes(component)), `${component} has its documented enablement default`)
+      check(disabled === (component === 'shell' ? !platformSurface().shellDefaultEnabled : component === 'tui'), `${component} has its documented enablement default`)
       try { (component === 'tui' ? resolveTuiConfig : component === 'ptc' ? resolvePtcConfig : component === 'hide-official' ? resolveHidingConfig : resolveConfig)(row.config); check(true, `${component} config is valid`) }
       catch (error) { check(false, `${component} config is valid`, String(error?.message ?? error)) }
     }
@@ -480,7 +480,7 @@ if (display !== undefined) {
 
 /** Payload the published package must carry, as `files` entries or paths they cover. */
 const ptc = manifestRaw.contributes?.['x-components']?.find(c => c.id === 'dsh-ops-ptc')
-check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === false, 'native PTC component is opt-in')
+check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === true, 'native PTC component is enabled by default')
 check(JSON.stringify(ptc?.tools) === JSON.stringify(PTC_TOOLS.map(publicToolName)), 'PTC declaration matches the generated tool contract')
 check(PTC_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
 check(JSON.stringify(pkg.os) === '["win32","linux","darwin"]' && JSON.stringify(pkg.cpu) === '["x64","arm64"]' &&

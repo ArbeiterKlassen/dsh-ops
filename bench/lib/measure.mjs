@@ -34,6 +34,7 @@ export function surfaceAccounting({ schemas = [], sections = [] } = {}) {
     schemaTokensEstimate: tokenEstimate(schemaBytes),
     schemaSha256: createHash('sha256').update(JSON.stringify(stable(cleanSchemas))).digest('hex'),
     promptSectionCount: cleanSections.length,
+    promptLineCount: cleanSections.reduce((sum, section) => sum + (section.text ? section.text.split('\n').length - (section.text.endsWith('\n') ? 1 : 0) : 0), 0),
     promptBytes,
     promptTokensEstimate: tokenEstimate(promptBytes),
     promptSha256: createHash('sha256').update(JSON.stringify(stable(cleanSections))).digest('hex'),

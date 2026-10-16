@@ -13,6 +13,7 @@ test('surface accounting is stable and records schema/prompt hashes', () => {
   })
   assert.deepEqual(one, two)
   assert.equal(one.schemaCount, 1)
+  assert.equal(one.promptLineCount, 1)
   assert.match(one.schemaSha256, /^[a-f0-9]{64}$/)
   assert.match(one.promptSha256, /^[a-f0-9]{64}$/)
   assert.equal(one.schemaTokensEstimate, tokenEstimate(one.schemaBytes))

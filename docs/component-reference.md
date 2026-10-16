@@ -1,6 +1,6 @@
 # Component reference
 
-What each of the five components publishes, with parameters and permission requirements.
+What each of the five bundle components publishes, with parameters and permission requirements.
 
 ---
 
@@ -10,11 +10,21 @@ What each of the five components publishes, with parameters and permission requi
 | --- | --- | --- | --- |
 | `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | Windows only | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
 | `dsh-ops/file` | Native Rust file operations with bounded results | On | Eleven native file tools |
-| `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
+| `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | On (PTC-only publication) | `ops_batch`, `ops_result` |
 | `dsh-ops/hide-official` | Strict scoped official-tool takeover | On | No tools; verified restrictions and execution guard |
 | `dsh-ops/tui` | Read-only current-session OPS sidebar | Off | None; see [sidebar guide](tui-panel.md) |
 
 The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) has been removed. A profile row that still names it loads as a no-op: it accepts any config, publishes nothing, and logs one warning that the row can be deleted.
+
+## Current integration contract (local, not a release)
+
+The bundle has **five independent components**, with the read-only TUI sidebar opt-in and these four enabled by default: shell (Windows only), file, PTC, and strict official-tool hiding. Linux/macOS omit the shell row at activation and retain official `bash`; Windows provides foreground `ops_bash` and retains official `pwsh`. PTC publishes only `ops_batch`/`ops_result` in verified pure PTC presentation.
+
+The file worker implements eleven bounded tools: inspect, glob, grep, stat, diff, literal replace, CAS create/overwrite, exact edit, and single-file copy/move/remove. Existing-file Windows overwrite/edit/replace and Windows/macOS copy **fail closed with `METADATA_UNSUPPORTED`** where security metadata preservation is unproven. Directories, recursive mutation, DOC/PDF, web/UI, and orchestration replacements are not implemented. No `ops_process_*` tools are registered; the unsafe background-process lane was withdrawn. The old FastCtx background entry remains compatibility-only, outside the five-row bundle.
+
+**Strict full-stack takeover is readiness-blocked**, not delivered: only official read/glob/grep have reviewed mappings. Unsupported official capabilities, missing OPS tools, own-scope official schemas, or unhideable `run_code` produce `READINESS_BLOCKED` (executor infrastructure, not `POLICY_DENIED`). All owned restrictions roll back, preserving the official surface, while agent prompt assembly and execution remain blocked. There is no silent mixed-mode continuation. Disable the entire hiding row explicitly to use an incomplete native replacement deployment; this is not an automatic fallback. PTC with hiding enabled is blocked on the pinned host because reserved `run_code` cannot be hidden.
+
+Every operation resolves DSH sandboxPolicy and uses host subprocess governance, cancellation and credential scrubbing. Fixed data-only file operations use the trusted file-policy fence and no-follow/CAS worker, not arbitrary code execution. Guidance is live and scoped, outputs bounded, and receipts/pages carry hashes, bytes, line counts or source counts where implemented. See [component reference](component-reference.md), [configuration](configuration-reference.md), and [local benchmark](benchmark.md). Benchmark token estimates are not demonstrated end-to-end token savings; no Desktop GUI or POSIX deployment acceptance is claimed.
 
 ---
 
@@ -210,14 +220,14 @@ The pinned host catalog and dynamic official prefixes live in
 new official names or custom aliases must be reviewed and registered in that catalog.
 
 Before installing any masks, every visible official capability must have a reviewed,
-implemented equivalent in `OFFICIAL_REPLACEMENTS`, and all four native file tools
+implemented equivalent in `OFFICIAL_REPLACEMENTS`, and all eleven native file tools
 must be visible. A same-named `ops_*` tool is not proof of equivalence. Currently only
 `read`, `glob`, and `grep` have reviewed mappings. **Full-stack takeover is blocked on
 missing equivalents** for write/edit/image, web, delegation, interaction, jobs and other
 host capabilities; this component does not implement those replacements.
 
 Failure rejects agent prompt assembly and denies tool execution with an
-`EXECUTOR_UNAVAILABLE` diagnostic (not a user-authorization denial). No partial hiding
+`READINESS_BLOCKED` / `EXECUTOR_UNAVAILABLE` diagnostic (not a user-authorization denial). No partial hiding
 or silent official/OPS mixing is permitted. Restrictions are rolled back across live
 agents when readiness fails, because ancestor restrictions also reach child scopes.
 The monotonic guard still denies execution even if a later pre-execute listener allows.

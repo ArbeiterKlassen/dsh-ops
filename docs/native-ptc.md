@@ -50,10 +50,10 @@ Rust >=1.88 is required. Build uses `cargo build --release --locked` against
 `native/Cargo.toml`. No install scripts download binaries. On Windows, enable the
 session toolchain before building; do not add multi-version toolchains to global PATH.
 
-Enable the opt-in `dsh-ops/ptc` bundle row. Its only config keys are `required`
+The `dsh-ops/ptc` bundle row is enabled by default. Its only config keys are `required`
 (default false) and an optional absolute `binaryPath`. `DSH_OPS_WORKER_BIN` can
 select a build; otherwise the component uses `runtime/<platform>-<arch>/dsh-ops-worker[.exe]` before `native/target/release`.
-The component remains opt-in. Published 0.3.1 packages include the runtime bytes
+Publication remains PTC-only. Strict official-tool hiding blocks PTC on the pinned host because reserved `run_code` cannot be hidden; an operator must explicitly disable the hiding row for standalone PTC use. This is not an automatic fallback. Published 0.3.1 packages include the runtime bytes
 of every supported platform; source checkouts stage them explicitly with
 `node bin/native-runtime.mjs stage --platform <target>`. There is no automatic
 compilation or download during installation.

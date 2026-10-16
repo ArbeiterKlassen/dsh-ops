@@ -14,7 +14,7 @@
 
 ## 工具发布与提示词
 
-- 组件列表恰为三个：shell/file 默认开启，background 默认关闭。分别核验组件名称、中文介绍、图标，以及实际版本。
+- 组件列表恰为四个：shell/file/PTC/hide-official 默认开启（Linux/macOS 默认不激活 shell，保留官方 bash）。严格隐藏若缺少等价能力必须 READINESS_BLOCKED、撤销全部自有隐藏限制并阻止组装/执行；不把阻断当全栈成功。后台替代尚未就绪。分别核验组件名称、中文介绍、图标，以及实际版本。
 - `workspace-write`、`read-only`：只有开启的四个 ops 文件工具；没有 ops_bash/后台工具，提示词不广告不存在的命令。
 - `danger-full-access`：默认四个文件工具 + ops_bash；仅后台组件开且 enableShellTools=true 时增加四个后台工具。任何组合都不发布 ops_run。
 - 文件与后台共享一个 FastCtx；关文件仍能管理后台，关后台仍能读搜改，重开不积累注册。

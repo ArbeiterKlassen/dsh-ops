@@ -6,16 +6,25 @@ Every configuration key, and **which component row owns it**.
 
 ## Where configuration lives
 
-In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/file` or `dsh-ops/ptc` row, adjust `config`, then save; unknown configuration keys cause errors naming the key.
-The bundle declares four independently toggled components. On first installation, the first two are enabled by default:
+In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/file`, `dsh-ops/ptc` or `dsh-ops/hide-official` row, adjust `config`, then save; unknown configuration keys cause errors naming the key.
+
+The bundle declares five independently toggled components. TUI is opt-in; the other four default enabled, with shell disabled on Linux/macOS:
+
 | Row `name` | Component | Default |
 | --- | --- | --- |
-| `dsh-ops/shell` | Terminal and shell | On |
+| `dsh-ops/shell` | Terminal and shell | Windows only |
 | `dsh-ops/file` | Rust file tools | On |
-| `dsh-ops/ptc` | Native PTC batches | Off |
+| `dsh-ops/ptc` | Native PTC batches | On, PTC-only |
+| `dsh-ops/hide-official` | Strict schema takeover | On; readiness may block |
 | `dsh-ops/tui` | Read-only sidebar, separate config | Off |
 
 A `dsh-ops/background` row left over from an earlier version loads as a no-op stub (the FastCtx background component was removed); it ignores its config and can be deleted.
+## Strict hiding configuration / 严格隐藏配置
+
+`dsh-ops/hide-official` accepts only `strict: true` (default) and `additionalOfficialTools: []` (deployment aliases). `strict: false`, OPS aliases and unknown keys reject activation. Disable the entire row to opt out. Readiness failure is `READINESS_BLOCKED`, restores official schemas and blocks assembly/execution, never automatic mixed mode. Only read/glob/grep mappings are reviewed; run_code cannot be hidden by this host.
+
+PTC accepts only `binaryPath` and `required` (default false). Its row is enabled by default but publishes only in pure PTC. Shell/file use `resolveConfig`; the old background entry is a removed no-op stub, not a bundle component. Windows file publication limitations are explicit in the component reference; hiding is not proof that unavailable writes are implemented.
+
 
 ---
 

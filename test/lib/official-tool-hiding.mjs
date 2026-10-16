@@ -163,7 +163,7 @@ export async function officialToolHidingMountChecks() {
       await assert.rejects(() => assemble(ctx, agent), /missing host API: restrict, guard/)
       const decision = await ctx.waterfall('tools/pre-execute', { agent, name: 'foreign' }, () => ({ kind: 'allow' }))
       assert.equal(decision.kind, 'deny')
-      assert.equal(decision.info.code, 'EXECUTOR_UNAVAILABLE')
+      assert.equal(decision.info.code, 'READINESS_BLOCKED')
     } finally { await shutdown(ctx) }
   })
   await test('assembled official schema injection is rejected even when registry masking succeeded', async () => {
@@ -178,6 +178,9 @@ export async function officialToolHidingMountChecks() {
         return result
       })
       await assert.rejects(() => assemble(ctx, agent), /assembled surface still contains official tools: web_search/)
+      assert.ok(scopedToolNames(ctx, agent).includes('read'), 'assembly failure restores official schemas')
+      assert.equal((await execute(ctx, agent, 'foreign')).isError, true)
+      await assert.rejects(() => assemble(ctx, agent), /READINESS_BLOCKED/)
     } finally { await shutdown(ctx) }
   })
   await test('agent disposal lifts restrictions and remount does not retain old masks', async () => {

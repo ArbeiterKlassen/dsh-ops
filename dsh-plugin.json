@@ -87,11 +87,7 @@
         "source": "the plugin's bash layer via host subprocess",
         "publicPrefix": "ops_",
         "tools": [
-          "bash",
-          "process_start",
-          "process_output",
-          "process_list",
-          "process_kill"
+          "bash"
         ],
         "shellPermission": "shell component enabled AND publishBashTool AND authoritative per-session DSH policy; restricted modes require host confinement"
       }
@@ -100,7 +96,7 @@
       {
         "id": "dsh-ops-ptc",
         "entry": "dsh-ops/ptc",
-        "defaultEnabled": false,
+        "defaultEnabled": true,
         "platforms": ["win32", "linux", "darwin"],
         "architectures": ["x64", "arm64"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
@@ -138,7 +134,7 @@
         "platforms": ["win32", "linux", "darwin"],
         "strict": true,
         "retainedOfficialCommand": { "win32": "pwsh", "linux": "bash", "darwin": "bash" },
-        "readiness": "All visible official capabilities require reviewed implemented OPS equivalents before any restriction is installed. run_code is not exempt; unhideable transports and own-scope registrations fail prompt assembly and execution closed."
+        "readiness": "READINESS_BLOCKED rolls back all owned restrictions and blocks assembly/execution; all visible official capabilities require reviewed implemented OPS equivalents before any restriction is installed. run_code is not exempt; unhideable transports and own-scope registrations fail prompt assembly and execution closed."
       }
     ]
   },

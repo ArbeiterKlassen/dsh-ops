@@ -13,8 +13,8 @@ packages to fetch.
 | Component | Linux x64 | Notes |
 | --- | --- | --- |
 | `dsh-ops/file` | yes | 4 tools: `ops_inspect_local_file`, `ops_grep`, `ops_glob`, `ops_replace` |
-| `dsh-ops/ptc` | yes | `ops_batch`, `ops_result`; opt-in |
-| `dsh-ops/shell` | yes | `ops_bash` over the host bash; pwsh stays Windows x64 |
+| `dsh-ops/ptc` | yes | `ops_batch`, `ops_result`; default enabled, PTC-only publication; strict hiding blocks reserved run_code |
+| `dsh-ops/shell` | opt-in | Host bash is supported; disabled by default on Linux. pwsh stays Windows x64 |
 
 ## Prerequisites
 

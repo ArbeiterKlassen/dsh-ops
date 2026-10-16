@@ -21,23 +21,15 @@
 
 # dsh-ops
 
-A plugin dedicated to improving the token efficiency of DSH plugins, boosting AI performance, reducing token consumption, and cutting total task time. It removes the token, time, and model-attention waste caused by DSH repeatedly hitting PowerShell errors on Windows, and will keep being updated.
+## Current integration contract (local, not a release)
 
-Main features of this plugin:
+The bundle has **five independent components**, with the read-only TUI sidebar opt-in and these four enabled by default: shell (Windows only), file, PTC, and strict official-tool hiding. Linux/macOS omit the shell row at activation and retain official `bash`; Windows provides foreground `ops_bash` and retains official `pwsh`. PTC publishes only `ops_batch`/`ops_result` in verified pure PTC presentation.
 
-- A set of more advanced always-on tools written in Rust. Compared with the built-ins, these tools use fewer input and output tokens, run faster, cover more ground, and impose less mental load on the AI; they also carry brief hash checks, line/position info, and similar messages to reduce token overhead.
-- Through progressive disclosure, it provides everyday tools such as DOC/PDF operations, web search, and crawl4ai-style HTML-to-Markdown tools. These save a lot of tokens by letting the AI avoid writing one-off code or scripts to reach its goal.
-- Provides an option to disable the built-in tools, to maximize savings on the AI's mental load and the fixed system prompt.
-- On Windows it additionally provides the `ops_bash` tool — the AI is far more fluent with bash than with pwsh. You can use the independent **bash 5.3.15** bundled with ops, or point the `ops_bash` tool at Git Bash.
+The file worker implements eleven bounded tools: inspect, glob, grep, stat, diff, literal replace, CAS create/overwrite, exact edit, and single-file copy/move/remove. Existing-file Windows overwrite/edit/replace and Windows/macOS copy **fail closed with `METADATA_UNSUPPORTED`** where security metadata preservation is unproven. Directories, recursive mutation, DOC/PDF, web/UI, and orchestration replacements are not implemented. No `ops_process_*` tools are registered; the unsafe background-process lane was withdrawn. The old FastCtx background entry remains compatibility-only, outside the five-row bundle.
 
-Plugin traits:
+**Strict full-stack takeover is readiness-blocked**, not delivered: only official read/glob/grep have reviewed mappings. Unsupported official capabilities, missing OPS tools, own-scope official schemas, or unhideable `run_code` produce `READINESS_BLOCKED` (executor infrastructure, not `POLICY_DENIED`). All owned restrictions roll back, preserving the official surface, while agent prompt assembly and execution remain blocked. There is no silent mixed-mode continuation. Disable the entire hiding row explicitly to use an incomplete native replacement deployment; this is not an automatic fallback. PTC with hiding enabled is blocked on the pinned host because reserved `run_code` cannot be hidden.
 
-- Low intrusion and high compatibility: it does not change runtime logic, inject into the system prompt or modify system variables — it only adds new, easy-to-use high-level tools, so it stays compatible with almost any plugin.
-
-> [!NOTE]
-> A rigorous benchmark and a concrete test plan for token savings and performance gains will ship in the next version, covering most common scenarios. The 97% token reduction reported for the previous version only describes the **"single, complex task delivered from a complete, explicit and specific prompt"** scenario — with short prompts the model's search for a conclusion is too random to control the variables.
-
-> tips: "ops" here is short for the broad sense of operations (running operations), indicating that this plugin sits in the base-tool position between DSH and system/code/file operations. This is not an operations (ops/SRE) plugin.
+Every operation resolves DSH sandboxPolicy and uses host subprocess governance, cancellation and credential scrubbing. Fixed data-only file operations use the trusted file-policy fence and no-follow/CAS worker, not arbitrary code execution. Guidance is live and scoped, outputs bounded, and receipts/pages carry hashes, bytes, line counts or source counts where implemented. See [component reference](docs/component-reference.md), [configuration](docs/configuration-reference.md), and [local benchmark](docs/benchmark.md). Benchmark token estimates are not demonstrated end-to-end token savings; no Desktop GUI or POSIX deployment acceptance is claimed.
 
 ## Install, update and uninstall
 
