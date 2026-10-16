@@ -104,7 +104,9 @@
     "validate:manifest": "node scripts/validate-manifest.mjs",
     "test": "node test/run.mjs",
     "verify:release": "npm run verify && node bin/check-release.mjs",
-    "verify": "node scripts/validate-manifest.mjs && node test/run.mjs"
+    "verify": "node scripts/validate-manifest.mjs && node test/run.mjs",
+    "bench": "node bench/run.mjs",
+    "test:bench": "node --test bench/measure.test.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
