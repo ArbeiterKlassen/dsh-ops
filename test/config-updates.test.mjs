@@ -1,17 +1,35 @@
-/** One-time per-row update self-check and owning-loader persistence. */
+/** One-time per-row update self-check and owning-row persistence through the profile config editor.
+ *
+ * Regression guard for #91/#108: the marker must reach the profile *patch* layer
+ * via `configEditor.edit()`, never `EntryTree.write()`. That whole-tree
+ * write-back bakes the composed rows into the profile root file, which made the
+ * `ui-theme` settings row echo its previous `preference`/`fontSize` and bounce.
+ */
 import { updatedConfig, mountConfigUpdates, CONFIG_UPDATE_VERSION } from '../lib/config-updates.js'
 import { LEGACY_FASTCTX_KEYS, resolveConfig } from '../lib/config.js'
 import { assert, report, test, tick, waitFor } from './lib/harness.mjs'
 
-function fixture(config, { name = 'dsh-ops/shell', failWrite = false } = {}) {
-  const writes = [], updates = [], logs = [], cleanup = []
-  const entry = { options: { name, config }, parent: { tree: { write() {
-    if (failWrite) throw new Error('read-only profile')
-    writes.push(structuredClone(entry.options.config))
-  } } }, async update({ config }) { entry.options.config = config; updates.push(config) } }
+/**
+ * Build a fixture row plus the two persistence surfaces the code may reach.
+ * `tree.write` is a tripwire: the suite fails loudly if anything calls it.
+ */
+function fixture(config, { name = 'dsh-ops/shell', failEdit = false, noEditor = false } = {}) {
+  const edits = [], updates = [], logs = [], cleanup = [], treeWrites = []
+  const entry = { options: { name, config },
+    parent: { tree: { write() { treeWrites.push(true); throw new Error('EntryTree.write() must not be used (#91/#108)') } } },
+    async update({ config: next }) { entry.options.config = next; updates.push(next) } }
+  // Stand-in for @deepseek-ai/dsh-config-editor: hand the candidate back to the row
+  // exactly like the service's loader reconciliation does.
+  const editor = { async edit(target, change) {
+    if (failEdit) throw new Error('read-only profile')
+    const next = change(structuredClone(target.options.config ?? {}), {})
+    target.options.config = next
+    edits.push(structuredClone(next))
+  } }
   const ctx = { fiber: { entry }, logger: { info: message => logs.push(message), warn: message => logs.push(message) },
-    effect(body) { cleanup.push(body()) } }
-  return { entry, ctx, writes, updates, logs, cleanup }
+    effect(body) { cleanup.push(body()) },
+    get: key => (noEditor ? undefined : key === 'configEditor' ? editor : undefined) }
+  return { entry, ctx, edits, updates, logs, cleanup, treeWrites }
 }
 
 await test('first run disables explicit true, marks completion, and preserves unrelated raw config', () => {
@@ -23,15 +41,18 @@ await test('first run disables explicit true, marks completion, and preserves un
   assert.equal(next.bashPath, raw.bashPath)
   assert.equal(raw.allowSystemShellFallback, true, 'never mutate input')
 })
-await test('evaluated true expressions are replaced but unrelated raw expressions survive write-back', async () => {
+await test('evaluated true expressions are replaced but unrelated raw expressions survive persistence', async () => {
   const expression = { __jsExpr: 'true' }
   const other = { __jsExpr: 'true' }
   const f = fixture({ allowSystemShellFallback: expression, promptPolicy: other })
   mountConfigUpdates(f.ctx, { allowSystemShellFallback: true })
   await tick(); await tick()
+  assert.equal(f.edits.length, 1)
+  assert.equal(f.edits[0].allowSystemShellFallback, false)
+  assert.deepEqual(f.edits[0].promptPolicy, other)
+  assert.equal(f.edits[0].configUpdateVersion, CONFIG_UPDATE_VERSION)
   assert.equal(f.entry.options.config.allowSystemShellFallback, false)
   assert.equal(f.entry.options.config.promptPolicy, other)
-  assert.equal(f.entry.options.config.configUpdateVersion, CONFIG_UPDATE_VERSION)
 })
 
 await test('self-check records first run even when fallback is absent or already false', () => {
@@ -77,42 +98,42 @@ await test('an unmigrated row carrying the legacy keys still validates, and they
   assert.throws(() => resolveConfig({ enableShellTools: 'yes' }), /enableShellTools/)
   assert.throws(() => resolveConfig({ toolCallTimeoutMs: -1 }), /toolCallTimeoutMs/)
 })
-await test('a version-1 file row is written once with the legacy keys removed', async () => {
+await test('a version-1 file row is persisted once with the legacy keys removed', async () => {
   const f = fixture({ configUpdateVersion: 1, promptPolicy: true, enableShellTools: false, required: false, toolCallTimeoutMs: 300000 }, { name: 'dsh-ops/file' })
   mountConfigUpdates(f.ctx, f.entry.options.config)
   await tick(); await tick()
-  assert.equal(f.writes.length, 1)
-  assert.deepEqual(f.writes[0], { configUpdateVersion: 2, promptPolicy: true, required: false })
+  assert.equal(f.edits.length, 1)
+  assert.deepEqual(f.edits[0], { configUpdateVersion: 2, promptPolicy: true, required: false })
 })
-await test('write-back is deferred, once only, persistent across recreated contexts', async () => {
+await test('persistence is deferred, once only, and survives a recreated context', async () => {
   const f = fixture({ allowSystemShellFallback: true, extraGuidance: 'keep' })
   mountConfigUpdates(f.ctx, f.entry.options.config)
   mountConfigUpdates(f.ctx, f.entry.options.config)
-  assert.equal(f.writes.length, 0)
+  assert.equal(f.edits.length, 0)
   await tick(); await tick()
-  assert.equal(f.writes.length, 1)
+  assert.equal(f.edits.length, 1)
   assert.equal(f.entry.options.config.allowSystemShellFallback, false)
   assert.equal(f.entry.options.config.extraGuidance, 'keep')
   f.entry.options.config.allowSystemShellFallback = true
   const restart = fixture(JSON.parse(JSON.stringify(f.entry.options.config)))
   mountConfigUpdates(restart.ctx, restart.entry.options.config)
   await tick()
-  assert.equal(restart.writes.length, 0)
+  assert.equal(restart.edits.length, 0)
   assert.equal(restart.entry.options.config.allowSystemShellFallback, true)
 })
-await test('no foreign row is written, and disposal cancels pending write-back', async () => {
+await test('no foreign row is touched, and disposal cancels pending persistence', async () => {
   const foreign = fixture({ allowSystemShellFallback: true }, { name: 'other-plugin' })
   mountConfigUpdates(foreign.ctx, foreign.entry.options.config)
   await tick()
-  assert.equal(foreign.writes.length, 0)
+  assert.equal(foreign.edits.length, 0)
   const own = fixture({ allowSystemShellFallback: true })
   mountConfigUpdates(own.ctx, own.entry.options.config)
   for (const dispose of own.cleanup) dispose()
   await tick()
-  assert.equal(own.writes.length, 0)
+  assert.equal(own.edits.length, 0)
 })
-await test('write failure does not retain a completion marker and warns without dumping config', async () => {
-  const f = fixture({ allowSystemShellFallback: true }, { failWrite: true })
+await test('persistence failure does not retain a completion marker and warns without dumping config', async () => {
+  const f = fixture({ allowSystemShellFallback: true }, { failEdit: true })
   const original = f.entry.options.config
   mountConfigUpdates(f.ctx, original)
   await tick(); await tick()
@@ -121,21 +142,38 @@ await test('write failure does not retain a completion marker and warns without 
   assert.ok(f.logs.some(message => message.includes('could not be saved')))
   assert.equal(f.logs.some(message => message.includes('extraGuidance')), false)
 })
+await test('a profile without the config editor stays in memory and never touches the loader tree', async () => {
+  const f = fixture({ allowSystemShellFallback: true }, { noEditor: true })
+  mountConfigUpdates(f.ctx, f.entry.options.config)
+  await tick(); await tick()
+  assert.equal(f.edits.length, 0)
+  assert.equal(f.treeWrites.length, 0)
+  assert.equal(f.entry.options.config.allowSystemShellFallback, true, 'in-memory migration must not rewrite the raw row')
+  assert.ok(f.logs.some(message => message.includes('applied in memory only')))
+})
+await test('the owning loader tree is never written, even when it is available (#91/#108)', async () => {
+  const f = fixture({ allowSystemShellFallback: true, extraGuidance: 'keep' })
+  mountConfigUpdates(f.ctx, f.entry.options.config)
+  await tick(); await tick()
+  assert.equal(f.treeWrites.length, 0)
+  assert.equal(f.edits.length, 1)
+  assert.ok(f.logs.every(message => !message.includes('owning loader for persistence')))
+})
 await test('each component owns its marker, and concurrent config edits are preserved', async () => {
   for (const name of ['dsh-ops', 'dsh-ops/shell', 'dsh-ops/file']) {
     const f = fixture({ allowSystemShellFallback: true }, { name })
     mountConfigUpdates(f.ctx, f.entry.options.config)
     f.entry.options.config = { allowSystemShellFallback: false, extraGuidance: 'new edit' }
     await tick(); await tick()
-    assert.equal(f.writes.length, 1)
-    assert.equal(f.writes[0].extraGuidance, 'new edit')
-    assert.equal(f.writes[0].configUpdateVersion, CONFIG_UPDATE_VERSION)
+    assert.equal(f.edits.length, 1)
+    assert.equal(f.edits[0].extraGuidance, 'new edit')
+    assert.equal(f.edits[0].configUpdateVersion, CONFIG_UPDATE_VERSION)
   }
   // The removed background row is a no-op stub; its saved config is never rewritten.
   const background = fixture({ enableShellTools: true }, { name: 'dsh-ops/background' })
   mountConfigUpdates(background.ctx, background.entry.options.config)
   await tick(); await tick()
-  assert.equal(background.writes.length, 0)
+  assert.equal(background.edits.length, 0)
 })
 await test('real component mount migrates before publication and preserves manual opt-in after restart', async () => {
   const { bootHost, shutdown, scopedToolNames } = await import('./lib/host.mjs')
@@ -145,12 +183,19 @@ await test('real component mount migrates before publication and preserves manua
   const snapshots = [], effective = []
   let fiber
   const entry = { options: { name: 'dsh-ops/shell', config: { allowSystemShellFallback: true, bashPath: process.execPath } },
-    parent: { tree: { write() { snapshots.push({ ...entry.options.config }) } } },
+    parent: { tree: { write() { throw new Error('EntryTree.write() must not be used (#91/#108)') } } },
     async update({ config }) { entry.options.config = config; fiber.update(config, true) } }
   try {
     await ctx.plugin(inner => {
       inner.provide('subprocess', { spawn() { throw new Error('not executed') } })
       inner.provide('sandboxPolicy', { resolve() { return { mode: 'danger-full-access' } } })
+      // Stand-in for @deepseek-ai/dsh-config-editor: apply the candidate to the row
+      // exactly like the real service does, so the mount path is exercised end to end.
+      inner.provide('configEditor', { async edit(target, change) {
+        const next = change(structuredClone(target.options.config ?? {}), {})
+        target.options.config = next
+        snapshots.push({ ...next })
+      } })
     })
     fiber = await ctx.plugin({ name: 'fixture-update-owner', apply(inner, raw) {
       inner.fiber.entry = entry
@@ -172,7 +217,7 @@ await test('real component mount migrates before publication and preserves manua
     await waitFor(() => effective.length === 2, { timeoutMs: 5000 })
     assert.equal(effective.at(-1), true)
     assert.equal(resolveConfig(fiber.config).allowSystemShellFallback, true)
-    // Migration itself does not trigger a second mount or another disk write.
+    // Migration itself does not trigger a second mount or another persisted edit.
     assert.equal(snapshots.length, 1)
   } finally { await shutdown(ctx) }
 })
