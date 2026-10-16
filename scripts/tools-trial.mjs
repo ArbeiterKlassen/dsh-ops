@@ -17,7 +17,18 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { publicToolName } from '../lib/policy.js'
-import { bootHost, callTool, mountPlugin, publicToolNames, shutdown } from '../test/lib/host.mjs'
+
+// The suite harness refuses to run when `DSH_HOME` points outside the system temp directory, and
+// mounting the plugin touches its own home. Own a throwaway one here — assigned *before* the harness
+// is imported — so the script runs anywhere, and print it so a report is reproducible.
+// The harness refuses any `DSH_HOME` outside the system temp directory, and a trial must never touch
+// a real profile home — so a caller-supplied path outside `os.tmpdir()` is replaced, not trusted.
+const tempRoot = tmpdir()
+const foreignHome = process.env.DSH_HOME !== undefined
+  && !path.resolve(process.env.DSH_HOME).startsWith(path.resolve(tempRoot))
+const ownedHome = process.env.DSH_HOME === undefined || foreignHome
+if (ownedHome) process.env.DSH_HOME = mkdtempSync(path.join(tempRoot, 'dsh-ops-trial-home-'))
+const { bootHost, callTool, mountPlugin, publicToolNames, shutdown } = await import('../test/lib/host.mjs')
 
 const REPORT = 'tools-trial-report.md'
 const results = []
@@ -26,6 +37,7 @@ const record = (tool, outcome, detail) => {
   process.stdout.write(`  ${outcome === 'ok' ? 'ok   ' : outcome === 'failed' ? 'FAIL ' : 'skip '} ${tool}${detail === undefined ? '' : ` — ${detail}`}\n`)
 }
 
+process.stdout.write(`  home: ${process.env.DSH_HOME}\n`)
 const workspace = mkdtempSync(path.join(tmpdir(), 'dsh-ops-trial-'))
 mkdirSync(path.join(workspace, 'nested'), { recursive: true })
 writeFileSync(path.join(workspace, 'alpha.txt'), 'alpha line\nsecond line\n')
@@ -114,6 +126,7 @@ try {
 } finally {
   await shutdown(ctx).catch(() => {})
   rmSync(workspace, { recursive: true, force: true })
+  if (ownedHome) rmSync(process.env.DSH_HOME, { recursive: true, force: true })
 }
 
 const ok = results.filter(result => result.outcome === 'ok').length
@@ -125,6 +138,7 @@ const lines = [
   `- attempted: **${ok + failed}** (ok ${ok}, failed ${failed})`,
   `- skipped: **${skipped}**`,
   `- host: ${process.platform}-${process.arch}, node ${process.version}`,
+  `- DSH_HOME: ${process.env.DSH_HOME}`,
   `- published by this build: ${published.join(', ') || '(none)'}`,
   '',
   '| tool | outcome | detail |',

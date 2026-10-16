@@ -108,12 +108,8 @@ jobs:
       - name: Build the native worker
         shell: bash
         run: npm run build:ptc
-      # The plugin reads and writes its own home; a trial must never touch the runner's real one.
-      - name: Prepare an isolated DSH home
-        shell: bash
-        run: |
-          mkdir -p "${{ runner.temp }}/dsh-home"
-          echo "DSH_HOME=${{ runner.temp }}/dsh-home" >> "$GITHUB_ENV"
+      # The trial owns a throwaway DSH_HOME under the system temp directory: the harness refuses to
+      # run when it points elsewhere (the runner's `_temp` is not `os.tmpdir()`).
       - name: Try every published tool
         shell: bash
         run: node scripts/tools-trial.mjs
