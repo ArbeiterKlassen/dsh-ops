@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "dsh-ops-codex",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Codex adapter for dsh-ops FastCtx file, search, and background tools on Windows.",
   "author": {
     "name": "ArbeiterKlassen"

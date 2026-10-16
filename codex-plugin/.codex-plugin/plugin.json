@@ -1,6 +1,6 @@
 {
   "name": "dsh-ops-codex",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Codex adapter for dsh-ops FastCtx file, search, and background tools on Windows.",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",

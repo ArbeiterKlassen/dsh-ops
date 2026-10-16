@@ -3,7 +3,111 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
-## 0.2.8 Missing bash payload diagnostics
+## 0.3.0 release scope and verification
+
+0.3.0 is Windows x64 only, explicitly approved by the maintainer for this release.
+Package os/cpu, component declarations and native target checks agree. Linux,
+macOS and ARM64 are future work; prior cross-compile checks are not release claims.
+
+The fixed file worker implements inspect/glob/grep/replace, receives session-cwd
+paths plus authoritative DSH write policy, and rechecks the writable-root allowlist
+in Rust before replacement. It uses the trusted-operation threat model of DSH
+fs-sandbox, with no-follow paths, revision checks and host subprocess governance.
+Arbitrary Bash/PTC code still uses the original DSH OS confinement; Windows
+partial enforcement is reported unchanged.
+
+Windows owned workspace roots get backed-up directory-only WRITE_OWNER before
+outer run_code/pwsh launch, with no recursive grants/owner changes/denial removal.
+Restricted Bash uses an installation-relative private MSYS copy: only import DLL
+names are redirected to original MIT IPC proxies, preserving the token and disk
+API paths. Original payload/proxy/source hashes are recorded and checked.
+Only the original GPL payload is an existing dependency; no modified MSYS DLL
+or complete private copy is included in the 0.3.0 tarball. Runtime modifications
+are identified in the local receipt; original licenses remain in the copy.
+This does not attest source-delivery closure for the historical PortableGit
+payload dependency (see the 0.2.1 historical limitation below).
+
+The Windows x64 Rust worker and two IPC proxies are staged with hash receipts.
+`npm run verify:release` includes 58 manifest checks, 13 test suites, worker
+PE/version/hash checks and IPC binary/source closure. Real Node PTC runtime and
+SDK coverage includes Bash command/script/pipeline, workspace write, outside-write
+denial and downgrade to read-only. Native PTC copy/move/remove, read-only result
+pages and full-access external roots pass with original DSH providers. No Linux,
+macOS or ARM64 binary/runtime acceptance is claimed. No benchmark is inferred
+from these gates. The npm tarball is built and checked after the GitHub Release;
+publication itself is performed separately by the maintainer.
+
+## Historical development evidence
+
+The file component is no longer a FastCtx client. `native/src/file.rs` implements
+bounded inspect, glob, grep and replace; `native/src/file_path.rs` implements
+absolute host-resolved path validation and component-by-component no-follow
+checks. The host adapter in `lib/file/` obtains the authoritative DSH session
+cwd and sandbox policy, forwards cancellation, and maps worker JSON into the DSH
+structured output contract. The initial exact-argv file confinement below was
+superseded by the fixed trusted-operation fence described above.
+
+The Windows x64 worker was built with the managed Rust `1.97.1` toolchain and
+staged under `runtime/win32-x64` with a version/target/executable/SHA-256 receipt.
+`cargo check`, `cargo build --release --locked`, `cargo clippy --all-targets
+-D warnings`, manifest validation, and all ten local JavaScript suites pass.
+The six-target release matrix and Linux/macOS runtime and sandbox acceptance are
+not claimed. FastCtx source/vendor remains unchanged and is retained only for
+the explicitly disabled background component.
+
+
+The independent MIT Rust core in `native/` is original dsh-ops code. It uses
+cap-std/cap-fs-ext handle-relative filesystem operations, serde, SHA-256, UUIDs,
+regex and fs2 workspace locking. No FastCtx source was modified or linked by the
+file component; legacy FastCtx remains only behind the disabled background
+component and all applicable notices remain intact.
+
+Host contract source (DSH 0.2.0-rc.2):
+
+- `packages/core/tools/src/index.ts`: `register`, `presentAs`, scoped SDK/wire
+  presentation and `tools/change`; the component never invokes private modeFor.
+- `packages/core/system-prompt/src/index.ts`: public `assemble({scope})`, sections
+  and wire tools distinguish pure PTC from native/hybrid.
+- `packages/sandbox/{sandbox,sandbox-policy}/src/index.ts`: per-session policy,
+  exact argv confinement, full/partial enforcement and runner diagnostics.
+- `packages/subprocess/subprocess/src/types.ts`: bounded stdin/collected stdout,
+  credential scrub and managed-range cancellation.
+- `packages/jobs/jobs/src/{index,types}.ts`: optional host-owned foreground job
+  admission, progress, wait, cancellation and collected-record removal.
+
+Windows x64 release worker build and three isolated PTC scenarios run with real
+Rust/Cordis/tool/prompt services; confinement and optional jobs are simulated.
+Linux x64 (`x86_64-unknown-linux-gnu`) and macOS arm64 (`aarch64-apple-darwin`)
+`cargo check --locked` pass from the Windows toolchain. These are compile checks,
+not linking/runtime/real sandbox acceptance. Other platform/architecture pairs,
+real process sandbox denial and live Desktop/PTC execution remain release gates.
+Real Windows x64 DSH sandbox-local/subprocess-local acceptance was subsequently
+added and passed: workspace-write copy, read-only result page without storage
+writes, denied outside-root mutation, and unconfined full-access outside-root
+mutation. This corrects the initial full-only enforcement gate: original Windows
+ACL reports partial and is now accepted with that exact fact returned.
+
+Runtime discovery now resolves packaged `runtime/<platform>-<arch>` bytes with
+version/checksum receipts before source fallback. Source builds stage their runtime
+automatically. Release assembly requires six native target builds and rejects
+incomplete packages; the release matrix has not been run or published here.
+
+No npm publish, GitHub push, or claimed model-token/turn benchmark took place.
+Details, budgets and security limitations: [Native PTC](docs/native-ptc.md).
+
+## 0.2.9 Bug fixes
+
+This release contains only bug fixes. It skips the Windows WSL launcher during
+PATH fallback (#12), rejects undeclared `ops_bash` arguments such as
+`run_in_background` before spawn (#10), and writes the one-time legacy shell
+fallback migration directly through the owning loader tree instead of invoking
+`Entry.update()`. The last change prevents a migration from remounting dsh-ops
+while Desktop is already reloading a profile row, addressing the reported
+configuration-edit slowdown with dsh-ops 0.2.6 and DSH 0.2.0-rc.2.
+
+No feature, component, configuration key, or runtime capability was added. The
+three Windows payload dependencies remain pinned to 0.2.1.
+
 
 Issue #9 showed that a host package-manager prune can leave the bash payload declared in the profile lockfile but absent on disk. `ops_bash` now converts a spawn-time `ENOENT` into a concise actionable result instead of exposing a raw process exception. It does not silently fall back to an unapproved system shell.
 
@@ -42,15 +146,15 @@ not a claim of completed desktop/web upgrade or a ten-minute idle timing test.
 
 ## 0.2.5 Stable safety and verification
 
-The stable main package is `dsh-ops@0.2.8`; it deliberately excludes the
+The stable main package is `dsh-ops@0.2.9`; it deliberately excludes the
 context-compaction beta branch. Main-package patches and runtime payloads have
 independent versions. The exact dependency mapping is:
 
 | Main package | Payload dependency (unchanged) | Upstream runtime |
 | --- | --- | --- |
-| `dsh-ops@0.2.8` | `@dsh-ops/fastctx-win32-x64@0.2.1` | FastCtx 0.2.6, upstream revision `ccaa157790d02328a60786eb94ee5ad698995a5f`; built from `dd348254281bf5eea6c4d9d07c49d82c565666f4` |
-| `dsh-ops@0.2.8` | `@dsh-ops/bash-win32-x64@0.2.1` | PortableGit `v2.56.0.windows.2` (2.56.0.2), bash 5.3.15 |
-| `dsh-ops@0.2.8` | `@dsh-ops/pwsh-win32-x64@0.2.1` | PowerShell 7.6.6 |
+| `dsh-ops@0.2.9` | `@dsh-ops/fastctx-win32-x64@0.2.1` | FastCtx 0.2.6, upstream revision `ccaa157790d02328a60786eb94ee5ad698995a5f`; built from `dd348254281bf5eea6c4d9d07c49d82c565666f4` |
+| `dsh-ops@0.2.9` | `@dsh-ops/bash-win32-x64@0.2.1` | PortableGit `v2.56.0.windows.2` (2.56.0.2), bash 5.3.15 |
+| `dsh-ops@0.2.9` | `@dsh-ops/pwsh-win32-x64@0.2.1` | PowerShell 7.6.6 |
 
 The same payload mapping applies to main-package versions 0.2.2–0.2.5.
 Each payload includes `provenance.json` with its executable SHA-256 and upstream

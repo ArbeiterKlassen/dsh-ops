@@ -1,4 +1,38 @@
-# dsh-ops
+## Native file component
+
+`dsh-ops-file` now uses the plugin-owned Rust worker, not FastCtx. It publishes
+`ops_inspect_local_file`, `ops_glob`, `ops_grep`, and `ops_replace` through the
+normal DSH tool registration scope. The worker receives one host-resolved path
+per call; relative paths are resolved against `session.header.cwd` by the host.
+There is no `root`, `workspace`, `cwd`, or `file_path` alias in the native file
+schemas.
+
+The worker is UTF-8 first and bounded. It rejects symlink/junction/reparse
+traversal, hidden files and `.git` traversal, uses Rust regex for grep, and
+performs replacement with a preflight count, hard replacement limit, content
+revision check, temporary-file write, fsync, and atomic replacement. `dryRun`
+never writes. A read-only DSH session can inspect/search but cannot replace.
+Fixed trusted file operations use `sandboxPolicy` checks and host subprocess governance; they never execute model code. Arbitrary Bash/PTC code still requires `sandbox.confine`, with no unconfined fallback. FastCtx remains only
+behind the disabled background component.
+
+Build and stage the current Windows worker from the source checkout:
+
+```console
+RUSTUP_TOOLCHAIN=1.97.1 cargo build --release --locked --manifest-path native/Cargo.toml
+node bin/native-runtime.mjs stage --platform win32-x64 --input native/target/release
+node bin/native-runtime.mjs check --platform win32-x64
+```
+
+**This 0.3.0 release supports Windows x64 only.** The native worker and Bash IPC proxies are included. Other platforms/architectures are not shipped or supported by this release. No FastCtx file-tool fallback exists.
+
+## Codex adapter (experimental)
+
+This repository includes `codex-plugin/`, which exposes FastCtx to Codex as a local stdio MCP server. The adapter version follows upstream and is currently 0.3.0.
+
+The default surface is `glob`, `grep`, `inspect_local_file` and `replace`. Setting `DSH_OPS_ENABLE_SHELL=1` and providing a bash executable adds `run`, `run_background` and the `job_*` tools.
+
+See [codex-plugin/README.md](codex-plugin/README.md) for setup and [docs/codex-adaptation.md](docs/codex-adaptation.md) for the design.
+
 
 [中文](README.md) | **English**
 
@@ -6,22 +40,14 @@ Reduce the tokens, time and model attention wasted on repeated PowerShell errors
 
 - Independent **bash 5.3.15**, preferred for general commands so your AI no longer has to fight PowerShell.
 - Independent **PowerShell 7.6.6** for necessary Windows-native operations through the host `pwsh` tool. PowerShell 7 also offers many improvements over the built-in PowerShell 5.
-- Faster, higher-performance Rust tools for reading, searching and replacing files, speeding up tasks and reducing unnecessary input/output. Because some tools do not use DSH's restricted terminal backend, command and background-task tools are enabled only with **full access**.
+- Faster fixed Rust file operations follow DSH filesystem policy. Bash uses the host sandbox in restricted modes; the optional FastCtx background component remains full-access-only. Matching Windows x64 MSYS payloads use a verified private IPC-compatible copy. Real PTC command/script/pipeline and permission-switch acceptance passes locally; Desktop GUI restart acceptance remains required.
 - A range of lightweight, easy-to-use Rust tools for DOCX and PDF processing will be added in the future; each can be toggled without taking up context.
 
 <img width="1603" height="1028" alt="247c1326cca5b66e60d330c3f32150e2" src="https://github.com/user-attachments/assets/7c9ba485-5323-42a2-b5a8-6dcda07f91c4" />
 
 Routing: **toolkit → bash → PowerShell 7**.
 
-Currently supports **Windows x64** only. Linux and Mac support will follow once the Rust tools are added for those platforms (bash functionality will not be provided on Linux or Mac). Target host DSH `0.2.0-rc.2`.
-
-## Codex adapter (experimental)
-
-This repository now includes `codex-plugin/`, which exposes FastCtx to Codex as a local stdio MCP server.
-
-The default surface is `glob`, `grep`, `inspect_local_file` and `replace`. Setting `DSH_OPS_ENABLE_SHELL=1` and providing a bash executable adds `run`, `run_background` and the `job_*` tools.
-
-See [codex-plugin/README.md](codex-plugin/README.md) for setup and [docs/codex-adaptation.md](docs/codex-adaptation.md) for the design.
+**0.3.0 supports Windows x64 only**, targeting DSH `0.2.0-rc.2`. The independent Rust file/PTC worker is included; PTC remains opt-in. Linux/macOS/ARM64 are future work, not release claims. See [Native PTC](docs/native-ptc.md).
 
 ## Install, update and remove
 
@@ -53,7 +79,7 @@ The ordinary DSH CLI cannot manage the reserved `desktop` profile; do not confus
 
 **Update**: repeat the same `npx --yes dsh-ops@latest install --profile ...` command, or use the official CLI's `add dsh-ops@latest`. Reload as requested by the application; restart it when replacing already-loaded code.
 
-The current version, `0.2.8`, builds on the 0.2.7 long-script stability fix and adds a readable `ENOENT` diagnostic when the bundled bash payload is missing. It does not silently switch to an unauthorized system bash. The Electron `workspace-write` `0xC0000142` failure belongs to the DSH host's Windows ACL runner and is outside this plugin's subprocess API; this release does not claim to repair that host issue. All three binary dependencies remain pinned to `0.2.1`, and npm payloads are not republished.
+`0.3.0` adds independent native Rust PTC enhancement: `ops_batch` and `ops_result`, DSH confinement, durable recovery, bounded references and projection. Three Windows payload dependencies remain pinned to `0.2.1`; no payload republish is needed. PTC is opt-in and the Windows x64 worker is included. See [Native PTC](docs/native-ptc.md).
 
 **Remove and check status**:
 
@@ -66,19 +92,56 @@ Replace `desktop` with `web` or `tui` as appropriate. You can also uninstall in 
 
 Legacy explicitly provisioned `<DSH_HOME>/dsh-ops/` files must be cleaned separately with `npx --yes dsh-ops@latest uninstall --yes`. Persistent `~/.fastctx/` state is kept by default; add `--purge-fastctx` explicitly if needed. Disabling the background component waits for in-flight calls, then attempts to terminate only its own jobs remembered on the current connection; failures produce warnings. Old jobs whose ownership was lost after disconnect, and permission downgrades alone, do not guarantee termination; handle your own jobs first.
 
+## Known issues
+
+**A missing `bash-win32-x64` under `node_modules/@dsh-ops/` is not a broken installation.** The three payloads are exact-versioned **optional dependencies** (`optionalDependencies`): if your registry has not synced that platform package at the pinned version, the package manager **skips it silently** — the install still exits 0 and prints no warning that names the missing payload.
+
+Measured on 2026-10-12: on `registry.npmmirror.com`, `@dsh-ops/bash-win32-x64` reports `dist-tags.latest = 0.0.0-stage` with `versions` holding only `0.0.0-stage`; the official `registry.npmjs.org` reports `0.2.1`. `npm view @dsh-ops/bash-win32-x64 version` through the mirror therefore prints a misleading old version — do not use it to decide whether the payload is available. This section expires by itself once the mirror catches up; below is how to verify and how to work around it.
+
+**Preferred remedy**: `provision-shells` bypasses the registry, fetches the pinned asset from the upstream GitHub Release, checks its sha256, unpacks it and writes a `.provisioned.json` receipt.
+
+```console
+npx --yes dsh-ops@latest provision-shells --bash
+```
+
+Behind a proxy (`HTTPS_PROXY` is handed to curl explicitly as `--proxy` and is inherited through the environment as well):
+
+```console
+:: cmd
+set HTTPS_PROXY=http://127.0.0.1:<clash-port>
+npx --yes dsh-ops@latest provision-shells --bash
+```
+
+```console
+# PowerShell
+$env:HTTPS_PROXY = 'http://127.0.0.1:<clash-port>'
+npx --yes dsh-ops@latest provision-shells --bash
+```
+
+**To check the result, run the profile's own copy**: `ladder` reports the bundled rung of **the copy that runs it**, so `npx … ladder` inspects the npx cache copy and its answer has nothing to do with your profile.
+
+```console
+node "%USERPROFILE%\.dsh\profiles\<profile>\node_modules\dsh-ops\bin\dsh-ops.mjs" ladder
+```
+
+The provisioned copy lives in `<DSH_HOME>/dsh-ops/shells` (shared across profiles, so one provision covers every profile on the machine) and outranks the bundled copy when the shells are resolved; `ladder` reports `source: provisioned`.
+
+**Do not** work around a missing payload with `allowSystemShellFallback: true`: that lowers the security posture (it uses a system bash with no pinned digest), and the one-time startup configuration migration sets it back to `false`.
+
 ## Components and prompts
 
-The official marketplace displays three independently toggled components. On first installation, the first two are enabled by default:
+The bundle declares four independently toggled components. On first installation, the first two legacy components are enabled by default; PTC is opt-in and requires a native worker build:
 
 | Component | Description | Default | Published tools |
 | --- | --- | --- | --- |
 | `dsh-ops-bash & powershell 7` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
 | `dsh-ops-file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Four file tools |
 | `dsh-ops-background` | Managed background tasks for scientific simulations, model training and other long-running processes | Off | Start, read output, list and terminate background jobs |
+| `dsh-ops-ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
 
 “Prefer bash as the terminal” means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. When the shell component is on, the official configuration lifecycle temporarily sets the PowerShell 7 path for `pwsh-sandbox`; when off, it restores the executor's latest original configuration without writing profile configuration. Switching executor configuration does not cancel already-running host commands.
 
-Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws retrieval guidance; background OFF withdraws background tools and owned-job guidance. File and background share one plugin-owned FastCtx connection; disabling one does not stop the other. Only five tools are added by default; the duplicate foreground `ops_run` is not published. These changes reduce fixed declaration costs. The Minimal preset overrides additional system sections; PTC mode calls the underlying tools through the SDK with unchanged permission gates.
+Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws native file guidance; background OFF withdraws background tools and owned-job guidance. The file component uses its independent Rust worker; FastCtx is retained only by the disabled background component. Four native file tools and `ops_bash` are added by default; duplicate foreground `ops_run` is not published. These changes reduce fixed declaration costs. The Minimal preset overrides additional system sections; PTC mode calls the underlying tools through the SDK with unchanged permission gates.
 
 ## Configuration and tools
 
@@ -101,7 +164,7 @@ config:
 ```
 
 - `enableShellTools`: deployment switch for the background component; enabling it still requires session `danger-full-access` to publish the four background tools. The file component never publishes command tools.
-- `publishBashTool`: whether to publish `ops_bash`; also requires full access and the host subprocess service.
+- `publishBashTool`: publish `ops_bash` using current session policy; restricted modes require the host sandbox, full access uses the host subprocess service.
 - `promptPolicy`: whether to inject the component's runtime guidance; use `extraGuidance` to append instructions.
 - `toolCallTimeoutMs`: FastCtx RPC wait timeout; it does not mean server-side work has terminated.
 - `required`: whether to reject activation when the runtime is unavailable.
@@ -116,12 +179,12 @@ config:
 | `ops_grep` | Rust regex search, multiple file filters, counts/summaries | No command permission gate¹ |
 | `ops_glob` | Multiple path patterns with exclusions | No command permission gate¹ |
 | `ops_replace` | Mechanical cross-file replacement; use host edit for precise changes | No command permission gate¹ |
-| `ops_bash` | Preferred general bash command executor; use `command` for short commands and `script_path` for long scripts | Yes |
+| `ops_bash` | Preferred general bash command executor; use `command` for short commands and `script_path` for long scripts | Confined in restricted modes; matched Windows x64 private IPC runtime |
 | `ops_run_background` | Start background jobs | Yes |
 | `ops_job_output` / `ops_job_list` / `ops_job_kill` | Read, list and stop jobs started by the current session | Yes |
 | Host `pwsh` | Windows-native operations using bundled PowerShell 7 | Host policy |
 
-¹ **File tools are not the host filesystem sandbox.** They do not use DSH's restricted file backend; in particular, `ops_replace` has no workspace confinement. Do not treat the tools provided by this plugin as a security solution for untrusted restricted environments.
+¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes; read-only rejects replacement, workspace-write permits writes under the workspace and DSH temporary areas, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes.
 
 ## Long scripts and JSON stability
 
@@ -130,6 +193,8 @@ Use `command` for short commands and pipelines. For scripts longer than about 1 
 When the bundled bash payload remains declared in the profile lockfile but its package directory has been removed by the host package manager, `ops_bash` returns a readable `ENOENT` diagnostic instead of exposing a raw `spawn` exception to the model. Restore the dependency with the profile's frozen install or official plugin manager; it does not silently switch to an unauthorized system bash.
 
 `script_path` accepts only the script path, so the script body is not repeated in the `ops_bash` arguments. `command` and `script_path` are mutually exclusive and exactly one is required. This interface cannot repair JSON that the model or host failed to parse; an unparseable tool call still requires a host/model retry.
+
+`ops_bash` arguments are **strict**: a key the schema does not declare is refused before execution, and the error names both the unknown keys and the accepted ones instead of ignoring them. **This tool has no `run_in_background` and returns no job id**; every command runs in the foreground. The host `bash` and `pwsh` tools do accept `run_in_background`, so a model may reasonably try it here; such a call is now rejected rather than silently run in the foreground. For a server, listener or watcher, use the host `pwsh` tool's `run_in_background`, or detach the process from inside the command (for example `nohup ... & disown`). Otherwise the call occupies the whole `timeoutMs` (up to `MAX_BASH_TIMEOUT_MS`, about 24.9 days).
 
 
 The plugin cleans up only its own `fastctx serve` clients on final lease release, connection shutdown, normal owner exit, or forced owner termination. Upstream `runtime-host` is a reusable shared process; a dead parent alone is not a leak. With no clients and about ten minutes of inactivity, it exits normally. Do not kill it by process-name sweeps. This release does not automatically sweep processes left by older versions.
