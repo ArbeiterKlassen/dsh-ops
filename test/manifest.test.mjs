@@ -153,7 +153,7 @@ await test('the card text is translated, not one string repeated across locales'
 
 await test('the card icon is a self-contained PNG with bounded dimensions', () => {
   const icon = fs.readFileSync(path.join(PACKAGE_ROOT, display.icon))
-  assert.equal(display.icon, './icon.png')
+  assert.equal(display.icon, './docs/assets/icon.png')
   assert.deepEqual(icon.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
   assert.equal(icon.toString('ascii', 12, 16), 'IHDR')
   assert.equal(icon.readUInt32BE(16), 256)
@@ -162,7 +162,7 @@ await test('the card icon is a self-contained PNG with bounded dimensions', () =
 })
 
 await test('the icon and all component entries are shipped in the package whitelist', () => {
-  assert.ok(pkg.files.includes('icon.png'))
+  assert.ok(pkg.files.includes('docs/assets/icon.png'))
   for (const component of ['shell', 'file', 'background', 'ptc']) {
     const directory = path.join(PACKAGE_ROOT, 'lib', 'components', component)
     assert.ok(fs.existsSync(path.join(directory, 'index.js')))

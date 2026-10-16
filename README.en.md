@@ -81,11 +81,17 @@ Replace `desktop` with `web` or `tui` as needed. You can also uninstall from the
 
 Old files explicitly provisioned by earlier versions under `<DSH_HOME>/dsh-ops/` need separate cleanup: `npx --yes dsh-ops@latest uninstall --yes`. Persistent state under `~/.fastctx/` is not deleted by default; add `--purge-fastctx` when needed. Disabling the background component waits for in-flight calls, then tries to terminate the component's own remembered tasks on its current connection; failure raises a warning. Old tasks whose ownership was lost on disconnect, and purely demoted tasks, are not guaranteed to be terminated — handle your own tasks first.
 
+## Documentation
+
+- [Usage](docs/usage.md) · [Troubleshooting](docs/troubleshooting.md) · [Component reference](docs/component-reference.md) · [Configuration reference](docs/configuration-reference.md)
+- [Native PTC](docs/native-ptc.md) · [Manual validation](docs/manual-validation.md)
+- [Contributing](docs/贡献指南.md) · [Roadmap](docs/roadmap.md) · [Changelog](docs/CHANGELOG.md) · [Provenance](docs/PROVENANCE.md)
+
 ## License
 
 Plugin source is distributed under **`MIT AND Apache-2.0`**: everything outside `vendor/fastctx/` is MIT; the vendored FastCtx is Apache-2.0. See [NOTICE](NOTICE), `vendor/fastctx/LICENSE-APACHE`, and `vendor/fastctx/NOTICE`.
 
-The separate Windows payload packages are distributed under their upstream components' licenses: Git for Windows includes GPL and other licensed components, and PowerShell includes MIT and third-party components. Their original licenses, notices, and provenance records are kept with the payloads; the plugin's MIT license does not replace those. See [PROVENANCE.md](PROVENANCE.md).
+The separate Windows payload packages are distributed under their upstream components' licenses: Git for Windows includes GPL and other licensed components, and PowerShell includes MIT and third-party components. Their original licenses, notices, and provenance records are kept with the payloads; the plugin's MIT license does not replace those. See [PROVENANCE.md](docs/PROVENANCE.md).
 
 ## Acknowledgements
 
