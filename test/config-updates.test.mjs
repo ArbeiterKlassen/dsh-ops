@@ -13,7 +13,7 @@ import { assert, report, test, tick, waitFor } from './lib/harness.mjs'
  * Build a fixture row plus the two persistence surfaces the code may reach.
  * `tree.write` is a tripwire: the suite fails loudly if anything calls it.
  */
-function fixture(config, { name = 'dsh-ops/shell', failEdit = false, noEditor = false, noEntry = false, logger = null, authoritative = null, mutateThenThrow = false } = {}) {
+function fixture(config, { name = 'dsh-ops/shell', failEdit = false, noEditor = false, noEntry = false, logger = null, authoritative = null, mutateThenThrow = false, failWith = null } = {}) {
   const edits = [], updates = [], logs = [], infos = [], warns = [], cleanup = [], treeWrites = []
   let editCalls = 0
   const entry = { options: { name, config },
@@ -23,6 +23,7 @@ function fixture(config, { name = 'dsh-ops/shell', failEdit = false, noEditor = 
   // exactly like the service's loader reconciliation does.
   const editor = { async edit(target, change) {
     editCalls += 1
+    if (failWith) throw failWith.value
     if (mutateThenThrow) {
       // The real editor reconciles the row before it rethrows; whatever it leaves
       // behind must not make the migration look saved.
@@ -294,5 +295,25 @@ await test('a save that fails after the editor reconciled the row is retried, ne
   mountConfigUpdates(f.ctx, raw)
   await tick(); await tick()
   assert.equal(f.editCalls, 2)
+})
+await test('a save failure that is not an Error is reported, not thrown back', async () => {
+  // `error.message` on `undefined`/`null` would raise from inside the handler that promises to
+  // report the failure, turning a failed save into an unhandled rejection.
+  for (const value of [undefined, 'a bare string']) {
+    const f = fixture({ allowSystemShellFallback: true }, { failWith: { value } })
+    mountConfigUpdates(f.ctx, f.entry.options.config)
+    await tick(); await tick()
+    assert.equal(f.warns.length, 1)
+    assert.match(f.warns[0], /could not be saved: /)
+    assert.deepEqual(f.edits, [])
+  }
+})
+await test('a logger that cannot key a WeakSet is skipped instead of breaking the notice', async () => {
+  const f = fixture({ allowSystemShellFallback: true }, { noEditor: true, logger: 'not-a-logger' })
+  mountConfigUpdates(f.ctx, f.entry.options.config)
+  await tick(); await tick()
+  assert.deepEqual(f.infos, [])
+  assert.deepEqual(f.edits, [])
+  assert.deepEqual(f.treeWrites, [])
 })
 report('config-updates')
