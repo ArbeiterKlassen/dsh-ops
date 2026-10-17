@@ -951,6 +951,27 @@ await test('ops_bash runs the resolved bash as `bash -c <command>` through ctx.s
   })
 })
 
+await test('ops_bash diagnostics are opt-in and cancellation before spawn has no effect', async () => {
+  const { service, specs, settle } = fakeSubprocess({ stdout: 'out\n' })
+  const definition = bashToolDefinition({ file: process.execPath, source: 'config', subprocess: service })
+  const running = definition.execute({ command: 'true', includeDiagnostics: true }, {})
+  settle()
+  const value = await running
+  assert.equal(value.stdout.bytes, 4)
+  assert.equal(value.stdout.bytesTotal, 4)
+  assert.equal(value.stdout.lines, 1)
+  assert.equal(value.diagnostics.executor.kind, 'subprocess')
+  assert.ok(value.diagnostics.durationMs >= 0)
+  const controller = new AbortController()
+  controller.abort(new Error('cancel fixture'))
+  const cancelled = await definition.execute({ command: 'true' }, { signal: controller.signal })
+  assert.equal(cancelled.status, 'failed')
+  assert.equal(cancelled.cancelled, true)
+  assert.equal(Object.hasOwn(cancelled, 'diagnostics'), false)
+  assert.equal(specs.length, 1)
+  await assert.rejects(() => definition.execute({ command: 'true', includeDiagnostics: 'yes' }, {}), /includeDiagnostics/)
+})
+
 await test('ops_bash reports a signal death with a signal and no exit code', async () => {
   await withTempDir('shells-signal', async (dir) => {
     const bash = makeExecutable(path.join(dir, 'bash'))

@@ -151,8 +151,8 @@ try {
     assert.equal(observed.items[0]?.text, 'protected', JSON.stringify(observed))
     fs.symlinkSync(path.join(dir, 'main'), path.join(dir, 'named-link'), process.platform === 'win32' ? 'junction' : 'dir')
     const linked = await fileCall('inspect_local_file', { path: path.join(dir, 'named-link') })
-    assert.equal(linked.error?.code, 'POLICY_DENIED', JSON.stringify(linked))
-    console.log(`ok: host-bridge absolute paths work${aliasRoot ? ' through the /var -> /private/var alias' : ''}; a named link stays POLICY_DENIED`)
+    assert.equal(linked.error?.code, 'PATH_RESTRICTED', JSON.stringify(linked))
+    console.log(`ok: host-bridge absolute paths work${aliasRoot ? ' through the /var -> /private/var alias' : ''}; a named link stays PATH_RESTRICTED`)
   } finally { await bridge.fiber.dispose() }
 
   // 3. Actual host registration scopes and presentation with a simulated enforcing
