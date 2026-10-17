@@ -19,7 +19,14 @@ pub fn require_no_extended_acl(file: &File) -> io::Result<()> {
     let acl = unsafe { *__error() = 0; acl_get_fd_np(file.as_raw_fd(), ACL_TYPE_EXTENDED) };
     if acl.is_null() {
         let error = io::Error::last_os_error();
-        if error.raw_os_error() == Some(0) { return Ok(()); }
+        // Apple's acl_get_fd_np delegates to filesec_get_property(FILESEC_ACL),
+        // which returns ENOENT when this live descriptor has no ACL property.
+        // This is not a path lookup: verify the fd is still valid before treating
+        // that documented absent-property result as an empty ACL.
+        if error.raw_os_error() == Some(0) || error.raw_os_error() == Some(2) {
+            file.metadata()?;
+            return Ok(());
+        }
         return Err(error);
     }
     let mut entry = std::ptr::null_mut();
