@@ -204,7 +204,7 @@ await test('full overwrite, precise edit and copy retain private mode and user a
   })
 })
 
-await test('Darwin copy clones the extended ACL before no-clobber publication', async () => {
+await test('Darwin extended ACL copy and replace fail closed before creating siblings', async () => {
   if (process.platform !== 'darwin') return
   await withTempDir('file-metadata-darwin-acl', async workspace => {
     const source = seed(path.join(workspace, 'source'), 0o600)
@@ -216,12 +216,16 @@ await test('Darwin copy clones the extended ACL before no-clobber publication', 
       assert.match(before, /everyone deny delete/u, 'fixture must carry a Darwin deny ACE')
       const revision = envelopeOf(await callTool('stat', { path: source }, { root: workspace }), assert).revision
       const copied = envelopeOf(await callTool('copy', { path: source, to, expectedRevision: revision }, { root: workspace }), assert)
-      assert.equal(copied.status, 'completed', JSON.stringify(copied))
-      assert.equal(acl(to), before)
-      assert.equal(modeOf(to), '0600')
-      const refused = envelopeOf(await callTool('copy', { path: source, to, expectedRevision: revision }, { root: workspace }), assert)
-      assert.equal(refused.error.code, 'REVISION_CONFLICT')
-      assert.equal(fs.readFileSync(to, 'utf8'), 'TOKEN' + String.fromCharCode(10))
+        assert.equal(copied.error.code, 'METADATA_UNSUPPORTED', JSON.stringify(copied))
+      assert.equal(copied.error.effectState, 'none')
+      assert.match(copied.error.nextAction, /metadata|filesystem/)
+      assert.equal(fs.existsSync(to), false)
+      assert.equal(acl(source), before)
+      assert.equal(fs.readdirSync(workspace).some(name => /[.]dsh-ops-[0-9a-f-]{36}$/.test(name)), false)
+      const replaced = await replaceToken(source, workspace)
+      assert.equal(replaced.error.code, 'METADATA_UNSUPPORTED')
+      assert.equal(replaced.error.effectState, 'none')
+      assert.equal(fs.readFileSync(source, 'utf8'), 'TOKEN' + String.fromCharCode(10))
     } finally {
       // Clear only fixture ACLs, including any unpublished clone left by a
       // failed assertion, so the deny-delete fixture cannot defeat cleanup.
