@@ -32,7 +32,7 @@ import { createObserver, decodeConsoleBytes, describeEvent, formatClock, OBSERVE
 import { describeModulePath } from '../bench/lib/env.mjs'
 import { buildSummary, createLogger, defaultRunFolder, dryRun, extractEndpoints, extractModel, parseArgs, pipedSpawnBlocker, placeholderLines, prepareOut, probeEndpoints, repeatsById, main as runMain } from '../bench/run.mjs'
 import { main as compareMain, parseArgs as parseCompareArgs, renderMarkdown, reportDir, resolveSide } from '../bench/compare.mjs'
-import { approvalPolicyFor, ensureLlmOverlay, entryConfigValue, inspectLocalBuild, parseArgs as parseSetupArgs, permissionEntries, planEntryPatch, planPatchEntries, planProfilePatch, poisonedModulePath, specVersion } from '../bench/setup.mjs'
+import { approvalPolicyFor, ensureLlmOverlay, entryConfigValue, inspectLocalBuild, nextStepLines, parseArgs as parseSetupArgs, permissionEntries, planEntryPatch, planPatchEntries, planProfilePatch, poisonedModulePath, specVersion } from '../bench/setup.mjs'
 import { nextFolderName } from '../bench/lib/next-folder.mjs'
 
 const LABEL = 'bench'
@@ -1683,6 +1683,24 @@ await test('setup checks the local build the candidate will execute, and names e
     write('runtime/linux-x64/provenance.json', JSON.stringify({ version: '1', target: 'linux-x64', executable: 'dsh-ops-worker' }))
     assert.deepEqual(inspectLocalBuild({ root: dir, platform: 'linux', arch: 'x64' }), { problems: [], warnings: [] })
   })
+})
+
+await test('setup ends by pointing at the one command, never at the manual three', () => {
+  const defaults = nextStepLines({ baseProfile: 'bench-base', candProfile: 'bench-ops', platform: 'win32' })
+  assert.equal(defaults.length, 2, 'Windows is the whole story: run it, or look before running')
+  assert.match(defaults[0], /^ {2}npm run bench:baseline {2}——/)
+  assert.match(defaults[1], /npm run bench:baseline -- --show/)
+  assert.ok(defaults.every(line => !/node bench\/(run|compare)\.mjs/.test(line)), 'the manual commands are gone')
+
+  // A renamed pair travels with the suggestion, and npm needs its own -- before the flags.
+  const renamed = nextStepLines({ baseProfile: 'alt-base', candProfile: 'alt-ops', platform: 'win32' })
+  assert.match(renamed[0], /npm run bench:baseline -- --base alt-base --cand alt-ops/)
+  assert.ok(!renamed.some(line => /--base alt-base --cand alt-ops.*--base alt-base/.test(line)), 'the pair is named once')
+
+  // Off Windows the wrapper does not exist, so the same three commands are spelled out.
+  const posix = nextStepLines({ baseProfile: 'bench-base', candProfile: 'bench-ops', platform: 'linux' })
+  assert.equal(posix.length, 3)
+  assert.match(posix[2], /node bench\/compare\.mjs bench-base bench-ops/)
 })
 
 await test('the auto folder walks benchmark-test-NN and skips whatever already answers', async () => {

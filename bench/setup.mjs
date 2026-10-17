@@ -884,6 +884,34 @@ function verifyBaseline(options, context) {
 }
 
 /**
+ * The closing "what now" lines: one command, and nothing else.
+ *
+ * The wrapper runs the baseline side, the candidate side and the comparison, and derives
+ * both labels from the profile names this script just prepared — so a renamed pair is
+ * handed over explicitly (`npm run` needs its own `--` before script arguments, or npm
+ * swallows the flags) instead of letting the run fall back to bench-base/bench-ops.
+ * `bench:baseline` is the Windows entry point; elsewhere the same three commands are run
+ * by hand, with the same labels.
+ * @param {object} options - the prepared pair.
+ * @param {string} options.baseProfile - the baseline profile.
+ * @param {string} options.candProfile - the candidate profile.
+ * @param {string} [options.platform] - the host platform (defaults to this process).
+ * @returns {string[]} the lines, ready to print.
+ */
+export function nextStepLines({ baseProfile, candProfile, platform = process.platform }) {
+  const renamed = baseProfile !== 'bench-base' || candProfile !== 'bench-ops'
+  const flags = renamed ? ` -- --base ${baseProfile} --cand ${candProfile}` : ''
+  const lines = [
+    `  npm run bench:baseline${flags}  —— 整轮 A/B：base 跑一遍、ops 跑一遍、再出对比报告`,
+    '  npm run bench:baseline -- --show  —— 只看这轮的工作组和三条命令，不跑',
+  ]
+  if (platform !== 'win32') {
+    lines.push(`  （bench:baseline 是 Windows 入口；这个平台直接跑 node bench/run.mjs 两次，再 node bench/compare.mjs ${baseProfile} ${candProfile}）`)
+  }
+  return lines
+}
+
+/**
  * The whole preparation.
  * @param {string[]} argv - arguments after the script name.
  * @returns {Promise<number>} the process exit code: 0 prepared, 1 a step failed, 2 usage. */
@@ -985,14 +1013,7 @@ export async function main(argv) {
   for (const warning of warnings) console.warn(`\n*** ${warning}`)
 
   log('\n— 下一步 —')
-  log('  node bench/run.mjs --dry-run --label selfcheck --profile selfcheck')
-  // The run label now matches the profile it came from, so the archived directory names
-  // read the same as `dsh --profile <name>` does, and --base-profile/--cand-profile carry
-  // straight through into the suggested commands.
-  log(`  node bench/run.mjs --label ${options.baseProfile} --profile ${options.baseProfile} --repeat 3`)
-  log(`  node bench/run.mjs --label ${options.candProfile} --profile ${options.candProfile} --repeat 3`)
-  log(`  node bench/compare.mjs ${options.baseProfile} ${options.candProfile} --fail-on both --json bench\\runs\\compare.json`)
-  log('  （冒烟先看 README §3：usage 有没有回报、候选侧 pwsh 是不是活着，再开正式跑分）')
+  for (const line of nextStepLines(options)) log(line)
 
   // A deliberate --no-plugin leaves the candidate unprepared without being a failure; a
   // plugin that was asked for and is still missing is one, because bench-ops cannot run.
