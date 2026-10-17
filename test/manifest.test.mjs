@@ -131,9 +131,11 @@ await test('the manifest license states the composite this repository ships', ()
 await test('the bundle patch inserts no background row and writes no removed FastCtx key', async () => {
   const { parse } = await import('yaml')
   const { LEGACY_FASTCTX_KEYS } = await import('../lib/config.js')
-  const patch = parse(fs.readFileSync(path.join(PACKAGE_ROOT, pkg.dsh.bundle.patch), 'utf8'))
+  const patch = parse(fs.readFileSync(path.join(PACKAGE_ROOT, pkg.dsh.bundle.patch), 'utf8'), {
+    customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: value => value }],
+  })
   const rows = patch.flatMap((entry) => entry.insert ?? [])
-  assert.deepEqual(rows.map((row) => row.name), ['dsh-ops/shell', 'dsh-ops/file', 'dsh-ops/ptc', 'dsh-ops/tui'])
+  assert.deepEqual(rows.map((row) => row.name), ['dsh-ops/shell', 'dsh-ops/file', 'dsh-ops/ptc', 'dsh-ops/tui', 'dsh-ops/hide-official'])
   for (const row of rows) {
     for (const key of LEGACY_FASTCTX_KEYS) assert.equal(Object.hasOwn(row.config ?? {}, key), false, `${row.name} still writes ${key}`)
   }
