@@ -102,7 +102,7 @@ Perform a deterministic UTF-8 replacement under `path`. `pattern` is **literal t
 
 ## `dsh-ops/ptc` — native batches and result references
 
-Loaded only in pure PTC sessions, off by default.
+Available by default, with tools published only in pure PTC sessions. Explicit profile disablement is preserved.
 
 ### `ops_batch`
 

@@ -112,7 +112,7 @@ await test('the declared namespace documents the upstream names and the public p
 
 await test('the declared prompt sections are the registered ones', () => {
   const declared = raw.contributes['x-prompt-sections'].map((section) => section.name)
-  assert.deepEqual([...declared].sort(), ['file', 'shell'].map(name => `${TOOLING_SECTION}:${name}`).sort())
+  assert.deepEqual([...declared].sort(), ['file', 'shell', 'ptc'].map(name => `${TOOLING_SECTION}:${name}`).sort())
   // The background stub still loads for existing rows but is no longer a declared component.
   assert.equal(raw.contributes['x-components'].some((component) => component.entry === 'dsh-ops/background'), false)
 })
@@ -133,7 +133,7 @@ await test('the bundle patch inserts no background row and writes no removed Fas
   const { LEGACY_FASTCTX_KEYS } = await import('../lib/config.js')
   const patch = parse(fs.readFileSync(path.join(PACKAGE_ROOT, pkg.dsh.bundle.patch), 'utf8'))
   const rows = patch.flatMap((entry) => entry.insert ?? [])
-  assert.deepEqual(rows.map((row) => row.name), ['dsh-ops/shell', 'dsh-ops/file', 'dsh-ops/ptc', 'dsh-ops/tui'])
+  assert.deepEqual(rows.map((row) => row.name), ['dsh-ops/shell', 'dsh-ops/file', 'dsh-ops/ptc', 'dsh-ops/tui', 'dsh-ops/hide-official'])
   for (const row of rows) {
     for (const key of LEGACY_FASTCTX_KEYS) assert.equal(Object.hasOwn(row.config ?? {}, key), false, `${row.name} still writes ${key}`)
   }
@@ -171,7 +171,7 @@ await test('the card icon is a self-contained PNG with bounded dimensions', () =
 
 await test('the icon and all component entries are shipped in the package whitelist', () => {
   assert.ok(pkg.files.includes('docs/assets/icon.png'))
-  for (const component of ['shell', 'file', 'background', 'ptc', 'tui']) {
+  for (const component of ['shell', 'file', 'background', 'ptc', 'tui', 'hide-official']) {
     const directory = path.join(PACKAGE_ROOT, 'lib', 'components', component)
     assert.ok(fs.existsSync(path.join(directory, 'index.js')))
     assert.ok(pkg.exports[`./${component}`])
@@ -181,6 +181,13 @@ await test('the icon and all component entries are shipped in the package whitel
     const relative = path.relative(fs.realpathSync(directory), iconFile)
     assert.ok(relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative), `${component}: icon must stay inside its manifest directory`)
     assert.ok(fs.statSync(iconFile).isFile() && fs.statSync(iconFile).size <= 256 * 1024)
+  }
+})
+
+await test('strict hiding and TUI are opt-in while native file/PTC default enabled', () => {
+  const components = raw.contributes['x-components']
+  for (const [id, enabled] of [['file', true], ['ptc', true], ['tui', false], ['hide-official', false]]) {
+    assert.equal(components.find(component => component.id === `dsh-ops-${id}`).defaultEnabled, enabled)
   }
 })
 

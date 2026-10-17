@@ -58,6 +58,11 @@
         "name": "dsh-ops:repository-tooling:shell",
         "order": 3251,
         "summary": "Prefer bash; use the bundled PowerShell 7 for Windows-native functionality where that payload exists; removed when the shell component is off."
+      },
+      {
+        "name": "dsh-ops:repository-tooling:ptc",
+        "order": 3252,
+        "summary": "Scoped PTC batch/result guidance; absent when PTC tools are unavailable."
       }
     ],
     "x-tool-namespaces": [
@@ -70,7 +75,14 @@
           "inspect_local_file",
           "grep",
           "glob",
-          "replace"
+          "replace",
+          "write_file",
+          "edit_file",
+          "diff",
+          "stat",
+          "copy",
+          "move",
+          "remove"
         ],
         "shellPermission": "Per-call DSH sandbox policy and native subprocess"
       },
@@ -89,7 +101,7 @@
       {
         "id": "dsh-ops-ptc",
         "entry": "dsh-ops/ptc",
-        "defaultEnabled": false,
+        "defaultEnabled": true,
         "platforms": ["win32", "linux", "darwin"],
         "architectures": ["x64", "arm64"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
@@ -118,6 +130,15 @@
         "defaultEnabled": false,
         "presentation": "Optional read-only dsh-TUI panel API v1",
         "tools": []
+      },
+      {
+        "id": "dsh-ops-hide-official",
+        "entry": "dsh-ops/hide-official",
+        "defaultEnabled": false,
+        "platforms": ["win32", "linux", "darwin"],
+        "strict": true,
+        "retainedOfficialCommand": { "win32": "pwsh", "linux": "bash", "darwin": "bash" },
+        "readiness": "Opt-in: READINESS_BLOCKED blocks assembly/execution only for the affected scope; healthy scopes retain verified masks. All visible official capabilities require reviewed implemented OPS equivalents before that scope is masked. run_code is not exempt; unhideable transports and own-scope registrations fail prompt assembly and execution closed."
       }
     ]
   },
