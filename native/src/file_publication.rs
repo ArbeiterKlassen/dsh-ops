@@ -60,11 +60,13 @@ pub(super) fn create_sibling(
         // Darwin ACLs are not the Linux POSIX ACL xattr. APFS cloning keeps the
         // original ACL and xattrs; unsupported filesystems must fail closed.
         let original = crate::file_path::read_file(source)?;
+        // CLONE_ACL (0x0004) is an Apple public flag not named by rustix 1.1.
+        // Without it clonefile inherits the destination ACL and drops source denies.
         rustix::fs::fclonefileat(
             &original,
             parent,
             temporary,
-            rustix::fs::CloneFlags::empty(),
+            rustix::fs::CloneFlags::from_bits_retain(0x0004),
         )
         .map_err(|error| {
             Failure::new(
