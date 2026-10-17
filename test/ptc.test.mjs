@@ -151,8 +151,8 @@ try {
     assert.equal(observed.items[0]?.text, 'protected', JSON.stringify(observed))
     fs.symlinkSync(path.join(dir, 'main'), path.join(dir, 'named-link'), process.platform === 'win32' ? 'junction' : 'dir')
     const linked = await fileCall('inspect_local_file', { path: path.join(dir, 'named-link') })
-    assert.equal(linked.error?.code, 'POLICY_DENIED', JSON.stringify(linked))
-    console.log(`ok: host-bridge absolute paths work${aliasRoot ? ' through the /var -> /private/var alias' : ''}; a named link stays POLICY_DENIED`)
+    assert.equal(linked.error?.code, 'PATH_RESTRICTED', JSON.stringify(linked))
+    console.log(`ok: host-bridge absolute paths work${aliasRoot ? ' through the /var -> /private/var alias' : ''}; a named link stays PATH_RESTRICTED`)
   } finally { await bridge.fiber.dispose() }
 
   // 3. Actual host registration scopes and presentation with a simulated enforcing
@@ -223,7 +223,9 @@ try {
     const readonly = await def.execute({action:'run',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure,signal:new AbortController().signal})
     assert.equal(readonly.error.code,'POLICY_DENIED')
     pure.session.mode = 'workspace-write'; sandboxAvailable = false
-    assert.equal((await def.execute({action:'run',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure,signal:new AbortController().signal})).error.code,'SANDBOX_UNAVAILABLE')
+    // The security layer (#168) collapses "no confinement provider" into the structured
+    // EXECUTOR_UNAVAILABLE vocabulary, so this refusal no longer reports SANDBOX_UNAVAILABLE.
+    assert.equal((await def.execute({action:'run',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure,signal:new AbortController().signal})).error.code,'EXECUTOR_UNAVAILABLE')
     assert.equal(calls.length,before); assert.equal(hostJobs.size,0)
     sandboxAvailable = true
     const hostDestKept = exists('host-dest'); assert.equal(hostDestKept,true)
