@@ -118,6 +118,15 @@
         "defaultEnabled": false,
         "presentation": "Optional read-only dsh-TUI panel API v1",
         "tools": []
+      },
+      {
+        "id": "dsh-ops-hide-official",
+        "entry": "dsh-ops/hide-official",
+        "defaultEnabled": false,
+        "platforms": ["win32", "linux", "darwin"],
+        "strict": true,
+        "retainedOfficialCommand": { "win32": "pwsh", "linux": "bash", "darwin": "bash" },
+        "readiness": "Opt-in: READINESS_BLOCKED blocks assembly/execution only for the affected scope; healthy scopes retain verified masks. All visible official capabilities require reviewed implemented OPS equivalents before that scope is masked. run_code is not exempt; unhideable transports and own-scope registrations fail prompt assembly and execution closed."
       }
     ]
   },
