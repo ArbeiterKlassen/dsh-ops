@@ -163,10 +163,35 @@ await test('full overwrite, precise edit and copy retain private mode and user a
     if (PYTHON) assert.equal(execFileSync('python3', ['-c', "import os,sys; print(os.getxattr(sys.argv[1],'user.dsh-ops').decode())", source], { encoding: 'utf8' }).trim(), 'kept')
     const to = path.join(workspace, 'copy.txt')
     const copied = envelopeOf(await callTool('copy', { path: source, to, expectedRevision: edited.revision }, { root: workspace }), assert)
-    if (process.platform === 'darwin') { assert.equal(copied.error.code, 'METADATA_UNSUPPORTED'); return }
     assert.equal(copied.status, 'completed', JSON.stringify(copied)); assert.equal(modeOf(to), '0600')
     assert.equal(fs.statSync(to).mtimeMs, fs.statSync(source).mtimeMs)
     if (PYTHON) assert.equal(execFileSync('python3', ['-c', "import os,sys; print(os.getxattr(sys.argv[1],'user.dsh-ops').decode())", to], { encoding: 'utf8' }).trim(), 'kept')
+  })
+})
+
+await test('Darwin copy clones the extended ACL before no-clobber publication', async () => {
+  if (process.platform !== 'darwin') return
+  await withTempDir('file-metadata-darwin-acl', async workspace => {
+    const source = seed(path.join(workspace, 'source'), 0o600)
+    execFileSync('/bin/chmod', ['+a', 'everyone deny delete', source])
+    const acl = target => execFileSync('/bin/ls', ['-lde', target], { encoding: 'utf8' }).split(String.fromCharCode(10)).slice(1).join(String.fromCharCode(10))
+    const to = path.join(workspace, 'copy')
+    try {
+      const before = acl(source)
+      assert.match(before, /everyone deny delete/u, 'fixture must carry a Darwin deny ACE')
+      const revision = envelopeOf(await callTool('stat', { path: source }, { root: workspace }), assert).revision
+      const copied = envelopeOf(await callTool('copy', { path: source, to, expectedRevision: revision }, { root: workspace }), assert)
+      assert.equal(copied.status, 'completed', JSON.stringify(copied))
+      assert.equal(acl(to), before)
+      assert.equal(modeOf(to), '0600')
+      const refused = envelopeOf(await callTool('copy', { path: source, to, expectedRevision: revision }, { root: workspace }), assert)
+      assert.equal(refused.error.code, 'REVISION_CONFLICT')
+      assert.equal(fs.readFileSync(to, 'utf8'), 'TOKEN' + String.fromCharCode(10))
+    } finally {
+      // Clear only fixture ACLs, including any unpublished clone left by a
+      // failed assertion, so the deny-delete fixture cannot defeat cleanup.
+      for (const name of fs.readdirSync(workspace)) execFileSync('/bin/chmod', ['-N', path.join(workspace, name)])
+    }
   })
 })
 

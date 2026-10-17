@@ -82,8 +82,8 @@ pub fn dispatch(request: Request) -> Result<Value> {
         && !(request.tool == "result"
             && request.args.get("action").and_then(Value::as_str) == Some("page"))
     {
-        return Err(Failure::new(
-            "POLICY_DENIED",
+        return Err(Failure::policy(
+            "read-only",
             "Read-only requests cannot mutate audit or result storage",
         ));
     }

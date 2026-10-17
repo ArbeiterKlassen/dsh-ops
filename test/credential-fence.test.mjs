@@ -224,14 +224,14 @@ await test('recursive file requests and batch copies enforce credential policy o
       deny_credential_names: policy,
       deny_roots: [path.join(workspace, '.ssh')],
     })), assert)
-    assert.equal((await run('inspect_local_file', { path: path.join(workspace, 'service-account-prod.json') })).error.code, 'POLICY_DENIED')
+    assert.equal((await run('inspect_local_file', { path: path.join(workspace, 'service-account-prod.json') })).error.code, 'CREDENTIAL_DENIED')
     const search = await run('grep', { path: workspace, pattern: 'SECRET_TOKEN' })
     assert.equal(search.matched, 0, JSON.stringify(search))
     assert.equal((await run('grep', { path: workspace, pattern: 'SECRET_TOKEN' }, false)).matched, 1)
     const copy = await run('batch', { action: 'plan', operations: [{ op: 'copy', path: 'service-account-prod.json', to: 'exposed.txt' }] })
-    assert.equal(copy.error.code, 'POLICY_DENIED', JSON.stringify(copy))
+    assert.equal(copy.error.code, 'CREDENTIAL_DENIED', JSON.stringify(copy))
     fs.mkdirSync(path.join(workspace, '.ssh')); fs.writeFileSync(path.join(workspace, '.ssh/config'), 'private')
-    assert.equal((await run('batch', { action: 'plan', operations: [{ op: 'copy', path: '.ssh/config', to: 'exposed.txt' }] })).error.code, 'POLICY_DENIED')
+    assert.equal((await run('batch', { action: 'plan', operations: [{ op: 'copy', path: '.ssh/config', to: 'exposed.txt' }] })).error.code, 'CREDENTIAL_DENIED')
     assert.equal(fs.existsSync(path.join(workspace, 'exposed.txt')), false)
   })
 })

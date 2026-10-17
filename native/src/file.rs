@@ -400,7 +400,7 @@ fn grep(request: &Request) -> Result<Value> {
     Ok(result(matches.into_iter().skip(args.offset).take(args.limit).collect(), total, args.offset, args.offset, match_count, walked.truncated))
 }
 fn replace(request: &Request) -> Result<Value> {
-    if request.read_only { return Err(Failure::new("POLICY_DENIED", "replace is unavailable in read-only mode")); }
+    if request.read_only { return Err(Failure::policy("read-only", "replace is unavailable in read-only mode")); }
     let args: ReplaceArgs = serde_json::from_value(request.args.clone())?;
     if args.pattern.is_empty() || args.max_replacements == 0 || args.max_replacements > 100_000 { return Err(Failure::new("INVALID_ARGUMENT", "pattern and maxReplacements are required")); }
     let walked = files_for(&args.path, &args.glob, request)?; let mut plans = Vec::new(); let mut total = 0usize; let mut binary: Vec<PathBuf> = Vec::new();
@@ -424,7 +424,7 @@ fn replace(request: &Request) -> Result<Value> {
         if let Some(roots) = &request.write_roots {
             let canonical = std::fs::canonicalize(&file)?;
             if !roots.iter().any(|root| std::fs::canonicalize(root).is_ok_and(|r| canonical.starts_with(r))) {
-                return Err(Failure::new("POLICY_DENIED", "User authorized workspace writes only; target is outside DSH writable roots. Ask the user to select full access; do not retry or bypass."));
+                return Err(Failure::policy("write-roots", "User authorized workspace writes only; target is outside DSH writable roots. Ask the user to select full access; do not retry or bypass."));
             }
         }
         // Hold the update lock across the check, the read and the publish, so a
@@ -626,30 +626,11 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     // a rename, so the new inode arrives with none of it.
     #[cfg(unix)]
     let preserved = PreservedMetadata::of(&checked)?;
-    let parent = checked.parent;
-    let name = checked.name;
-    sweep_debris(&parent, &name);
+    let parent = &checked.parent;
+    let name = &checked.name;
+    sweep_debris(parent, name);
     let temporary = format!(".{name}.dsh-ops-{}", uuid::Uuid::new_v4());
-    #[cfg(target_os = "macos")]
-    {
-        // APFS cloning preserves Darwin's extended ACL (not the Linux POSIX
-        // ACL xattr). Fail closed on filesystems without clone support rather
-        // than silently publishing an inode that lost a deny entry.
-        let source = crate::file_path::read_file(&crate::file_path::checked(raw)?)?;
-        rustix::fs::fclonefileat(&source, &parent, temporary.as_str(), rustix::fs::CloneFlags::empty())
-            .map_err(|error| Failure::new("ACCESS_DENIED", format!("Atomic replacement requires APFS metadata-preserving clone support: {error}")))?;
-        let mut cloned_options = cap_std::fs::OpenOptions::new(); cloned_options.read(true).follow(FollowSymlinks::No);
-        let cloned = parent.open_with(&temporary, &cloned_options)?;
-        rustix::fs::fchmod(&cloned, rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR).map_err(|error| Failure::new("ACCESS_DENIED", error))?;
-    }
-    #[cfg(target_os = "macos")]
-    let mut options = { let mut value = cap_std::fs::OpenOptions::new(); value.write(true).truncate(true).follow(FollowSymlinks::No); value };
-    #[cfg(not(target_os = "macos"))]
-    #[allow(unused_mut)] // mode is applied only on Unix
-    let mut options = { let mut value = cap_std::fs::OpenOptions::new(); value.write(true).create_new(true).follow(FollowSymlinks::No); value };
-    #[cfg(unix)]
-    { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
-    let mut file = parent.open_with(&temporary, &options).map_err(|e| Failure::new("ACCESS_DENIED", format!("Atomic replacement create: {e}")))?;
+    let mut file = publication::create_sibling(parent, &temporary, Some(&checked))?;
     // Keep content private until final metadata is restored. Creation mode also
     // masks inherited ACL grants; never write sensitive bytes to a default 0666 inode.
     let prepared = (|| -> Result<Option<(Value, Vec<String>)>> {
@@ -687,6 +668,9 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     }
     Ok(report)
 }
+
+#[path = "file_publication.rs"]
+mod publication;
 
 #[path = "file_single.rs"]
 mod single;

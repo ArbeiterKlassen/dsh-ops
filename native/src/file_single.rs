@@ -170,8 +170,8 @@ fn check_revision(bytes: Option<&[u8]>, expected: &str) -> Result<()> {
 }
 pub(super) fn authorize_write(request: &Request, raw: &str) -> Result<PathBuf> {
     if request.read_only {
-        return Err(Failure::new(
-            "POLICY_DENIED",
+        return Err(Failure::policy(
+            "read-only",
             "User authorization is read-only. Ask the user to select workspace-write; do not retry or bypass.",
         ));
     }
@@ -190,8 +190,8 @@ pub(super) fn authorize_write(request: &Request, raw: &str) -> Result<PathBuf> {
             .iter()
             .any(|root| std::fs::canonicalize(root).is_ok_and(|root| candidate.starts_with(root)))
         {
-            return Err(Failure::new(
-                "POLICY_DENIED",
+            return Err(Failure::policy(
+                "write-roots",
                 "User authorized workspace writes only. Ask the user for full access for an external target; do not retry or bypass.",
             ));
         }
@@ -387,27 +387,10 @@ fn publish_new(
             "Copy requires proven Windows DACL/metadata preservation; no file was changed.",
         ));
     }
-    #[cfg(target_os = "macos")]
-    if source.is_some() {
-        return Err(Failure::new(
-            "METADATA_UNSUPPORTED",
-            "Copy requires proven Darwin ACL clone preservation; no file was changed.",
-        ));
-    }
     #[cfg(unix)]
     let preserved = source.map(PreservedMetadata::of).transpose()?;
     let temporary = format!(".{}.dsh-ops-{}", checked.name, uuid::Uuid::new_v4());
-    let mut options = cap_std::fs::OpenOptions::new();
-    options
-        .write(true)
-        .create_new(true)
-        .follow(FollowSymlinks::No);
-    #[cfg(unix)]
-    {
-        use cap_std::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = checked.parent.open_with(&temporary, &options)?;
+    let mut file = publication::create_sibling(&checked.parent, &temporary, source)?;
     let prepared = (|| -> Result<()> {
         file.write_all(bytes)?;
         if let Some(source) = source {
@@ -583,7 +566,7 @@ fn remove_file(request: &Request) -> Result<Value> {
     )
 }
 
-#[cfg(all(test, unix, not(target_os = "macos")))]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     #[test]

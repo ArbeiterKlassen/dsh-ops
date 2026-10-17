@@ -71,7 +71,7 @@ pub fn link(metadata: &Metadata) -> bool {
 }
 pub fn regular(metadata: &Metadata, directory: bool) -> Result<()> {
     if link(metadata) || (!metadata.is_file() && !metadata.is_dir()) || (directory && !metadata.is_dir()) {
-        return Err(Failure::new("POLICY_DENIED", "Links, reparse points and special objects are not traversed; inspect the target path for the offending entry"));
+        return Err(Failure::new("PATH_RESTRICTED", "Links, reparse points and special objects are not traversed; inspect the target path for the offending entry"));
     }
     Ok(())
 }

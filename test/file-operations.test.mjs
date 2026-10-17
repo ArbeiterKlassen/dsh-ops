@@ -11,7 +11,7 @@ import { FILE_TOOLS, FILE_MUTATIONS, publicToolName } from '../lib/policy.js'
 import { PARAMETERS, definition, normalizeArguments } from '../lib/file/contract.js'
 import { bootHost, shutdown } from './lib/host.mjs'
 import { assert, test, report, withTempDir } from './lib/harness.mjs'
-import { callTool, envelopeOf, requireWorker, WORKER } from './lib/boundary.mjs'
+import { callTool, callWorker, request, envelopeOf, requireWorker, WORKER } from './lib/boundary.mjs'
 requireWorker('file-operations')
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const call = async (tool, args, root, options = {}) => envelopeOf(await callTool(tool, args, { root, ...options }), assert)
@@ -111,7 +111,7 @@ await test('copy/move/remove require source CAS, absent destination and regular 
     for (const tool of ['copy', 'move']) failed(await call(tool, { path: source, to, expectedRevision }, root), 'REVISION_CONFLICT')
     assert.equal(fs.readFileSync(to, 'utf8'), 'keep'); fs.unlinkSync(to)
     const copied = await call('copy', { path: source, to, expectedRevision }, root)
-    if (process.platform === 'win32' || process.platform === 'darwin') { failed(copied, 'METADATA_UNSUPPORTED'); assert.equal(fs.existsSync(to), false) }
+    if (process.platform === 'win32') { failed(copied, 'METADATA_UNSUPPORTED'); assert.equal(fs.existsSync(to), false) }
     else { assert.equal(copied.status, 'completed', JSON.stringify(copied)); assert.equal(rev(to), expectedRevision); fs.unlinkSync(to) }
     const moved = await call('move', { path: source, to, expectedRevision }, root)
     assert.equal(moved.status, 'completed', JSON.stringify(moved)); assert.equal(fs.existsSync(source), false); assert.equal(rev(to), expectedRevision)
@@ -149,7 +149,8 @@ await test('no-follow ancestry rejects symlinks/junctions even for a missing wri
     const link = path.join(root, 'link'); fs.symlinkSync(real, link, process.platform === 'win32' ? 'junction' : 'dir')
     for (const tool of ['stat', 'write_file', 'edit_file', 'copy', 'move', 'remove']) {
       const value = await call(tool, { path: path.join(link, tool === 'write_file' ? 'new' : 'a'), ...(tool === 'stat' ? {} : { expectedRevision: tool === 'write_file' ? 'absent' : hash('keep') }), ...(tool === 'write_file' ? { content: 'bad' } : tool === 'edit_file' ? { edits: [{ oldText: 'keep', newText: 'bad' }] } : ['copy', 'move'].includes(tool) ? { to: path.join(root, 'dest') } : {}) }, root)
-      failed(value, 'POLICY_DENIED')
+      failed(value, 'PATH_RESTRICTED')
+      assert.equal(value.error.reason, undefined)
     }
     assert.equal(fs.existsSync(path.join(real, 'new')), false); assert.equal(fs.readFileSync(path.join(real, 'a'), 'utf8'), 'keep')
   })
@@ -179,11 +180,11 @@ await test('three authoritative modes, both transfer paths, credential fence, li
         assert.equal(throughLink.error.code, 'POLICY_DENIED'); assert.equal(fs.existsSync(path.join(outside, 'escape')), false)
         session.mode = 'danger-full-access'
         const fullLink = await invokeTool('write_file', { path: path.join(linked, 'escape'), content: 'bad', expectedRevision: 'absent' })
-        assert.equal(fullLink.error.code, 'POLICY_DENIED'); assert.equal(fs.existsSync(path.join(outside, 'escape')), false)
+        assert.equal(fullLink.error.code, 'PATH_RESTRICTED'); assert.equal(fs.existsSync(path.join(outside, 'escape')), false)
         session.mode = 'workspace-write'
         const beforeSourceNames = fs.readdirSync(outside).sort()
         const copySource = await invokeTool('copy', { path: source, to: 'external-copy', expectedRevision: rev(source) })
-        if (['win32', 'darwin'].includes(process.platform)) assert.equal(copySource.error.code, 'METADATA_UNSUPPORTED')
+        if (process.platform === 'win32') assert.equal(copySource.error.code, 'METADATA_UNSUPPORTED')
         else { assert.equal(copySource.status, 'completed', JSON.stringify(copySource)); assert.equal(fs.readFileSync(path.join(root, 'external-copy'), 'utf8'), 'outside') }
         assert.deepEqual(fs.readdirSync(outside).sort(), beforeSourceNames, 'read-only source must not receive sidecar writes')
         assert.equal(fs.readFileSync(source, 'utf8'), 'outside')
@@ -207,6 +208,22 @@ await test('three authoritative modes, both transfer paths, credential fence, li
         assert.equal(noAuthority.error.code, 'EXECUTOR_UNAVAILABLE'); assert.doesNotMatch(JSON.stringify(noAuthority), /private infrastructure/)
       } finally { await shutdown(ctx) }
     })
+  })
+})
+await test('native selector reasons never conflate credential or path restrictions with mode denial', async () => {
+  await withTempDir('file-denial-reasons', async root => {
+    const target = path.join(root, 'existing'); fs.writeFileSync(target, 'keep')
+    const args = { path: target, content: 'bad', expectedRevision: rev(target) }
+    for (const [options, reason] of [[{ readOnly: true }, 'read-only'], [{ writeRoots: [] }, 'write-roots']]) {
+      const value = await call('write_file', args, root, options)
+      failed(value, 'POLICY_DENIED'); assert.equal(value.error.reason, reason)
+    }
+    const denied = envelopeOf(await callWorker(JSON.stringify({ ...request('stat', { path: target }, { root }), deny_roots: [target] })), assert)
+    failed(denied, 'CREDENTIAL_DENIED'); assert.equal(denied.error.reason, undefined)
+    const linked = path.join(root, 'link'); fs.symlinkSync(root, linked, process.platform === 'win32' ? 'junction' : 'dir')
+    const restricted = await call('stat', { path: path.join(linked, 'existing') }, root)
+    failed(restricted, 'PATH_RESTRICTED'); assert.equal(restricted.error.reason, undefined)
+    assert.equal(fs.readFileSync(target, 'utf8'), 'keep')
   })
 })
 await test('Windows DACLs survive fail-closed overwrite/edit/replace/copy and inode-preserving move', async () => {
