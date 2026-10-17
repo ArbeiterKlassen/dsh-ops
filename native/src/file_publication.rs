@@ -3,6 +3,25 @@
 use super::*;
 use cap_std::fs::{Dir, File, OpenOptions};
 
+pub(super) fn open_update_lock(parent: &Dir, name: &str) -> Result<std::fs::File> {
+    crate::file_path::validate_name(name)?;
+    #[unix]
+    let file = {
+        // A single validated sibling beneath an already-held no-follow directory.
+        // Avoid cap-std's emulated create/open dance under simultaneous creators.
+        let fd = rustix::fs::openat(parent, name,
+            rustix::fs::OFlags::RDWR | rustix::fs::OFlags::CREATE | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC | rustix::fs::OFlags::NONBLOCK,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR)
+            .map_err(|error| Failure::from(std::io::Error::from(error)))?;
+        File::from_std(std::fs::File::from(fd))
+    };
+    #[windows]
+    let file = parent.open_with(name, OpenOptions::new().read(true).write(true).create(true).follow(FollowSymlinks::No))?;
+    crate::file_path::regular(&file.metadata()?, false)?;
+    Ok(file.into_std())
+}
+
 pub(super) fn check_revision(bytes: Option<&[u8]>, expected: &str) -> Result<()> {
     if expected != "absent" && !(expected.len() == 64 && expected.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))) {
         return Err(Failure::new("INVALID_ARGUMENT", "expectedRevision must be absent or lowercase SHA-256"));
@@ -29,6 +48,26 @@ pub(super) fn authorize_write(request: &Request, raw: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn simultaneous_lock_creators_keep_one_live_inode() {
+        let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("ops-lock-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(12));
+        let handles: Vec<_> = (0..12).map(|_| {
+            let root = root.clone(); let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                let parent = Dir::open_ambient_dir(root, cap_std::ambient_authority()).unwrap();
+                barrier.wait();
+                open_update_lock(&parent, ".dsh-ops-lock-test.lock").unwrap()
+            })
+        }).collect();
+        let files: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        FileExt::try_lock_exclusive(&files[0]).unwrap();
+        for file in &files[1..] { assert!(FileExt::try_lock_exclusive(file).is_err(), "all creators must share one lock inode"); }
+        drop(files);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn revision_cas_never_treats_absent_as_a_wildcard() {
         check_revision(None, "absent").unwrap();

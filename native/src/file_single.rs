@@ -205,21 +205,7 @@ fn lock_single(raw: &str) -> Result<std::fs::File> {
         "{:x}",
         Sha256::digest(checked.name.to_lowercase().as_bytes())
     );
-    let mut options = cap_std::fs::OpenOptions::new();
-    options
-        .read(true)
-        .write(true)
-        .create(true)
-        .follow(FollowSymlinks::No);
-    #[cfg(unix)]
-    {
-        use cap_std::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let file = checked
-        .parent
-        .open_with(format!(".dsh-ops-update-{key}.lock"), &options)?
-        .into_std();
+    let file = publication::open_update_lock(&checked.parent, &format!(".dsh-ops-update-{key}.lock"))?;
     FileExt::try_lock_exclusive(&file).map_err(|_| {
         Failure::new(
             "REVISION_CONFLICT",

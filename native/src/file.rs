@@ -588,17 +588,7 @@ fn lock_and_read_for_update(file: &Path) -> Result<(std::fs::File, Vec<u8>)> {
     // another process lock a different inode under the same lock name.
     let key = format!("{:x}", Sha256::digest(checked.name.to_lowercase().as_bytes()));
     let lock_name = format!(".dsh-ops-update-{key}.lock");
-    let mut options = cap_std::fs::OpenOptions::new();
-    options.read(true).write(true).create(true).follow(FollowSymlinks::No);
-    #[cfg(unix)]
-    { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
-    let lock = checked.parent.open_with(lock_name, &options).map_err(|error| {
-        let mut failure = Failure::from(error);
-        failure.message = format!("Stable update lock open: {}", failure.message);
-        failure
-    })?;
-    crate::file_path::regular(&lock.metadata()?, false)?;
-    let lock = lock.into_std();
+    let lock = publication::open_update_lock(&checked.parent, &lock_name)?;
     FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this path; nothing was changed, retry"))?;
     let bytes = read_bytes(file)?;
     Ok((lock, bytes))
