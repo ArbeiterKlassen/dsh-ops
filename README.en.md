@@ -26,7 +26,7 @@ A plugin dedicated to improving the token efficiency of DSH plugins, boosting AI
 Main features of this plugin:
 
 - A set of more advanced always-on tools written in Rust. Compared with the built-ins, these tools use fewer input and output tokens, run faster, cover more ground, and impose less mental load on the AI; they also carry brief hash checks, line/position info, and similar messages to reduce token overhead.
-- Through progressive disclosure, it provides everyday tools such as DOC/PDF operations, web search, and crawl4ai-style HTML-to-Markdown tools. These save a lot of tokens by letting the AI avoid writing one-off code or scripts to reach its goal.
+- Planned on the [roadmap](docs/roadmap.md): everyday tools such as DOC/PDF operations, web search, and crawl4ai-style HTML-to-Markdown tools, added through progressive disclosure so the AI avoids writing one-off code or scripts to reach its goal. **The current release does not ship them yet.**
 - Provides an option to disable the built-in tools, to maximize savings on the AI's mental load and the fixed system prompt.
 - On Windows it additionally provides the `ops_bash` tool — the AI is far more fluent with bash than with pwsh. You can use the independent **bash 5.3.15** bundled with ops, or point the `ops_bash` tool at Git Bash.
 
