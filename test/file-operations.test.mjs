@@ -160,9 +160,8 @@ await test('native selector reasons never conflate credential or path restrictio
       failed(value, 'POLICY_DENIED'); assert.equal(value.error.reason, reason)
     }
     const denied = envelopeOf(await callWorker(JSON.stringify({ ...request('stat', { path: target }, { root }), deny_roots: [target] })), assert)
-    // The credential/path codes keep the pre-existing vocabulary in this branch; the
-    // credential-versus-mode split is the security-layer issue's contract change.
-    failed(denied, 'POLICY_DENIED'); assert.equal(denied.error.reason, undefined)
+    // This security layer distinguishes the credential fence from selector denial.
+    failed(denied, 'CREDENTIAL_DENIED'); assert.equal(denied.error.reason, undefined)
     const linked = path.join(root, 'link'); fs.symlinkSync(root, linked, process.platform === 'win32' ? 'junction' : 'dir')
     const restricted = await call('stat', { path: path.join(linked, 'existing') }, root)
     failed(restricted, 'PATH_RESTRICTED'); assert.equal(restricted.error.reason, undefined)

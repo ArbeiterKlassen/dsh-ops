@@ -7,6 +7,28 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Safety and atomicity (#168)
+
+- Darwin nonempty extended ACLs now fail closed with `METADATA_UNSUPPORTED` before staging.
+  APFS cloning alone is not an exact ACL guarantee; deny-delete entries also prevent safe
+  staging rename/unlink. Use a dedicated metadata-aware tool for ACL-bearing files; changing
+  DSH permissions is not a repair. Plain files still require supported metadata-preserving cloning.
+
+- Replacement receipts hash observed bytes, not a second racy read. Cooperating writers retain
+  the persistent path lock across CAS and atomic publication. Later-file failures retain
+  `effectState: applied` when earlier files have changed; receipt output is bounded before writes.
+- Only trusted host anchors are canonicalized; descendant links remain subject to native
+  no-follow validation. Session temp paths never fall back to the shared root.
+- Windows replacement preserves supported owner/group/DACL/basic metadata through the existing
+  metadata crate. Darwin requires metadata-preserving cloning. Unsupported metadata returns
+  `METADATA_UNSUPPORTED` with repair guidance, not permission-selector advice.
+- `CREDENTIAL_DENIED`, `PATH_RESTRICTED`, `AUTHORITY_CHANGED` and `EXECUTION_RESTRICTED` distinguish
+  credential/path fences, changed authority and OS execution restrictions from actual DSH denials.
+- This cut retains four public file tools. The seven additional tools and end-to-end
+  `expectedRevision` acceptance belong to #167; the shared revision primitive is tested here.
+  Locks serialize cooperating OPS writers, not unrelated programs. Cross-compilation is not
+  macOS/Linux runtime acceptance; repeated macOS/APFS concurrency remains an acceptance gate.
+
 - Tools trial: `node scripts/tools-trial.mjs` calls every published tool on a real host and prints a
   per-tool table; CI runs it in a separate, non-required `tools-trial` job.
 - Documentation now matches the shipped 0.3.1 surface (no behavior change): the component reference
