@@ -82,11 +82,31 @@ export function runCapture(command, args, env = process.env) {
  */
 
 /**
+ * The global npm prefix, asked of npm itself (`npm root -g`) — the one place that knows
+ * about a custom prefix, an nvm install, or a user-level global directory that is not on
+ * PATH. On Windows `npm` is a `.cmd` shim, which Node cannot spawn with captured pipes;
+ * the `%APPDATA%\npm` candidate covers that default, so this is the POSIX/custom-prefix
+ * fallback and a failure to answer is silent.
+ * @param {object} [options] - what to ask.
+ * @param {Record<string, string|undefined>} [options.env] - the environment npm runs in.
+ * @param {(command: string, args: string[], env: object) => object|null} [options.run] -
+ *   the runner, injectable so a test never needs npm on PATH.
+ * @returns {string|null} the absolute global root, or null when npm cannot answer.
+ */
+export function npmGlobalRoot({ env = process.env, run = runCapture } = {}) {
+  const result = run('npm', ['root', '-g'], env)
+  if (!result || result.status !== 0) return null
+  const root = String(result.stdout ?? '').trim()
+  return root === '' ? null : root
+}
+
+/**
  * Find the dsh launcher to spawn: `--dsh` wins, otherwise the PATH shim's
- * `node_modules/@deepseek-ai/dsh/lib/bin.js` target, otherwise Windows' npm prefix.
+ * `node_modules/@deepseek-ai/dsh/lib/bin.js` target, otherwise Windows' npm prefix,
+ * otherwise the global root `npm root -g` reports.
  */
 export function resolveDshEntry(explicit = null, options = {}) {
-  const { env = process.env, platform = process.platform } = options
+  const { env = process.env, platform = process.platform, runNpm = runCapture } = options
   if (explicit) {
     const file = path.resolve(explicit)
     if (!fs.existsSync(file)) throw new Error(`--dsh points at a path that does not exist: ${file}`)
@@ -105,6 +125,11 @@ export function resolveDshEntry(explicit = null, options = {}) {
     else candidates.push(binFromShim(real))
   }
   if (platform === 'win32' && env.APPDATA) candidates.push(path.join(env.APPDATA, 'npm', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
+  const npmRoot = npmGlobalRoot({ env, run: runNpm })
+  if (npmRoot) {
+    notes.push(`npm root -g ${npmRoot}`)
+    candidates.push(path.join(npmRoot, '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
+  }
   for (const candidate of candidates) {
     if (candidate && fs.existsSync(candidate)) return { file: candidate, kind: 'js', version: null, notes }
   }
