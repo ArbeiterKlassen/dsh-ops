@@ -75,7 +75,14 @@
           "inspect_local_file",
           "grep",
           "glob",
-          "replace"
+          "replace",
+          "write_file",
+          "edit_file",
+          "diff",
+          "stat",
+          "copy",
+          "move",
+          "remove"
         ],
         "shellPermission": "Per-call DSH sandbox policy and native subprocess"
       },
