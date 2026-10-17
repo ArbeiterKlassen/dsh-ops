@@ -7,9 +7,24 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Platform defaults confirmed by the operator (#170)
+
+- PTC enhancement is enabled by default (`defaultEnabled: true`, no disabled bundle row).
+  This changes the published 0.3.0/0.3.1 opt-in baseline, but does not force PTC presentation:
+  native/hybrid sessions do not acquire batch/result tools or their scoped guidance.
+- Shell stays enabled on Windows, Linux and macOS. Strict official-tool hiding stays opt-in.
+  Existing explicit profile choices are not migrated or overwritten; users can disable the
+  PTC component explicitly. Enabling the component does not raise filesystem permissions.
+- The catalog's POSIX shell-default claim now agrees with the bundle/manifest. No unsupported
+  `defaultEnabledPlatforms` field or platform `!!js` expression is needed.
+- No token saving is claimed. The pinned-host declaration-cost check is recorded in
+  `docs/ptc-cost.md`: PTC-only added 4,671 prompt characters in the isolated Windows sample;
+  native/hybrid added zero. This is not a tokenizer or net-usage measurement. #145/#148
+  comparisons require equal-task usage/latency/retry evidence before claiming savings.
+
 ### PTC paging and discoverability (#171, #160)
 
-- PTC remains opt-in pending the separate #170 default-policy decision. Enabled PTC-only scopes
+- Default enablement is decided separately in #170. Enabled PTC-only scopes
   receive batch/result usage guidance; native/hybrid scopes do not inherit that guidance or tools.
 - Argument schemas use the pinned host's supported JSON Schema subset, retaining numeric limits
   as descriptions and native validation. Actual host SDK rendering is tested against `unknown`.

@@ -1,8 +1,8 @@
 
-# Five independent components. PTC, the read-only TUI panel, and strict
-# official-tool hiding are opt-in: the hide-official row stays disabled until an
-# operator explicitly enables it for a complete native surface.
-# Legacy shell and file stay enabled; neither is required by the PTC component.
+# Five independent components. PTC enhancement and shell are enabled by default;
+# PTC capabilities are still published only to authoritative PTC-only sessions.
+# The read-only TUI panel and strict official-tool hiding remain opt-in.
+# Explicit existing profile choices are not migrated or overwritten.
 # The former dsh-ops/background row is no longer inserted; existing rows load as a no-op stub.
 - insert:
     - id: dsh-ops-shell
@@ -19,7 +19,6 @@
         required: false
     - id: dsh-ops-ptc
       name: dsh-ops/ptc
-      disabled: true
       config:
         required: false
     - id: dsh-ops-tui
