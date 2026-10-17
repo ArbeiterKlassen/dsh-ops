@@ -264,24 +264,30 @@ export function normalizeUsage(usage) {
  * @throws {SealError} when the directory is not a sweep output, a row is unusable, or the document breaks the schema.
  */
 export function sealRun(options = {}) {
-  const dir = path.resolve(requiredString(options.dir, 'sealRun: options.dir'))
-  const resultsDir = path.join(dir, 'results')
-  if (!isDirectory(resultsDir)) throw new SealError(`sealRun: ${dir} has no results/ directory — point it at one sweep's output folder`)
+  // One arm per directory is the scheduler's layout (a row segment does not carry the arm),
+  // so sealing a sweep means folding N arm directories into ONE document: each row already
+  // names its own arm through `metrics.arm`, which is exactly what `results[].arm` is for.
+  const dirs = (options.dirs ?? [options.dir]).map((entry) => path.resolve(requiredString(entry, 'sealRun: options.dirs[]')))
   const arms = normalizeArms(options.arms)
   const sealedAt = new Date(clockOf(options)()).toISOString()
-  const metricsNames = fs.readdirSync(resultsDir).filter((name) => name.endsWith(ROW_SUFFIXES.metrics)).sort()
-  if (metricsNames.length === 0) throw new SealError(`sealRun: ${resultsDir} holds no ${ROW_SUFFIXES.metrics} row — nothing to seal`)
-
   const results = []
   const archive = []
   const eventFiles = []
-  for (const name of metricsNames) {
-    const segment = name.slice(0, -ROW_SUFFIXES.metrics.length)
-    const row = sealRow(dir, resultsDir, segment, arms)
-    results.push(row.result)
-    archive.push(...row.archive)
-    if (row.eventFile !== null) eventFiles.push(row.eventFile)
+  let rowCount = 0
+  for (const dir of dirs) {
+    const resultsDir = path.join(dir, 'results')
+    if (!isDirectory(resultsDir)) throw new SealError(`sealRun: ${dir} has no results/ directory — point it at one sweep's output folder`)
+    const metricsNames = fs.readdirSync(resultsDir).filter((name) => name.endsWith(ROW_SUFFIXES.metrics)).sort()
+    for (const name of metricsNames) {
+      const segment = name.slice(0, -ROW_SUFFIXES.metrics.length)
+      const row = sealRow(dir, resultsDir, segment, arms)
+      results.push(row.result)
+      archive.push(...row.archive)
+      if (row.eventFile !== null) eventFiles.push(row.eventFile)
+      rowCount += 1
+    }
   }
+  if (rowCount === 0) throw new SealError(`sealRun: ${dirs.join(', ')} hold no ${ROW_SUFFIXES.metrics} row — nothing to seal`)
   results.sort(compareResults)
   archive.sort(compareByPath)
   eventFiles.sort(compareByPath)
@@ -299,7 +305,10 @@ export function sealRun(options = {}) {
   if (!validation.ok) {
     throw new SealError('sealRun: the sealed document does not match bench/run.schema.json', validation.errors)
   }
-  const file = path.resolve(options.out ?? path.join(dir, 'run.json'))
+  // A sweep's arms live in sibling directories, so the sealed document belongs in their
+  // parent (the group folder); a single directory keeps sealing in place.
+  const base = dirs.length > 1 ? path.dirname(dirs[0]) : dirs[0]
+  const file = path.resolve(options.out ?? path.join(base, 'run.json'))
   const changed = writeIfChanged(file, `${JSON.stringify(document, null, 2)}\n`)
   return { path: file, document, changed, validation }
 }

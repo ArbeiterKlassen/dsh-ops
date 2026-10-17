@@ -153,7 +153,25 @@ export function abMain(argv, io) {
 }
 /** Route a subcommand: `ab` here, a later slice's `main(argv, io)`, or a loud "not implemented". */
 async function dispatch(command, argv, io) {
-  if (command.name === 'ab') return abMain(argv, io)
+  // `ab` is the one command whose old shape (one process per arm) is exactly what the
+  // A/B design fixes: hand the whole sweep to the in-process runner so the arms can
+  // interleave (AB/BA). The plan-only fallback stays for `--show` and for a missing runner.
+  if (command.name === 'ab') {
+    // One child runs the WHOLE sweep, so the arms interleave inside it (AB/BA) — that is the
+    // design fix, and it is not the old shape (which spawned one process per arm). A child is
+    // used rather than an in-process `import` because importing the runner here left the CLI's
+    // top-level await unsettled (exit 13) while the same module runs fine as an entry point.
+    const runner = path.join(REPO_ROOT, command.target)
+    if (fs.existsSync(runner)) {
+      const result = spawnSync(process.execPath, [runner, ...argv], { cwd: REPO_ROOT, stdio: 'inherit', windowsHide: true })
+      if (result.error) {
+        io.err(`bench ab: could not start the runner: ${String(result.error.message ?? result.error)}`)
+        return EXIT.failure
+      }
+      return result.status ?? EXIT.failure
+    }
+    return abMain(argv, io)
+  }
   const target = path.join(REPO_ROOT, command.target)
   if (fs.existsSync(target)) {
     const module = await import(pathToFileURL(target).href)
