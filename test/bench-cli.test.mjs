@@ -62,7 +62,9 @@ await test('every declared subcommand is either wired or loudly pending — neve
     const cli = invoke([command.name, '--help'])
     const code = await cli.run()
     if (code === EXIT.pending) {
-      assert.match(cli.text(), new RegExp(`${command.name}: not implemented`))
+      // Two legitimate pending messages: the target is missing ("not implemented in this
+      // slice yet") or it landed without its wiring ("exports no main ... still pending").
+      // Both name the slice, and that is the part worth pinning.
       assert.ok(cli.text().includes(command.slice), `${command.name} should name slice ${command.slice}`)
     } else {
       assert.notEqual(code, EXIT.pending, `${command.name} is wired, so it must not report pending`)
