@@ -130,11 +130,11 @@
       {
         "id": "dsh-ops-hide-official",
         "entry": "dsh-ops/hide-official",
-        "defaultEnabled": true,
+        "defaultEnabled": false,
         "platforms": ["win32", "linux", "darwin"],
         "strict": true,
         "retainedOfficialCommand": { "win32": "pwsh", "linux": "bash", "darwin": "bash" },
-        "readiness": "READINESS_BLOCKED rolls back all owned restrictions and blocks assembly/execution; all visible official capabilities require reviewed implemented OPS equivalents before any restriction is installed. run_code is not exempt; unhideable transports and own-scope registrations fail prompt assembly and execution closed."
+        "readiness": "Opt-in: READINESS_BLOCKED blocks assembly/execution only for the affected scope; healthy scopes retain verified masks. All visible official capabilities require reviewed implemented OPS equivalents before that scope is masked. run_code is not exempt; unhideable transports and own-scope registrations fail prompt assembly and execution closed."
       }
     ]
   },

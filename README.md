@@ -23,11 +23,11 @@
 
 ## 当前集成契约（仅本地，未发布）
 
-Bundle 有**五个独立组件**，只读 TUI 侧栏默认关闭，以下四个默认开启：终端（仅 Windows）、文件、PTC、严格隐藏官方工具。Linux/macOS 默认不激活组件 1，保留官方 `bash`；Windows 提供前台 `ops_bash`，官方命令工具只保留 `pwsh`。组件 3 仅在公开组装结果证实纯 PTC 时发布 `ops_batch` / `ops_result`。
+Bundle 有**五个独立组件**，终端（仅 Windows）、文件、PTC 默认开启；只读 TUI 侧栏和严格隐藏官方工具默认关闭、显式选择启用。Linux/macOS 默认不激活组件 1，保留官方 `bash`；Windows 提供前台 `ops_bash` 并保留官方工具；只有显式启用且 readiness 完整的严格接管才将官方命令工具收窄到 `pwsh`。组件 3 仅在公开组装结果证实纯 PTC 时发布 `ops_batch` / `ops_result`。
 
-文件 worker 实现十一个有界工具：读取、glob、grep、stat、diff、字面替换、CAS 创建/覆盖、精确编辑、单文件 copy/move/remove。Windows 已有文件覆盖/edit/replace 和 Windows/macOS copy 在无法证明安全元数据保留时返回 `METADATA_UNSUPPORTED`，不会静默降级。未实现目录/递归修改、DOC/PDF、网页/UI、编排替代。当前不注册 `ops_process_*`；不安全的后台进程 lane 已撤回。旧 FastCtx background 入口仅兼容保留，不在五行默认 bundle 内。
+文件 worker 实现十一个有界工具：读取、glob、grep、stat、diff、字面替换、CAS 创建/覆盖、精确编辑、单文件 copy/move/remove。Windows 覆盖/edit/replace/copy 保留 owner/group、有序 DACL 和受支持的基本属性/时间戳；只读覆盖拒绝，ADS、EA、特殊存储属性返回 `METADATA_UNSUPPORTED`，不声称保留 SACL/审计标签。macOS 覆盖/copy 使用 APFS 元数据克隆，不支持克隆的文件系统明确拒绝。未实现目录/递归修改、DOC/PDF、网页/UI、编排替代。当前不注册 `ops_process_*`；不安全的后台进程 lane 已撤回。旧 FastCtx background 入口仅兼容保留，不在五行默认 bundle 内。
 
-**全栈接管被 readiness 阻断，不是已完成能力**：仅官方 read/glob/grep 有已审核映射。官方能力缺少真实替代、OPS 工具缺失、当前作用域官方工具无法隐藏，或保留 transport `run_code` 无法隐藏时，返回 `READINESS_BLOCKED`（执行基础设施问题，非用户权限拒绝）。插件撤销所有自有隐藏限制，保持官方 surface 不变，同时阻止 agent 提示词组装与执行，不允许混用继续。要使用未完整接管的部署，必须由操作者显式关闭整个隐藏组件，不会自动 fallback。当前固定宿主无法隐藏 `run_code`，所以隐藏开启时纯 PTC 也被阻断。
+**全栈接管被 readiness 阻断，不是已完成能力**：仅官方 read/glob/grep 有已审核映射。官方能力缺少真实替代、OPS 工具缺失、当前作用域官方工具无法隐藏，或保留 transport `run_code` 无法隐藏时，返回 `READINESS_BLOCKED`（执行基础设施问题，非用户权限拒绝）。仅阻止受影响作用域的提示词组装和执行；健康独立/祖先作用域保留已验证 mask，组装错误按作用域失效并可重试，不允许混用继续。隐藏组件默认关闭，必须显式启用，不会自动 fallback。当前固定宿主无法隐藏 `run_code`，所以隐藏开启时纯 PTC 也被阻断。
 
 所有操作服从 DSH sandboxPolicy、宿主 subprocess 治理、取消和凭据清理。固定数据式文件操作走可信文件权限围栏及 no-follow/CAS worker，不执行任意代码。提示词按当前作用域实时生成，输出有界；实际实现的回执/分页携带 hash、字节、行数或源计数。详见[组件参考](docs/组件参考.md)、[配置参考](docs/配置参考.md)、[本地 benchmark](docs/benchmark.md)。benchmark token 数仅估算，不代表端到端节省；尚未进行 Desktop GUI 或 POSIX 实机验收。
 
@@ -139,3 +139,4 @@ Rust 工具基于 [yc-duan](https://github.com/yc-duan) 的 Codex 插件 FastCtx
 ## Star 趋势
 
 [![Star 趋势图](https://api.star-history.com/svg?repos=T-Auto/dsh-ops&type=Date)](https://star-history.com/#T-Auto/dsh-ops&Date)
+授权错误：只有明确的宿主授权预检或带 `reason: read-only|write-roots` 的原生 `POLICY_DENIED` 才建议用户切换权限；旧版/未知 reason 原样透传。`CREDENTIAL_DENIED` 是权限选择器无法解除的凭据保护，`PATH_RESTRICTED` 是 no-follow/路径限制。仍允许操作的授权快照变化返回 `AUTHORITY_CHANGED`、不启动进程。stderr 只能证明 `EXECUTION_RESTRICTED`，副作用 unknown、不能推断缺少用户授权（Bash 使用 `restriction`）；取消即使退出码为零也算失败并标记 `[cancelled]`。

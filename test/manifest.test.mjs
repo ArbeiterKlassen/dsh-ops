@@ -186,4 +186,11 @@ await test('the icon and all component entries are shipped in the package whitel
   }
 })
 
+await test('strict hiding and TUI are opt-in while native file/PTC default enabled', () => {
+  const components = raw.contributes['x-components']
+  for (const [id, enabled] of [['file', true], ['ptc', true], ['tui', false], ['hide-official', false]]) {
+    assert.equal(components.find(component => component.id === `dsh-ops-${id}`).defaultEnabled, enabled)
+  }
+})
+
 report('manifest')

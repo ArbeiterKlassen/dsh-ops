@@ -78,8 +78,8 @@ try {
   assert.equal(request('batch', { action: 'resume', id: run.id }).done, 3)
   assert.equal(fs.readFileSync(path.join(dir, 'copy-a'), 'utf8'), 'alpha', 'completed copy never re-executed')
   assert.equal(request('batch', { action: 'run', operations: [{ op: 'copy', path: 'source/a', to: 'copy-a' }] }).error.code, 'REVISION_CONFLICT')
-  assert.equal(request('batch', { action: 'run', protect: ['main'], operations: [{ op: 'remove', path: 'main' }] }).error.code, 'POLICY_DENIED')
-  assert.equal(request('batch', { action: 'run', operations: [{ op: 'move', path: 'source', to: 'source/nested' }] }).error.code, 'POLICY_DENIED')
+  assert.equal(request('batch', { action: 'run', protect: ['main'], operations: [{ op: 'remove', path: 'main' }] }).error.code, 'PATH_RESTRICTED')
+  assert.equal(request('batch', { action: 'run', operations: [{ op: 'move', path: 'source', to: 'source/nested' }] }).error.code, 'PATH_RESTRICTED')
   const plan = request('batch', { action: 'plan', operations: [{ op: 'remove', path: 'source/a' }] })
   assert.equal(request('batch', { action: 'run', id: plan.id }).error.code, 'INVALID_ARGUMENT')
   write('source/a', 'changed after observation')
@@ -181,8 +181,8 @@ try {
     assert.equal(observed.items[0]?.text, 'protected', JSON.stringify(observed))
     fs.symlinkSync(path.join(dir, 'main'), path.join(dir, 'named-link'), process.platform === 'win32' ? 'junction' : 'dir')
     const linked = await fileCall('inspect_local_file', { path: path.join(dir, 'named-link') })
-    assert.equal(linked.error?.code, 'POLICY_DENIED', JSON.stringify(linked))
-    console.log(`ok: host-bridge absolute paths work${aliasRoot ? ' through the /var -> /private/var alias' : ''}; a named link stays POLICY_DENIED`)
+    assert.equal(linked.error?.code, 'PATH_RESTRICTED', JSON.stringify(linked))
+    console.log(`ok: host-bridge absolute paths work${aliasRoot ? ' through the /var -> /private/var alias' : ''}; a named link stays PATH_RESTRICTED`)
   } finally { await bridge.fiber.dispose() }
 
   // 3. Actual host registration scopes and presentation with a simulated enforcing
@@ -273,8 +273,8 @@ try {
     const runnerError = await fixtureCall(fakeOutcome({ exitCode: 9 }, 'fixture runner failed'))
     assert.equal(runnerError.error.code, 'EXECUTOR_UNAVAILABLE'); assert.equal(runnerError.error.effectState, 'none')
     const osDenied = await fixtureCall(fakeOutcome({ exitCode: 1 }, 'fixture access denied'))
-    assert.equal(osDenied.error.code, 'POLICY_DENIED'); assert.equal(osDenied.error.effectState, 'unknown')
-    assert.equal(osDenied.error.permission.current, 'workspace-write'); assert.match(osDenied.error.nextAction, /Do not retry/)
+    assert.equal(osDenied.error.code, 'EXECUTION_RESTRICTED'); assert.equal(osDenied.error.effectState, 'unknown')
+    assert.equal(osDenied.error.permission, undefined); assert.match(osDenied.error.nextAction, /Do not blindly retry/)
     const lost = await fixtureCall(fakeOutcome({ exitCode: 0 }, '', true))
     assert.equal(lost.error.code, 'OUTPUT_LIMIT'); assert.equal(lost.error.effectState, 'unknown'); assert.match(lost.detailsRef, /^j-/)
     const changingPolicy = { get(name) {

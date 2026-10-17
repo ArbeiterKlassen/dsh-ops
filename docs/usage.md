@@ -25,7 +25,7 @@ cargo build --release --manifest-path native/Cargo.toml
 node bin/native-runtime.mjs stage --platform darwin-arm64
 ```
 
-Linux/macOS keep the official host `bash`; the Windows shell component is disabled there by default. No background row is included in the five-component bundle. Strict hiding is enabled but blocks incomplete readiness; see [components](component-reference.md).
+Linux/macOS keep the official host `bash`; the Windows shell component is disabled there by default. No background row is included in the five-component bundle. Strict hiding defaults disabled and blocks incomplete readiness when explicitly enabled; see [components](component-reference.md).
 
 The desktop application's bundled CLI lives inside its own installation, at
 `.../Contents/Resources/runtime/cli/bin/dsh` on macOS, rather than at the

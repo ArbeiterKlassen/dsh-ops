@@ -233,7 +233,7 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
       check(row?.id === `${pkg.name}-${component}`, `the ${component} component has a stable row id`)
       if (!row) continue
       const disabled = component === 'shell' ? Function(`return (${row.disabled})`)() : row.disabled === true
-      check(disabled === (component === 'shell' ? !platformSurface().shellDefaultEnabled : component === 'tui'), `${component} has its documented enablement default`)
+      check(disabled === (component === 'shell' ? !platformSurface().shellDefaultEnabled : ['tui', 'hide-official'].includes(component)), `${component} has its documented enablement default`)
       try { (component === 'tui' ? resolveTuiConfig : component === 'ptc' ? resolvePtcConfig : component === 'hide-official' ? resolveHidingConfig : resolveConfig)(row.config); check(true, `${component} config is valid`) }
       catch (error) { check(false, `${component} config is valid`, String(error?.message ?? error)) }
     }
@@ -499,6 +499,7 @@ const REQUIRED_ENTRIES = [
   'native/Cargo.toml',
   'native/Cargo.lock',
   'native/src',
+  'native/windows-metadata',
   'native/bash-ipc',
   'runtime',
   'lib',

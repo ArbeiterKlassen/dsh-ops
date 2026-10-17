@@ -24,9 +24,9 @@
  * widening access if guessed. Owner and other xattrs are best-effort and reported
  * in `metadataWarnings`.
  *
- * Platform. Whole-suite skip on win32: mode bits, POSIX ACLs and `user.*` xattrs
- * are not what a Windows replacement carries — it carries a DACL, and
- * `docs/windows-verification.md` W1 asks for those measurements on a real host.
+ * Platform. Windows runs its own exact owner/group/DACL + timestamps test;
+ * POSIX runs the mode/ACL/xattr cases below. Adversarial Windows ACL and staging
+ * cleanup cases live in file-operations.test.mjs.
  *
  * Not asserted here, and why:
  *
@@ -45,12 +45,41 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { assert, report, skipSuite, test, withTempDir } from './lib/harness.mjs'
+import { assert, report, test, withTempDir } from './lib/harness.mjs'
 import { callTool, envelopeOf, requireWorker } from './lib/boundary.mjs'
 
 requireWorker('file-metadata')
 if (process.platform === 'win32') {
-  skipSuite('file-metadata', 'mode bits, POSIX ACLs and user xattrs are POSIX-only; Windows carries a DACL instead (windows-verification.md W1)')
+  await test('Windows overwrite/edit/replace/copy retain exact owner/group/DACL and timestamps', async () => {
+    await withTempDir('file-windows-metadata', async root => {
+      const source = path.join(root, 'source')
+      fs.writeFileSync(source, 'TOKEN')
+      fs.utimesSync(source, new Date('2020-01-02T00:00:00Z'), new Date('2020-01-03T00:00:00Z'))
+      const acl = target => execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(Get-Acl -LiteralPath '${target.replaceAll("'", "''")}').Sddl`], { encoding: 'utf8', env: { ...process.env, PSModulePath: '' } }).trim()
+      const before = acl(source), timestamp = fs.statSync(source).mtimeMs
+      const call = async (tool, args) => envelopeOf(await callTool(tool, { path: source, ...args }, { root }), assert)
+      let revision = (await call('stat', {})).revision
+      for (const [tool, args] of [
+        ['write_file', { content: 'NEXT' }],
+        ['edit_file', { edits: [{ oldText: 'NEXT', newText: 'FINAL' }] }],
+        ['replace', { pattern: 'FINAL', replacement: 'DONE' }],
+      ]) {
+        const value = await call(tool, { ...(tool === 'replace' ? {} : { expectedRevision: revision }), ...args })
+        assert.equal(value.status, 'completed', JSON.stringify(value))
+        revision = (await call('stat', {})).revision
+        assert.equal(acl(source), before)
+        assert.equal(fs.statSync(source).mtimeMs, timestamp)
+      }
+      const to = path.join(root, 'copied')
+      const copied = await call('copy', { to, expectedRevision: revision })
+      assert.equal(copied.status, 'completed', JSON.stringify(copied))
+      assert.equal(acl(to), before)
+      assert.equal(fs.statSync(to).mtimeMs, timestamp)
+      assert.equal(fs.readFileSync(to, 'utf8'), 'DONE')
+    })
+  })
+  report('file-metadata')
+  process.exit(process.exitCode ?? 0)
 }
 
 const installed = command => {

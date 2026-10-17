@@ -14,7 +14,7 @@ packages to fetch.
 | Component | Linux x64 | Notes |
 | --- | --- | --- |
 | `dsh-ops/file` | yes | 11 native tools: inspect, grep, glob, replace, write, edit, diff, stat, copy, move, remove |
-| `dsh-ops/ptc` | yes | `ops_batch`, `ops_result`; default enabled, PTC-only publication; strict hiding blocks reserved run_code |
+| `dsh-ops/ptc` | yes | `ops_batch`, `ops_result`; default enabled, PTC-only publication; opt-in strict hiding blocks reserved run_code |
 | `dsh-ops/hide-official` | yes | strict surface takeover; readiness-blocked until every visible official capability has a reviewed OPS equivalent |
 | `dsh-ops/shell` | opt-in | Host bash is supported; disabled by default on Linux. pwsh stays Windows x64 |
 

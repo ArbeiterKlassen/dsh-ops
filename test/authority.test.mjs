@@ -228,7 +228,7 @@ if (!attempt.ok) {
   if (process.env.DSH_OPS_REQUIRE_RUNTIME === '1') throw new Error(attempt.reason)
   skipSuite('authority', attempt.reason)
 }
-await test('real worker accepts trusted workspace aliases for reads/create/move and retains descendant no-follow', async () => {
+await test('real worker accepts trusted workspace aliases for reads/create/copy/move and retains descendant no-follow', async () => {
   await withTempDir('authority-native', async root => {
     const real = path.join(root, 'real'), alias = path.join(root, 'alias')
     fs.mkdirSync(real); fs.symlinkSync(real, alias, process.platform === 'win32' ? 'junction' : 'dir')
@@ -249,8 +249,8 @@ await test('real worker accepts trusted workspace aliases for reads/create/move 
       assert.equal(created.status, 'completed', JSON.stringify(created))
       const revision = createHash('sha256').update('source').digest('hex')
       const copied = await call('copy', { path: 'source.txt', to: path.join(alias, 'copy.txt'), expectedRevision: revision })
-      assert.equal(copied.status, process.platform === 'win32' || process.platform === 'darwin' ? 'error' : 'completed', JSON.stringify(copied))
-      if (copied.status === 'error') assert.equal(copied.error.code, 'METADATA_UNSUPPORTED')
+      assert.equal(copied.status, 'completed', JSON.stringify(copied))
+      assert.equal(fs.readFileSync(path.join(real, 'copy.txt'), 'utf8'), 'source')
       const moved = await call('move', { path: 'source.txt', to: path.join(alias, 'moved.txt'), expectedRevision: revision })
       assert.equal(moved.status, 'completed', JSON.stringify(moved))
       fs.symlinkSync(real, path.join(real, 'child-link'), process.platform === 'win32' ? 'junction' : 'dir')

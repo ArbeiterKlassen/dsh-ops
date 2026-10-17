@@ -113,7 +113,6 @@ await test('CJK content survives read, replace and grep without shifting a line 
     assert.equal(refused.error?.code, 'POLICY_DENIED', JSON.stringify(refused))
     assert.equal(fs.readFileSync(at('待改.txt'), 'utf8'), '旧值\n', 'the refused write changed nothing')
     const applied = envelopeOf(await callTool('replace', { path: at('待改.txt'), pattern: '旧值', replacement: '新值' }, { root: workspace, writeRoots: [workspace] }), assert)
-    if (process.platform === 'win32') { assert.equal(applied.error.code, 'METADATA_UNSUPPORTED'); assert.equal(fs.readFileSync(at('待改.txt'), 'utf8'), '旧值\n'); return }
     assert.equal(applied.changed, 1)
     assert.equal(fs.readFileSync(at('待改.txt'), 'utf8'), '新值\n')
   })
@@ -178,7 +177,7 @@ await test('a symlink is refused even when it stays inside the root', async () =
       for (const name of ['in-root.txt', 'escaping.txt', 'dangling.txt']) {
         const refused = envelopeOf(await callTool('inspect_local_file', { path: at(name) }, { root: workspace }), assert)
         assert.equal(refused.status, 'error', `${name} was traversed: ${JSON.stringify(refused)}`)
-        assert.equal(refused.error.code, 'POLICY_DENIED', `${name} => ${refused.error.code}`)
+        assert.equal(refused.error.code, 'PATH_RESTRICTED', `${name} => ${refused.error.code}`)
         assert.match(refused.error.message, /not traversed/)
       }
       const globbed = envelopeOf(await callTool('glob', { path: workspace, pattern: ['**/*'] }, { root: workspace }), assert)

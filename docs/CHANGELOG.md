@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased local four-component integration
+## Unreleased local five-component integration
 
-- Default bundle: Windows shell, eleven native file tools, PTC-only batch/result, strict scoped official-tool hiding; POSIX retains official bash. Legacy background entry is outside the bundle.
+- Default bundle: Windows shell, eleven native file tools, PTC-only batch/result; strict scoped official-tool hiding and TUI are opt-in; POSIX retains official bash. Legacy background entry is outside the bundle.
 - Foreground Bash diagnostics are opt-in; unproven process lifecycle tools were withdrawn. File receipts carry hashes/bytes/line counts; PTC source hashes are stable across pages.
-- Full-stack takeover is **READINESS_BLOCKED** where official capabilities lack reviewed equivalents or run_code cannot be hidden. All owned restrictions roll back and assembly/execution block; no silent mixed mode. Windows overwrite/edit/replace and Windows/Darwin copy fail closed for unproven metadata preservation.
+- Full-stack takeover is **READINESS_BLOCKED** where official capabilities lack reviewed equivalents or run_code cannot be hidden. Readiness and retryable assembly failures are scope-local; healthy scopes retain verified masks. Windows overwrite/edit/replace/copy preserve supported owner/group/DACL/basic metadata through a narrow handle-only adapter; restrictive failed-publication staging is removed through the owned DELETE handle. Unsupported metadata fails explicitly; Darwin copy shares the APFS clone path.
 - Local benchmark added; no release, publish, CI invocation, GUI acceptance or POSIX deployment acceptance is implied.
 
 

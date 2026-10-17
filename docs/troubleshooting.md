@@ -150,7 +150,7 @@ No. It is FastCtx's reusable shared process, started by earlier versions with th
 
 macOS has no dsh-ops shell payload. The default bundle therefore disables
 `dsh-ops/shell` and retains the official host `bash`; it does not publish
-`ops_bash`. The strict hiding component remains enabled but reports
+`ops_bash`. The strict hiding component defaults disabled; when explicitly enabled it reports
 `READINESS_BLOCKED` until every non-exempt official capability has a reviewed OPS
 equivalent. Do not add `bashPath` to a removed background row to infer support.
 PowerShell 7 can be provisioned separately, but the host disables its pwsh rows

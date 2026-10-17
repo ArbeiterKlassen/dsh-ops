@@ -28,9 +28,13 @@ stat, diff, literal replace, CAS create/overwrite, exact edit, and single-file
 copy/move/remove. It receives session-cwd paths plus authoritative DSH write policy,
 rechecks the writable-root allowlist in Rust before mutation, and uses the trusted
 DSH fs-sandbox operation model with no-follow paths, revision checks and host
-subprocess governance. Existing-file Windows overwrite/edit/replace and
-Windows/macOS copy fail closed with `METADATA_UNSUPPORTED` where security metadata
-preservation is unproven.
+subprocess governance. Windows overwrite/edit/replace/copy preserve owner/group/ordered DACL
+and supported basic attributes/timestamps through the isolated `native/windows-metadata`
+adapter (the business crate still forbids unsafe). ADS, EA and special storage fail
+with `METADATA_UNSUPPORTED`; SACL/audit-label fidelity is not claimed. macOS overwrite/copy
+require APFS metadata-preserving clones. The adapter uses windows-permissions 0.2.4 (MIT,
+https://github.com/danieldulaney/windows-permissions-rs), windows-sys 0.59 and winapi 0.3.9;
+only required handle-level Win32/NT calls are unsafe with documented ownership invariants.
 
 Windows owned workspace roots get backed-up directory-only WRITE_OWNER before
 outer run_code/pwsh launch, with no recursive grants/owner changes/denial removal.

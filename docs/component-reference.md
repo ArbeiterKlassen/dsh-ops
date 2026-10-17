@@ -11,18 +11,18 @@ What each of the five bundle components publishes, with parameters and permissio
 | `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | Windows only | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
 | `dsh-ops/file` | Native Rust file operations with bounded results | On | Eleven native file tools |
 | `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | On (PTC-only publication) | `ops_batch`, `ops_result` |
-| `dsh-ops/hide-official` | Strict scoped official-tool takeover | On | No tools; verified restrictions and execution guard |
+| `dsh-ops/hide-official` | Strict scoped official-tool takeover | Off (opt-in) | No tools; verified restrictions and execution guard |
 | `dsh-ops/tui` | Read-only current-session OPS sidebar | Off | None; see [sidebar guide](tui-panel.md) |
 
 The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) has been removed. A profile row that still names it loads as a no-op: it accepts any config, publishes nothing, and logs one warning that the row can be deleted.
 
 ## Current integration contract (local, not a release)
 
-The bundle has **five independent components**, with the read-only TUI sidebar opt-in and these four enabled by default: shell (Windows only), file, PTC, and strict official-tool hiding. Linux/macOS omit the shell row at activation and retain official `bash`; Windows provides foreground `ops_bash` and retains official `pwsh`. PTC publishes only `ops_batch`/`ops_result` in verified pure PTC presentation.
+The bundle has **five independent components**: shell (Windows only), file and PTC are enabled by default; the read-only TUI sidebar and strict official-tool hiding are opt-in. Linux/macOS omit the shell row at activation and retain official `bash`; Windows provides foreground `ops_bash` and retains official `pwsh`. PTC publishes only `ops_batch`/`ops_result` in verified pure PTC presentation.
 
-The file worker implements eleven bounded tools: inspect, glob, grep, stat, diff, literal replace, CAS create/overwrite, exact edit, and single-file copy/move/remove. Existing-file Windows overwrite/edit/replace and Windows/macOS copy **fail closed with `METADATA_UNSUPPORTED`** where security metadata preservation is unproven. Directories, recursive mutation, DOC/PDF, web/UI, and orchestration replacements are not implemented. No `ops_process_*` tools are registered; the unsafe background-process lane was withdrawn. The old FastCtx background entry remains compatibility-only, outside the five-row bundle.
+The file worker implements eleven bounded tools: inspect, glob, grep, stat, diff, literal replace, CAS create/overwrite, exact edit, and single-file copy/move/remove. Windows overwrite/edit/replace/copy preserve owner/group/ordered DACL and supported basic attributes/timestamps. Readonly overwrite and unsupported metadata fail honestly before publication (`METADATA_UNSUPPORTED` for named streams, EA and special storage); SACL/audit labels are outside this contract. macOS overwrite/copy use APFS metadata-preserving clones; unsupported filesystems fail closed. Directories, recursive mutation, DOC/PDF, web/UI, and orchestration replacements are not implemented. No `ops_process_*` tools are registered; the unsafe background-process lane was withdrawn. The old FastCtx background entry remains compatibility-only, outside the five-row bundle.
 
-**Strict full-stack takeover is readiness-blocked**, not delivered: only official read/glob/grep have reviewed mappings. Unsupported official capabilities, missing OPS tools, own-scope official schemas, or unhideable `run_code` produce `READINESS_BLOCKED` (executor infrastructure, not `POLICY_DENIED`). All owned restrictions roll back, preserving the official surface, while agent prompt assembly and execution remain blocked. There is no silent mixed-mode continuation. Disable the entire hiding row explicitly to use an incomplete native replacement deployment; this is not an automatic fallback. PTC with hiding enabled is blocked on the pinned host because reserved `run_code` cannot be hidden.
+**Strict full-stack takeover is readiness-blocked**, not delivered: only official read/glob/grep have reviewed mappings. Unsupported official capabilities, missing OPS tools, own-scope official schemas, or unhideable `run_code` produce `READINESS_BLOCKED` (executor infrastructure, not `POLICY_DENIED`). Only the affected scope is blocked; healthy independent/ancestor scopes keep their verified masks. Assembly verification errors invalidate that scope snapshot and retry on the next request without removing the mask. There is no silent mixed-mode continuation. The hiding row is disabled by default; enable it only for a verified complete deployment. This is not automatic fallback. PTC with hiding enabled is blocked on the pinned host because reserved `run_code` cannot be hidden.
 
 Every operation resolves DSH sandboxPolicy and uses host subprocess governance, cancellation and credential scrubbing. Fixed data-only file operations use the trusted file-policy fence and no-follow/CAS worker, not arbitrary code execution. Guidance is live and scoped, outputs bounded, and receipts/pages carry hashes, bytes, line counts or source counts where implemented. See [component reference](component-reference.md), [configuration](configuration-reference.md), and [local benchmark](benchmark.md). Benchmark token estimates are not demonstrated end-to-end token savings; no Desktop GUI or POSIX deployment acceptance is claimed.
 
@@ -119,7 +119,7 @@ Perform a deterministic UTF-8 replacement under `path`. `pattern` is **literal t
 
 Write/edit receipts are short and content-free: `revision`, `bytes`, `lineCount`, `changed`, `dryRun`, `items` with previous revision/bytes and metadata. Source revision checks and stable per-path sidecar locks serialize cooperating native writers across atomic inode replacement; advisory locks do not stop unrelated external writers. New files use private preparation and atomic no-clobber publication; POSIX overwrite preserves mode/ACL and reports owner/xattr restore warnings. Copy fails rather than publish if captured metadata cannot be restored (timestamps retained). Move retains inode metadata. Requests are capped at 2 MiB, file reads at 32 MiB, responses at roughly 96 KiB; host cancellation/deadlines remain authoritative. No shell fallback exists.
 
-**Windows migration / safety boundary:** actual overwrite via `ops_write_file`, `ops_edit_file`, legacy `ops_replace`, and `ops_copy` fails closed with `METADATA_UNSUPPORTED` until Windows DACL/security-metadata preservation is proven. No file is changed; dry-run previews still work in writable modes. Create-only write, stat/diff/read/search, same-filesystem move and remove remain supported. This is an implementation availability limitation, **not** user authorization; switching permission mode cannot fix it. Do not hide all host mutation tools based solely on OPS tool-name presence. Darwin copy also fails closed pending proven ACL clone support; Darwin overwrite uses the existing metadata-preserving APFS clone path.
+**Metadata contract:** Windows preserves owner/group/ordered DACL and supported basic attributes/timestamps. Readonly overwrite is refused; ADS, EA and special storage return `METADATA_UNSUPPORTED` before publication. SACL/audit labels are outside this contract. Darwin overwrite/copy require an APFS metadata-preserving clone; unsupported filesystems fail closed. These are implementation limits, not authorization denials.
 
 ### Results and errors
 
@@ -228,8 +228,7 @@ host capabilities; this component does not implement those replacements.
 
 Failure rejects agent prompt assembly and denies tool execution with an
 `READINESS_BLOCKED` / `EXECUTOR_UNAVAILABLE` diagnostic (not a user-authorization denial). No partial hiding
-or silent official/OPS mixing is permitted. Restrictions are rolled back across live
-agents when readiness fails, because ancestor restrictions also reach child scopes.
+or silent official/OPS mixing is permitted. Readiness is checked per scope (including inherited masks); failed children/siblings do not poison healthy ancestors or unrelated roots. Verified masks remain installed on retryable assembly verification errors.
 The monotonic guard still denies execution even if a later pre-execute listener allows.
 
 `run_code` is an official tool, **not an exception**. The pinned host reserves it outside
@@ -238,3 +237,7 @@ Use a verified native presentation or change the host API before enabling takeov
 that agent; this component does not force a presentation mode. Own-scope official tool
 registrations that `restrict` cannot hide likewise block assembly. Tool changes trigger
 live reconciliation; unload and agent disposal lift all owned restrictions.
+
+### Authority and execution errors
+
+Only native `POLICY_DENIED` with `reason: read-only|write-roots` (or explicit host policy preflight) receives selector advice. Legacy/unknown-reason denials pass through unchanged. `CREDENTIAL_DENIED` is a credential fence no selector removes; `PATH_RESTRICTED` is no-follow/path policy. `AUTHORITY_CHANGED` stops before spawn when the snapshot changes but the request remains allowed; refresh context before a new call. Stderr signatures prove only `EXECUTION_RESTRICTED` with unknown effects and no selector advice (Bash returns `restriction`, not `permission`). Cancellation is failed even at exit zero and renders `[cancelled]`. Never bypass confinement or blindly retry unknown/applied effects.
