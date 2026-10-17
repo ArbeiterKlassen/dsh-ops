@@ -3,7 +3,7 @@
  * The comparison CLI: two archived run directories in, one verdict out.
  *
  * It reads `bench/runs/<stamp>-<label>/summary.json` on both sides, aggregates each
- * task's repeats (median by default, min alongside), prints the table the change
+ * task's repeats (median by default), prints the table the change
  * review reads, archives it in the directory the candidate run lives in — the group,
  * never inside the run archive itself — and turns the two gate rules
  * into an exit code: `regression` for "the candidate burned more tokens than the
@@ -14,9 +14,9 @@
  * A token delta on its own cannot say *why* the candidate moved, and the reasons need
  * opposite fixes: a bigger prompt on every request is a tool-schema or prompt-policy
  * cost, extra steps are a model-behaviour cost, and a fatter context is a tool-output
- * cost. So the report carries three extra tables — per-request fixed cost, the delta
- * decomposition, and the usage-bucket split — all of them diagnostic. The gate still
- * judges `grandTotal` alone; nothing here can fail a run.
+ * cost. So the report carries two extra tables — per-task bucket detail and the
+ * usage-bucket split — both of them diagnostic. The gate still judges `grandTotal`
+ * alone; nothing here can fail a run.
  *
  * @module dsh-ops/bench/compare
  */
@@ -25,7 +25,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { compareSummaries, formatNumber, median, AGGREGATES, FAIL_ON, REGRESSION_SCOPES } from './lib/compare-core.mjs'
+import { compareSummaries, formatNumber, percentChange, AGGREGATES, FAIL_ON, REGRESSION_SCOPES } from './lib/compare-core.mjs'
 
 const BENCH_DIR = path.dirname(fileURLToPath(import.meta.url))
 const RUNS_DIR = path.join(BENCH_DIR, 'runs')
@@ -207,11 +207,12 @@ function loadSummary(file, spec) {
 export function renderMarkdown(comparison, sources) {
   const statKey = comparison.aggregate === 'min' ? 'grandTotalMin' : 'grandTotalMedian'
   const tokens = comparison.gate.tokensComparable
+  const deltaCell = (baseValue, candValue) => `${short(baseValue)}→${short(candValue)} (${percentText(percentChange(baseValue, candValue))})`
   const rows = comparison.tasks.map((task) => {
     const tokenCell = tokens
-      ? `${formatNumber(task.base[statKey])} → ${formatNumber(task.cand[statKey])} (${percentText(task.delta.grandTotalPct)})${task.regressed ? ' ⚠regressed' : ''}${spread(task, comparison.aggregate)}`
+      ? `${formatNumber(task.base[statKey])} → ${formatNumber(task.cand[statKey])} (${percentText(task.delta.grandTotalPct)})`
       : 'n/a (usage incomplete)'
-    return `| ${task.id} | ${tokenCell} | ${short(task.base.stepsMedian)}→${short(task.cand.stepsMedian)} | ${short(task.base.toolCallsMedian)}→${short(task.cand.toolCallsMedian)} | ${short(task.base.toolErrorsMedian)}→${short(task.cand.toolErrorsMedian)} | ${task.base.passed}/${task.base.repeats}→${task.cand.passed}/${task.cand.repeats} |`
+    return `| ${task.id} | ${tokenCell} | ${deltaCell(task.base.stepsMedian, task.cand.stepsMedian)} | ${deltaCell(task.base.toolCallsMedian, task.cand.toolCallsMedian)} | ${short(task.base.toolErrorsMedian)}→${short(task.cand.toolErrorsMedian)} | ${task.base.passed}/${task.base.repeats}→${task.cand.passed}/${task.cand.repeats} |`
   })
   const totals = comparison.totals
   const totalTokens = tokens
@@ -225,7 +226,9 @@ export function renderMarkdown(comparison, sources) {
   // repeat and never again is still evidence it was published and reached for, so
   // the column sums every archived run on each side (the shape §5a of the test03
   // retro reads). Tools only one side ever called get a 0 on the other, which is
-  // exactly the "published vs never called" contrast the table exists to show.
+  // exactly the "published vs never called" contrast the table exists to show. The
+  // plugin's own tools sort first (their adoption is what the report is for), then
+  // the rest, each group by the Ops count.
   const toolTotals = new Map()
   for (const task of comparison.tasks) {
     for (const side of ['base', 'cand']) {
@@ -236,48 +239,61 @@ export function renderMarkdown(comparison, sources) {
       }
     }
   }
+  const ownTool = (name) => name.startsWith('ops')
+  // A built-in tool the candidate kept reaching for is the number this table wants a
+  // reader to notice, so it is red; the plugin's own tools (ops_*) stay plain.
+  const opsCountCell = (name, count) => (!ownTool(name) && count > 0
+    ? `<span style="color:red">${short(count)}</span>`
+    : short(count))
   const toolRows = [...toolTotals.entries()]
-    .sort((left, right) => (right[1].base + right[1].cand) - (left[1].base + left[1].cand) || left[0].localeCompare(right[0]))
-    .map(([name, counts]) => `| ${name} | ${short(counts.base)} | ${short(counts.cand)} |`)
+    .sort((left, right) => (Number(ownTool(right[0])) - Number(ownTool(left[0])))
+      || (right[1].cand - left[1].cand)
+      || left[0].localeCompare(right[0]))
+    .map(([name, counts]) => `| ${name} | ${short(counts.base)} | ${opsCountCell(name, counts.cand)} |`)
+
+  const bucketKeys = comparison.aggregate === 'min'
+    ? { input: 'inputMin', output: 'outputMin', cacheRead: 'cacheReadMin' }
+    : { input: 'inputMedian', output: 'outputMedian', cacheRead: 'cacheReadMedian' }
+  const bucketCell = (baseValue, candValue) => `${formatNumber(baseValue)} → ${formatNumber(candValue)} (${percentText(percentChange(baseValue, candValue))})`
+  const bucketRow = (label, baseSide, candSide) => `| ${label} | ${bucketCell(baseSide[bucketKeys.input], candSide[bucketKeys.input])} | ${bucketCell(baseSide[bucketKeys.output], candSide[bucketKeys.output])} | ${bucketCell(baseSide[bucketKeys.cacheRead], candSide[bucketKeys.cacheRead])} |`
+  const totalsBuckets = comparison.totals?.buckets
+  const totalBucketRow = totalsBuckets?.comparable
+    ? `| **TOTAL** | ${bucketCell(totalsBuckets.input.base, totalsBuckets.input.cand)} | ${bucketCell(totalsBuckets.output.base, totalsBuckets.output.cand)} | ${bucketCell(totalsBuckets.cacheRead.base, totalsBuckets.cacheRead.cand)} |`
+    : null
+  const tokenBuckets = tokenBucketsSection(comparison, tokens)
 
   const lines = [
     `# bench compare: ${comparison.base.label ?? 'base'} → ${comparison.cand.label ?? 'cand'}`,
     '',
     `Aggregate: **${comparison.aggregate}**, tolerance ${comparison.gate.tolerancePct}%, gate \`--fail-on ${comparison.gate.failOn}\` (regression scope \`${comparison.gate.regressionScope ?? 'task'}\`).`,
     `Base: ${comparison.base.profile} · ${comparison.base.model ?? 'model unknown'} · dsh ${comparison.base.dshVersion ?? '?'}`,
-    `Cand: ${comparison.cand.profile} · ${comparison.cand.model ?? 'model unknown'} · dsh ${comparison.cand.dshVersion ?? '?'}`,
+    `Ops: ${comparison.cand.profile} · ${comparison.cand.model ?? 'model unknown'} · dsh ${comparison.cand.dshVersion ?? '?'}`,
     '',
-    `| task | tokens ${comparison.aggregate} base→cand (Δ%) | steps | tool calls | tool errors | pass |`,
-    '|------|----------------------------------------|-------|------------|-------------|------|',
+    `| task | tokens ${comparison.aggregate} base→ops (Δ%) | steps base→ops (Δ%) | tool calls base→ops (Δ%) | tool errors | pass |`,
+    '|------|----------------------------------------|----------------------|-------------------------|-------------|------|',
     ...rows,
-    `| **TOTAL** | ${totalTokens} | ${formatNumber(totals.baseSteps)}→${formatNumber(totals.candSteps)} | ${formatNumber(totals.baseToolCalls)}→${formatNumber(totals.candToolCalls)} | ${formatNumber(totals.baseToolErrors)}→${formatNumber(totals.candToolErrors)} | ${totals.basePasses}/${totals.baseRuns}→${totals.candPasses}/${totals.candRuns} |`,
+    `| **TOTAL** | ${totalTokens} | ${deltaCell(totals.baseSteps, totals.candSteps)} | ${deltaCell(totals.baseToolCalls, totals.candToolCalls)} | ${formatNumber(totals.baseToolErrors)}→${formatNumber(totals.candToolErrors)} | ${totals.basePasses}/${totals.baseRuns}→${totals.candPasses}/${totals.candRuns} |`,
     `| **GEOMEAN Δ** | ${geomeanTokens} | — | — | — | — |`,
-    '',
-    `**Gate:** ${comparison.gate.fail ? 'FAIL' : 'PASS'}${comparison.gate.reasons.length > 0 ? ` — ${comparison.gate.reasons.join('; ')}` : ''}`,
-    '',
-    comparison.warnings.length > 0 ? `**Warnings:**\n\n${comparison.warnings.map((warning) => `- ${warning}`).join('\n')}` : '**Warnings:** none',
-    '',
-    tokens
-      ? ['## Bucket detail (median per task)',
-        '',
-        '| task | side | input | output | cache read |',
-        '|------|------|-------|--------|------------|',
-        ...comparison.tasks.flatMap((task) => [
-          `| ${task.id} | base | ${short(task.base.inputMedian)} | ${short(task.base.outputMedian)} | ${short(task.base.cacheReadMedian)} |`,
-          `| ${task.id} | cand | ${short(task.cand.inputMedian)} | ${short(task.cand.outputMedian)} | ${short(task.cand.cacheReadMedian)} |`,
-        ])].join('\n')
-      : '## Bucket detail\n\nSkipped: at least one side lost a `step_end.usage`, so the per-bucket\nmedians below the total would be lower bounds presented as measurements.',
-    '',
-    overheadSection(comparison, tokens),
     '',
     toolRows.length > 0
       ? ['## Tool calls (summed over every archived run on each side)',
         '',
-        '| tool | base | cand |',
+        '| tool | base | ops |',
         '|------|------|------|',
         ...toolRows].join('\n')
       : '## Tool calls\n\nSkipped: neither side recorded a `toolCallsByName` breakdown.',
     '',
+    tokens
+      ? [`## Bucket detail (${comparison.aggregate} per task)`,
+        '',
+        '| task | input base→ops (Δ%) | output base→ops (Δ%) | cache read base→ops (Δ%) |',
+        '|------|--------------------|----------------------|--------------------------|',
+        ...comparison.tasks.map((task) => bucketRow(task.id, task.base, task.cand)),
+        ...(totalBucketRow ? [totalBucketRow] : []),
+      ].join('\n')
+      : '## Bucket detail\n\nSkipped: at least one side lost a `step_end.usage`, so the per-bucket\nmedians below the total would be lower bounds presented as measurements.',
+    '',
+    ...(tokenBuckets ? [tokenBuckets, ''] : []),
     `Sources: ${sources.baseFile}`,
     `         ${sources.candFile}`,
     '',
@@ -286,123 +302,42 @@ export function renderMarkdown(comparison, sources) {
 }
 
 /**
- * The other statistic, shown alongside the one the gate used (§6: "并列展示 min").
- * @param {object} task - one comparison row.
- * @param {'median'|'min'} aggregate - the statistic the table is sorted around.
- * @returns {string} the parenthetical, or '' when a side is unknown.
- */
-function spread(task, aggregate) {
-  const other = aggregate === 'min' ? 'median' : 'min'
-  const baseValue = aggregate === 'min' ? task.base.grandTotalMedian : task.base.grandTotalMin
-  const candValue = aggregate === 'min' ? task.cand.grandTotalMedian : task.cand.grandTotalMin
-  if (baseValue === null || candValue === null) return ''
-  return ` · ${other} ${formatNumber(baseValue)} → ${formatNumber(candValue)}`
-}
-
-/**
- * The diagnostic sections: what a request costs before the model does anything, how
- * the total delta splits into fixed overhead / extra steps / context, and which usage
- * bucket holds the difference.
- *
- * All three are diagnostic. The gate judges `grandTotal`, and a run that is cheaper
- * for the wrong reason still has to pass its checks — but a reviewer who sees "+51%"
- * and nothing else cannot tell a tool-schema tax from a model that decided to verify
- * its own answer twice, and those two have opposite fixes. A side that predates the
- * per-step prompt capture degrades to a "Skipped" note naming how to recover it,
- * because a silence that looks like a zero is the one failure mode worth avoiding.
+ * The usage-bucket split: how the TOTAL delta divides between uncached input,
+ * output, and cache reads. Diagnostic only — the gate judges `grandTotal` — but a
+ * delta that sits in cache reads is a very different bill from the same delta in
+ * uncached input, so the buckets are printed side by side. A partial usage set has no
+ * honest split, so it degrades to a "Skipped" note instead of presenting lower bounds
+ * as measurements.
  * @param {object} comparison - the structure from `compareSummaries`.
  * @param {boolean} tokens - whether the token columns are comparable at all.
- * @returns {string} the section text.
+ * @returns {string} the section text, or '' when there is nothing to show.
  */
-function overheadSection(comparison, tokens) {
-  // A partial usage set supports neither table: the per-request split and the
-  // per-bucket deltas would both be lower bounds dressed up as measurements, which is
-  // exactly what the token gate refuses to do.
+function tokenBucketsSection(comparison, tokens) {
   if (!tokens) {
     return [
-      '## Per-request overhead and token buckets',
+      '## Token buckets',
       '',
       'Skipped: at least one side lost a `step_end.usage`, so per-bucket deltas',
-      'and the per-request split would be lower bounds presented as measurements.',
+      'would be lower bounds presented as measurements.',
     ].join('\n')
   }
-  const parts = []
-  const overhead = comparison.overhead
-  if (overhead?.comparable) {
-    const rows = comparison.tasks
-      .filter((task) => task.overhead?.comparable)
-      .map((task) => {
-        const o = task.overhead
-        return `| ${task.id} | ${short(o.baseFirstRequest)} → ${short(o.candFirstRequest)} (${signed(o.candFirstRequest - o.baseFirstRequest)}, ${percentText(task.delta.firstRequestPromptPct)}) | ${short(task.base.promptPerStepMedian)} → ${short(task.cand.promptPerStepMedian)} | ${short(o.baseSteps)}→${short(o.candSteps)} |`
-      })
-    parts.push([
-      '## Per-request overhead (what every request costs before any work)',
-      '',
-      'The first request of a run carries no history — system prompt + tool schemas + task',
-      'text — so its delta is the fixed per-request cost a tool-surface or prompt-policy',
-      'change adds, paid on every request whether or not the tools are used. "prompt / step"',
-      'is the whole run\'s prompt tokens divided by its steps: the average context each',
-      'request re-sent, where tool output shows up.',
-      '',
-      '| task | first request base→cand | prompt / step base→cand | steps base→cand |',
-      '|------|------------------------|-------------------------|-----------------|',
-      ...rows,
-    ].join('\n'))
-    const deltas = comparison.tasks.filter((task) => task.overhead?.comparable).map((task) => task.overhead.candFirstRequest - task.overhead.baseFirstRequest)
-    const pcts = comparison.tasks.filter((task) => task.overhead?.comparable).map((task) => task.delta.firstRequestPromptPct).filter((value) => typeof value === 'number')
-    parts.push(`**Fixed per-request cost:** median across tasks ${signed(median(deltas))} tokens (${percentText(median(pcts))}) — the tool schemas and prompt policy, before the model does anything.`)
-
-    const decomposeRows = comparison.tasks
-      .filter((task) => task.overhead?.comparable)
-      .map((task) => {
-        const o = task.overhead
-        return `| ${task.id} | ${signed(o.totalDelta)} | ${signed(o.fixedOverheadTokens)} | ${signed(o.extraStepsTokens)} | ${signed(o.residualTokens)} | ${signed(o.outputDelta)} |`
-      })
-    const total = overhead
-    decomposeRows.push(`| **TOTAL** | ${signed(total.totalDelta)} | ${signed(total.fixedOverheadTokens)} | ${signed(total.extraStepsTokens)} | ${signed(total.residualTokens)} | ${signed(total.outputDelta)} |`)
-    parts.push([
-      `## Where the token delta comes from (${comparison.aggregate})`,
-      '',
-      '- **fixed per-request overhead**: the first-request delta, paid on every candidate step.',
-      '- **extra steps**: the step-count difference, priced at the baseline\'s first request.',
-      '- **bigger context**: what neither explains — larger tool results carried in the',
-      '  history, or context that grew faster. Negative means the candidate kept less.',
-      '- **Δ output**: the model writing more or less. Not a context-size effect.',
-      '',
-      '| task | Δ tokens | fixed per-request overhead | extra steps | bigger context | Δ output |',
-      '|------|----------|----------------------------|-------------|----------------|----------|',
-      ...decomposeRows,
-    ].join('\n'))
-  } else {
-    parts.push([
-      '## Per-request overhead',
-      '',
-      'Skipped: this archive predates per-step prompt capture (`metrics.prompt`), so the',
-      'fixed per-request cost cannot be separated from the conversation the model built.',
-      'The events still carry every `step_end.usage`, so re-running either side — or',
-      're-aggregating `results/*.events.ndjson` with the current harness — recovers it.',
-    ].join('\n'))
-  }
-
   const buckets = comparison.totals?.buckets
-  if (buckets?.comparable) {
-    const row = (label, bucket) => `| ${label} | ${short(bucket.base)} | ${short(bucket.cand)} | ${signed(bucket.delta)} | ${shareText(bucket.sharePct)} |`
-    parts.push([
-      `## Token buckets (TOTAL, ${comparison.aggregate})`,
-      '',
-      'The three buckets sum to the total, so the shares add up: a delta that is almost',
-      'entirely cache read is a very different bill from the same delta in uncached input,',
-      'because cache reads are normally priced far below it. The gate judges the total.',
-      '',
-      '| bucket | base | cand | Δ | share of Δ |',
-      '|--------|------|------|-----|-----------|',
-      row('uncached input', buckets.input),
-      row('output', buckets.output),
-      row('cache read', buckets.cacheRead),
-      row('**TOTAL**', buckets.grandTotal),
-    ].join('\n'))
-  }
-  return parts.join('\n\n')
+  if (!buckets?.comparable) return ''
+  const row = (label, bucket) => `| ${label} | ${short(bucket.base)} | ${short(bucket.cand)} | ${signed(bucket.delta)} (${percentText(percentChange(bucket.base, bucket.cand))}) |`
+  return [
+    `## Token buckets (TOTAL, ${comparison.aggregate})`,
+    '',
+    'The three buckets sum to the total. A delta that sits in cache read is a very',
+    'different bill from the same delta in uncached input, because cache reads are',
+    'normally priced far below it. The gate judges the total.',
+    '',
+    '| bucket | base | ops | Δ (Δ%) |',
+    '|--------|------|------|-------|',
+    row('uncached input', buckets.input),
+    row('output', buckets.output),
+    row('cache read', buckets.cacheRead),
+    row('**TOTAL**', buckets.grandTotal),
+  ].join('\n')
 }
 
 /**
@@ -417,23 +352,17 @@ function signed(value) {
 }
 
 /**
- * A share rendered with one decimal, or a dash when the total delta is zero.
- * @param {number|null} value - the percent.
- * @returns {string} the text.
- */
-function shareText(value) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a'
-  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
-}
-
-/**
- * A percent rendered with its sign, or a dash.
+ * A percent rendered with its sign and a colour: green when the candidate spent no
+ * more than the baseline (≤ 0, what a benchmark wants) and red when it spent more.
+ * A missing value stays plain text — colouring it would imply a measurement.
  * @param {number|null} value - the percent.
  * @returns {string} the text.
  */
 function percentText(value) {
   if (value === null || value === undefined) return 'n/a'
-  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
+  const text = `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
+  const colour = value > 0 ? 'red' : 'green'
+  return `<span style="color:${colour}">${text}</span>`
 }
 
 /**

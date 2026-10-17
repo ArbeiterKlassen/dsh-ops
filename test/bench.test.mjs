@@ -657,8 +657,8 @@ await test('aggregateTask produces medians, minima and a pass rate', () => {
 })
 
 await test('a 37% token win with equal pass rates clears both gates', () => {
-  const base = summary('bench-base', [run('csv-sum', 1000, true), run('grep-sweep', 2000, true)])
-  const cand = summary('bench-ops', [run('csv-sum', 630, true), run('grep-sweep', 1250, true)])
+  const base = summary('bench-base', [run('csv-sum', 1000, true), run('big-file-paging', 2000, true)])
+  const cand = summary('bench-ops', [run('csv-sum', 630, true), run('big-file-paging', 1250, true)])
   const comparison = compareSummaries(base, cand, { failOn: 'both' })
   assert.equal(comparison.totals.baseGrandTotal, 3000)
   assert.equal(comparison.totals.candGrandTotal, 1880)
@@ -773,14 +773,14 @@ await test('CHECK_TYPES stays in step with the verifier the tasks are written ag
 await test('the per-task regression gate fires even when the summed TOTAL improves', () => {
   // The 2026-10-16 sweep shape, compressed: one big win must not launder a
   // regression on another task into a PASS.
-  const base = summary('base', [run('csv-sum', 300000, true), run('bulk-rename', 50000, true)])
-  const cand = summary('cand', [run('csv-sum', 100000, true), run('bulk-rename', 130000, true)])
+  const base = summary('base', [run('csv-sum', 300000, true), run('big-file-paging', 50000, true)])
+  const cand = summary('cand', [run('csv-sum', 100000, true), run('big-file-paging', 130000, true)])
   const asTask = compareSummaries(base, cand, { tolerancePct: 2, failOn: 'both', regressionScope: 'task' })
   assert.equal(asTask.totals.grandTotalPct, -34.3, 'the sum says 34% cheaper overall …')
   assert.equal(asTask.gate.regressionFailed, true, '… and the per-task gate still says no')
-  assert.equal(asTask.tasks.find((task) => task.id === 'bulk-rename').regressed, true)
+  assert.equal(asTask.tasks.find((task) => task.id === 'big-file-paging').regressed, true)
   assert.equal(asTask.tasks.find((task) => task.id === 'csv-sum').regressed, false)
-  assert.match(asTask.gate.reasons.join(' '), /token regression: bulk-rename 130,000 > 51,000 \(base 50,000 \+ 2%\)/)
+  assert.match(asTask.gate.reasons.join(' '), /token regression: big-file-paging 130,000 > 51,000 \(base 50,000 \+ 2%\)/)
   // The scale-free overall figure: +160% and -66.7% average to about -7%, not -34%.
   assert.equal(asTask.totals.grandTotalGeomeanPct, -7)
   // The old scope is available and shows the masking it used to allow.
@@ -807,7 +807,7 @@ await test('geometricMeanPct skips unusable ratios and round-trips the equal-wei
 
 await test('the shipped corpus loads and validates', () => {
   const tasks = loadTasks(TASKS_DIR)
-  assert.deepEqual(tasks.map((task) => task.id).sort(), ['api-rename', 'big-file-paging', 'bulk-rename', 'config-hunt', 'csv-sum', 'deep-module-256k', 'fix-build', 'gate-repair-loop', 'grep-sweep', 'log-stats', 'long-corpus-ledger', 'noisy-test-triage'])
+  assert.deepEqual(tasks.map((task) => task.id).sort(), ['api-rename', 'big-file-paging', 'config-hunt', 'csv-sum', 'gate-repair-loop', 'noisy-test-triage'])
   for (const task of tasks) {
     assert.ok(task.title.length > 0)
     assert.equal(typeof task.prompt, 'string')
@@ -817,27 +817,13 @@ await test('the shipped corpus loads and validates', () => {
     for (const check of task.verify) assert.ok(CHECK_TYPES.includes(check.type), `${task.id}: bad check ${check.type}`)
   }
   assert.equal(tasks.find((task) => task.id === 'csv-sum').timeoutMs, DEFAULT_TIMEOUT_MS)
-  // "Renamed, never rewritten" is verified by hash, not just by prefix counts.
-  const bulk = tasks.find((task) => task.id === 'bulk-rename')
-  assert.ok(bulk.verify.some((check) => check.type === 'contentHashes' && check.expect === 'hashes'), 'bulk-rename must check content hashes')
-  // The tiered budgets: expensive tasks sampled less, cheap ones more.
+  // The tiered budgets: every surviving task is sampled twice by default.
   assert.deepEqual(tasks.reduce((acc, task) => ({ ...acc, [task.id]: task.repeat }), {}), {
-    'bulk-rename': 3, 'csv-sum': 2, 'fix-build': 4, 'grep-sweep': 2, 'log-stats': 5,
-    'config-hunt': 2, 'big-file-paging': 2, 'noisy-test-triage': 2, 'api-rename': 2,
-    'long-corpus-ledger': 2, 'deep-module-256k': 2, 'gate-repair-loop': 2,
+    'csv-sum': 2, 'config-hunt': 2, 'big-file-paging': 2, 'noisy-test-triage': 2,
+    'api-rename': 2, 'gate-repair-loop': 2,
   })
-  // The 256K tier: the corpus is too large to carry, so every line of the answer has
-  // to be earned by visiting its shard; the module is one file whose two ranges are
-  // ~1 MB apart. Both must outlive the default per-task deadline.
-  const ledger = tasks.find((task) => task.id === 'long-corpus-ledger')
-  assert.ok(ledger.fixture.params.shards >= 32, 'the ledger corpus must be wide enough to need 256K')
-  assert.ok(ledger.fixture.params.shards * ledger.fixture.params.charsPerShard >= 1000000, 'the ledger corpus must be ~1 MB of text')
-  assert.ok(ledger.verify.some((check) => check.type === 'fileLines' && check.expect === 'report'), 'every shard must show up in the answer')
-  const deep = tasks.find((task) => task.id === 'deep-module-256k')
-  assert.ok(deep.fixture.params.lines >= 25000, 'the module must be ~1 MB on its own')
-  assert.ok(deep.timeoutMs >= DEFAULT_TIMEOUT_MS, 'a 256K task needs at least the default deadline')
-  // The long-run tier is the opposite shape: a small workspace split into enough
-  // fail-fast stages that the step count cannot stay in single digits.
+  // The long-run tier: a small workspace split into enough fail-fast stages that
+  // the step count cannot stay in single digits.
   const loop = tasks.find((task) => task.id === 'gate-repair-loop')
   assert.ok(loop.fixture.params.gates >= 24, 'the long-run task needs enough stages to force many turns')
   assert.ok(loop.fixture.params.probes >= 20, 'each round must leave a real log behind, not a single line')
@@ -853,7 +839,7 @@ await test('the shipped corpus loads and validates', () => {
 })
 
 await test('every task fixture really exports the keys its checks reference', () => {
-  const small = { 'grep-sweep': SMALL.grepTree, 'bulk-rename': SMALL.renameTree, 'csv-sum': SMALL.largeCsv, 'fix-build': SMALL.brokenProject, 'log-stats': SMALL.logStats, 'config-hunt': SMALL.configTree, 'big-file-paging': SMALL.deepModule, 'noisy-test-triage': SMALL.noisySuite, 'api-rename': SMALL.symbolTree, 'long-corpus-ledger': SMALL.deepCorpus, 'deep-module-256k': SMALL.deepModule, 'gate-repair-loop': SMALL.gatePipeline }
+  const small = { 'csv-sum': SMALL.largeCsv, 'config-hunt': SMALL.configTree, 'big-file-paging': SMALL.deepModule, 'noisy-test-triage': SMALL.noisySuite, 'api-rename': SMALL.symbolTree, 'gate-repair-loop': SMALL.gatePipeline }
   for (const task of loadTasks(TASKS_DIR)) {
     const fixture = generate(task.fixture.generator, small[task.id] ?? task.fixture.params)
     for (const check of task.verify) {
@@ -884,24 +870,14 @@ await test('every task in the corpus is answerable and its own verify accepts it
         fs.writeFileSync(target, file.content, 'utf8')
       }
       const answers = {
-        'grep-sweep': () => ['matches.txt', fixture.exports.matches.join('\n')],
         'csv-sum': () => ['answer.txt', String(fixture.exports.sum)],
-        'log-stats': () => ['errors.txt', fixture.exports.report.join('\n')],
         'config-hunt': () => ['answer.txt', fixture.exports.answer],
         'big-file-paging': () => ['answer.txt', fixture.exports.answer],
-        'deep-module-256k': () => ['answer.txt', fixture.exports.answer],
-        'long-corpus-ledger': () => ['report.txt', fixture.exports.report.join('\n')],
         'noisy-test-triage': () => ['failure.txt', fixture.exports.failingName],
       }
       if (answers[task.id]) {
         const [answerPath, answerText] = answers[task.id]()
         fs.writeFileSync(path.join(dir, answerPath), `${answerText}\n`, 'utf8')
-      } else if (task.id === 'bulk-rename') {
-        for (const file of fs.readdirSync(path.join(dir, 'data'))) {
-          fs.renameSync(path.join(dir, 'data', file), path.join(dir, 'data', file.replace('TEMP_', 'DATA_')))
-        }
-      } else if (task.id === 'fix-build') {
-        for (const fix of fixture.exports.fixes) fs.writeFileSync(path.join(dir, ...fix.path.split('/')), fix.content, 'utf8')
       } else if (task.id === 'api-rename') {
         for (const fixed of fixture.exports.fixedFiles) fs.writeFileSync(path.join(dir, ...fixed.path.split('/')), fixed.content, 'utf8')
       } else if (task.id === 'gate-repair-loop') {
@@ -963,8 +939,8 @@ await test('the runner CLI parses the documented shape', () => {
   assert.equal(options.timeout, null)
   assert.equal(options.llmPatchExplicit, false)
 
-  const picked = parseArgs(['--label=l', '--profile=p', '--task', 'csv-sum', '--task=log-stats', '--repeat', '5', '--timeout', '60000', '--sleep-ms', '2000', '--strict', '--keep', '--dsh-home', 'D:/bench/home'])
-  assert.deepEqual(picked.taskIds, ['csv-sum', 'log-stats'])
+  const picked = parseArgs(['--label=l', '--profile=p', '--task', 'csv-sum', '--task=noisy-test-triage', '--repeat', '5', '--timeout', '60000', '--sleep-ms', '2000', '--strict', '--keep', '--dsh-home', 'D:/bench/home'])
+  assert.deepEqual(picked.taskIds, ['csv-sum', 'noisy-test-triage'])
   assert.equal(picked.repeat, 5)
   assert.equal(picked.repeatExplicit, true, 'an explicit --repeat overrides every per-task budget')
   assert.equal(picked.timeout, 60000)
@@ -1332,26 +1308,61 @@ process.exit(0)
   })
 })
 
-await test('the report shows the statistic the gate used and the other one alongside', () => {
+await test('the report shows only the statistic the gate used, with no spread or regression tag', () => {
   const base = summary('base', [run('csv-sum', 1000, true), run('csv-sum', 1400, true)])
   const cand = summary('cand', [run('csv-sum', 600, true), run('csv-sum', 600, true)])
   const asMedian = renderMarkdown(compareSummaries(base, cand, { aggregate: 'median' }), { baseFile: 'b/summary.json', candFile: 'c/summary.json' })
-  assert.match(asMedian, /1,200 → 600 \(-50\.0%\) · min 1,000 → 600/)
+  assert.match(asMedian, /1,200 → 600 \(<span style="color:green">-50\.0%<\/span>\)/)
+  assert.match(asMedian, /\| \*\*GEOMEAN Δ\*\* \| <span style="color:green">-50\.0%<\/span>/)
+  assert.doesNotMatch(asMedian, /· min /)
+  assert.doesNotMatch(asMedian, /⚠regressed/)
   assert.match(asMedian, /# bench compare: base → cand/)
+  // The report names the candidate side "Ops", never "Cand".
+  assert.match(asMedian, /^Ops: /m)
+  assert.doesNotMatch(asMedian, /^Cand: /m)
+  assert.match(asMedian, /tokens median base→ops \(Δ%\)/)
+  assert.match(asMedian, /## Bucket detail \(median per task\)/)
+  assert.match(asMedian, /\| task \| input base→ops \(Δ%\) \| output base→ops \(Δ%\) \| cache read base→ops \(Δ%\) \|/)
+  assert.match(asMedian, /\| csv-sum \| 840 → 420 \(<span style="color:green">-50\.0%<\/span>\) \| 360 → 180 \(<span style="color:green">-50\.0%<\/span>\) \| 0 → 0 \(<span style="color:green">0\.0%<\/span>\) \|/)
+  assert.match(asMedian, /\| \*\*TOTAL\*\* \| 840 → 420 \(<span style="color:green">-50\.0%<\/span>\) \| 360 → 180 \(<span style="color:green">-50\.0%<\/span>\) \| 0 → 0 \(<span style="color:green">0\.0%<\/span>\) \|/)
+  assert.doesNotMatch(asMedian, /\| side \|/)
+  assert.match(asMedian, /\| bucket \| base \| ops \| Δ \(Δ%\) \|/)
   assert.match(asMedian, /\| \*\*TOTAL\*\* \| 1,200 → 600/)
   assert.doesNotMatch(asMedian, /cache write|reasoning/)
   assert.doesNotMatch(asMedian, /## Footnotes/)
   const asMin = renderMarkdown(compareSummaries(base, cand, { aggregate: 'min' }), { baseFile: 'b', candFile: 'c' })
-  assert.match(asMin, /1,000 → 600 \(-40\.0%\) · median 1,200 → 600/)
+  assert.match(asMin, /1,000 → 600 \(<span style="color:green">-40\.0%<\/span>\)/)
+  assert.doesNotMatch(asMin, /· median /)
+  // A per-task regression still fails the gate and the exit code, but the report
+  // no longer carries the verdict or the warnings.
+  const regressedComparison = compareSummaries(summary('base', [run('csv-sum', 1000, true)]), summary('cand', [run('csv-sum', 1300, true)]))
+  assert.equal(regressedComparison.gate.fail, true)
+  const regressed = renderMarkdown(regressedComparison, { baseFile: 'b', candFile: 'c' })
+  assert.doesNotMatch(regressed, /\*\*Gate:\*\*/)
+  assert.doesNotMatch(regressed, /\*\*Warnings:\*\*/)
+  assert.doesNotMatch(regressed, /⚠regressed/)
+  // A rise is the expensive direction, so its percent renders red.
+  assert.match(regressed, /\(<span style="color:red">\+30\.0%<\/span>\)/)
   const incomplete = renderMarkdown(compareSummaries(summary('base', [run('csv-sum', 1000, true, { usageReported: false })]), cand), { baseFile: 'b', candFile: 'c' })
   assert.match(incomplete, /n\/a \(usage incomplete\)/)
   assert.match(incomplete, /Skipped: at least one side lost a `step_end\.usage`/)
   assert.doesNotMatch(incomplete, /Bucket detail \(median per task\)/)
 })
 
+await test('steps and tool calls carry coloured base→ops percentages in the main table', () => {
+  const base = summary('base', [run('csv-sum', 1000, true, { steps: 10, toolCalls: 8 })])
+  const cand = summary('cand', [run('csv-sum', 1000, true, { steps: 12, toolCalls: 6 })])
+  const markdown = renderMarkdown(compareSummaries(base, cand), { baseFile: 'b', candFile: 'c' })
+  assert.match(markdown, /\| task \| tokens median base→ops \(Δ%\) \| steps base→ops \(Δ%\) \| tool calls base→ops \(Δ%\) \| tool errors \| pass \|/)
+  const row = /\| csv-sum \| 1,000 → 1,000 \(<span style="color:green">0\.0%<\/span>\) \| 10→12 \(<span style="color:red">\+20\.0%<\/span>\) \| 8→6 \(<span style="color:green">-25\.0%<\/span>\) \| 0→0 \| 1\/1→1\/1 \|/
+  assert.match(markdown, row)
+  const total = /\| \*\*TOTAL\*\* \| 1,000 → 1,000 \(<span style="color:green">0\.0%<\/span>\) \| 10→12 \(<span style="color:red">\+20\.0%<\/span>\) \| 8→6 \(<span style="color:green">-25\.0%<\/span>\) \| 0→0 \| 1\/1→1\/1 \|/
+  assert.match(markdown, total)
+})
+
 await test('the report counts tool calls by name across every archived run', () => {
   const base = summary('base', [
-    run('csv-sum', 1000, true, { toolCallsByName: { pwsh: 3, read: 2 } }),
+    run('csv-sum', 1000, true, { toolCallsByName: { pwsh: 3, read: 2, sed: 99, ops_old: 50 } }),
     run('csv-sum', 1000, true, { repeatIndex: 1, toolCallsByName: { pwsh: 1, ops_grep: 0 } }),
   ])
   const cand = summary('cand', [
@@ -1359,37 +1370,67 @@ await test('the report counts tool calls by name across every archived run', () 
   ])
   const markdown = renderMarkdown(compareSummaries(base, cand), { baseFile: 'b', candFile: 'c' })
   assert.match(markdown, /## Tool calls \(summed over every archived run on each side\)/)
-  assert.match(markdown, /\| pwsh \| 4 \| 2 \|/)
-  assert.match(markdown, /\| read \| 2 \| 1 \|/)
+  assert.match(markdown, /\| pwsh \| 4 \| <span style="color:red">2<\/span> \|/)
+  assert.match(markdown, /\| read \| 2 \| <span style="color:red">1<\/span> \|/)
   assert.match(markdown, /\| ops_grep \| 0 \| 4 \|/)
+  assert.match(markdown, /\| ops_old \| 50 \| 0 \|/)
+  assert.match(markdown, /\| sed \| 99 \| 0 \|/)
+  // A built-in tool the Ops side never called stays plain; only a non-zero Ops count
+  // on a non-ops_* row is red.
+  assert.doesNotMatch(markdown, /\| ops_[a-z_]+ \| [^|]+ \| <span style="color:red">/)
+  // ops_* tools come first (even one the Ops side never called), then the rest by
+  // Ops count: ops_grep 4, ops_old 0, pwsh 2, read 1, sed 0.
+  const rows = ['| ops_grep | 0 | 4 |', '| ops_old | 50 | 0 |', '| pwsh | 4 | <span style="color:red">2</span> |', '| read | 2 | <span style="color:red">1</span> |', '| sed | 99 | 0 |']
+    .map((row) => markdown.indexOf(row))
+  assert.ok(rows.every((index) => index !== -1))
+  assert.ok(rows.every((index, i) => i === 0 || rows[i - 1] < index), 'ops_* tools first, then Ops-count descending')
+  // Tool adoption is important enough to sit directly under the main table.
+  assert.ok(markdown.indexOf('## Tool calls') < markdown.indexOf('## Bucket detail'), 'Tool calls comes before Bucket detail')
+  assert.ok(markdown.indexOf('| tool | base | ops |') < markdown.indexOf('## Token buckets'), 'Tool calls comes before Token buckets')
 })
 
-await test('the report separates fixed per-request cost, extra steps and context', () => {
+await test('the report leaves out the per-request overhead and delta decomposition', () => {
   const base = summary('base', [shapedRun('csv-sum', { steps: 5, first: 6000, perStep: 7000, output: 300 })])
   const cand = summary('cand', [shapedRun('csv-sum', { steps: 7, first: 8000, perStep: 9000, output: 600 })])
-  const markdown = renderMarkdown(compareSummaries(base, cand), { baseFile: 'b', candFile: 'c' })
-  assert.match(markdown, /## Per-request overhead \(what every request costs before any work\)/)
-  assert.match(markdown, /\| csv-sum \| 6,000 → 8,000 \(\+2,000, \+33\.3%\) \| 7,000 → 9,000 \| 5→7 \|/)
-  assert.match(markdown, /\*\*Fixed per-request cost:\*\* median across tasks \+2,000 tokens \(\+33\.3%\)/)
-  assert.match(markdown, /## Where the token delta comes from \(median\)/)
-  assert.match(markdown, /\| csv-sum \| \+28,300 \| \+14,000 \| \+12,000 \| \+2,000 \| \+300 \|/)
-  assert.match(markdown, /\| \*\*TOTAL\*\* \| \+28,300 \| \+14,000 \| \+12,000 \| \+2,000 \| \+300 \|/)
+  const comparison = compareSummaries(base, cand)
+  const markdown = renderMarkdown(comparison, { baseFile: 'b', candFile: 'c' })
+  // The decomposition is still computed, it is just not rendered any more.
+  assert.equal(comparison.overhead.comparable, true)
+  assert.equal(comparison.overhead.fixedOverheadTokens, 14000)
+  assert.doesNotMatch(markdown, /Per-request overhead/)
+  assert.doesNotMatch(markdown, /Where the token delta comes from/)
+  assert.doesNotMatch(markdown, /Fixed per-request cost/)
+  assert.doesNotMatch(markdown, /prompt \/ step/)
+  assert.match(markdown, /## Bucket detail \(median per task\)/)
   assert.match(markdown, /## Token buckets \(TOTAL, median\)/)
-  assert.match(markdown, /\| cache read \| 0 \| 0 \| 0 \| 0\.0% \|/)
+  assert.match(markdown, /\| cache read \| 0 \| 0 \| 0 \(<span style="color:green">0\.0%<\/span>\) \|/)
 })
 
-await test('an archive without prompt capture says so instead of showing zeros', () => {
+await test('token bucket deltas carry coloured base→ops percentages', () => {
+  const base = summary('base', [run('csv-sum', 1000, true)])
+  const cand = summary('cand', [run('csv-sum', 1200, true)])
+  const markdown = renderMarkdown(compareSummaries(base, cand), { baseFile: 'b', candFile: 'c' })
+  assert.match(markdown, /\| bucket \| base \| ops \| Δ \(Δ%\) \|/)
+  assert.match(markdown, /\| uncached input \| 700 \| 840 \| \+140 \(<span style="color:red">\+20\.0%<\/span>\) \|/)
+  assert.match(markdown, /\| output \| 300 \| 360 \| \+60 \(<span style="color:red">\+20\.0%<\/span>\) \|/)
+  assert.match(markdown, /\| cache read \| 0 \| 0 \| 0 \(<span style="color:green">0\.0%<\/span>\) \|/)
+  assert.match(markdown, /\| \*\*TOTAL\*\* \| 1,000 \| 1,200 \| \+200 \(<span style="color:red">\+20\.0%<\/span>\) \|/)
+})
+
+await test('an archive without prompt capture renders no overhead zeroes', () => {
   const base = summary('base', [run('csv-sum', 1000, true)])
   const cand = summary('cand', [run('csv-sum', 1000, true)])
   const markdown = renderMarkdown(compareSummaries(base, cand), { baseFile: 'b', candFile: 'c' })
-  assert.match(markdown, /Skipped: this archive predates per-step prompt capture/)
-  assert.doesNotMatch(markdown, /Where the token delta comes from/)
-  // The bucket split needs only the usage totals, so it still renders.
+  // No prompt capture is needed for what the report still shows.
+  assert.doesNotMatch(markdown, /prompt capture/)
+  assert.doesNotMatch(markdown, /Per-request overhead/)
+  assert.match(markdown, /## Bucket detail \(median per task\)/)
   assert.match(markdown, /## Token buckets \(TOTAL, median\)/)
 
-  // And when usage itself is incomplete, the bucket split steps aside too.
+  // When usage itself is incomplete, both bucket sections step aside.
   const incomplete = renderMarkdown(compareSummaries(summary('base', [run('csv-sum', 1000, true, { usageReported: false })]), cand), { baseFile: 'b', candFile: 'c' })
   assert.match(incomplete, /Skipped: at least one side lost a `step_end\.usage`, so per-bucket deltas/)
+  assert.match(incomplete, /## Token buckets/)
 })
 
 // ---------------------------------------------------------------------------

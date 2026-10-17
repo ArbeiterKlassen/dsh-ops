@@ -21,8 +21,8 @@ rem  --cand    optional candidate label AND profile  (default: bench-ops).
 rem  --show    print the three commands and exit, run nothing.
 rem
 rem  Examples:
-rem     bench\ab-compare.bat --task fix-build --repeat 1
-rem     bench\ab-compare.bat --task fix-build --task csv-sum --folder ops-0.3.1
+rem     bench\ab-compare.bat --task csv-sum --repeat 1
+rem     bench\ab-compare.bat --task csv-sum --task gate-repair-loop --folder ops-0.3.1
 rem     bench\ab-compare.bat --verbose --probe-endpoint
 rem
 rem  Exit code: the compare gate result (0 = passed), 1 when a run failed.

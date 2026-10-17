@@ -1292,8 +1292,9 @@ export function buildSummary(options, setup, results, window) {
  *
  * Two kinds are expected to pass untouched: `fileMissing` (there is nothing there to
  * be absent) and any check marked `invariant: true`, which is an anti-tamper guard on
- * a fixture file — `fix-build`'s "test.js was not edited" check is exactly that, and
- * it is the reason the corpus needs this distinction rather than a blanket rule.
+ * a fixture file — `gate-repair-loop`'s "check.js was not edited" guard is exactly
+ * that, and it is the reason the corpus needs this distinction rather than a blanket
+ * rule.
  * @param {object[]} tasks - the selected tasks.
  * @param {Options} options - the parsed options.
  * @returns {Promise<boolean>} true when every task self-checked.

@@ -16,10 +16,9 @@
 #     OpenAI 兼容端点）用 openai-completions；
 #   - 服务器必须在流式响应里回报 usage（stream_options.include_usage），
 #     否则 harness 拒绝给出 token 结论（PLAN §2.6）；
-#   - contextWindow 要按模型真实窗口填：256K 档的两道题（long-corpus-ledger /
-#     deep-module-256k，见 README §4.3）workspace 各约 256K token，dsh 的
-#     compaction-basic 在 0.8 × contextWindow 处触发压缩，所以填小了会先压缩再答题，
-#     测到的是压缩策略而不是长上下文；短题峰值 prompt 只有 2 万上下，与这个值无关；
+#   - contextWindow 要按模型真实窗口填：现有语料里最长的题峰值 prompt 约 2 万 token，
+#     这个值不影响它们；但填小了仍会让 compaction-basic（0.8 × contextWindow）
+#     提前触发压缩，想跑长上下文任务时尤其要注意；
 #   - patch 语义是"整段替换 config"：llm-pi-ai 的 config 只有 providers
 #     一个字段、agent-default-model 只有 provider/model，直接照抄结构即可。
 

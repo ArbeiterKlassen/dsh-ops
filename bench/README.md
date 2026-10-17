@@ -35,7 +35,7 @@ node bench/run.mjs --label bench-ops  --profile bench-ops  --folder ops-0.3.1
 node bench/compare.mjs bench-base bench-ops --folder ops-0.3.1 --fail-on both
 ```
 
-不传 `--repeat` 时按语料的分层预算跑（每任务 2~5 次，见 §4.2）；显式 `--repeat N` 会统一覆盖。
+不传 `--repeat` 时按语料的分层预算跑（每任务 2 次，见 §4.2）；显式 `--repeat N` 会统一覆盖。
 
 第一次在新机器上跑，**加 `--verbose`**；§4.1 把现场日志的每一行都解释了，`--preflight-only`
 则是花 200ms（不花 token）先问一句"这台机器和这个 profile 到底行不行"。
@@ -304,7 +304,7 @@ Ctrl-C 是**礼貌停止**：runner 杀掉 dsh 子进程及其进程树（不会
 
 `--preflight-only`（§3）是同一个体检的零成本版本：不建 run 目录、不 spawn 任务、不花 token。
 
-`compare.mjs` 开关：`--aggregate median|min`（缺省 median，并列展示 min）、
+`compare.mjs` 开关：`--aggregate median|min`（缺省 median）、
 `--tolerance-pct <n>`（缺省 2）、`--fail-on regression|pass-drop|both|none`（缺省 both）、
 `--regression-scope task|total|both`（缺省 task：逐任务对照容差，大任务的收益掩盖不了
 别的任务回归；total 是旧的"只看 TOTAL 之和"行为，both 两个都判）、
@@ -315,69 +315,58 @@ run 目录或 `summary.json`。因此 `run.mjs` 默认的当天日期目录不�
 把日期当组名传进去即可：`node bench/compare.mjs bench-base bench-ops --folder 2026-10-16`。
 usage 不完整时报告只出步数/工具计数，token 列打印 `n/a`，分桶明细整段省略。
 报告里 TOTAL 行是语料总成本（体积加权），GEOMEAN 行是各任务 Δ% 的等权几何平均
-（"整体效应"的无尺度读数），两个都打印。
+（"整体效应"的无尺度读数），两个都打印。主表的 tokens、steps、tool calls 三列都给出
+base→ops 与 Δ%；tool errors / pass 仍是原始对照。百分比按方向着色：**≤ 0 绿色**
+（候选更省），**> 0 红色**（候选更贵）；缺失值保持 `n/a` 不上色。
 
-主表之后是四段**诊断**（都只是解释，门禁照旧只看 `grandTotal`；数据缺失时写 Skipped，
+主表之后紧跟 **Tool calls** 表：按工具名汇总两侧调用次数。`ops_*` 开头的工具集中排最前
+（组内按 Ops 调用次数降序），其余工具随后也按 Ops 调用次数降序——插件自身工具的采用情况
+一眼可见，没被 Ops 调过的工具排在最后；非 `ops_*` 工具只要在 Ops 列有调用数就标红
+（说明 Ops 仍在使用内置工具）。
+再往后是两段**诊断**（都只是解释，门禁照旧只看 `grandTotal`；数据缺失时写 Skipped，
 不填零）：
 
 | 章节 | 在回答什么 |
 |---|---|
-| Bucket detail | 逐任务两侧的 input / output / cache read 中位数 |
-| **Per-request overhead** | 每次请求的**固定开销**：首步 prompt（无历史 = 系统提示 + 工具 schema + 任务文本）的 base→cand，以及每步平均 prompt（上下文涨多快） |
-| **Where the token delta comes from** | Δ 的一阶分解：固定开销（每轮都付）/ 多跑的步数 / 更大的上下文（残差）/ Δ output。四项相加 = 总 Δ |
-| **Token buckets (TOTAL)** | 三个桶各自的 Δ 与占 Δ 的百分比：涨 54% 和"其中 89% 是 cache read（计价通常低一个数量级）"是两件事 |
+| Bucket detail | 逐任务 input / output / cache read 的 base→ops 差异与 Δ%（每任务一行，另附 TOTAL） |
+| **Token buckets (TOTAL)** | 三个桶各自的 base→ops 与 Δ（含 Δ%）：同样的 Δ 落在 cache read 还是 uncached input，计价差一个数量级 |
 
-外加 Tool calls 表按工具名汇总两侧调用次数，"装了但从没被调用"因此一眼可见。
-`bench/runs/` 里 2026-10-16 之前的归档没有 `prompt` 字段（harness 当时不采集），
-这几段会打印 Skipped；`results/*.events.ndjson` 里每一步的 `step_end.usage` 都还在，
-用当前 harness 重跑或重新聚合即可恢复。
+usage 不完整时这两张表打印 Skipped，不把下界当测量；`results/*.events.ndjson` 里每一步的
+`step_end.usage` 都还在，用当前 harness 重跑或重新聚合即可恢复。
 
 自检（不 spawn dsh、不花 token）：`node bench/run.mjs --dry-run --label selfcheck --profile selfcheck`，
 它只把 fixture 生成与 verify 两头各跑一遍，验证语料的形状还成立。
 
-### 4.2 任务语料：十二个任务各测什么
+### 4.2 任务语料：六个任务各测什么
 
 模型进门只看到一句英文 prompt 和一个由 fixture 现场生成的临时 workspace；下表是
 `bench/tasks/*.task.json` 的现状（规格与打点意图见 PLAN §7，期望值全部由生成字节推导，模型看不到）。
-前五个（bulk-rename … log-stats）是挑给文件/批量类 ops 工具"有油水可赚"的合成题；
-接着四个（config-hunt … api-rename）是复盘中补的**贴近日常**的场景：config-hunt /
-big-file-paging / noisy-test-triage 刻意不挑边，api-rename 现在收窄成"只用文件工具"
-的 capability probe（与 bulk-rename 的批量约束同类），
-测的是真实使用里反复出现而前五个没覆盖的形状；接着两道是 **256K 档**（见 §4.3），
-workspace 本身约 256K token，专门用来回答"之前那些差异是不是因为上下文太短"；
-最后一道 `gate-repair-loop` 是 **长跑档**（见 §4.4），workspace 很小而**步数**很多，
-专门用来回答反面那个问题——那些每步的节省在几十步的尺度上还成立吗：
+前四题（csv-sum … noisy-test-triage）是复盘中挑出的**贴近日常**的场景，刻意不挑边；
+`api-rename` 收窄成"只用文件工具"的 capability probe，测的是同一类形状下的工具选择；
+最后一道 `gate-repair-loop` 是 **长跑档**（见 §4.3），workspace 很小而**步数**很多，
+专门用来回答"每步的节省在几十步的尺度上还成不成立"：
 
 | 任务 | workspace 里有什么 | 模型要干什么 | 考什么 | 怎么判卷 |
 |---|---|---|---|---|
-| **bulk-rename** | `data/` 下 300 个 `TEMP_0001.dat`–`TEMP_0300.dat`（各 5 行十六进制） | 把文件名前缀 `TEMP_` 改成 `DATA_`，内容一个字节都不能动；每次工具调用最多改 10 个 | 三十批改名：会不会用一条循环命令绕过"每次 ≤10"；会不会误删/截断 | `countFiles` 数前缀 + `contentHashes` 逐文件 SHA-256：删了重建、改写内容都过不了 |
 | **csv-sum** | 8000 行 `data.csv`（`id,region,amount`，约 112KB） | 算出 `region=EU` 的 `amount` 总和，把纯整数写进 `answer.txt` | 是整读进上下文再心算，还是一条聚合命令就地求和（标题里的 "without drowning the context"） | `fileEquals`：与生成器边写边累加出的精确值比对 |
-| **fix-build** | 迷你 Node 项目：`test.js` + `src/` 三个文件，埋恰好 3 个单行 bug | 跑 `node test.js` 看它挂，只修 `src/` 让测试转绿；禁改 `test.js`/`package.json`、禁删断言 | 错误-重试闭环：读报错→定位→修→再跑；会不会改测试文件作弊 | `command` 要求 exit 0 + `test.js` 的 `invariant` 比对防篡改 |
-| **grep-sweep** | `src/dir00…dir09` 共 200 个 js 文件，恰好 8 个藏着 token `NEEDLE_X7Q` | 找出所有含该 token 的文件，每次搜索最多覆盖 50 个文件，相对路径按字典序写进 `matches.txt`，一行一个，不许夹带行号/计数 | 搜索工具用得对不对；分批搜索（≥4 次）与路径格式是否精确；噪音下不误报不漏报 | `fileLines` 与生成器记录的 8 条精确路径逐行比对 |
-| **log-stats** | `logs/` 下 `app_00.log`–`app_49.log`，各 400 行 `LEVEL\|时间戳\|消息` | 每个文件数出含 `ERROR` 的行数，每次工具调用最多处理 10 个日志文件，按文件名序写成 `errors.txt`（`文件名 计数` 共 50 行） | 5 批小步（每批 ≤10 个）vs 一次全表；计数精确到行 | `fileLines` 比对生成器逐文件算好的 50 行报告 |
 | **config-hunt** | 三层配置 JSON + 12 个包（每个包带一个**不参与合并**的 `config.json` 诱饵）+ 写明合并顺序的 `README.md`，四个文件的同一个 key 值互不相同 | 按 README 的顺序求出 production 下 `MAX_UPLOAD_MB` 的生效值，只把这个整数写进 `answer.txt` | "grep 到第一个数就交差"vs 读约定再求值；多文件探索的步数 × 每请求固定开销 | `fileEquals`：与最高优先级那一层的值比对 |
 | **big-file-paging** | 单个 `src/pipeline.js`，约 4200 行 / 170KB；`LIMIT_TABLE` 在 ~55% 处，`auditLimit()` 在最后 12 行读它；另有历史注释与 `LEGACY_LIMIT_TABLE` 两个错值 | 写出 `auditLimit('staging')` 的返回值，只把这一个整数写进 `answer.txt` | 整读 4 千行 vs 定位到两段远处区间各读一次：日常最高频的"在长文件里找答案" | `fileEquals`：与活表里的值比对（两个诱饵值都不同） |
 | **noisy-test-triage** | `runner.js` 打印 2400 行 `ok N - …`（每 250 行一条 `# progress`），恰好一行 `not ok N - …` 带断言诊断，退出码 1 | 跑 `node runner.js`，把失败用例名（`not ok <number> - ` 之后的原文）写进 `failure.txt` | 大输出的裁剪与定位：`\| grep`/有界搜索 vs 把 6 万字符日志灌进上下文 | `fileEquals` + 把"套件确实在挂"钉成 `invariant` 的 `command` 检查（前提破了 dry-run 拒绝这题） |
 | **api-rename** | `src/core.js` 有 `parsePayload` 与两个长相符号（`…Legacy`、`…Async`，后者**调用**目标函数）；60 个模块中 1/5 只用到长相符号；根目录 `check.mjs` import 改后的名字 | 把 `parsePayload` 改名为 `decodePayload`（定义/import/调用点），长相符号保持原名，**只用文件工具改**（禁止 shell 文本替换），不改行为、不增删 `src/` 文件，完成后 `node check.mjs` exit 0 | 跨文件批量替换 vs 逐文件 read+edit；字面量替换的边界（前缀相同的符号、长相符号体内的调用点） | `contentHashes` 逐文件字节比对（漏改一处或顺手改错都挂）+ `command node check.mjs` exit 0 |
-| **long-corpus-ledger** | `shards/shard-00.md`…`shard-31.md` 共 32 篇复盘（合计约 1.08MB ≈ 254K token），每篇 ~95% 是散文；根目录 `README.md` 写明判据：live settlement = `## Ledger` 里 `page=` 等于该篇 `## Index` 最大页的那条 | 逐 shard 求出 live settlement，按 shard 升序把 `shard-NN <amount>` 共 32 行写进 `report.txt` | 256K 语料上的**有界遍历**：整读进上下文已不可负担，能不能只带两个字段走完全部 32 篇（或一条脚本） | `fileLines` 与生成器逐 shard 算好的 32 行比对——**少一个 shard 就少一行**，覆盖是被判卷强制的 |
-| **deep-module-256k** | 单个 `src/pipeline.js`，约 27000 行 / 1.08MB ≈ 254K token；与 big-file-paging 同形状、6 倍行数：活表在 ~55%，`auditLimit()` 在最后 12 行读它，另有历史注释与 `LEGACY_LIMIT_TABLE` 两个错值 | 写出 `auditLimit('staging')` 的返回值，只把这一个整数写进 `answer.txt` | **短档的对照**：4200 行整读 4 万 token 负担得起，27000 行整读约 25 万 token 会越过压缩线 → 区间读从"省一点"变成"能不能做完" | `fileEquals`：与活表里的值比对（两个诱饵值都不同） |
 | **gate-repair-loop** | `gates/gate_00.js`–`gate_23.js` 共 24 个阶段模块（各 70 行惰性填充，把契约和代码隔开），加一个 **fail-fast** 的 `check.js`；每个阶段只有一个绑定常量与自己的契约注释不符 | 跑 `node check.js`（它逐阶段比对 golden 值、在第一个不符处停下），修 `gates/` 里失败的阶段直到 exit 0，再把门禁打印的最终值写进 `answer.txt` | **长跑形状**：24 个阶段 ⇒ 至少 24 轮"跑→读→改"，且第 N 轮要把前 N 个阶段累积的通过行重新带进上下文（末轮约 22KB）——考的是**步数**与每步的固定开销，不是单次上下文体积 | `command node check.js` exit 0 + `fileEquals answer.txt`；`check.js` 另挂 `fileEquals` 的 `invariant` 守卫防篡改 |
 
-规模本身就是被测信号：token、步数、工具调用数都进 metrics。前五题挑给文件/批量类
-ops 工具"有油水可赚"的任务族；中间四题里 config-hunt / big-file-paging / noisy-test-triage
-仍是**不挑边**的日常形状，api-rename 则被收窄成"只用文件工具"的 probe，谁赢都能读出来；
-接着两题把同一批形状抬到 256K 尺度，让"整读"这条捷径先失效；
-最后一题反过来只放大**步数**（同一套工具面要付几十次，见 §4.4）。
+规模本身就是被测信号：token、步数、工具调用数都进 metrics。csv-sum / config-hunt /
+big-file-paging / noisy-test-triage 是**不挑边**的日常形状，api-rename 则被收窄成
+"只用文件工具"的 probe，谁赢都能读出来；最后一题反过来只放大**步数**（同一套工具面
+要付几十次，见 §4.3）。
 
-bulk-rename 的"每次最多 10 个"、log-stats 的"每次最多 10 个日志"、grep-sweep 的"每次最多
-50 个文件"、api-rename 的"只用文件工具"都是**提示词约定，不是判卷条件**：`verify` 只读
-最终状态，一条循环命令或一次 `sed` 照样通过（`countFiles` / `contentHashes` / `fileLines`
-分不出用了什么过程）。它们测的是模型按不按批走、用不用文件工具——报告里的 `tool calls` /
-`steps` 与每步重发的上下文——而不是约束本身；要门禁化只能引入带审计的 helper（判卷看
-审计），代价是任务从"日常形状"变成"按协议做题"。
+api-rename 的"只用文件工具"是**提示词约定，不是判卷条件**：`verify` 只读最终状态，
+一次 `sed` 照样通过（`contentHashes` 分不出用了什么过程）。它测的是模型用不用文件工具——
+报告里的 `tool calls` / `steps` 与每步重发的上下文——而不是约束本身；要门禁化只能引入
+带审计的 helper（判卷看审计），代价是任务从"日常形状"变成"按协议做题"。
 
-`repeat` 已按任务成本分层（便宜题多采样，如 log-stats 5 次、grep-sweep 2 次；
-十二个任务缺省合计 30 次/侧），显式 `--repeat N` 会覆盖整个分层预算。
+`repeat` 现在每道题缺省都是 2 次/侧（合计 12 次/侧）；语料变重时仍可用 `repeat` 字段分层，
+显式 `--repeat N` 会覆盖整个预算。
 
 `ops_replace` 每改一个文件会在同目录留下一个 `.dsh-ops-update-<sha256>.lock`。它**不是残留**：
 发布是原子改名，锁必须活在目标 inode 之外，所以插件按文件名哈希建一份持久协作锁、从不删除
@@ -386,47 +375,18 @@ bulk-rename 的"每次最多 10 个"、log-stats 的"每次最多 10 个日志"�
 那条约定也照旧由它守着。注意 `ops_glob` / `ops_grep` 本来就不报它（隐藏组件规则），
 所以模型在 workspace 里看不见这些文件。
 
-### 4.3 256K 长上下文档（`long-corpus-ledger` / `deep-module-256k`）
+### 4.3 长跑档（`gate-repair-loop`）
 
-这两题是给"上下文太短"这个怀疑准备的正面对照：workspace 各约 1.08MB 文本（≈254K token），
-而且答案都**必须**跨过整份材料才凑得齐——`long-corpus-ledger` 少读一个 shard 就少一行，
-`deep-module-256k` 的答案在文件两端。于是"读一角"没有捷径，只有两条路：
-
-- **有界遍历**：逐 shard / 逐区间定位，只把答案需要的字段带进上下文；
-- **整读**：在短档里这是可行且常常更省事的（170KB 模块 ≈ 4 万 token），在这一档
-  整读约 25 万 token，越过 `0.8 × contextWindow` 的压缩线——`dsh-compaction-basic`
-  会开始摘要历史、只保留 16%，模型拿到的就不再是原文。这时测到的其实是压缩策略。
-
-**前置条件**：`bench/llm.patch.yml` 里该模型的 `contextWindow` 必须 ≥ 262144，且
-**扣掉 `maxTokens` 预留后仍有 > 256K 的余量**（压缩压力取 `0.8 × contextWindow` 与
-`contextWindow − maxTokens − headroom` 的较小值）。模板 `llm.patch.example.yml`
-现在默认写 262144。短题不受这个值影响（峰值 prompt 只有 2 万上下，永远碰不到压缩线），
-但动了它就是动了口径：**两侧基线要重跑**，旧 run 目录与新数据不可直接对比。
-
-单独跑这一档（不跑整轮语料）：
-
-```console
-node bench/run.mjs --label bench-base --profile bench-base --folder 256k --task long-corpus-ledger --task deep-module-256k
-node bench/run.mjs --label bench-ops  --profile bench-ops  --folder 256k --task long-corpus-ledger --task deep-module-256k
-node bench/compare.mjs bench-base bench-ops --folder 256k --fail-on both
-```
-
-想多采样就加 `--repeat N`（缺省各 2 次/侧）；token 结论仍然要求服务端在流式响应里
-回报 usage（§3）。
-
-### 4.4 长跑档（`gate-repair-loop`）
-
-§4.3 量的是"一次要搬多少字节"，这一题量的是反面：workspace 只有约 90KB，但
+这一题量的是反过来的东西：workspace 只有约 90KB，但
 `check.js` 是 **fail-fast** 的——它按顺序校验 `gates/` 里的阶段、在第一个不一致的阶段退出，
 所以修好一个阶段只换来一个阶段的进展，24 个阶段至少要 24 次运行；而第 N 轮会把前
 N 个阶段累积的通过行重新带进历史（末轮约 22KB）。
 
-为什么值得单列一档：报告里 `## Per-request overhead` 那节量的是**每次请求都付**的固定开销
-（工具 schema + 提示词策略，两侧对比的首步 prompt 之差），它**按 step 线性累加**。
-短跑里这笔钱被"少跑两步"抵消掉（test10：固定开销 +16,065，多跑的步数 −12,450），
-长跑里它没有地方藏。所以这一题在同一轮里同时回答两件事：每步的节省在几十步的尺度上
-还成立吗，还是被固定开销吃掉——**看 TOTAL 之前先看 `## Where the token delta comes from`
-的四项分解**，别只看总量。
+为什么值得单列一档：这一题放大的是**步数**。每轮都要把前面阶段的通过行重新带进历史，
+固定开销按 step 线性累加；短跑里这笔钱可能被"少跑两步"抵消掉（test10：固定开销 +16,065，
+多跑的步数 −12,450），长跑里步数差没有地方藏。所以它回答的是：每步的节省在几十步的尺度上
+还成立吗，还是被步数和上下文增长吃掉——**先看主表的 steps 列与 TOTAL，再看
+`## Token buckets` 的 Δ 构成**，别只看总量。
 
 配平旋钮都在 `fixture.params` 里：`gates` 决定最少轮数（也决定步数下限），`probes`
 决定每轮日志的行数（也就决定每步要重新带多少工具输出），`linesPerGate` 决定每个阶段
@@ -441,11 +401,12 @@ node bench/compare.mjs bench-base bench-ops --folder long-run --fail-on both
 ### 门禁与退出码
 
 - `regression`：缺省逐任务判定（`--regression-scope task`）——任一任务候选 median token
-  > 该任务基线 × (1 + tolerance) → 退出码 1（报告行内标 `⚠regressed`）。旧的 TOTAL 之和
-  判定可用 `--regression-scope total` 取回，`both` 两个都判；
+  > 该任务基线 × (1 + tolerance) → 退出码 1（失败原因打印在命令行；Markdown 报告不再带
+  门禁行）。旧的 TOTAL 之和判定可用 `--regression-scope total` 取回，`both` 两个都判；
 - `pass-drop`：任一任务或 TOTAL 的通过率下降 → 退出码 1（token 降了但任务做不对 = 无效优化）；
 - 任一侧 usage 不完整 → token 列打印 `n/a`，`regression` 自动降级为仅 `pass-drop`；
-- 两侧 model/provider 不一致 → 显著警告（公平性锚，PLAN §10.1）。
+- 两侧 model/provider 不一致等公平性问题 → 记入比较结构的 `warnings`（`--json` 可见；
+  Markdown 报告不再单列 Warnings 段）。
 
 `run.mjs`：`0` 表示整轮跑完并落盘（任务失败是被测量的结果，不是运行器的错误）、
 `1` 表示 preflight 或运行器故障、`2` 表示命令行用法错误。
@@ -519,18 +480,17 @@ profile 且优先于 profile 层。跑分的人若在这里放过自己的模型
 
 1. **公平性锚**：两侧同 provider、同 model、同上下文配置，由共用同一份 `--patch` overlay
    保证；每个 run 目录存档带 overlay 的 `dump-config.txt`。
-2. **方差**：模型输出非确定。采样按语料的分层预算（每任务 `repeat` 字段，2~5 次，显式
-   `--repeat N` 统一覆盖），取中位数，报告并列 min 以观察离散度；单次差异在噪声内没有意义。
+2. **方差**：模型输出非确定。采样按语料的分层预算（每任务 `repeat` 字段，2 次，显式
+   `--repeat N` 统一覆盖），取中位数；单次差异在噪声内没有意义。
 3. **口径**：`grandTotal` = input + output + cacheRead + cacheWrite 四桶之和；
    `reasoningTokens` 单列展示、**不**计入总量。cache 桶是否"省钱"取决于计价模型，
-   所以报告分桶展示，并在 `## Token buckets` 里给出各桶占 Δ 的百分比——一个 +54% 的
-   Δ 里如果 89% 是 cache read，"token 涨了"和"账单涨了"就不是同一件事，报告不替读者
-   把这两个数合并掉。
-4. **Δ 的归因是一阶分解，不是因果证明**：`## Per-request overhead` 用首步 prompt 隔离
-   出每轮都付的固定开销，`## Where the token delta comes from` 把 Δ 拆成固定开销 / 多跑的
-   步数 / 残差（工具结果更大、上下文涨得更快）。三项相加等于 prompt 的 Δ，加上 Δ output
+   所以报告在 `## Token buckets` 里分桶展示 base→ops 与 Δ——同样一个 +54% 的 Δ，
+   落在 cache read 和落在 uncached input 上不是同一张账单，报告不替读者把这两个数合并掉。
+4. **Δ 的归因是一阶分解，不是因果证明**：`compareSummaries` 仍把 Δ 拆成固定开销 / 多跑的
+   步数 / 残差（工具结果更大、上下文涨得更快），三项相加等于 prompt 的 Δ，加上 Δ output
    等于总 Δ——这是算术恒等，不是结论：残差里既有"某个工具吐了一大坨"，也有"模型这次
-   多验证了一遍"，要分清得翻 `results/*.events.ndjson`。门禁只判 `grandTotal`。
+   多验证了一遍"，要分清得翻 `results/*.events.ndjson`。这项分解保留在比较结构与
+   `--json` 输出里，Markdown 报告不再展开；门禁只判 `grandTotal`。
 5. **观测性指标**：`textChars` / `thinkingChars` 受事件流 32KB 单行截断影响，只作观察，
    不进门禁。
 6. **自测声明**：结果只描述"这台机器、这个模型、这组任务、这个时间"的测量，不构成可外推的
