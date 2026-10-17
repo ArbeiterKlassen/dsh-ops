@@ -566,7 +566,10 @@ mod tests {
     use super::*;
     #[test]
     fn copy_changed_source_is_not_published() {
-        let root = std::env::temp_dir().join(format!("dsh-ops-copy-cas-{}", uuid::Uuid::new_v4()));
+        let temp = std::env::temp_dir();
+        #[cfg(unix)]
+        let temp = std::fs::canonicalize(temp).unwrap();
+        let root = temp.join(format!("dsh-ops-copy-cas-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root).unwrap();
         let source = root.join("source");
         let dest = root.join("dest");

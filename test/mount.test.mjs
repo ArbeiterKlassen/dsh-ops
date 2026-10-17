@@ -63,7 +63,7 @@ async function executor(ctx) {
 }
 async function agent(ctx, id, mode = 'danger-full-access', parent) {
   const { createScope } = await import('@deepseek-ai/dsh-scope')
-  const result = { id, session: { mode, header: { cwd: process.cwd() } } }
+  const result = { id, session: { id, mode, header: { cwd: process.cwd() } } }
   let scope
   await (parent?.ctx ?? ctx).plugin({ inject: ['tools'], apply(inner) { scope = createScope(inner, result) } })
   result.ctx = scope.ctx
@@ -230,7 +230,7 @@ await test('bash is scoped to authorized sessions, responds to mode changes, and
     if (process.platform === 'win32') {
       const restrictedResult = await definition.execute({ command: 'echo no' }, { agent: full, signal: new AbortController().signal })
       assert.equal(restrictedResult.status, 'failed')
-      assert.match(restrictedResult.error, /EXECUTOR_UNAVAILABLE/)
+      assert.match(restrictedResult.error, /EXECUTOR_UNAVAILABLE: The restricted Bash runtime/)
       assert.equal(restrictedResult.permission, undefined)
     } else {
       const value = await definition.execute({ command: 'echo no' }, { agent: full, signal: new AbortController().signal })
