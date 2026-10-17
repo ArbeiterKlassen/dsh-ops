@@ -233,8 +233,8 @@ fn segment_match(pattern: &str, value: &str) -> bool {
 }
 fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     let raw = path.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;
-    let target = crate::file_path::checked(raw)?;
-    let mut file = crate::file_path::read_file(&target)?;
+    let target = crate::file_path::checked(raw).map_err(|mut error| { error.message = format!("read path validation: {}", error.message); error })?;
+    let mut file = crate::file_path::read_file(&target).map_err(|mut error| { error.message = format!("read open: {}", error.message); error })?;
     let mut bytes = Vec::new();
     std::io::Read::by_ref(&mut file).take(MAX_FILE_BYTES + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_FILE_BYTES { return Err(Failure::new("OUTPUT_LIMIT", "File exceeds the bounded read budget")); }
@@ -582,7 +582,7 @@ impl PreservedMetadata {
 /// Non-cooperating writers remain outside this advisory serialization contract.
 fn lock_and_read_for_update(file: &Path) -> Result<(std::fs::File, Vec<u8>)> {
     let raw = file.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;
-    let checked = crate::file_path::checked(raw)?;
+    let checked = crate::file_path::checked_leaf(raw, true)?;
     // The lock inode must survive replacement of the target inode. Keep a
     // persistent, hidden sidecar per path; unlinking it after unlock would let
     // another process lock a different inode under the same lock name.
@@ -592,7 +592,7 @@ fn lock_and_read_for_update(file: &Path) -> Result<(std::fs::File, Vec<u8>)> {
     options.read(true).write(true).create(true).follow(FollowSymlinks::No);
     #[cfg(unix)]
     { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
-    let lock = checked.parent.open_with(lock_name, &options)?;
+    let lock = checked.parent.open_with(lock_name, &options).map_err(|error| Failure::new("LOCK_OPEN_FAILED", format!("Stable update lock open: {error}")))?;
     crate::file_path::regular(&lock.metadata()?, false)?;
     let lock = lock.into_std();
     FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this path; nothing was changed, retry"))?;
@@ -635,6 +635,9 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     let preserved = PreservedMetadata::of(&checked)?;
     #[cfg(windows)]
     let preserved = publication::Preserved::capture(&checked, true)?;
+    #[cfg(target_os = "macos")]
+    dsh_ops_darwin_metadata::require_no_extended_acl(&crate::file_path::read_file(&checked)?.into_std())
+        .map_err(|error| Failure::new("METADATA_UNSUPPORTED", error))?;
     let parent = &checked.parent;
     let name = &checked.name;
     sweep_debris(parent, name);
