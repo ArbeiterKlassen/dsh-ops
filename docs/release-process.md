@@ -30,14 +30,15 @@ Sync master with main | active
 
 1. **`native`（矩阵：`windows-latest`/`win32-x64`、`ubuntu-24.04`/`linux-x64`、`macos-latest`/`darwin-arm64`）**
    - 只构建 [lib/ptc/runtime.js](../lib/ptc/runtime.js) 里声明的那三个目标；Intel macOS 与两种 arm64 变体不在矩阵内。
-   - 固定 Rust 1.97.1 与已锁定的 `Cargo.lock`；`cargo build --release --locked` 失败即整次发布失败。
+   - 固定 Rust 1.97.1 与已锁定的 `Cargo.lock`；npm 平台名和 Rust triple 分列（例如 `win32-x64` 对应 `x86_64-pc-windows-msvc`），`cargo build --release --locked --target <triple>` 失败即整次发布失败。
    - `bin/native-runtime.mjs stage` 为目标写入 `runtime/<target>/provenance.json`（version／target／executable／sha256）——这就是本仓库的 provenance 约定；缺二进制或不是常规文件都会报错。
    - Windows 目标额外跑 `npm run build:bash-ipc`，其 receipt 由门禁按仓库内的 `native/bash-ipc/*` 源码哈希复核。
    - 产物以 `native-<target>` 上传，路径就是 CI 使用的 `runtime/<target>/`，`if-no-files-found: error`。
    - 这里**故意不做 `actions/cache` 恢复**：发布二进制在冷目录里由该 tag 的源码构建，不会被上一次运行的缓存顶替。
 2. **`gate`（`windows-latest`，只读权限）**
    - tag 与 `package.json` 版本不一致 → 直接失败（不进入打包）。
-   - 下载三个 artifact 合并回 `runtime/`。
+   - 下载三个 artifact 分别放回 `runtime/win32-x64`、`runtime/linux-x64`、`runtime/darwin-arm64`，不把各目标的 `provenance.json` 展平覆盖。
+   - 单独编译 gate 宿主 worker 到 `native/target/release` 供固定路径的真实套件使用；这份测试 build 不替换来自冷构建矩阵的 staged 发布产物。
    - **`npm run verify:release`**（`validate-manifest` + 全部仓库测试 + `bin/check-release.mjs`）是硬门禁：三目标缺一、receipt 与字节哈希不符、Windows IPC 二进制/源码哈希不符、`dsh-plugin.json` 与 runtime 白名单不一致，任一都失败。
    - 之后才 `build-platform-packages.mjs --dist`（组装 Windows 两个 payload 包 + 主包并打 tarball，写 `provenance.json` 与 `SHA256SUMS`），再 `... check --dist`（只重读已记录的摘要，不下载不构建）。
    - dist 目录以 `release-dist` 上传，`if-no-files-found: error`。

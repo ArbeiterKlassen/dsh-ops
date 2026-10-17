@@ -54,9 +54,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: windows-latest, target: win32-x64 }
-          - { runner: ubuntu-24.04, target: linux-x64 }
-          - { runner: macos-latest, target: darwin-arm64 }
+          - { runner: windows-latest, target: win32-x64, triple: x86_64-pc-windows-msvc }
+          - { runner: ubuntu-24.04, target: linux-x64, triple: x86_64-unknown-linux-gnu }
+          - { runner: macos-latest, target: darwin-arm64, triple: aarch64-apple-darwin }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     env:
@@ -79,7 +79,7 @@ jobs:
 
       - name: Add the release target
         shell: bash
-        run: rustup target add ${{ matrix.target }}
+        run: rustup target add ${{ matrix.triple }}
 
       - name: Install locked dependencies
         # Only the Windows job needs node_modules: the IPC proxies link against the
@@ -91,13 +91,13 @@ jobs:
 
       - name: Build the native worker
         shell: bash
-        run: cargo build --release --locked --manifest-path native/Cargo.toml --target ${{ matrix.target }}
+        run: cargo build --release --locked --manifest-path native/Cargo.toml --target ${{ matrix.triple }}
 
       - name: Stage the runtime with its provenance receipt
         # Fails on a missing or non-regular target binary, and writes
         # runtime/<target>/provenance.json carrying the executable's sha256.
         shell: bash
-        run: node bin/native-runtime.mjs stage --platform ${{ matrix.target }} --input native/target/${{ matrix.target }}/release
+        run: node bin/native-runtime.mjs stage --platform ${{ matrix.target }} --input native/target/${{ matrix.triple }}/release
 
       - name: Build the Windows Bash IPC proxies
         # Only the Windows target carries the IPC proxies; their receipt is verified
@@ -109,8 +109,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.target }}
-          # `runtime/<target>/` is the layout ci.yml uploads and the layout both
-          # `native-runtime check` and `bin/check-release.mjs` read back.
+          # Download each artifact into its own runtime/<target>/ directory.
           path: runtime/${{ matrix.target }}/
           if-no-files-found: error
           retention-days: 7
@@ -149,9 +148,27 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: native-*
-          path: runtime
-          merge-multiple: true
+          name: native-win32-x64
+          path: runtime/win32-x64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-linux-x64
+          path: runtime/linux-x64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-darwin-arm64
+          path: runtime/darwin-arm64
+
+      - name: Prepare the host worker for functional suites
+        # Boundary suites intentionally resolve their checkout-local host build.
+        # This build is test-only; the staged release runtimes remain the cold matrix artifacts.
+        shell: bash
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          cargo build --release --locked --manifest-path native/Cargo.toml
 
       - name: Release gate (manifest, suites, runtime closure)
         # Publishing must not start before this step is green — it is the only reason
