@@ -41,7 +41,7 @@ import { callTool, envelopeOf, requireWorker } from './lib/boundary.mjs'
 requireWorker('replace-concurrency')
 
 const WRITERS = 6
-const TRIALS = 3
+const TRIALS = process.platform === 'darwin' ? 10 : 3
 const FILLER = 1024 * 1024
 
 /** Read one call's outcome without throwing on any of them. */
