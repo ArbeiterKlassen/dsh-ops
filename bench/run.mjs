@@ -31,7 +31,7 @@ const workspace = mkdtempSync(path.join(home, 'workspace-'))
 const sample = path.join(workspace, 'sample.txt')
 const large = path.join(workspace, 'large.txt')
 writeFileSync(sample, readFileSync(path.join(fixtureRoot, 'sample.txt')))
-writeFileSync(large, readFileSync(path.join(fixtureRoot, 'large.txt')))
+writeFileSync(large, 'benchmark output fixture line with bounded content 0123456789 abcdefghijklmnopqrstuvwxyz\n'.repeat(12_000))
 
 const scenarios = []
 const schemaAccounting = []
