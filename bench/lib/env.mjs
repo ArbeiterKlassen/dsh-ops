@@ -46,7 +46,11 @@ export function poisonedModulePath(modulePath, windows = process.env.SystemRoot 
 }, delimiter = path.delimiter) {
   if (!modulePath) return null
   const entries = modulePath.split(delimiter).filter(Boolean)
-  const inBox = path.join(windows, 'system32', 'WindowsPowerShell', 'v1.0', 'Modules').toLowerCase()
+  // `windows` is always Windows-shaped (the default is `process.env.SystemRoot ?? 'C:\\Windows'`,
+  // and `PSModulePath` is a Windows-only variable), so the joiner has to be pinned too: on a POSIX
+  // host `path.join` produces `C:\Windows/system32/…`, which never equals the in-box entry below,
+  // and the ordering rule silently collapses into "scan every entry".
+  const inBox = path.win32.join(windows, 'system32', 'WindowsPowerShell', 'v1.0', 'Modules').toLowerCase()
   const atInBox = entries.findIndex((entry) => entry.toLowerCase() === inBox)
   const limit = atInBox === -1 ? entries.length : atInBox
   for (const entry of entries.slice(0, limit)) {
