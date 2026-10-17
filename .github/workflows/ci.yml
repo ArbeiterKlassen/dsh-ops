@@ -1,4 +1,4 @@
-name: Cross-platform 0.3.1 validation
+name: Cross-platform validation
 on:
   # A merge to `main` must validate itself. Without this, `main` was only ever checked when someone
   # remembered to dispatch the workflow by hand — which is how a stale number shipped in #134.
@@ -12,12 +12,13 @@ permissions:
   contents: read
 concurrency:
   group: cross-platform-${{ github.ref }}
-  cancel-in-progress: false
+  # A pull request that gets a new push supersedes its own earlier run; `main` never cancels,
+  # because a half-built release branch is worse than a queued one.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   validate:
     strategy:
       fail-fast: false
-      max-parallel: 2
       matrix:
         include:
           - { runner: windows-latest, target: win32-x64 }
@@ -27,6 +28,11 @@ jobs:
     timeout-minutes: 35
     env:
       CARGO_BUILD_JOBS: '3'
+      # Runners are shared and sometimes loaded: give each suite more headroom than a workstation
+      # needs, and let a deadline be retried once — a timeout is the environment answering, and the
+      # retry prints, so a green summary still shows it happened.
+      DSH_OPS_SUITE_TIMEOUT_MS: '300000'
+      DSH_OPS_RETRY_TIMEOUTS: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,6 +51,8 @@ jobs:
             ~/.cargo/git
             native/target
           key: ops-031-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/Cargo.lock') }}
+          # A changed lockfile must not throw the whole cache away: fall back to the previous one.
+          restore-keys: ops-031-${{ runner.os }}-${{ runner.arch }}-
       - name: Linux ACL test dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y acl
@@ -103,6 +111,8 @@ jobs:
             ~/.cargo/git
             native/target
           key: ops-031-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/Cargo.lock') }}
+          # A changed lockfile must not throw the whole cache away: fall back to the previous one.
+          restore-keys: ops-031-${{ runner.os }}-${{ runner.arch }}-
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
       - name: Build the native worker
