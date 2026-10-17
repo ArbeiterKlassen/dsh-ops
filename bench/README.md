@@ -235,6 +235,8 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 声明了但没接线的子命令**从不静默**:目标文件不存在,或存在但没导出 `main(argv, io)`,都以退出码 `3`
 点名所属切片与目标路径。因此切片可以一个一个并入,而 CLI 的 tripwire 始终说真话:
 
-- `setup` / `report` / `panel` 已接线,`--help` 退 `0`;
-- `ab` 目前是**计划形态**:`--show` 打印三条命令,真跑前会检查 runner 入口,缺失就退 `3`;
-- `tools` 的测量模块已就位,但 `bench/tools/index.mjs` 还没导出 `main`,同样退 `3`。
+- `setup` / `report` / `panel` / `tools` 已接线,`--help` 退 `0`;
+- `ab` 已接线:整次 sweep 在**一个**子进程内完成,两臂按 `(task, repeat)` 的奇偶 **AB/BA 交错**
+  (奇数轮 base→cand,偶数轮 cand→base);`--show` 只打印逐对计划,不 spawn 任何会话;
+- 目前只剩"声明了但目标文件还没落地"这一种 pending 形态,它退 `3` 并点名切片与目标路径 ——
+  切片一个一个并入时,这条 tripwire 始终说真话。

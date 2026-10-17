@@ -232,7 +232,8 @@ export async function main(argv, io = {}) {
       ...(options.timeoutMs === null ? {} : { timeoutMs: options.timeoutMs }),
       io: { out, err, table: io.table ?? (rows => console.table(rows)) },
     })
-    if (result.output) out(`Report: ${result.output}`)
+    // `compareFiles` already announces the report path through `io.out`; printing it here
+    // again would put the same line on the console twice.
     return Number.isInteger(result.exitCode) ? result.exitCode : 1
   } catch (error) {
     err(`bench tools: ${String(error?.message ?? error)}`)
