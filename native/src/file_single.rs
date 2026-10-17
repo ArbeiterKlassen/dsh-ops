@@ -376,6 +376,59 @@ fn publish_new(
     let preserved = source.map(|source| publication::Preserved::capture(source, false)).transpose()?;
     #[cfg(unix)]
     let preserved = source.map(PreservedMetadata::of).transpose()?;
+    #[cfg(target_os = "macos")]
+    if let Some(source) = source {
+        // Darwin cannot stage a copy: an ACE that denies `delete` blocks `unlink`
+        // and `rename` on the file itself, so a staged clone carrying the source's
+        // ACL can never be removed again, and only `clonefile` can carry that ACL
+        // at all. The clone therefore goes straight to the destination name, which
+        // is itself no-clobber, and the bytes it published are measured below
+        // instead of assumed.
+        if let Some(expected) = expected_source {
+            // Re-check before anything is published: a source that already moved
+            // must publish nothing.
+            check_revision(Some(&read_bytes(&source.display)?), expected)?;
+        }
+        let mut file = publication::publish_clone(&checked.parent, &checked.name, source)?;
+        let prepared = (|| -> Result<()> {
+            let mut published = Vec::new();
+            (&mut file)
+                .take(bytes.len() as u64 + 1)
+                .read_to_end(&mut published)?;
+            if published.as_slice() != bytes {
+                return Err(Failure::new(
+                    "RESULT_PARTIAL",
+                    "The source changed while it was cloned, so the destination holds another revision",
+                ));
+            }
+            let metadata = crate::file_path::read_file(source)?.metadata()?;
+            let times = std::fs::FileTimes::new()
+                .set_accessed(metadata.accessed()?.into_std())
+                .set_modified(metadata.modified()?.into_std());
+            file.try_clone()?.into_std().set_times(times)?;
+            if let Some(preserved) = &preserved {
+                // Mask inherited grants while the captured mode is off, exactly as
+                // the staged path does: re-applying user attributes needs write
+                // permission on the inode, which a read-only source does not grant.
+                rustix::fs::fchmod(&file, rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR)
+                    .map_err(|error| Failure::new("ACCESS_DENIED", error))?;
+                let (_, warnings) = preserved.restore(&file)?;
+                if !warnings.is_empty() {
+                    return Err(Failure::new(
+                        "METADATA_UNSUPPORTED",
+                        "Copy metadata could not be fully restored",
+                    ));
+                }
+            }
+            file.sync_all()?;
+            Ok(())
+        })();
+        if let Err(failure) = prepared {
+            // The destination name already exists: the clone published it.
+            return Err(applied_failure(&failure.code, failure.message));
+        }
+        return sync_applied(&checked.parent);
+    }
     let temporary = format!(".{}.dsh-ops-{}", checked.name, uuid::Uuid::new_v4());
     let mut file = publication::create_sibling(&checked.parent, &temporary, source)?;
     let prepared = (|| -> Result<()> {
