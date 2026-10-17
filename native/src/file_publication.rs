@@ -5,7 +5,7 @@ use cap_std::fs::{Dir, File, OpenOptions};
 
 pub(super) fn open_update_lock(parent: &Dir, name: &str) -> Result<std::fs::File> {
     crate::file_path::validate_name(name)?;
-    #[unix]
+    #[cfg(unix)]
     let file = {
         // A single validated sibling beneath an already-held no-follow directory.
         // Avoid cap-std's emulated create/open dance under simultaneous creators.
@@ -16,7 +16,7 @@ pub(super) fn open_update_lock(parent: &Dir, name: &str) -> Result<std::fs::File
             .map_err(|error| Failure::from(std::io::Error::from(error)))?;
         File::from_std(std::fs::File::from(fd))
     };
-    #[windows]
+    #[cfg(windows)]
     let file = parent.open_with(name, OpenOptions::new().read(true).write(true).create(true).follow(FollowSymlinks::No))?;
     crate::file_path::regular(&file.metadata()?, false)?;
     Ok(file.into_std())
