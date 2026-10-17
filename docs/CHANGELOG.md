@@ -7,23 +7,22 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-### Platform default baseline guarded (#170; policy decision pending)
+### Platform defaults confirmed by the operator (#170)
 
-- No default flip is shipped by this patch: PTC remains opt-in (`disabled: true`,
-  `defaultEnabled: false`); shell remains enabled on Windows/Linux/macOS; hide-official remains
-  opt-in. Existing explicit profile choices are not migrated or overwritten.
-- The catalog's unused POSIX `shellDefaultEnabled: false` claim now matches the actual enabled
-  bundle/manifest default. A dedicated test guards all three defaults against that 0.3.1 baseline.
-- The #151 proposal to enable PTC globally and disable POSIX shell is not adopted without an
-  explicit product decision. No token saving is claimed; #145/#148's reported cost increases
-  are not answered by a benchmark here. PTC opt-in users can enable `dsh-ops-ptc` explicitly.
-- No `defaultEnabledPlatforms` field or platform `!!js` expression is introduced: this patch does
-  not claim the pinned host consumes that extension or exposes process during patch evaluation.
-  A future flip must prove those host contracts and document migration before changing defaults.
+- PTC enhancement is enabled by default (`defaultEnabled: true`, no disabled bundle row).
+  This changes the published 0.3.0/0.3.1 opt-in baseline, but does not force PTC presentation:
+  native/hybrid sessions do not acquire batch/result tools or their scoped guidance.
+- Shell stays enabled on Windows, Linux and macOS. Strict official-tool hiding stays opt-in.
+  Existing explicit profile choices are not migrated or overwritten; users can disable the
+  PTC component explicitly. Enabling the component does not raise filesystem permissions.
+- The catalog's POSIX shell-default claim now agrees with the bundle/manifest. No unsupported
+  `defaultEnabledPlatforms` field or platform `!!js` expression is needed.
+- No token saving is claimed. #145/#148 cost comparisons remain an acceptance requirement;
+  functional and schema tests alone do not prove a net token benefit.
 
 ### PTC paging and discoverability (#171, #160)
 
-- PTC remains opt-in pending the separate #170 default-policy decision. Enabled PTC-only scopes
+- Default enablement is decided separately in #170. Enabled PTC-only scopes
   receive batch/result usage guidance; native/hybrid scopes do not inherit that guidance or tools.
 - Argument schemas use the pinned host's supported JSON Schema subset, retaining numeric limits
   as descriptions and native validation. Actual host SDK rendering is tested against `unknown`.

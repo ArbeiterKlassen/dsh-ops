@@ -101,7 +101,7 @@
       {
         "id": "dsh-ops-ptc",
         "entry": "dsh-ops/ptc",
-        "defaultEnabled": false,
+        "defaultEnabled": true,
         "platforms": ["win32", "linux", "darwin"],
         "architectures": ["x64", "arm64"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
