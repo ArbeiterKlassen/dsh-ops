@@ -3,6 +3,45 @@
 use super::*;
 use cap_std::fs::{Dir, File, OpenOptions};
 
+pub(super) fn check_revision(bytes: Option<&[u8]>, expected: &str) -> Result<()> {
+    if expected != "absent" && !(expected.len() == 64 && expected.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))) {
+        return Err(Failure::new("INVALID_ARGUMENT", "expectedRevision must be absent or lowercase SHA-256"));
+    }
+    let actual = bytes.map(|bytes| format!("{:x}", Sha256::digest(bytes))).unwrap_or_else(|| "absent".into());
+    if actual != expected { return Err(Failure::new("REVISION_CONFLICT", "Revision differs; inspect before preparing a new request")); }
+    Ok(())
+}
+
+pub(super) fn authorize_write(request: &Request, raw: &str) -> Result<PathBuf> {
+    if request.read_only { return Err(Failure::policy("read-only", "User authorization is read-only")); }
+    let checked = crate::file_path::checked_leaf(raw, true)?;
+    request.authorize_path(&checked.display)?;
+    if let Some(roots) = &request.write_roots {
+        let parent = fs::canonicalize(checked.display.parent().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "No parent"))?)?;
+        let candidate = parent.join(&checked.name);
+        if !roots.iter().any(|root| fs::canonicalize(root).is_ok_and(|root| candidate.starts_with(root))) {
+            return Err(Failure::policy("write-roots", "Target is outside authorized write roots"));
+        }
+    }
+    Ok(checked.display)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn revision_cas_never_treats_absent_as_a_wildcard() {
+        check_revision(None, "absent").unwrap();
+        assert_eq!(check_revision(Some(b"old"), "absent").unwrap_err().code, "REVISION_CONFLICT");
+        let hash = format!("{:x}", Sha256::digest(b"old"));
+        check_revision(Some(b"old"), &hash).unwrap();
+        assert_eq!(check_revision(None, &hash).unwrap_err().code, "REVISION_CONFLICT");
+        assert_eq!(check_revision(Some(b"new"), &hash).unwrap_err().code, "REVISION_CONFLICT");
+        assert_eq!(check_revision(Some(b"old"), &hash.to_uppercase()).unwrap_err().code, "INVALID_ARGUMENT");
+    }
+}
+
+
 pub(super) fn create_sibling(
     parent: &Dir,
     temporary: &str,
@@ -41,7 +80,7 @@ pub(super) fn create_sibling(
             // Mask inherited grants before writing new bytes. The caller restores
             // the captured original mode after writing, before publication.
             rustix::fs::fchmod(&cloned, rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR)
-                .map_err(|error| Failure::new("ACCESS_DENIED", error))?;
+                .map_err(|error| Failure::new("METADATA_UNSUPPORTED", error))?;
             Ok(parent.open_with(
                 temporary,
                 OpenOptions::new()
@@ -77,11 +116,9 @@ pub(super) fn create_sibling(
 
 #[cfg(windows)]
 fn metadata_error(error: std::io::Error) -> Failure {
-    if error.kind() == std::io::ErrorKind::Unsupported {
-        Failure::new("METADATA_UNSUPPORTED", error)
-    } else {
-        error.into()
-    }
+    // The source was opened separately: failures inside capture/restore prove
+    // metadata cannot be guaranteed, not that the DSH selector denied a write.
+    Failure::new("METADATA_UNSUPPORTED", error)
 }
 #[cfg(windows)]
 pub(super) struct Preserved(dsh_ops_windows_metadata::Metadata);

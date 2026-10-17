@@ -71,7 +71,13 @@ impl Failure {
             phase: "preflight".into(),
             retryable: false,
             effect_state: "none".into(),
-            next_action: "Correct the request or inspect the manifest.".into(),
+            next_action: match code {
+                "METADATA_UNSUPPORTED" => "Use a filesystem/platform or dedicated tool that preserves the source metadata. Changing the permission selector or blindly retrying cannot repair this limitation.",
+                "REVISION_CONFLICT" => "Inspect the current revision before preparing a new request; do not blindly retry.",
+                "CREDENTIAL_DENIED" => "Choose a non-credential path; do not bypass the credential fence or change the permission selector to remove it.",
+                "PATH_RESTRICTED" => "Inspect the real path and linked/special components; do not bypass no-follow protection.",
+                _ => "Correct the request or inspect the manifest.",
+            }.into(),
             message: message.to_string(),
         }
     }

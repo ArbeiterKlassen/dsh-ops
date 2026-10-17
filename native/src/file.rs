@@ -415,24 +415,17 @@ fn replace(request: &Request) -> Result<Value> {
     let mut items=Vec::new(); for (file, original, text, count) in plans { let revision=format!("{:x}", Sha256::digest(&original)); let next=text.replace(&args.pattern,&args.replacement); items.push(json!({"path":file,"replacements":count,"revision":revision,"revisionAfter":format!("{:x}", Sha256::digest(next.as_bytes())),"bytesBefore":original.len(),"bytesAfter":next.len(),"lineCountBefore":text.lines().count(),"lineCount":next.lines().count()})); }
     if serde_json::to_vec(&items)?.len() > MAX_OUTPUT_BYTES / 2 { return Err(Failure::new("OUTPUT_LIMIT", "Replacement receipts exceed the bounded output budget; narrow path/glob. No files changed.")); }
     if args.dry_run { return Ok(json!({"status":"completed","phase":"observe","changed":0,"matched":total,"skipped":skipped,"failed":0,"complete":true,"omitted":0,"dryRun":true,"items":items,"skippedPaths":skipped_paths})); }
-    for item in &items { single::authorize_write(request, item["path"].as_str().unwrap_or(""))?; }
+    for item in &items { publication::authorize_write(request, item["path"].as_str().unwrap_or(""))?; }
     let mut changed=0usize; for item in &mut items {
         let applied = (|| -> Result<()> { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
-        // Trusted transport owns this allowlist. Re-check every selected file,
-        // not only the initial search root, immediately before publication.
-        if let Some(roots) = &request.write_roots {
-            let canonical = std::fs::canonicalize(&file)?;
-            if !roots.iter().any(|root| std::fs::canonicalize(root).is_ok_and(|r| canonical.starts_with(r))) {
-                return Err(Failure::policy("write-roots", "User authorized workspace writes only; target is outside DSH writable roots. Ask the user to select full access; do not retry or bypass."));
-            }
-        }
+        publication::authorize_write(request, file.to_str().unwrap_or(""))?;
         // Hold the update lock across the check, the read and the publish, so a
         // peer cannot slip in between them and lose our write, or make us lose
         // its. The guard is named, not `_`, so it lives to the end of this pass.
         let (_update, bytes) = lock_and_read_for_update(&file)?;
         // The revision is checked against the bytes the lock returned, so the check
         // and the write cannot be separated by another open — see the lock for why.
-        let expected=item["revision"].as_str().unwrap_or(""); if format!("{:x}", Sha256::digest(&bytes)) != expected { return Err(Failure::new("REVISION_CONFLICT", "file changed between observe and execute")); }
+        let expected=item["revision"].as_str().unwrap_or(""); publication::check_revision(Some(&bytes), expected)?;
         let text=String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "replace only supports UTF-8 files"))?; let next=text.replace(&args.pattern,&args.replacement);
         // Report what the replacement kept. The fields are additive, so a caller
         // that ignores them sees exactly the envelope it saw before.
@@ -586,7 +579,9 @@ fn lock_and_read_for_update(file: &Path) -> Result<(std::fs::File, Vec<u8>)> {
     options.read(true).write(true).create(true).follow(FollowSymlinks::No);
     #[cfg(unix)]
     { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
-    let lock = checked.parent.open_with(lock_name, &options)?.into_std();
+    let lock = checked.parent.open_with(lock_name, &options)?;
+    crate::file_path::regular(&lock.metadata()?, false)?;
+    let lock = lock.into_std();
     FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this path; nothing was changed, retry"))?;
     let bytes = read_bytes(file)?;
     Ok((lock, bytes))
@@ -646,6 +641,10 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
         Ok(report) => report,
         Err(failure) => { publication::discard_sibling(parent, &temporary, file)?; return Err(failure); }
     };
+    if let Err(failure) = parent.symlink_metadata(name).map_err(Failure::from).and_then(|metadata| crate::file_path::regular(&metadata, false)) {
+        publication::discard_sibling(parent, &temporary, file)?;
+        return Err(failure);
+    }
     // Publication stays handle-relative and does not traverse links.
     let publish = parent.rename(&temporary, parent, name);
     if let Err(error) = publish {

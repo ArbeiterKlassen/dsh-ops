@@ -106,7 +106,7 @@ await test('a symlink is refused before any open, inside or outside the root', a
       for (const [label, target] of [['escaping', escaping], ['in-root', inside]]) {
         const refused = envelopeOf(await callTool('inspect_local_file', { path: target }, { root: workspace }), assert)
         assert.equal(refused.status, 'error', `${label}: ${JSON.stringify(refused)}`)
-        assert.equal(refused.error.code, 'PATH_RESTRICTED')
+        assert.equal(refused.error.code, 'PATH_RESTRICTED', `${label} => ${refused.error.code}`)
         assert.match(refused.error.message, /not traversed/)
       }
       // The link target itself is still readable by its real name, so the refusal
