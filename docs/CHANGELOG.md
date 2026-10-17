@@ -37,6 +37,11 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Safety and atomicity (#168)
 
+- Darwin nonempty extended ACLs now fail closed with `METADATA_UNSUPPORTED` before staging.
+  APFS cloning alone is not an exact ACL guarantee; deny-delete entries also prevent safe
+  staging rename/unlink. Use a dedicated metadata-aware tool for ACL-bearing files; changing
+  DSH permissions is not a repair. Plain files still require supported metadata-preserving cloning.
+
 - Replacement receipts hash observed bytes, not a second racy read. Cooperating writers retain
   the persistent path lock across CAS and atomic publication. Later-file failures retain
   `effectState: applied` when earlier files have changed; receipt output is bounded before writes.

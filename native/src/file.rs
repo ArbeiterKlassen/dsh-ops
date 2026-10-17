@@ -108,7 +108,7 @@ pub fn dispatch(request: &Request) -> Result<Value> {
         "replace" => replace(request),
         "stat" | "diff" | "write_file" | "edit_file" | "copy" | "move" | "remove" => single::run(request),
         _ => Err(Failure::new("INVALID_ARGUMENT", "Unknown file capability")),
-    }
+    }.map_err(|mut error| { error.message = format!("{}: {}", request.tool, error.message); error })
 }
 
 fn target(raw: &str, _allow_missing: bool) -> Result<PathBuf> {
@@ -592,7 +592,11 @@ fn lock_and_read_for_update(file: &Path) -> Result<(std::fs::File, Vec<u8>)> {
     options.read(true).write(true).create(true).follow(FollowSymlinks::No);
     #[cfg(unix)]
     { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
-    let lock = checked.parent.open_with(lock_name, &options).map_err(|error| Failure::new("LOCK_OPEN_FAILED", format!("Stable update lock open: {error}")))?;
+    let lock = checked.parent.open_with(lock_name, &options).map_err(|error| {
+        let mut failure = Failure::from(error);
+        failure.message = format!("Stable update lock open: {}", failure.message);
+        failure
+    })?;
     crate::file_path::regular(&lock.metadata()?, false)?;
     let lock = lock.into_std();
     FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this path; nothing was changed, retry"))?;
