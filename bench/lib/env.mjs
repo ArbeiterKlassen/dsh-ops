@@ -19,13 +19,22 @@ import { fileURLToPath } from 'node:url'
 export const BENCH_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 /** The repository root this checkout is, `bench/`'s parent. */
 export const REPO_ROOT = path.dirname(BENCH_DIR)
-/** The `<platform>-<arch>` tag the run contract records and reports key on. */
+/**
+ * The `<platform>-<arch>` tag the run contract records and reports key on.
+ * @param {string} [platform] - the platform to tag (default the host).
+ * @param {string} [arch] - the architecture to tag (default the host).
+ * @returns {string} the tag, e.g. `win32-x64`.
+ */
 export const platformTag = (platform = process.platform, arch = process.arch) => `${platform}-${arch}`
 
 /**
  * Find an executable on PATH without spawning anything. A PATH scan beats
  * `where.exe` / `which`: a confined parent (an agent inside a sandbox) cannot always
  * open those pipes, and the launcher would then look missing from the next directory.
+ * @param {string} name - the bare command name, without extension.
+ * @param {Record<string, string|undefined>} [env] - the environment whose PATH is scanned.
+ * @param {string} [platform] - the platform that decides the extension list.
+ * @returns {string|null} the first matching file, or null.
  */
 export function findOnPath(name, env = process.env, platform = process.platform) {
   const directories = (env.PATH ?? env.Path ?? '').split(path.delimiter).filter(Boolean)
@@ -45,6 +54,8 @@ export function findOnPath(name, env = process.env, platform = process.platform)
  * Extract the package's JS entry from an npm shim (`.cmd`, POSIX shell script, or
  * symlink target): npm writes `%dp0%\node_modules\@deepseek-ai\dsh\lib\bin.js` into
  * the Windows shim and `$basedir/node_modules/.../bin.js` into the POSIX one.
+ * @param {string} shimFile - the resolved shim (or link target) to read.
+ * @returns {string|null} the existing `lib/bin.js` path, or null when the shim names none.
  */
 export function binFromShim(shimFile) {
   let text = ''
@@ -62,7 +73,13 @@ export function binFromShim(shimFile) {
   return fs.existsSync(fallback) ? fallback : null
 }
 
-/** Run a command and capture its output, never throwing on a missing binary. */
+/**
+ * Run a command and capture its output, never throwing on a missing binary.
+ * @param {string} command - the executable to spawn.
+ * @param {string[]} args - its arguments, passed verbatim (no shell).
+ * @param {Record<string, string|undefined>} [env] - the environment the child sees.
+ * @returns {{status: number|null, stdout: string, stderr: string, errorCode: string|null}|null} the captured result, or null when the spawn itself threw.
+ */
 export function runCapture(command, args, env = process.env) {
   try {
     const result = spawnSync(command, args, { encoding: 'utf8', timeout: 30_000, windowsHide: true, env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -104,6 +121,11 @@ export function npmGlobalRoot({ env = process.env, run = runCapture } = {}) {
  * Find the dsh launcher to spawn: `--dsh` wins, otherwise the PATH shim's
  * `node_modules/@deepseek-ai/dsh/lib/bin.js` target, otherwise Windows' npm prefix,
  * otherwise the global root `npm root -g` reports.
+ * @param {string|null} [explicit] - the `--dsh` path, or null to probe.
+ * @param {{env?: Record<string, string|undefined>, platform?: string, runNpm?: (command: string, args: string[], env: object) => object|null}} [options] - the
+ *   environment, target platform and injectable npm runner.
+ * @returns {DshEntry} the resolved entry and the notes that say how it was found.
+ * @throws {Error} when nothing resolves, naming every place that was looked in.
  */
 export function resolveDshEntry(explicit = null, options = {}) {
   const { env = process.env, platform = process.platform, runNpm = runCapture } = options
@@ -143,6 +165,9 @@ export function resolveDshEntry(explicit = null, options = {}) {
  * The spawn plan for a resolved entry — the **only** way the bench spawns dsh: a
  * `.cmd`/`.ps1`/`.bat` shim is never passed to `spawn` (Node cannot pipe it, and a
  * shell would re-quote argv), and `shell` stays off so array arguments arrive verbatim.
+ * @param {DshEntry} entry - the resolved launcher.
+ * @param {string[]} [args] - the arguments to pass after it.
+ * @returns {{command: string, args: string[], label: string}} the command, its argv and a printable label.
  */
 export function spawnPlan(entry, args = []) {
   return {
@@ -165,6 +190,11 @@ export function spawnPlan(entry, args = []) {
  * Modules` and `Program Files\PowerShell\Modules` are user module folders and are
  * harmless, so a pure string match here would cry wolf on every PowerShell 7 box.
  *   and `path.delimiter` is `:` on POSIX, which would shred `C:\…` at the drive-letter colon.
+ * @param {string|undefined} modulePath - the `PSModulePath` value to judge.
+ * @param {string} [windows] - the Windows root the in-box entry is derived from.
+ * @param {(file: string) => boolean} [isDirectory] - the module-directory probe, injectable for tests.
+ * @param {string} [delimiter] - the list separator; `;` because the value is Windows-shaped on every host.
+ * @returns {string|null} the entry whose Core install would shadow 5.1, or null when the order is safe.
  */
 export function poisonedModulePath(modulePath, windows = process.env.SystemRoot ?? 'C:\\Windows', isDirectory = (file) => {
   try {
@@ -188,7 +218,13 @@ export function poisonedModulePath(modulePath, windows = process.env.SystemRoot 
   return null
 }
 
-/** Render `PSModulePath` as one readable line, in search order. */
+/**
+ * Render `PSModulePath` as one readable line, in search order.
+ * @param {string|undefined} modulePath - the value to render.
+ * @param {string|null} [poison] - the entry {@link poisonedModulePath} flagged, marked in the line.
+ * @param {string} [delimiter] - the list separator, matching {@link poisonedModulePath}.
+ * @returns {string} the numbered entries, or the "not set" sentence.
+ */
 export function describeModulePath(modulePath, poison = null, delimiter = ';') {
   if (!modulePath) return 'PSModulePath is not set'
   return modulePath.split(delimiter).filter(Boolean)

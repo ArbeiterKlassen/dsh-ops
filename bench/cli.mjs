@@ -38,7 +38,10 @@ const AB_FLAGS_WITH_VALUE = ['--task', '--repeat', '--folder', '--base', '--cand
 /** Raised for a malformed command line; carries the message `main` prints. */
 export class UsageError extends Error {}
 
-/** The top-level help; `ab --help` carries the sweep's own flag list. */
+/**
+ * The top-level help; `ab --help` carries the sweep's own flag list.
+ * @returns {string} the help text, one subcommand per line.
+ */
 export function usage() {
   const width = Math.max(...COMMANDS.map((command) => command.name.length))
   return [
@@ -55,7 +58,10 @@ export function usage() {
   ].join('\n')
 }
 
-/** The `ab` help: the sweep's flags, and why the group is allocated once. */
+/**
+ * The `ab` help: the sweep's flags, and why the group is allocated once.
+ * @returns {string} the `ab` help text.
+ */
 export function abUsage() {
   return [
     'usage: node bench/cli.mjs ab [--task <id>]... [--repeat <N>] [--folder <name>]',
@@ -69,7 +75,13 @@ export function abUsage() {
   ].join('\n')
 }
 
-/** Split the `ab` flags from the runner flags; a malformed flag raises `UsageError`. */
+/**
+ * Split the `ab` flags from the runner flags; anything unrecognised is kept in `extra`
+ * for the runner, and a malformed flag raises `UsageError`.
+ * @param {string[]} argv - the arguments after `ab`.
+ * @returns {{base: string, cand: string, tasks: string[], repeat: string|null, folder: string|null, show: boolean, extra: string[], help: boolean}} the parsed options.
+ * @throws {UsageError} when a value-taking flag has no value, or a label / repeat / folder is malformed.
+ */
 export function parseAbArgs(argv) {
   const options = { base: 'bench-base', cand: 'bench-ops', tasks: [], repeat: null, folder: null, show: false, extra: [], help: false }
   for (let index = 0; index < argv.length; index += 1) {
@@ -96,7 +108,15 @@ export function parseAbArgs(argv) {
   }
   return options
 }
-/** Build the three commands of one sweep. Pure — it allocates the folder but writes nothing. */
+/**
+ * Build the three commands of one sweep — base run, candidate run, comparison — all three
+ * sharing the one group folder allocated here. Pure: it reserves the name but writes
+ * nothing, so `--show` and a real run report the same plan.
+ * @param {string[]} argv - the `ab` arguments, parsed by {@link parseAbArgs}.
+ * @param {{runsDir?: string, repoRoot?: string}} [options] - where group folders live and
+ *   the checkout the three commands run in; injectable so a suite allocates nothing real.
+ * @returns {{base: string, cand: string, tasks: string[], repeat: string|null, folder: string, show: boolean, extra: string[], help: boolean, allocated: boolean, commands: {label: string, target: string, args: string[], argv: string[]}[], repoRoot: string}} the plan.
+ */
 export function planAb(argv, options = {}) {
   const { runsDir = RUNS_DIR, repoRoot = REPO_ROOT } = options
   const parsed = parseAbArgs(argv)
@@ -114,7 +134,14 @@ export function planAb(argv, options = {}) {
   commands.push({ label: 'compare', target: 'bench/compare.mjs', args: [parsed.base, parsed.cand, '--folder', folder], argv: ['bench/compare.mjs', parsed.base, parsed.cand, '--folder', folder] })
   return { ...parsed, folder, allocated, commands, repoRoot }
 }
-/** Run the sweep, or explain which slice is still missing; every step is a Node script, never a shell. */
+/**
+ * Run the sweep, or explain which runner entry is still missing. Every step is a Node
+ * script spawned without a shell, and the comparison's exit code is the sweep's verdict.
+ * @param {string[]} argv - the `ab` arguments.
+ * @param {{out: (line: string) => void, err: (line: string) => void, plan?: object}} io - the
+ *   output sinks; `plan` is injectable so a suite never allocates a real folder.
+ * @returns {number} `EXIT.ok` when every step exited 0, the failing step's code, or `EXIT.pending` when a target is absent.
+ */
 export function abMain(argv, io) {
   const plan = io.plan ?? planAb(argv)
   if (plan.help) {
@@ -151,7 +178,14 @@ export function abMain(argv, io) {
   io.out('\n[ab] compare exit code 0  (gates passed)')
   return EXIT.ok
 }
-/** Route a subcommand: `ab` here, a later slice's `main(argv, io)`, or a loud "not implemented". */
+/**
+ * Route a subcommand: `ab` here, a later slice's `main(argv, io)`, or a loud "not
+ * implemented" naming that slice and its future file.
+ * @param {{name: string, slice: string, target: string, summary: string}} command - one entry of {@link COMMANDS}.
+ * @param {string[]} argv - the arguments after the command name.
+ * @param {{out: (line: string) => void, err: (line: string) => void}} io - the output sinks.
+ * @returns {Promise<number>} the subcommand's exit code.
+ */
 async function dispatch(command, argv, io) {
   if (command.name === 'ab') return abMain(argv, io)
   const target = path.join(REPO_ROOT, command.target)
@@ -168,7 +202,14 @@ async function dispatch(command, argv, io) {
   io.err(`bench ${command.name}: not implemented in this slice yet (${command.slice}); it will live in ${command.target}`)
   return EXIT.pending
 }
-/** Run the CLI. */
+/**
+ * Run the CLI: help and version first, then the command lookup, then {@link dispatch}.
+ * Never throws — a `UsageError` becomes exit 2, anything else exit 1 with its stack.
+ * @param {string[]} argv - `process.argv.slice(2)`.
+ * @param {{out?: (line: string) => void, err?: (line: string) => void}} [io] - the output
+ *   sinks; omitted, they write to the console.
+ * @returns {Promise<number>} one of {@link EXIT}.
+ */
 export async function main(argv, io = {}) {
   const out = io.out ?? ((line) => console.log(line))
   const err = io.err ?? ((line) => console.error(line))

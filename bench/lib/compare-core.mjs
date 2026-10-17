@@ -74,8 +74,9 @@ function sumCoreBuckets(usage) {
 /**
  * The comparable token total of one metrics document.
  *
- * #183's summary carries `usage.grandTotal`; the sealed `run.json` schema does not,
- * so the four core buckets are summed when it is absent. `reasoningTokens` is never
+ * #183's summary and the sealed `run.json` both carry `usage.grandTotal` (the sealed
+ * schema requires it), but a document that predates that requirement may omit it, so
+ * the four core buckets are summed when it is absent. `reasoningTokens` is never
  * a term — it is not part of the total either way.
  * @param {object} metrics - a metrics document.
  * @returns {number|null} the total, or null when the document reports nothing.
@@ -113,8 +114,9 @@ export function resultMetrics(result) {
   const inner = result.metrics && typeof result.metrics === 'object' ? result.metrics : result
   const taskId = typeof result.taskId === 'string' && result.taskId !== '' ? result.taskId : inner.taskId
   const repeatIndex = Number.isInteger(result.repeatIndex) ? result.repeatIndex : inner.repeatIndex
-  // The sealed schema has no `grandTotal`, so materialize it from the four buckets
-  // once, here, and every downstream statistic reads one shape.
+  // The sealed schema requires `grandTotal`, but a `#183` summary (or any document from
+  // before that requirement) may omit it, so materialize it from the four buckets once,
+  // here, and every downstream statistic reads one shape.
   const usage = inner.usage && typeof inner.usage === 'object' ? { ...inner.usage } : inner.usage
   if (usage && !isNumber(usage.grandTotal)) {
     const sum = sumCoreBuckets(usage)

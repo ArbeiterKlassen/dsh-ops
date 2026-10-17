@@ -42,10 +42,19 @@ const CHECK_LOCATION_FIELDS = {
 }
 /** The expectation keys a check may set, at most one of them. */
 const CHECK_EXPECTATION_FIELDS = ['expect', 'text', 'lines', 'count']
-/** A registry argument as a Set: an array of names, a Set, or a `fixtures`-style name -> builder map. */
+/**
+ * A registry argument as a Set: an array of names, a Set, or a `fixtures`-style name -> builder map.
+ * @param {string[]|Set<string>|Record<string, unknown>} registry - the registry to read.
+ * @returns {Set<string>} the known names.
+ */
 const asSet = (registry) => (registry instanceof Set ? registry : new Set(Array.isArray(registry) ? registry : Object.keys(registry)))
 
-/** Read and parse one task file, naming it when it cannot be read or parsed. */
+/**
+ * Read and parse one task file, naming it when it cannot be read or parsed.
+ * @param {string} file - the `*.task.json` path.
+ * @returns {object} the parsed task (not yet validated).
+ * @throws {Error} when the file cannot be read or is not valid JSON, naming the file.
+ */
 export function readTask(file) {
   let text
   try {
@@ -60,7 +69,14 @@ export function readTask(file) {
   }
 }
 
-/** Load and validate every `*.task.json` in a directory, sorted by file name. */
+/**
+ * Load and validate every `*.task.json` in a directory, sorted by file name.
+ * @param {string} [dir] - the corpus directory (default {@link TASKS_DIR}).
+ * @param {{generators?: string[]|Set<string>|Record<string, unknown>, checkTypes?: string[]|Set<string>|Record<string, unknown>}} [registries] -
+ *   the later slices' known generator and check-type names; left out, any non-empty slug passes.
+ * @returns {object[]} the validated tasks, `timeoutMs` defaulted.
+ * @throws {Error} when the directory is missing, holds no task file, or any file is invalid.
+ */
 export function loadTasks(dir = TASKS_DIR, registries = {}) {
   if (!fs.existsSync(dir)) throw new Error(`task directory not found: ${dir}`)
   const names = fs.readdirSync(dir).filter((name) => name.endsWith('.task.json')).sort()
@@ -68,7 +84,15 @@ export function loadTasks(dir = TASKS_DIR, registries = {}) {
   return names.map((name) => validateTask(readTask(path.join(dir, name)), name, registries))
 }
 
-/** Validate one task and return it with `timeoutMs` defaulted. */
+/**
+ * Validate one task and return it with `timeoutMs` defaulted.
+ * @param {object} task - the parsed task document.
+ * @param {string} [origin] - the file name every failure message is prefixed with.
+ * @param {{generators?: string[]|Set<string>|Record<string, unknown>, checkTypes?: string[]|Set<string>|Record<string, unknown>}} [registries] -
+ *   the known generator and check-type names, when the later slices have landed.
+ * @returns {object} a shallow copy of the task with `timeoutMs` resolved.
+ * @throws {Error} on the first structural problem, naming the file and the field.
+ */
 export function validateTask(task, origin = 'task', registries = {}) {
   const fail = (message) => {
     throw new Error(`${origin}: ${message}`)
@@ -109,7 +133,14 @@ export function validateTask(task, origin = 'task', registries = {}) {
   return { ...task, timeoutMs: timeout }
 }
 
-/** Reject any field the allowlist does not know. */
+/**
+ * Reject any field the allowlist does not know.
+ * @param {object} value - the object to check.
+ * @param {string[]} allowed - the fields it may carry.
+ * @param {string} where - the message prefix naming the block (`''` or `fixture `).
+ * @param {(message: string) => never} fail - the caller's raiser, so the file name is added once.
+ * @returns {void}
+ */
 function rejectUnknown(value, allowed, where, fail) {
   const unknown = Object.keys(value).filter((key) => !allowed.includes(key))
   if (unknown.length > 0) {
@@ -117,7 +148,14 @@ function rejectUnknown(value, allowed, where, fail) {
   }
 }
 
-/** Validate one verify check descriptor. */
+/**
+ * Validate one verify check descriptor.
+ * @param {object} check - the check to validate.
+ * @param {number} index - its position in `verify[]`, used in every message.
+ * @param {(message: string) => never} fail - the caller's raiser, already prefixed with the file name.
+ * @param {{generators?: string[]|Set<string>|Record<string, unknown>, checkTypes?: string[]|Set<string>|Record<string, unknown>}} registries - the registries `validateTask` received.
+ * @returns {void}
+ */
 function validateCheck(check, index, fail, registries) {
   if (!check || typeof check !== 'object' || Array.isArray(check)) fail(`verify[${index}] must be an object`)
   rejectUnknown(check, CHECK_FIELDS, '', (message) => fail(`verify[${index}] has ${message}`))
@@ -143,7 +181,13 @@ function validateCheck(check, index, fail, registries) {
   if (check.invariant !== undefined && typeof check.invariant !== 'boolean') fail(`verify[${index}] "invariant" must be a boolean`)
 }
 
-/** Select tasks by id, preserving corpus order, and reject unknown ids. */
+/**
+ * Select tasks by id, preserving corpus order, and reject unknown ids.
+ * @param {object[]} tasks - the loaded corpus.
+ * @param {string[]} [ids] - the ids to keep; empty means the whole corpus.
+ * @returns {object[]} the selected tasks, in corpus order.
+ * @throws {Error} when an id is not in the corpus, naming every unknown one.
+ */
 export function selectTasks(tasks, ids = []) {
   if (!ids || ids.length === 0) return tasks
   const byId = new Map(tasks.map((task) => [task.id, task]))
