@@ -205,21 +205,7 @@ fn lock_single(raw: &str) -> Result<std::fs::File> {
         "{:x}",
         Sha256::digest(checked.name.to_lowercase().as_bytes())
     );
-    let mut options = cap_std::fs::OpenOptions::new();
-    options
-        .read(true)
-        .write(true)
-        .create(true)
-        .follow(FollowSymlinks::No);
-    #[cfg(unix)]
-    {
-        use cap_std::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let file = checked
-        .parent
-        .open_with(format!(".dsh-ops-update-{key}.lock"), &options)?
-        .into_std();
+    let file = publication::open_update_lock(&checked.parent, &format!(".dsh-ops-update-{key}.lock"))?;
     FileExt::try_lock_exclusive(&file).map_err(|_| {
         Failure::new(
             "REVISION_CONFLICT",
@@ -412,10 +398,28 @@ fn publish_new(
             return Err(error);
         }
     }
+    #[cfg(target_os = "macos")]
+    {
+        // RENAME_EXCL publishes an absent destination without a staging unlink.
+        // A preserved Darwin deny-delete ACE must not strand a second hardlink.
+        let published = rustix::fs::renameat_with(
+            &checked.parent, temporary.as_str(), &checked.parent, checked.name.as_str(),
+            rustix::fs::RenameFlags::NOREPLACE,
+        );
+        if let Err(error) = published {
+            publication::discard_sibling(&checked.parent, &temporary, file)?;
+            return Err(std::io::Error::from(error).into());
+        }
+        drop(file);
+        return sync_applied(&checked.parent);
+    }
+    #[cfg(not(target_os = "macos"))]
     let published = checked
         .parent
         .hard_link(&temporary, &checked.parent, &checked.name);
+    #[cfg(not(target_os = "macos"))]
     let cleanup = publication::discard_sibling(&checked.parent, &temporary, file);
+    #[cfg(not(target_os = "macos"))]
     if let Err(mut failure) = cleanup {
         if published.is_ok() {
             failure.effect_state = "applied".into();
@@ -423,9 +427,11 @@ fn publish_new(
         }
         return Err(failure);
     }
+    #[cfg(not(target_os = "macos"))]
     published?;
     #[cfg(windows)]
     if let Some(preserved) = &preserved { preserved.verify(&checked.parent, &checked.name)?; }
+    #[cfg(not(target_os = "macos"))]
     sync_applied(&checked.parent)
 }
 fn sync_applied(parent: &cap_std::fs::Dir) -> Result<()> {

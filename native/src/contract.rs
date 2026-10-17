@@ -71,7 +71,13 @@ impl Failure {
             phase: "preflight".into(),
             retryable: false,
             effect_state: "none".into(),
-            next_action: "Correct the request or inspect the manifest.".into(),
+            next_action: match code {
+                "METADATA_UNSUPPORTED" => "Use a filesystem/platform or dedicated tool that preserves the source metadata. Changing the permission selector or blindly retrying cannot repair this limitation.",
+                "REVISION_CONFLICT" => "Inspect the current revision before preparing a new request; do not blindly retry.",
+                "CREDENTIAL_DENIED" => "Choose a non-credential path; do not bypass the credential fence or change the permission selector to remove it.",
+                "PATH_RESTRICTED" => "Inspect the real path and linked/special components; do not bypass no-follow protection.",
+                _ => "Correct the request or inspect the manifest.",
+            }.into(),
             message: message.to_string(),
         }
     }
@@ -127,9 +133,7 @@ impl Request {
         NAMES.get_or_init(|| regex::Regex::new(r"(?i)(^|/)(id_(rsa|dsa|ecdsa|ed25519)(\.|$)|[^/]*credentials[^/]*\.(json|ya?ml|ini)$|service-account[^/]*\.json$|\.env(\.|$))").expect("fixed credential expression")).is_match(&target)
     }
     pub fn authorize_path(&self, path: &std::path::Path) -> Result<()> {
-        // The credential/mode split of this code (`CREDENTIAL_DENIED`) belongs to the
-        // security-layer issue; this branch keeps the code base's existing vocabulary.
-        if self.denies_path(path) { return Err(Failure::new("POLICY_DENIED", "Credential location refused by the operator's file policy")); }
+        if self.denies_path(path) { return Err(Failure::new("CREDENTIAL_DENIED", "Credential location refused by the operator's file policy")); }
         Ok(())
     }
     /// The denied roots as paths, in the lexical form the traversal compares
@@ -204,7 +208,7 @@ mod tests {
             assert_eq!(failure["reason"], reason);
             assert_eq!(failure["effectState"], "none");
         }
-        for code in ["PATH_RESTRICTED", "ACCESS_DENIED"] {
+        for code in ["PATH_RESTRICTED", "CREDENTIAL_DENIED"] {
             let failure = serde_json::to_value(Failure::new(code, "Restriction")).unwrap();
             assert!(failure.get("reason").is_none());
         }
