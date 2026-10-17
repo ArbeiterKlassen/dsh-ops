@@ -17,8 +17,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   PTC component explicitly. Enabling the component does not raise filesystem permissions.
 - The catalog's POSIX shell-default claim now agrees with the bundle/manifest. No unsupported
   `defaultEnabledPlatforms` field or platform `!!js` expression is needed.
-- No token saving is claimed. #145/#148 cost comparisons remain an acceptance requirement;
-  functional and schema tests alone do not prove a net token benefit.
+- No token saving is claimed. The pinned-host declaration-cost check is recorded in
+  `docs/ptc-cost.md`: PTC-only added 4,671 prompt characters in the isolated Windows sample;
+  native/hybrid added zero. This is not a tokenizer or net-usage measurement. #145/#148
+  comparisons require equal-task usage/latency/retry evidence before claiming savings.
 
 ### PTC paging and discoverability (#171, #160)
 
