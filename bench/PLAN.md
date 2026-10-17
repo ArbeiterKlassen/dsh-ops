@@ -528,11 +528,16 @@ dsh 的压缩线（`compaction-basic` 在 0.8 × `contextWindow` 处触发、保
 - fixture `renameTree{seed:2, count:300}`：`data/TEMP_0001.dat … TEMP_0300.dat`，
   每个文件 5 行随机十六进制样式文本。exports：`count=300`、`hashes`（每个文件改后名
   `DATA_NNNN.dat` 的原始字节 SHA-256 清单）。
-- prompt：把 `data/` 下所有以 `TEMP_` 开头的文件改名为 `DATA_` 前缀（其余文件名不变），不改内容。
+- prompt：把 `data/` 下所有以 `TEMP_` 开头的文件改名为 `DATA_` 前缀（其余文件名不变），
+  不改内容；**每次工具调用最多改 10 个文件名**（一条把 300 个一起改完的循环命令不合规），
+  因此至少 30 批。
 - verify：`countFiles{dir:"data",prefix:"DATA_",count:300}` + `countFiles{dir:"data",prefix:"TEMP_",count:0}`
   + `contentHashes{dir:"data",expect:"hashes"}`——第三条闭合"删了重建同名空壳也算过"的漏洞，
   改名必须字节不动。
-- 打点：批量 shell 循环 / 批处理工具 vs 逐个工具调用。
+- 打点：**三十批小步**而不是一条大命令——每批 ≤10 个，第 N 批要把前 N-1 批的历史重新带进
+  上下文，量的是每步固定开销与批量工具输出体积。注意"≤10/次"是**提示词约定，不是判卷
+  条件**：verify 只读最终字节，一条循环命令仍能通过；它测的是遵循度（看 `tool calls` /
+  `steps`），不是硬门禁。要门禁化只能让改名走带审计的 helper，代价是任务变成协议题。
 
 ### 7.3 csv-sum —— 大文件聚合
 

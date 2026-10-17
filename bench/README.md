@@ -324,7 +324,7 @@ workspace 本身约 256K token，专门用来回答"之前那些差异是不是�
 
 | 任务 | workspace 里有什么 | 模型要干什么 | 考什么 | 怎么判卷 |
 |---|---|---|---|---|
-| **bulk-rename** | `data/` 下 300 个 `TEMP_0001.dat`–`TEMP_0300.dat`（各 5 行十六进制） | 把文件名前缀 `TEMP_` 改成 `DATA_`，内容一个字节都不能动 | 批量改名走一条循环命令，还是 300 次逐个工具调用；会不会误删/截断 | `countFiles` 数前缀 + `contentHashes` 逐文件 SHA-256：删了重建、改写内容都过不了 |
+| **bulk-rename** | `data/` 下 300 个 `TEMP_0001.dat`–`TEMP_0300.dat`（各 5 行十六进制） | 把文件名前缀 `TEMP_` 改成 `DATA_`，内容一个字节都不能动；每次工具调用最多改 10 个 | 三十批改名：会不会用一条循环命令绕过"每次 ≤10"；会不会误删/截断 | `countFiles` 数前缀 + `contentHashes` 逐文件 SHA-256：删了重建、改写内容都过不了 |
 | **csv-sum** | 8000 行 `data.csv`（`id,region,amount`，约 112KB） | 算出 `region=EU` 的 `amount` 总和，把纯整数写进 `answer.txt` | 是整读进上下文再心算，还是一条聚合命令就地求和（标题里的 "without drowning the context"） | `fileEquals`：与生成器边写边累加出的精确值比对 |
 | **fix-build** | 迷你 Node 项目：`test.js` + `src/` 三个文件，埋恰好 3 个单行 bug | 跑 `node test.js` 看它挂，只修 `src/` 让测试转绿；禁改 `test.js`/`package.json`、禁删断言 | 错误-重试闭环：读报错→定位→修→再跑；会不会改测试文件作弊 | `command` 要求 exit 0 + `test.js` 的 `invariant` 比对防篡改 |
 | **grep-sweep** | `src/dir00…dir09` 共 200 个 js 文件，恰好 8 个藏着 token `NEEDLE_X7Q` | 找出所有含该 token 的文件，相对路径按字典序写进 `matches.txt`，一行一个，不许夹带行号/计数 | 搜索工具用得对不对；排序与路径格式是否精确；噪音下不误报不漏报 | `fileLines` 与生成器记录的 8 条精确路径逐行比对 |
@@ -341,6 +341,13 @@ workspace 本身约 256K token，专门用来回答"之前那些差异是不是�
 ops 工具"有油水可赚"的任务族；中间四题刻意**不挑边**——它们更接近日常形状，谁赢是测出来的
 结果，不是设计出来的；接着两题把同一批形状抬到 256K 尺度，让"整读"这条捷径先失效；
 最后一题反过来只放大**步数**（同一套工具面要付几十次，见 §4.4）。
+
+bulk-rename 的"每次最多 10 个"是**提示词约定**，不是判卷条件：`verify` 只读最终字节，
+一条循环命令把 300 个一起改完也照样通过（`countFiles` / `contentHashes` 分不出单次调用
+改了几个）。它测的是模型按不按批走——报告里的 `tool calls` / `steps` 与每步重发的上下文——
+而不是"≤10"本身；要把它变成判卷条件，只能让改名走一个带审计的 helper（判卷看审计），
+代价是任务从"自然批量改名"变成"按协议调用 helper"。
+
 `repeat` 已按任务成本分层（便宜题多采样，如 log-stats 5 次、grep-sweep 2 次；
 十二个任务缺省合计 30 次/侧），显式 `--repeat N` 会覆盖整个分层预算。
 
