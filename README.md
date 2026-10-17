@@ -26,7 +26,7 @@
 本插件的主要功能：
 
 - 提供一组更高级的tools常驻工具，由rust编写。这些tools工具相对于原版，输入和输出token都更少，运行速度更快，且覆盖面更广，给ai造成的心智负担更低，同时附带简短的哈希校验、行数位置等消息以减少
-- 以渐进式纰漏的形式，为日常工作提供诸如doc/pdf操作，网页搜索，html转markdown类crawl4ai工具等日常工作常用的tools工具。这些工具可以使得ai不必重新编写代码或者脚本来实现自己的目标从而大大节省Token
+- 已在[路线图](docs/roadmap.md)中规划：以渐进式披露的形式补上 doc/pdf 操作、网页搜索、html 转 markdown 类 crawl4ai 工具等日常常用的 tools 工具，让 ai 不必重新编写代码或脚本来实现自己的目标。**当前版本尚未提供这些工具。**
 - 提供关闭原版tools以最大化节省ai心智负担和系统固定提示词的可选项
 - 在windows平台下额外提供tools：ops_bash的支持——ai使用bash远比ai使用pwsh更流畅。可选择使用ops自带的独立 **bash 5.3.15** ，也可以将ops_bash工具指定为git bash
 
