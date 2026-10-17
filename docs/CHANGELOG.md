@@ -17,6 +17,13 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Tools trial: `node scripts/tools-trial.mjs` calls every published tool on a real host and prints a
   per-tool table; CI runs it in a separate, non-required `tools-trial` job.
+- Suites (#172): the symlink check in `linux-sandbox` expects `PATH_RESTRICTED` like the rest of the
+  no-follow contract; the `mount` bash fixture gives its session an id, so read-only `ops_bash`
+  reaches the policy instead of failing early (and the Windows branch asserts the real restricted
+  runtime reason); the Rust copy-CAS test resolves the macOS `/var` symlink in its temp root; the
+  Windows restrictive-staging check names its fixture as unavailable on a host that deletes through
+  a DELETE-deny DACL instead of failing on the precondition. `docs/CONTRIBUTING.md` and
+  `docs/贡献指南.md` are now a full bilingual pair.
 
 ### The config-update marker goes to the profile patch, and never to the composed tree
 
