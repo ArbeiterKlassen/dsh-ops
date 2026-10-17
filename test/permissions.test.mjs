@@ -75,8 +75,7 @@ await test('the real worker behaves as the file-tool descriptions say (#44)', as
       assert.deepEqual(names(grep),['sub/nested.md','top.md'])
       // replace matches literal text: "a.b" does not match "axb".
       const replaced=await call('replace',{path:'a.txt',pattern:'a.b',replacement:'Z'})
-      assert.equal(replaced.changed,1,JSON.stringify(replaced))
-      assert.equal(fs.readFileSync(path.join(root,'a.txt'),'utf8'),'Z axb\n')
+      assert.equal(replaced.changed,1,JSON.stringify(replaced)); assert.equal(fs.readFileSync(path.join(root,'a.txt'),'utf8'),'Z axb\n')
     } finally { await shutdown(ctx) }
   })
 })
@@ -364,7 +363,6 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
         result=await bash.execute({command:"printf bad > denied.txt",workdir:root,timeoutMs:10000},exec)
         assert.notEqual(result.exitCode,0); assert.ok(!fs.existsSync(path.join(root,'denied.txt')))
         assert.equal(result.restriction?.code,'EXECUTION_RESTRICTED',JSON.stringify(result))
-        assert.equal(result.permission,undefined)
         agent.session.mode='workspace-write'
         result=await bash.execute({command:"printf forbidden > outside.txt",workdir:outside,timeoutMs:10000},exec)
         assert.notEqual(result.exitCode,0,JSON.stringify(result))

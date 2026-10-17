@@ -106,6 +106,7 @@ pub fn dispatch(request: &Request) -> Result<Value> {
         "glob" => glob(request),
         "grep" => grep(request),
         "replace" => replace(request),
+        "stat" | "diff" | "write_file" | "edit_file" | "copy" | "move" | "remove" => single::run(request),
         _ => Err(Failure::new("INVALID_ARGUMENT", "Unknown file capability")),
     }
 }
@@ -417,8 +418,6 @@ fn replace(request: &Request) -> Result<Value> {
     for item in &items { publication::authorize_write(request, item["path"].as_str().unwrap_or(""))?; }
     let mut changed=0usize; for item in &mut items {
         let applied = (|| -> Result<()> { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
-        // Compare the held no-follow ancestry, not a replaceable leaf handle.
-        // On Darwin, canonicalize's F_GETPATH can race with atomic unlink/rename.
         publication::authorize_write(request, file.to_str().unwrap_or(""))?;
         // Hold the update lock across the check, the read and the publish, so a
         // peer cannot slip in between them and lose our write, or make us lose
@@ -642,7 +641,6 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
         Ok(report) => report,
         Err(failure) => { publication::discard_sibling(parent, &temporary, file)?; return Err(failure); }
     };
-    // Recheck the leaf before publication as well as during initial traversal.
     if let Err(failure) = parent.symlink_metadata(name).map_err(Failure::from).and_then(|metadata| crate::file_path::regular(&metadata, false)) {
         publication::discard_sibling(parent, &temporary, file)?;
         return Err(failure);
@@ -674,4 +672,6 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
 #[path = "file_publication.rs"]
 mod publication;
 
-use publication::content_facts;
+#[path = "file_single.rs"]
+mod single;
+use single::content_facts;

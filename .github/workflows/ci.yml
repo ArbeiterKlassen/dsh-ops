@@ -7,6 +7,10 @@ on:
   # And a pull request has to show its result before it is merged, not after.
   pull_request:
     branches: [main]
+  # A merge queue builds the queued commits before they reach `main`, and it only accepts a group
+  # whose required checks passed there. Without this trigger the workflow simply never runs for a
+  # queued group, so enabling a merge queue would silently un-gate every merge.
+  merge_group:
   workflow_dispatch:
 permissions:
   contents: read
@@ -130,3 +134,80 @@ jobs:
           path: tools-trial-report.md
           if-no-files-found: warn
           retention-days: 7
+
+  # Static checks on the workflows themselves. Cheap, no Rust, nothing beyond the repository's own
+  # dependencies: a workflow that quietly stops triggering — or stops blocking — is otherwise
+  # invisible until someone merges something it was supposed to stop.
+  workflow-lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+      - name: Check workflow structure
+        run: node scripts/check-workflows.mjs
+
+  # `package.json` promises `^22.19 || >=24`, but the matrix above only ever runs 24, so the lower
+  # bound was never exercised. One job on the declared floor keeps that promise honest without
+  # tripling the platform matrix.
+  node-floor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '3'
+      DSH_OPS_SUITE_TIMEOUT_MS: '300000'
+      DSH_OPS_RETRY_TIMEOUTS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19'
+      - name: Set up pinned Rust
+        shell: bash
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+      - name: Build and test native worker
+        shell: bash
+        run: |
+          cargo test --locked --manifest-path native/Cargo.toml
+          npm run build:ptc
+      - name: Functional gate (skips, suite inventory, packed artifact)
+        shell: bash
+        run: node scripts/verify-gate.mjs --skip-install
+
+  # One check for a maintainer to require. Branch protection names individual job results, and the
+  # matrix above expands into one check per platform, so requiring the gate means keeping three names
+  # in sync — and silently losing the gate when a runner label changes. This job collapses them, and
+  # it reports the deliberately non-blocking `tools-trial` without letting it fail the run.
+  ci-required:
+    name: CI required
+    if: always()
+    needs: [validate, workflow-lint, node-floor, tools-trial]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fail unless every blocking job succeeded
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+          for job in validate workflow-lint node-floor; do
+            case "$job" in
+              validate) result='${{ needs.validate.result }}' ;;
+              workflow-lint) result='${{ needs.workflow-lint.result }}' ;;
+              node-floor) result='${{ needs.node-floor.result }}' ;;
+            esac
+            echo "${job}: ${result}"
+            [ "$result" = success ] || failed=1
+          done
+          echo "tools-trial: ${{ needs.tools-trial.result }} — informational: a broken tool shows up in its own job and report, it does not block a merge"
+          if [ "$failed" != 0 ]; then
+            echo "::error::a blocking job did not succeed; read the failing job above"
+            exit 1
+          fi
+          echo "Every blocking job succeeded."

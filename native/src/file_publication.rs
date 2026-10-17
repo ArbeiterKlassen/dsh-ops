@@ -3,11 +3,6 @@
 use super::*;
 use cap_std::fs::{Dir, File, OpenOptions};
 
-pub(super) fn content_facts(bytes: &[u8]) -> Value {
-    json!({"revision":format!("{:x}", Sha256::digest(bytes)),"bytes":bytes.len(),
-        "lineCount":std::str::from_utf8(bytes).ok().map(|text| text.lines().count())})
-}
-
 pub(super) fn check_revision(bytes: Option<&[u8]>, expected: &str) -> Result<()> {
     if expected != "absent" && !(expected.len() == 64 && expected.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))) {
         return Err(Failure::new("INVALID_ARGUMENT", "expectedRevision must be absent or lowercase SHA-256"));
