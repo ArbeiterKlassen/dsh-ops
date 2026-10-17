@@ -173,7 +173,7 @@ await test('three authoritative modes, both transfer paths, credential fence, li
         }
         const linked = path.join(root, 'linked'); fs.symlinkSync(outside, linked, process.platform === 'win32' ? 'junction' : 'dir')
         const throughLink = await invokeTool('write_file', { path: path.join(linked, 'escape'), content: 'bad', expectedRevision: 'absent' })
-        assert.equal(throughLink.error.code, 'POLICY_DENIED'); assert.equal(fs.existsSync(path.join(outside, 'escape')), false)
+        assert.equal(throughLink.error.code, 'PATH_RESTRICTED'); assert.equal(fs.existsSync(path.join(outside, 'escape')), false)
         session.mode = 'danger-full-access'
         const fullLink = await invokeTool('write_file', { path: path.join(linked, 'escape'), content: 'bad', expectedRevision: 'absent' })
         assert.equal(fullLink.error.code, 'PATH_RESTRICTED'); assert.equal(fs.existsSync(path.join(outside, 'escape')), false)
@@ -194,7 +194,7 @@ await test('three authoritative modes, both transfer paths, credential fence, li
         const full = await invokeTool('write_file', { path: path.join(outside, 'full'), content: 'ok', expectedRevision: 'absent' })
         assert.equal(full.status, 'completed', JSON.stringify(full))
         for (const [tool, args] of [['stat', { path: path.join(root, '.env') }], ['write_file', { path: path.join(root, '.env'), content: 'bad', expectedRevision: 'absent' }], ['copy', { path: source, to: path.join(root, '.env'), expectedRevision: rev(source) }]]) {
-          const value = await invokeTool(tool, args); assert.equal(value.error.code, 'POLICY_DENIED'); assert.doesNotMatch(JSON.stringify(value), /outside.*outside/s)
+          const value = await invokeTool(tool, args); assert.equal(value.error.code, 'CREDENTIAL_DENIED'); assert.doesNotMatch(JSON.stringify(value), /outside.*outside/s)
         }
         resolves = 0; downgrade = true
         const changed = await invokeTool('write_file', { path: 'downgrade', content: 'bad', expectedRevision: 'absent' })
@@ -299,6 +299,35 @@ await test('Windows inherited and explicit deny ACLs survive writes and copies i
     for (const tool of ['write_file', 'copy']) {
       failed(await call(tool, { path: streamed, expectedRevision: rev(streamed), ...(tool === 'copy' ? { to: path.join(destination, 'streamed') } : { content: 'bad' }) }, root), 'METADATA_UNSUPPORTED')
       assert.equal(fs.readFileSync(streamed, 'utf8'), 'keep'); assert.equal(fs.readFileSync(streamed + ':private', 'utf8'), 'secret')
+    }
+  })
+})
+await test('Windows failed overwrite unlinks restrictive staging through its owned DELETE handle', async () => {
+  if (process.platform !== 'win32') return
+  const ps = code => {
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from("$ErrorActionPreference='Stop';" + code, 'utf16le').toString('base64')], { encoding: 'utf8', env: { ...process.env, PSModulePath: '' } })
+    assert.equal(result.status, 0, result.stderr); return result.stdout.trim()
+  }
+  const quote = value => value.replaceAll("'", "''")
+  await withTempDir('file-staging-delete', async root => {
+    const source = path.join(root, 'source'), probe = path.join(root, 'probe')
+    fs.writeFileSync(source, 'ORIGINAL'); fs.writeFileSync(probe, 'probe')
+    const originalAcl = ps(`(Get-Acl -LiteralPath '${quote(root)}').Sddl`)
+    try {
+      ps(`$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; foreach($p in @('${quote(source)}','${quote(probe)}')) { $a=Get-Acl -LiteralPath $p; $a.SetAccessRuleProtection($true,$true); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Delete','Deny')); Set-Acl -LiteralPath $p -AclObject $a }; $p='${quote(root)}'; $a=Get-Acl -LiteralPath $p; $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'DeleteSubdirectoriesAndFiles','Deny')); Set-Acl -LiteralPath $p -AclObject $a`)
+      // This is not merely an ACE-text fixture: ordinary pathname deletion must
+      // fail under the exact source/parent policy restored onto the staging inode.
+      assert.throws(() => fs.unlinkSync(probe), error => ['EPERM', 'EACCES'].includes(error.code))
+      assert.equal(fs.readFileSync(probe, 'utf8'), 'probe')
+      const before = ps(`(Get-Acl -LiteralPath '${quote(source)}').Sddl`)
+      const result = await call('write_file', { path: source, expectedRevision: rev(source), content: 'SENSITIVE REPLACEMENT' }, root)
+      failed(result, 'ACCESS_DENIED')
+      assert.match(result.error.message, /Atomic replacement publish/u, 'fixture must reach rename after bytes and restrictive metadata were prepared')
+      assert.equal(fs.readFileSync(source, 'utf8'), 'ORIGINAL')
+      assert.equal(ps(`(Get-Acl -LiteralPath '${quote(source)}').Sddl`), before)
+      assert.deepEqual(fs.readdirSync(root).filter(name => name.startsWith('.source.dsh-ops-')), [], 'no unpublished bytes may remain')
+    } finally {
+      ps(`$p='${quote(root)}'; $a=Get-Acl -LiteralPath $p; $a.SetSecurityDescriptorSddlForm('${quote(originalAcl)}'); Set-Acl -LiteralPath $p -AclObject $a`)
     }
   })
 })

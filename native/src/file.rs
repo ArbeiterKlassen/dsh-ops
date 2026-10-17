@@ -642,17 +642,17 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
         file.sync_all()?;
         Ok(report)
     })();
-    drop(file);
     let report = match prepared {
         Ok(report) => report,
-        Err(failure) => { let _ = parent.remove_file(&temporary); return Err(failure); }
+        Err(failure) => { publication::discard_sibling(parent, &temporary, file)?; return Err(failure); }
     };
     // Publication stays handle-relative and does not traverse links.
     let publish = parent.rename(&temporary, parent, name);
     if let Err(error) = publish {
-        let _ = parent.remove_file(&temporary);
+        publication::discard_sibling(parent, &temporary, file)?;
         return Err(Failure::new("ACCESS_DENIED", format!("Atomic replacement publish: {error}")));
     }
+    drop(file);
     #[cfg(windows)]
     preserved.verify(parent, name)?;
     #[cfg(unix)]

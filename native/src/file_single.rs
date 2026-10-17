@@ -401,21 +401,28 @@ fn publish_new(
         Ok(())
     })();
     if let Err(error) = prepared {
-        publication::discard_sibling(&checked.parent, &temporary, file);
+        publication::discard_sibling(&checked.parent, &temporary, file)?;
         return Err(error);
     }
     if let (Some(source), Some(expected)) = (source, expected_source) {
         if let Err(error) =
             read_bytes(&source.display).and_then(|bytes| check_revision(Some(&bytes), expected))
         {
-            publication::discard_sibling(&checked.parent, &temporary, file);
+            publication::discard_sibling(&checked.parent, &temporary, file)?;
             return Err(error);
         }
     }
     let published = checked
         .parent
         .hard_link(&temporary, &checked.parent, &checked.name);
-    publication::discard_sibling(&checked.parent, &temporary, file);
+    let cleanup = publication::discard_sibling(&checked.parent, &temporary, file);
+    if let Err(mut failure) = cleanup {
+        if published.is_ok() {
+            failure.effect_state = "applied".into();
+            failure.next_action = "The destination is published but a staging link may remain. Inspect both; do not repeat the copy.".into();
+        }
+        return Err(failure);
+    }
     published?;
     #[cfg(windows)]
     if let Some(preserved) = &preserved { preserved.verify(&checked.parent, &checked.name)?; }

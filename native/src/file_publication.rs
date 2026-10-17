@@ -128,13 +128,20 @@ impl Preserved {
     }
 }
 
-/// Best-effort removal of our exact staging link. Windows may have restored a
-/// readonly bit or restrictive DACL; use the still-owned DELETE handle, not chmod.
-pub(super) fn discard_sibling(parent: &Dir, name: &str, file: File) {
+/// Remove our exact staging link while its DELETE-capable handle is still owned.
+/// Never change permissions: a copy may already share this inode with its target.
+pub(super) fn discard_sibling(parent: &Dir, name: &str, file: File) -> Result<()> {
     #[cfg(windows)]
-    if let Ok(handle) = file.try_clone() {
-        let _ = dsh_ops_windows_metadata::discard(&handle.into_std());
-    }
+    let removed = dsh_ops_windows_metadata::discard(&file.into_std());
+    #[cfg(not(windows))]
     drop(file);
-    let _ = parent.remove_file(name);
+    #[cfg(windows)]
+    if removed.is_ok() { return Ok(()); }
+    parent.remove_file(name).map_err(|error| {
+        let mut failure = Failure::new("CLEANUP_FAILED", format!("Could not remove staging sibling {name}: {error}"));
+        failure.phase = "cleanup".into();
+        failure.effect_state = "unknown".into();
+        failure.next_action = "Inspect the staging sibling and target before retrying; unpublished bytes may remain.".into();
+        failure
+    })
 }
