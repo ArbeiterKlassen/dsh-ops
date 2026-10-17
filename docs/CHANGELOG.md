@@ -24,6 +24,13 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Windows restrictive-staging check names its fixture as unavailable on a host that deletes through
   a DELETE-deny DACL instead of failing on the precondition. `docs/CONTRIBUTING.md` and
   `docs/贡献指南.md` are now a full bilingual pair.
+- Documentation now matches the shipped 0.3.1 surface (no behavior change): the component reference
+  describes `ops_inspect_local_file` as the bounded UTF-8/hex reader it implements (not multi-range,
+  extra encodings or PDF), calls `ops_replace` a literal replacement, states that read-only refuses
+  replacement including its dry run, and names the session's private temporary directory as the
+  workspace-write fence; the Chinese reference is kept in sync. `docs/schema-measurement.md` and
+  `docs/schema-current.json` are marked as the historical 0.2.x FastCtx snapshot, and the READMEs
+  mark the DOC/PDF, web-search and crawl4ai-style tools as roadmap items instead of shipped ones.
 
 ### The config-update marker goes to the profile patch, and never to the composed tree
 
