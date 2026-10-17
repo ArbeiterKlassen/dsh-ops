@@ -63,7 +63,7 @@ async function executor(ctx) {
 }
 async function agent(ctx, id, mode = 'danger-full-access', parent) {
   const { createScope } = await import('@deepseek-ai/dsh-scope')
-  const result = { id, session: { mode, header: { cwd: process.cwd() } } }
+  const result = { id, session: { id, mode, header: { cwd: process.cwd() } } }
   let scope
   await (parent?.ctx ?? ctx).plugin({ inject: ['tools'], apply(inner) { scope = createScope(inner, result) } })
   result.ctx = scope.ctx
