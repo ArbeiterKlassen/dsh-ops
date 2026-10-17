@@ -61,6 +61,12 @@
     },
     "./ptc/package.json": "./lib/components/ptc/package.json",
     "./ptc/locale/*.json": "./lib/components/ptc/locale/*.json",
+    "./panel": {
+      "default": "./lib/components/panel/index.js"
+    },
+    "./panel/package.json": "./lib/components/panel/package.json",
+    "./panel/locale/*.json": "./lib/components/panel/locale/*.json",
+    "./panel/icon": "./lib/components/panel/icon.png",
     "./tui": { "default": "./lib/components/tui/index.js" },
     "./tui/package.json": "./lib/components/tui/package.json",
     "./tui/locale/*.json": "./lib/components/tui/locale/*.json",
