@@ -87,6 +87,12 @@ const installed = command => {
 }
 const SETFACL = installed('setfacl') && installed('getfacl')
 const PYTHON = installed('python3')
+const setUserAttribute = target => process.platform === 'darwin'
+  ? execFileSync('/usr/bin/xattr', ['-w', 'user.dsh-ops', 'kept', target])
+  : PYTHON && execFileSync('python3', ['-c', "import os,sys; os.setxattr(sys.argv[1],'user.dsh-ops',b'kept')", target])
+const userAttribute = target => process.platform === 'darwin'
+  ? execFileSync('/usr/bin/xattr', ['-p', 'user.dsh-ops', target], { encoding: 'utf8' }).trim()
+  : execFileSync('python3', ['-c', "import os,sys; print(os.getxattr(sys.argv[1],'user.dsh-ops').decode())", target], { encoding: 'utf8' }).trim()
 
 /** The low twelve bits, octal, so a comparison never depends on setuid or the file type. */
 const modeOf = target => (fs.statSync(target).mode & 0o7777).toString(8).padStart(4, '0')
@@ -183,18 +189,18 @@ await test('a dry run reports no metadata because it published nothing', async (
 await test('full overwrite, precise edit and copy retain private mode and user attributes', async () => {
   await withTempDir('file-metadata-new', async workspace => {
     const source = seed(path.join(workspace, 'private.txt'), 0o600)
-    if (PYTHON) execFileSync('python3', ['-c', "import os,sys; os.setxattr(sys.argv[1],'user.dsh-ops',b'kept')", source])
+    setUserAttribute(source)
     const stat = () => callTool('stat', { path: source }, { root: workspace }).then(value => envelopeOf(value, assert))
     const written = envelopeOf(await callTool('write_file', { path: source, content: 'NEXT', expectedRevision: (await stat()).revision }, { root: workspace }), assert)
     assert.equal(written.status, 'completed', JSON.stringify(written)); assert.equal(modeOf(source), '0600')
     const edited = envelopeOf(await callTool('edit_file', { path: source, expectedRevision: written.revision, edits: [{ oldText: 'NEXT', newText: 'FINAL' }] }, { root: workspace }), assert)
     assert.equal(edited.status, 'completed', JSON.stringify(edited)); assert.equal(modeOf(source), '0600')
-    if (PYTHON) assert.equal(execFileSync('python3', ['-c', "import os,sys; print(os.getxattr(sys.argv[1],'user.dsh-ops').decode())", source], { encoding: 'utf8' }).trim(), 'kept')
+    if (process.platform === 'darwin' || PYTHON) assert.equal(userAttribute(source), 'kept')
     const to = path.join(workspace, 'copy.txt')
     const copied = envelopeOf(await callTool('copy', { path: source, to, expectedRevision: edited.revision }, { root: workspace }), assert)
     assert.equal(copied.status, 'completed', JSON.stringify(copied)); assert.equal(modeOf(to), '0600')
     assert.equal(fs.statSync(to).mtimeMs, fs.statSync(source).mtimeMs)
-    if (PYTHON) assert.equal(execFileSync('python3', ['-c', "import os,sys; print(os.getxattr(sys.argv[1],'user.dsh-ops').decode())", to], { encoding: 'utf8' }).trim(), 'kept')
+    if (process.platform === 'darwin' || PYTHON) assert.equal(userAttribute(to), 'kept')
   })
 })
 
