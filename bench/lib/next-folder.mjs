@@ -31,6 +31,8 @@ const WIDTH = 2
 /**
  * The group names already present under the runs root, lower-cased so the answer
  * holds on a case-insensitive filesystem (Windows) as well as a case-sensitive one.
+ * @param {string} runsDir - the runs root to scan; a missing or unreadable one counts as empty.
+ * @returns {Set<string>} the lower-cased entry names.
  */
 export function takenFolders(runsDir) {
   let entries
@@ -42,7 +44,11 @@ export function takenFolders(runsDir) {
   return new Set(entries.map((entry) => entry.name.toLowerCase()))
 }
 
-/** The first `benchmark-test-NN` nobody is using yet. */
+/**
+ * The first `benchmark-test-NN` nobody is using yet.
+ * @param {string} [runsDir] - the runs root to scan (default {@link RUNS_DIR}).
+ * @returns {string} the free group name, zero-padded to two digits.
+ */
 export function nextFolderName(runsDir = RUNS_DIR) {
   const taken = takenFolders(runsDir)
   for (let number = 1; ; number += 1) {
