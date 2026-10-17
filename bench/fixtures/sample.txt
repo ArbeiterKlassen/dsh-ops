@@ -1,2 +1,0 @@
-benchmark fixture: native worker and host wrapper
-benchmark benchmark benchmark benchmark benchmark benchmark benchmark benchmark
