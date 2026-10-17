@@ -408,7 +408,22 @@ fn replace(request: &Request) -> Result<Value> {
     // malformed request: the binary is reported as skipped and the text files around it are still
     // edited. Failing the whole call on the first non-UTF-8 byte made a routine directory edit
     // impossible, and the error named no file, so the caller could not even narrow the request.
-    for file in walked.files { let bytes=read_bytes(&file)?; match String::from_utf8(bytes.clone()) { Ok(text) => { let count=text.match_indices(&args.pattern).count(); if count>0 { total += count; plans.push((file, bytes, text, count)); } } Err(_) => binary.push(file) } }
+    let mut update_guards = Vec::new();
+    for file in walked.files {
+        // Serialize observation as well as publication. On APFS an open racing
+        // an unlink/rename can fail ENOENT on the superseded vnode even though
+        // the directory name always has a complete version. Do not retry or
+        // relabel ENOENT: avoid the race between cooperating writers instead.
+        let (guard, bytes) = if args.dry_run { (None, read_bytes(&file)?) }
+            else { let (guard, bytes) = lock_and_read_for_update(&file)?; (Some(guard), bytes) };
+        match String::from_utf8(bytes.clone()) {
+            Ok(text) => {
+                let count = text.match_indices(&args.pattern).count();
+                if count > 0 { total += count; plans.push((file, bytes, text, count)); update_guards.push(guard); }
+            }
+            Err(_) => binary.push(file),
+        }
+    }
     let skipped = binary.len();
     let skipped_paths: Vec<Value> = binary.iter().take(8).map(|file| json!(relative_display(&request.root_path(), file))).collect();
     if total > args.max_replacements { return Err(Failure::new("OUTPUT_LIMIT", format!("{total} matches exceed maxReplacements ({}); no file was changed. maxReplacements is a ceiling, not a truncation: raise it to {total} or more and retry.", args.max_replacements))); }
@@ -419,10 +434,8 @@ fn replace(request: &Request) -> Result<Value> {
     let mut changed=0usize; for item in &mut items {
         let applied = (|| -> Result<()> { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
         publication::authorize_write(request, file.to_str().unwrap_or(""))?;
-        // Hold the update lock across the check, the read and the publish, so a
-        // peer cannot slip in between them and lose our write, or make us lose
-        // its. The guard is named, not `_`, so it lives to the end of this pass.
-        let (_update, bytes) = lock_and_read_for_update(&file)?;
+        // Observation guards above remain owned until every publication settles.
+        let bytes = read_bytes(&file)?;
         // The revision is checked against the bytes the lock returned, so the check
         // and the write cannot be separated by another open — see the lock for why.
         let expected=item["revision"].as_str().unwrap_or(""); publication::check_revision(Some(&bytes), expected)?;

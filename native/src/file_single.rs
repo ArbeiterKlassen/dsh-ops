@@ -412,10 +412,28 @@ fn publish_new(
             return Err(error);
         }
     }
+    #[cfg(target_os = "macos")]
+    {
+        // RENAME_EXCL publishes an absent destination without a staging unlink.
+        // A preserved Darwin deny-delete ACE must not strand a second hardlink.
+        let published = rustix::fs::renameat_with(
+            &checked.parent, temporary.as_str(), &checked.parent, checked.name.as_str(),
+            rustix::fs::RenameFlags::NOREPLACE,
+        );
+        if let Err(error) = published {
+            publication::discard_sibling(&checked.parent, &temporary, file)?;
+            return Err(std::io::Error::from(error).into());
+        }
+        drop(file);
+        return sync_applied(&checked.parent);
+    }
+    #[cfg(not(target_os = "macos"))]
     let published = checked
         .parent
         .hard_link(&temporary, &checked.parent, &checked.name);
+    #[cfg(not(target_os = "macos"))]
     let cleanup = publication::discard_sibling(&checked.parent, &temporary, file);
+    #[cfg(not(target_os = "macos"))]
     if let Err(mut failure) = cleanup {
         if published.is_ok() {
             failure.effect_state = "applied".into();
@@ -423,9 +441,11 @@ fn publish_new(
         }
         return Err(failure);
     }
+    #[cfg(not(target_os = "macos"))]
     published?;
     #[cfg(windows)]
     if let Some(preserved) = &preserved { preserved.verify(&checked.parent, &checked.name)?; }
+    #[cfg(not(target_os = "macos"))]
     sync_applied(&checked.parent)
 }
 fn sync_applied(parent: &cap_std::fs::Dir) -> Result<()> {
