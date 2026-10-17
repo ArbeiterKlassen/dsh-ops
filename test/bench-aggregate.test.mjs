@@ -123,14 +123,28 @@ await test('usageReported is all-or-nothing and a partial sum is kept, not repai
   assert.equal(noSteps.usageReported, false, 'no steps is not "reported complete"')
   assert.equal(noSteps.usage.grandTotal, 0)
 
-  // Inherited from the ported implementation and pinned here so a change is
-  // deliberate: a `usage` object with no recognizable bucket counts as a reported
-  // step, so the run reads as complete with an all-zero total. Nothing names a
-  // bucket, so `usageBucketsSeen` stays empty — but the "reported" flag does not.
+  // A `usage` object with no recognizable bucket is silence, not a reported zero.
+  // Counting it as reported let a provider that reports nothing produce a complete,
+  // all-zero token total; the flag and the bucket list must agree instead.
   const emptyUsage = aggregateLines([stepEnd({})])
-  assert.equal(emptyUsage.usageReported, true)
+  assert.equal(emptyUsage.steps, 1)
+  assert.equal(emptyUsage.stepsWithUsage, 0, 'a bucket-less usage object is not usage')
+  assert.equal(emptyUsage.usageReported, false)
   assert.deepEqual(emptyUsage.usageBucketsSeen, [])
   assert.equal(emptyUsage.usage.grandTotal, 0)
+  assert.equal(emptyUsage.stepUsage[0].usage, null, 'and the step stays unknown, not a zero row')
+
+  // `totalTokens` is not a bucket either: it cannot be split into the terms
+  // `grandTotal` is made of, so a step that names only it is unreported too.
+  const totalOnly = aggregateLines([stepEnd({ totalTokens: 120 })])
+  assert.equal(totalOnly.usageReported, false)
+  assert.deepEqual(totalOnly.usageBucketsSeen, [])
+
+  // But a bucket reported as a real zero IS a report: `inputTokens: 0` names the
+  // bucket, so the "provider said zero" case is untouched by the rule above.
+  const explicitZero = aggregateLines([stepEnd({ inputTokens: 0 })])
+  assert.equal(explicitZero.usageReported, true)
+  assert.deepEqual(explicitZero.usageBucketsSeen, ['inputTokens'])
 })
 
 await test('the streaming form and the batch form agree, including CRLF and blank lines', () => {

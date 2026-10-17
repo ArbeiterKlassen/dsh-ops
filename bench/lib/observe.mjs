@@ -36,6 +36,8 @@
  * @module dsh-ops/bench/observe
  */
 
+import { formatNumber } from './compare-core.mjs'
+
 /** How many `tool_result` errors to name before the rest are only counted. */
 const TOOL_ERROR_REPORTS = 5
 /** How many stderr lines to echo under `--verbose` before the rest are only counted. */
@@ -568,15 +570,6 @@ function isNumeric(value) {
 /** A count rendered for humans. */
 function count(value) {
   return isNumeric(value) ? formatNumber(value) : '0'
-}
-
-/**
- * Thousands-separated rendering of a count. Local on purpose: the same function lives
- * in `lib/compare-core.mjs` (P4/P6), but this slice ships before it and must stand
- * alone. Semantics are identical — round, then group with commas in en-US.
- */
-function formatNumber(value) {
-  return Math.round(value).toLocaleString('en-US')
 }
 
 /** Character length of a payload. */

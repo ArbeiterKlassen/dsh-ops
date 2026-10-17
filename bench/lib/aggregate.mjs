@@ -14,7 +14,9 @@
  * applies one level down: `usageBucketsSeen` names the buckets the provider
  * actually reported, so a `0` placeholder for a bucket nobody mentioned is never
  * read as "the provider said zero", and `reasoningTokens` is simply absent until
- * some step reports it.
+ * some step reports it. A `usage` object that names no bucket at all is not a
+ * reported step: it is the same silence as a missing one, and it must not be able
+ * to produce a complete, all-zero total.
  *
  * The second thing it keeps is the **shape of the run, not just its total**: every
  * step's prompt size (input + cacheRead + cacheWrite) is recorded alongside the sum,
@@ -219,12 +221,21 @@ function closeStep(state, event) {
     return
   }
 
-  state.stepsWithUsage += 1
-  addUsage(state, usage)
-
   const totals = emptyUsage()
   const seen = new Set()
   addBuckets(totals, seen, usage)
+  if (seen.size === 0) {
+    // A `usage` object that names no recognizable bucket is not a reported step.
+    // Counting it would let a provider that reports nothing at all hand back a
+    // complete, all-zero token total — a number nobody measured, wearing the
+    // "complete" flag. `totalTokens` alone is not a bucket either: it cannot be
+    // split into the terms `grandTotal` is made of.
+    state.stepUsage.push({ turn, step, promptTokens: null, usage: null, tools })
+    return
+  }
+  state.stepsWithUsage += 1
+  addUsage(state, usage)
+
   const prompt = promptTokens(usage)
   state.stepUsage.push({ turn, step, promptTokens: prompt, usage: freezeUsage(totals, seen), tools })
   attributeStep(state, tools, totals, seen)
