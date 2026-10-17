@@ -205,21 +205,7 @@ fn lock_single(raw: &str) -> Result<std::fs::File> {
         "{:x}",
         Sha256::digest(checked.name.to_lowercase().as_bytes())
     );
-    let mut options = cap_std::fs::OpenOptions::new();
-    options
-        .read(true)
-        .write(true)
-        .create(true)
-        .follow(FollowSymlinks::No);
-    #[cfg(unix)]
-    {
-        use cap_std::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let file = checked
-        .parent
-        .open_with(format!(".dsh-ops-update-{key}.lock"), &options)?
-        .into_std();
+    let file = publication::open_update_lock(&checked.parent, &format!(".dsh-ops-update-{key}.lock"))?;
     FileExt::try_lock_exclusive(&file).map_err(|_| {
         Failure::new(
             "REVISION_CONFLICT",
@@ -376,59 +362,6 @@ fn publish_new(
     let preserved = source.map(|source| publication::Preserved::capture(source, false)).transpose()?;
     #[cfg(unix)]
     let preserved = source.map(PreservedMetadata::of).transpose()?;
-    #[cfg(target_os = "macos")]
-    if let Some(source) = source {
-        // Darwin cannot stage a copy: an ACE that denies `delete` blocks `unlink`
-        // and `rename` on the file itself, so a staged clone carrying the source's
-        // ACL can never be removed again, and only `clonefile` can carry that ACL
-        // at all. The clone therefore goes straight to the destination name, which
-        // is itself no-clobber, and the bytes it published are measured below
-        // instead of assumed.
-        if let Some(expected) = expected_source {
-            // Re-check before anything is published: a source that already moved
-            // must publish nothing.
-            check_revision(Some(&read_bytes(&source.display)?), expected)?;
-        }
-        let mut file = publication::publish_clone(&checked.parent, &checked.name, source)?;
-        let prepared = (|| -> Result<()> {
-            let mut published = Vec::new();
-            (&mut file)
-                .take(bytes.len() as u64 + 1)
-                .read_to_end(&mut published)?;
-            if published.as_slice() != bytes {
-                return Err(Failure::new(
-                    "RESULT_PARTIAL",
-                    "The source changed while it was cloned, so the destination holds another revision",
-                ));
-            }
-            let metadata = crate::file_path::read_file(source)?.metadata()?;
-            let times = std::fs::FileTimes::new()
-                .set_accessed(metadata.accessed()?.into_std())
-                .set_modified(metadata.modified()?.into_std());
-            file.try_clone()?.into_std().set_times(times)?;
-            if let Some(preserved) = &preserved {
-                // Mask inherited grants while the captured mode is off, exactly as
-                // the staged path does: re-applying user attributes needs write
-                // permission on the inode, which a read-only source does not grant.
-                rustix::fs::fchmod(&file, rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR)
-                    .map_err(|error| Failure::new("ACCESS_DENIED", error))?;
-                let (_, warnings) = preserved.restore(&file)?;
-                if !warnings.is_empty() {
-                    return Err(Failure::new(
-                        "METADATA_UNSUPPORTED",
-                        "Copy metadata could not be fully restored",
-                    ));
-                }
-            }
-            file.sync_all()?;
-            Ok(())
-        })();
-        if let Err(failure) = prepared {
-            // The destination name already exists: the clone published it.
-            return Err(applied_failure(&failure.code, failure.message));
-        }
-        return sync_applied(&checked.parent);
-    }
     let temporary = format!(".{}.dsh-ops-{}", checked.name, uuid::Uuid::new_v4());
     let mut file = publication::create_sibling(&checked.parent, &temporary, source)?;
     let prepared = (|| -> Result<()> {
@@ -465,10 +398,28 @@ fn publish_new(
             return Err(error);
         }
     }
+    #[cfg(target_os = "macos")]
+    {
+        // RENAME_EXCL publishes an absent destination without a staging unlink.
+        // A preserved Darwin deny-delete ACE must not strand a second hardlink.
+        let published = rustix::fs::renameat_with(
+            &checked.parent, temporary.as_str(), &checked.parent, checked.name.as_str(),
+            rustix::fs::RenameFlags::NOREPLACE,
+        );
+        if let Err(error) = published {
+            publication::discard_sibling(&checked.parent, &temporary, file)?;
+            return Err(std::io::Error::from(error).into());
+        }
+        drop(file);
+        return sync_applied(&checked.parent);
+    }
+    #[cfg(not(target_os = "macos"))]
     let published = checked
         .parent
         .hard_link(&temporary, &checked.parent, &checked.name);
+    #[cfg(not(target_os = "macos"))]
     let cleanup = publication::discard_sibling(&checked.parent, &temporary, file);
+    #[cfg(not(target_os = "macos"))]
     if let Err(mut failure) = cleanup {
         if published.is_ok() {
             failure.effect_state = "applied".into();
@@ -476,9 +427,11 @@ fn publish_new(
         }
         return Err(failure);
     }
+    #[cfg(not(target_os = "macos"))]
     published?;
     #[cfg(windows)]
     if let Some(preserved) = &preserved { preserved.verify(&checked.parent, &checked.name)?; }
+    #[cfg(not(target_os = "macos"))]
     sync_applied(&checked.parent)
 }
 fn sync_applied(parent: &cap_std::fs::Dir) -> Result<()> {
@@ -619,10 +572,11 @@ mod tests {
     use super::*;
     #[test]
     fn copy_changed_source_is_not_published() {
-        let temp = std::env::temp_dir();
-        #[cfg(unix)]
-        let temp = std::fs::canonicalize(temp).unwrap();
-        let root = temp.join(format!("dsh-ops-copy-cas-{}", uuid::Uuid::new_v4()));
+        // Darwin's `TMPDIR` sits under `/var`, itself a symlink to `/private/var`, and the
+        // no-follow traversal refuses any linked component. Resolve the ambient root first so
+        // the fixture exercises the copy CAS rather than the platform's temp spelling.
+        let ambient = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+        let root = ambient.join(format!("dsh-ops-copy-cas-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root).unwrap();
         let source = root.join("source");
         let dest = root.join("dest");

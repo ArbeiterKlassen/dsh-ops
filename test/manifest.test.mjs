@@ -112,7 +112,7 @@ await test('the declared namespace documents the upstream names and the public p
 
 await test('the declared prompt sections are the registered ones', () => {
   const declared = raw.contributes['x-prompt-sections'].map((section) => section.name)
-  assert.deepEqual([...declared].sort(), ['file', 'shell'].map(name => `${TOOLING_SECTION}:${name}`).sort())
+  assert.deepEqual([...declared].sort(), ['file', 'shell', 'ptc'].map(name => `${TOOLING_SECTION}:${name}`).sort())
   // The background stub still loads for existing rows but is no longer a declared component.
   assert.equal(raw.contributes['x-components'].some((component) => component.entry === 'dsh-ops/background'), false)
 })
@@ -131,9 +131,7 @@ await test('the manifest license states the composite this repository ships', ()
 await test('the bundle patch inserts no background row and writes no removed FastCtx key', async () => {
   const { parse } = await import('yaml')
   const { LEGACY_FASTCTX_KEYS } = await import('../lib/config.js')
-  const patch = parse(fs.readFileSync(path.join(PACKAGE_ROOT, pkg.dsh.bundle.patch), 'utf8'), {
-    customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: value => value }],
-  })
+  const patch = parse(fs.readFileSync(path.join(PACKAGE_ROOT, pkg.dsh.bundle.patch), 'utf8'))
   const rows = patch.flatMap((entry) => entry.insert ?? [])
   assert.deepEqual(rows.map((row) => row.name), ['dsh-ops/shell', 'dsh-ops/file', 'dsh-ops/ptc', 'dsh-ops/tui', 'dsh-ops/hide-official'])
   for (const row of rows) {

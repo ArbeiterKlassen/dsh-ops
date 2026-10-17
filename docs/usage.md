@@ -25,7 +25,14 @@ cargo build --release --manifest-path native/Cargo.toml
 node bin/native-runtime.mjs stage --platform darwin-arm64
 ```
 
-Linux/macOS keep the official host `bash`; the Windows shell component is disabled there by default. No background row is included in the five-component bundle. Strict hiding defaults disabled and blocks incomplete readiness when explicitly enabled; see [components](component-reference.md).
+Then point the shell row at a bash the machine already has:
+
+```yaml
+- id: dsh-ops-shell
+  name: dsh-ops/shell
+  config:
+    bashPath: /opt/homebrew/bin/bash
+```
 
 The desktop application's bundled CLI lives inside its own installation, at
 `.../Contents/Resources/runtime/cli/bin/dsh` on macOS, rather than at the
@@ -120,7 +127,7 @@ Use `ops_bash`'s `command` for short commands and pipelines. For scripts longer 
 
 `script_path` accepts only the script path, so the script body is not repeated in the `ops_bash` arguments. `command` and `script_path` are mutually exclusive and exactly one is required. This interface cannot repair JSON that the model or host failed to parse; an unparseable tool call still requires a host/model retry.
 
-`ops_bash` arguments are **strict**: a key the schema does not declare is refused before execution, and the error names both the unknown keys and the accepted ones instead of ignoring them. **This tool has no `run_in_background` and returns no job id**; every command runs in the foreground. The host `bash` and `pwsh` tools do accept `run_in_background`, so a model may reasonably try it here; such a call is rejected rather than silently run in the foreground. Background lifecycle replacements are not ready; strict hiding blocks unsupported official jobs rather than suggesting detached shell workarounds. `ops_bash` remains foreground-only and provider cancellation/timeout owns its process range. `includeDiagnostics: true` adds executor timing and stream bytes/line counts; defaults stay compact.
+`ops_bash` arguments are **strict**: a key the schema does not declare is refused before execution, and the error names both the unknown keys and the accepted ones instead of ignoring them. **This tool has no `run_in_background` and returns no job id**; every command runs in the foreground. The host `bash` and `pwsh` tools do accept `run_in_background`, so a model may reasonably try it here; such a call is rejected rather than silently run in the foreground. For a server, listener or watcher, use the host `pwsh` tool's `run_in_background`, or detach the process from inside the command (for example `nohup ... & disown`). Otherwise the call occupies the whole `timeoutMs` (up to `MAX_BASH_TIMEOUT_MS`, about 24.9 days).
 
 ---
 

@@ -87,7 +87,7 @@ try {
   const page = request('result', { action: 'page', id: run.id })
   assert.equal(page.items.length, 3); assert.equal(page.complete, true)
   assert.equal(page.expires, null)
-  assert.equal(request('result', { action: 'release', id: run.id }).error.code, 'POLICY_DENIED')
+  assert.equal(request('result', { action: 'release', id: run.id }).error.code, 'INVALID_ARGUMENT')
   assert.equal(request('result', { action: 'page', id: run.id }, 'foreign-session').error.code, 'POLICY_DENIED')
   // Simulate the durable write-ahead boundary left by a process crash, rather than
   // adding fault-injection switches to production code.
@@ -122,6 +122,13 @@ try {
     assert.ok(page.items.length)
   } while (offset < rows.length)
   assert.deepEqual(got, rows)
+  const first = request('result', { action: 'page', id: reference.id, limit: 1 })
+  assert.equal(first.items[0].n, 0); assert.equal(first.nextOffset, 1)
+  const last = request('result', { action: 'page', id: reference.id, offset: rows.length - 1 })
+  assert.equal(last.items[0].n, 999); assert.equal(last.complete, true)
+  const beyond = request('result', { action: 'page', id: reference.id, offset: rows.length + 10 })
+  assert.deepEqual(beyond.items, []); assert.equal(beyond.complete, true); assert.equal(beyond.nextOffset, rows.length)
+  assert.equal(request('result', { action: 'page', id: 'invalid' }).error.code, 'INVALID_ARGUMENT')
   const projected = request('result', { action: 'page', id: reference.id, equals: { kind: 'even' }, fields: ['n'], limit: 512, maxBytes: 16384 })
   assert.equal(projected.total, 500); assert.deepEqual(projected.items[1], { n: 2 })
   assert.equal(projected.sourceTotal, 1000); assert.equal(projected.contentHash, reference.contentHash)
@@ -144,6 +151,8 @@ try {
   expiredRecord.expires = 1
   fs.writeFileSync(path.join(store, expiredFile), JSON.stringify(expiredRecord))
   assert.equal(request('result', { action: 'page', id: expired.id }).error.code, 'REFERENCE_EXPIRED')
+  assert.match(request('result', { action: 'page', id: expired.id }).error.nextAction, /Release.*new observation/)
+  assert.equal(request('result', { action: 'page', id: expired.id }, 'foreign-session').error.code, 'POLICY_DENIED')
   assert.equal(request('batch', { action: 'plan', operationsRef: expired.id }).error.code, 'REFERENCE_EXPIRED')
   assert.equal(request('result', { action: 'release', id: expired.id }).status, 'released')
   assert.ok(exists('main/keep'))
@@ -182,7 +191,7 @@ try {
     fs.symlinkSync(path.join(dir, 'main'), path.join(dir, 'named-link'), process.platform === 'win32' ? 'junction' : 'dir')
     const linked = await fileCall('inspect_local_file', { path: path.join(dir, 'named-link') })
     assert.equal(linked.error?.code, 'PATH_RESTRICTED', JSON.stringify(linked))
-    console.log(`ok: host-bridge absolute paths work${aliasRoot ? ' through the /var -> /private/var alias' : ''}; a named link stays PATH_RESTRICTED`)
+    console.log(`ok: host-bridge absolute paths work${aliasRoot ? ' through the /var -> /private/var alias' : ''}; a named link stays POLICY_DENIED`)
   } finally { await bridge.fiber.dispose() }
 
   // 3. Actual host registration scopes and presentation with a simulated enforcing
@@ -238,6 +247,7 @@ try {
     const assembled = await ctx.get('systemPrompt').assemble({scope:pure})
     assert.deepEqual(assembled.tools.map(t => t.name), ['run_code'])
     assert.ok(assembled.sections.some(s => s.text.includes('ops_batch')))
+    assert.ok(assembled.sections.some(s => s.name === 'dsh-ops:repository-tooling:ptc' && s.text.includes('Do not replace read')))
     assert.equal((await ctx.get('systemPrompt').assemble({scope:native})).sections.some(s => s.text.includes('ops_batch')), false)
     const def = ctx.get('tools').get('ops_batch', pure)
     const wrongOwner = await def.execute({ action: 'plan', operations: [] }, { agent: ptcChild, signal: new AbortController().signal })
@@ -285,6 +295,17 @@ try {
     assert.equal(authorityChanged.error.code, 'POLICY_DENIED'); assert.equal(authorityChanged.error.effectState, 'none')
     assert.equal(authorityChanged.error.permission.current, 'read-only'); assert.equal(calls.length, before)
     pure.session.mode = 'workspace-write'
+    let pageSpawns = 0, snapshots = 0
+    const changedPageAuthority = { get(name) {
+      if (name === 'sandboxPolicy') return { resolve: () => ({ mode: ++snapshots === 1 ? 'workspace-write' : 'read-only', workspaceRoot: dir }) }
+      if (name === 'sandbox') return { confine: async argv => ({ argv, enforcement: 'full' }) }
+      if (name === 'subprocess') return { spawn() { pageSpawns++; throw new Error('changed page must not spawn') } }
+      return ctx.get(name)
+    } }
+    const changedPage = await invoke(changedPageAuthority, file, 'result', { action: 'page', id: reference.id }, { agent: pure }, new AbortController().signal)
+    assert.equal(changedPage.error.code, 'AUTHORITY_CHANGED')
+    assert.equal(changedPage.error.effectState, 'none'); assert.equal(changedPage.error.permission, undefined)
+    assert.equal(pageSpawns, 0)
     sandboxAvailable = true
     const hostDestKept = exists('host-dest'); assert.equal(hostDestKept,true)
     const partialSandboxCtx = { get(name) {

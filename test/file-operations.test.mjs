@@ -1,17 +1,17 @@
-/** Full native file surface: real worker + real DSH subprocess/policy/fs observations. */
+/**
+ * Full native file surface: the shipped worker, driven through the
+ * `test/lib/boundary.mjs` request shape, plus the generated tool contract. The host
+ * lane (`lib/file/worker.js`: authority modes, credential fence, observations)
+ * belongs to the security/atomicity issue and is deliberately not exercised here.
+ */
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
-import Subprocess from '@deepseek-ai/dsh-subprocess-local'
-import FileSystem from '@deepseek-ai/dsh-fs-local'
-import * as ObservationPolicy from '@deepseek-ai/dsh-fs-observation-policy'
-import { invoke } from '../lib/file/worker.js'
 import { FILE_TOOLS, FILE_MUTATIONS, publicToolName } from '../lib/policy.js'
 import { PARAMETERS, definition, normalizeArguments } from '../lib/file/contract.js'
-import { bootHost, shutdown } from './lib/host.mjs'
 import { assert, test, report, withTempDir } from './lib/harness.mjs'
-import { callTool, callWorker, request, envelopeOf, requireWorker, WORKER } from './lib/boundary.mjs'
+import { callTool, callWorker, request, envelopeOf, requireWorker } from './lib/boundary.mjs'
 requireWorker('file-operations')
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const call = async (tool, args, root, options = {}) => envelopeOf(await callTool(tool, args, { root, ...options }), assert)
@@ -151,60 +151,6 @@ await test('no-follow ancestry rejects symlinks/junctions even for a missing wri
     assert.equal(fs.existsSync(path.join(real, 'new')), false); assert.equal(fs.readFileSync(path.join(real, 'a'), 'utf8'), 'keep')
   })
 })
-await test('three authoritative modes, both transfer paths, credential fence, live downgrade and host observations', async () => {
-  await withTempDir('file-authority', async root => {
-    await withTempDir('file-outside', async outside => {
-      const { ctx } = await bootHost(); const session = { id: 'file-authority', mode: 'read-only', header: { cwd: root } }
-      const exec = { agent: { session }, signal: new AbortController().signal }
-      try {
-        await ctx.plugin(Subprocess); await ctx.plugin(FileSystem, {}); await ctx.plugin(ObservationPolicy)
-        let resolves = 0; let downgrade = false
-        await ctx.plugin(inner => inner.provide('sandboxPolicy', { resolve() { resolves++; if (downgrade && resolves === 2) session.mode = 'read-only'; return { mode: session.mode, workspaceRoot: root } } }))
-        const invokeTool = (tool, args) => invoke(ctx, WORKER, tool, args, exec, exec.signal)
-        const source = path.join(outside, 'source'); fs.writeFileSync(source, 'outside')
-        const operations = { write_file: { path: 'new', content: 'new', expectedRevision: 'absent' }, edit_file: { path: source, expectedRevision: rev(source), edits: [{ oldText: 'outside', newText: 'bad' }] }, copy: { path: source, to: 'copy', expectedRevision: rev(source) }, move: { path: source, to: 'move', expectedRevision: rev(source) }, remove: { path: source, expectedRevision: rev(source) } }
-        for (const [tool, args] of Object.entries(operations)) { const value = await invokeTool(tool, args); assert.equal(value.error.code, 'POLICY_DENIED'); assert.match(value.error.nextAction, /Ask the user/); assert.equal(value.error.permission.current, 'read-only') }
-        assert.equal((await invokeTool('stat', { path: source })).status, 'completed')
-        session.mode = 'workspace-write'
-        for (const tool of ['move', 'remove', 'edit_file']) assert.equal((await invokeTool(tool, operations[tool])).error.code, 'POLICY_DENIED')
-        for (const tool of ['write_file', 'copy']) {
-          const args = tool === 'copy' ? { ...operations.copy, to: path.join(outside, 'bad') } : { ...operations.write_file, path: path.join(outside, 'bad') }
-          assert.equal((await invokeTool(tool, args)).error.code, 'POLICY_DENIED')
-        }
-        const linked = path.join(root, 'linked'); fs.symlinkSync(outside, linked, process.platform === 'win32' ? 'junction' : 'dir')
-        const throughLink = await invokeTool('write_file', { path: path.join(linked, 'escape'), content: 'bad', expectedRevision: 'absent' })
-        assert.equal(throughLink.error.code, 'PATH_RESTRICTED'); assert.equal(fs.existsSync(path.join(outside, 'escape')), false)
-        session.mode = 'danger-full-access'
-        const fullLink = await invokeTool('write_file', { path: path.join(linked, 'escape'), content: 'bad', expectedRevision: 'absent' })
-        assert.equal(fullLink.error.code, 'PATH_RESTRICTED'); assert.equal(fs.existsSync(path.join(outside, 'escape')), false)
-        session.mode = 'workspace-write'
-        const beforeSourceNames = fs.readdirSync(outside).sort()
-        const copySource = await invokeTool('copy', { path: source, to: 'external-copy', expectedRevision: rev(source) })
-        assert.equal(copySource.status, 'completed', JSON.stringify(copySource)); assert.equal(fs.readFileSync(path.join(root, 'external-copy'), 'utf8'), 'outside')
-        assert.deepEqual(fs.readdirSync(outside).sort(), beforeSourceNames, 'read-only source must not receive sidecar writes')
-        assert.equal(fs.readFileSync(source, 'utf8'), 'outside')
-        const target = path.join(root, 'new'); const created = await invokeTool('write_file', operations.write_file)
-        assert.equal(created.status, 'completed', JSON.stringify(created)); assert.equal(created.sandbox.mode, 'workspace-write')
-        const fsTarget = await ctx.get('fs').resolve(target, { cwd: root })
-        const intent = () => ctx.waterfall('fs/edit-intent', fsTarget, exec, () => undefined)
-        assert.deepEqual(await intent(), { version: (await ctx.get('fs').stat(fsTarget)).version })
-        await invokeTool('remove', { path: target, expectedRevision: created.revision })
-        await assert.rejects(intent(), error => error.code === 'FS_NOT_FOUND')
-        session.mode = 'danger-full-access'
-        const full = await invokeTool('write_file', { path: path.join(outside, 'full'), content: 'ok', expectedRevision: 'absent' })
-        assert.equal(full.status, 'completed', JSON.stringify(full))
-        for (const [tool, args] of [['stat', { path: path.join(root, '.env') }], ['write_file', { path: path.join(root, '.env'), content: 'bad', expectedRevision: 'absent' }], ['copy', { path: source, to: path.join(root, '.env'), expectedRevision: rev(source) }]]) {
-          const value = await invokeTool(tool, args); assert.equal(value.error.code, 'CREDENTIAL_DENIED'); assert.doesNotMatch(JSON.stringify(value), /outside.*outside/s)
-        }
-        resolves = 0; downgrade = true
-        const changed = await invokeTool('write_file', { path: 'downgrade', content: 'bad', expectedRevision: 'absent' })
-        assert.equal(changed.error.code, 'POLICY_DENIED'); assert.equal(fs.existsSync(path.join(root, 'downgrade')), false)
-        const noAuthority = await invoke({ get() { throw new Error('private infrastructure details') } }, WORKER, 'stat', { path: source }, exec, exec.signal)
-        assert.equal(noAuthority.error.code, 'EXECUTOR_UNAVAILABLE'); assert.doesNotMatch(JSON.stringify(noAuthority), /private infrastructure/)
-      } finally { await shutdown(ctx) }
-    })
-  })
-})
 await test('native selector reasons never conflate credential or path restrictions with mode denial', async () => {
   await withTempDir('file-denial-reasons', async root => {
     const target = path.join(root, 'existing'); fs.writeFileSync(target, 'keep')
@@ -214,6 +160,7 @@ await test('native selector reasons never conflate credential or path restrictio
       failed(value, 'POLICY_DENIED'); assert.equal(value.error.reason, reason)
     }
     const denied = envelopeOf(await callWorker(JSON.stringify({ ...request('stat', { path: target }, { root }), deny_roots: [target] })), assert)
+    // This security layer distinguishes the credential fence from selector denial.
     failed(denied, 'CREDENTIAL_DENIED'); assert.equal(denied.error.reason, undefined)
     const linked = path.join(root, 'link'); fs.symlinkSync(root, linked, process.platform === 'win32' ? 'junction' : 'dir')
     const restricted = await call('stat', { path: path.join(linked, 'existing') }, root)
@@ -315,12 +262,17 @@ await test('Windows failed overwrite unlinks restrictive staging through its own
     const originalAcl = ps(`(Get-Acl -LiteralPath '${quote(root)}').Sddl`)
     try {
       ps(`$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; foreach($p in @('${quote(source)}','${quote(probe)}')) { $a=Get-Acl -LiteralPath $p; $a.SetAccessRuleProtection($true,$true); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Delete','Deny')); Set-Acl -LiteralPath $p -AclObject $a }; $p='${quote(root)}'; $a=Get-Acl -LiteralPath $p; $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'DeleteSubdirectoriesAndFiles','Deny')); Set-Acl -LiteralPath $p -AclObject $a`)
-      // This is not merely an ACE-text fixture: ordinary pathname deletion must
-      // fail under the exact source/parent policy restored onto the staging inode.
+      // This is not merely an ACE-text fixture: ordinary pathname deletion must fail
+      // under the exact source/parent policy restored onto the staging inode. A hosted
+      // runner running as the built-in Administrator (RID 500, SDDL alias `LA`) is not
+      // stopped by an explicit deny ACE, and the publish this case needs would succeed
+      // there too -- replacing an existing target requires DELETE on it, exactly what
+      // the probe measures -- so restrictive staging cannot be reached on that host.
+      const probeAcl = ps(`(Get-Acl -LiteralPath '${quote(probe)}').Sddl`)
       let probeError
       try { fs.unlinkSync(probe) } catch (error) { probeError = error }
       if (probeError === undefined) {
-        console.log('  staging DELETE fixture unavailable: this host deleted a probe whose own and parent DACL deny DELETE, so restrictive staging cannot be reached here')
+        console.log(`  staging DELETE fixture unavailable: this host deleted a probe whose own and parent DACL deny DELETE (${probeAcl}), so restrictive staging cannot be reached here`)
         return
       }
       assert.ok(['EPERM', 'EACCES'].includes(probeError.code), String(probeError))

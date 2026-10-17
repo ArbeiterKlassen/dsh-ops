@@ -1,10 +1,12 @@
-# Five independent components. The shell defaults on only on Windows; TUI is opt-in.
-# Strict official-tool hiding is disabled until explicitly enabled for a complete native surface.
-# Existing dsh-ops/background rows load as a no-op stub.
+
+# Five independent components. PTC enhancement and shell are enabled by default;
+# PTC capabilities are still published only to authoritative PTC-only sessions.
+# The read-only TUI panel and strict official-tool hiding remain opt-in.
+# Explicit existing profile choices are not migrated or overwritten.
+# The former dsh-ops/background row is no longer inserted; existing rows load as a no-op stub.
 - insert:
     - id: dsh-ops-shell
       name: dsh-ops/shell
-      disabled: !!js process.platform !== "win32"
       config:
         promptPolicy: true
         publishBashTool: true

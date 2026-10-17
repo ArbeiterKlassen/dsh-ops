@@ -6,25 +6,16 @@ Every configuration key, and **which component row owns it**.
 
 ## Where configuration lives
 
-In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/file`, `dsh-ops/ptc` or `dsh-ops/hide-official` row, adjust `config`, then save; unknown configuration keys cause errors naming the key.
-
-The bundle declares five independently toggled components. TUI and strict hiding are opt-in; shell/file/PTC default enabled, with shell disabled on Linux/macOS:
-
+In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/file` or `dsh-ops/ptc` row, adjust `config`, then save; unknown configuration keys cause errors naming the key.
+The bundle declares four independently toggled components. On first installation, the first two are enabled by default:
 | Row `name` | Component | Default |
 | --- | --- | --- |
-| `dsh-ops/shell` | Terminal and shell | Windows only |
+| `dsh-ops/shell` | Terminal and shell | On |
 | `dsh-ops/file` | Rust file tools | On |
-| `dsh-ops/ptc` | Native PTC batches | On, PTC-only |
-| `dsh-ops/hide-official` | Strict schema takeover | Off; explicit opt-in |
+| `dsh-ops/ptc` | Native PTC batches | Off |
 | `dsh-ops/tui` | Read-only sidebar, separate config | Off |
 
 A `dsh-ops/background` row left over from an earlier version loads as a no-op stub (the FastCtx background component was removed); it ignores its config and can be deleted.
-## Strict hiding configuration / 严格隐藏配置
-
-`dsh-ops/hide-official` accepts only `strict: true` (default) and `additionalOfficialTools: []` (deployment aliases). `strict: false`, OPS aliases and unknown keys reject activation. The row defaults disabled. Readiness failure is `READINESS_BLOCKED` and blocks assembly/execution only in the affected scope; healthy scopes keep verified masks. Assembly errors are scope-local and retryable, never automatic mixed mode. Only read/glob/grep mappings are reviewed; run_code cannot be hidden by this host.
-
-PTC accepts only `binaryPath` and `required` (default false). Its row is enabled by default but publishes only in pure PTC. Shell/file use `resolveConfig`; the old background entry is a removed no-op stub, not a bundle component. Windows file publication limitations are explicit in the component reference; hiding is not proof that unavailable writes are implemented.
-
 
 ---
 
@@ -94,7 +85,7 @@ config:
 
 ## Prompt registration
 
-Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws native file guidance. The file component uses its independent Rust worker and publishes eleven bounded file tools; the old background component is a removed no-op stub. Windows adds `ops_bash` by default; Linux/macOS retain the official host `bash` because shell is disabled there. PTC mode calls the underlying tools through the SDK with unchanged permission gates.
+Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws native file guidance. The file component uses its independent Rust worker. Four native file tools and `ops_bash` are added by default. These changes reduce fixed declaration costs. The Minimal preset overrides additional system sections; PTC mode calls the underlying tools through the SDK with unchanged permission gates.
 
 ---
 

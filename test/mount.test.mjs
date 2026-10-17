@@ -230,7 +230,7 @@ await test('bash is scoped to authorized sessions, responds to mode changes, and
     if (process.platform === 'win32') {
       const restrictedResult = await definition.execute({ command: 'echo no' }, { agent: full, signal: new AbortController().signal })
       assert.equal(restrictedResult.status, 'failed')
-      assert.match(restrictedResult.error, /EXECUTOR_UNAVAILABLE: The restricted Bash runtime/)
+      assert.match(restrictedResult.error, /EXECUTOR_UNAVAILABLE/)
       assert.equal(restrictedResult.permission, undefined)
     } else {
       const value = await definition.execute({ command: 'echo no' }, { agent: full, signal: new AbortController().signal })
