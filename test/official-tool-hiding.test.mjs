@@ -17,14 +17,16 @@ await test('strict hiding config is independent, rejects downgrade/unknown keys 
   raw.additionalOfficialTools.push('another')
   assert.deepEqual(result.additionalOfficialTools, ['custom_delegation'])
 })
-await test('platform exceptions and component-one defaults match the loader bundle on all platforms', () => {
+await test('strict hiding is disabled opt-in while shell and PTC defaults stay unchanged', () => {
   const document = parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'cordis.patch.yml'), 'utf8'), {
     customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: value => value }],
   })
   const rows = document.flatMap(item => item.insert)
   const shell = rows.find(row => row.name === 'dsh-ops/shell')
   const hiding = rows.find(row => row.name === 'dsh-ops/hide-official')
-  assert.notEqual(hiding.disabled, true)
+  assert.equal(hiding.disabled, true)
+  assert.equal(rows.find(row => row.name === 'dsh-ops/tui').disabled, true)
+  for (const name of ['file', 'ptc']) assert.notEqual(rows.find(row => row.name === `dsh-ops/${name}`).disabled, true)
   assert.deepEqual(resolveHidingConfig(hiding.config), { strict: true, additionalOfficialTools: [] })
   for (const platform of ['win32', 'linux', 'darwin']) {
     assert.deepEqual(platformSurface(platform), { retainedCommand: platform === 'win32' ? 'pwsh' : 'bash', shellDefaultEnabled: platform === 'win32' })

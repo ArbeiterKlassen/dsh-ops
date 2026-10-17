@@ -8,9 +8,11 @@ import { bootHost, registryHasOwnRegister, registryNames, scopedToolNames, shutd
 
 const tool = name => ({ name, description: `fixture ${name}`, parameters: { type: 'object', properties: {} },
   output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] }, execute: async () => `ran:${name}` })
-async function mint(ctx, id) {
+async function mint(ctx, id, parent) {
   const agent = { id, session: { id, header: { cwd: process.cwd() } } }
-  await ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(inner) { agent.ctx = createScope(inner, agent).ctx } })
+  await (parent?.ctx ?? ctx).plugin({ inject: ['tools', 'systemPrompt'], apply(inner) {
+    agent.ctx = createScope(inner, agent, parent ? { parent } : undefined).ctx
+  } })
   await ctx.serial('agent/created', { agent })
   return agent
 }
@@ -134,23 +136,63 @@ export async function officialToolHidingMountChecks() {
       assert.ok(scopedToolNames(ctx, agent).includes('foreign'))
     } finally { await shutdown(ctx) }
   })
-  await test('a child with unhideable official tools rolls back inherited masks for all live scopes', async () => {
+  await test('an unrelated root with local write does not stop a healthy root', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx); ctx.tools.register(tool('read'))
+      replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
       await mount(ctx)
-      const parent = await mint(ctx, 'atomic-parent')
-      const child = { id: 'atomic-child', session: parent.session }
-      await parent.ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(inner) { child.ctx = createScope(inner, child).ctx } })
+      const a = await mint(ctx, 'independent-a'), b = await mint(ctx, 'independent-b')
+      await assemble(ctx, a); await assemble(ctx, b)
+      const liftWrite = b.ctx.tools.register(tool('write'))
+      await assert.rejects(() => assemble(ctx, b), /no registered equivalent OPS capability: write/)
+      assert.equal((await execute(ctx, b, 'foreign')).isError, true)
+      assert.ok(scopedToolNames(ctx, b).includes('read'), 'failed root has no partial mask')
+      assert.equal(scopedToolNames(ctx, a).includes('read'), false)
+      await assemble(ctx, a)
+      assert.equal((await execute(ctx, a, 'foreign')).isError, false)
+      liftWrite()
+      await assemble(ctx, b)
+      assert.equal(scopedToolNames(ctx, b).includes('read'), false)
+    } finally { await shutdown(ctx) }
+  })
+  await test('a failed child is blocked without stopping its healthy parent or unrelated root', async () => {
+    const { ctx } = await bootHost()
+    try {
+      replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
+      const hiding = await mount(ctx)
+      const parent = await mint(ctx, 'independent-parent')
+      const other = await mint(ctx, 'independent-root')
+      const child = await mint(ctx, 'independent-child', parent)
       child.ctx.tools.register(tool('read'))
-      await ctx.serial('agent/created', { agent: child })
       await assert.rejects(() => assemble(ctx, child), /cannot hide own-scope/)
-      await assert.rejects(() => assemble(ctx, parent), /another live agent/)
-      assert.ok(scopedToolNames(ctx, parent).includes('read'))
+      assert.equal((await execute(ctx, child, 'foreign')).isError, true)
       assert.ok(scopedToolNames(ctx, child).includes('read'))
+      for (const agent of [parent, other]) {
+        await assemble(ctx, agent)
+        assert.equal((await execute(ctx, agent, 'foreign')).isError, false)
+        assert.equal(scopedToolNames(ctx, agent).includes('read'), false)
+      }
       await ctx.serial('agent/disposed', { agent: child })
       await assemble(ctx, parent)
+      await hiding.dispose()
+      for (const agent of [parent, child, other]) assert.ok(scopedToolNames(ctx, agent).includes('read'))
+    } finally { await shutdown(ctx) }
+  })
+  await test('inherited masks cannot conceal a child missing an OPS replacement', async () => {
+    const { ctx } = await bootHost()
+    try {
+      replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
+      await mount(ctx)
+      const parent = await mint(ctx, 'ready-parent')
+      const child = await mint(ctx, 'filtered-child', parent)
+      const lift = child.ctx.tools.restrict({ deny: [publicToolName('inspect_local_file')] })
+      await assert.rejects(() => assemble(ctx, child), /missing OPS surface:.*ops_inspect_local_file/)
+      assert.equal((await execute(ctx, child, 'foreign')).isError, true)
+      await assemble(ctx, parent)
       assert.equal(scopedToolNames(ctx, parent).includes('read'), false)
+      lift()
+      await assemble(ctx, child)
+      assert.equal(scopedToolNames(ctx, child).includes('read'), false)
     } finally { await shutdown(ctx) }
   })
   await test('missing host restriction/guard APIs block assembly with infrastructure diagnostics', async () => {
@@ -178,9 +220,30 @@ export async function officialToolHidingMountChecks() {
         return result
       })
       await assert.rejects(() => assemble(ctx, agent), /assembled surface still contains official tools: web_search/)
-      assert.ok(scopedToolNames(ctx, agent).includes('read'), 'assembly failure restores official schemas')
-      assert.equal((await execute(ctx, agent, 'foreign')).isError, true)
-      await assert.rejects(() => assemble(ctx, agent), /READINESS_BLOCKED/)
+      assert.equal(scopedToolNames(ctx, agent).includes('read'), false, 'assembly failure preserves the verified registry mask')
+      await assert.rejects(() => assemble(ctx, agent), /assembled surface still contains official tools: web_search/)
+    } finally { await shutdown(ctx) }
+  })
+  await test('a fail-once prompt provider blocks only that assembly and recovers on the next request', async () => {
+    const { ctx } = await bootHost()
+    try {
+      replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
+      await mount(ctx)
+      const a = await mint(ctx, 'transient-a'), b = await mint(ctx, 'transient-b')
+      await assemble(ctx, a); await assemble(ctx, b)
+      let failOnce = true
+      ctx.on('system-prompt/assemble', (assembly, context, next) => {
+        if (context.scope === a && failOnce) { failOnce = false; throw new Error('transient fixture failure') }
+        return next()
+      })
+      await assert.rejects(() => assemble(ctx, a), /could not be verified: transient fixture failure/)
+      assert.equal(scopedToolNames(ctx, a).includes('read'), false)
+      assert.equal(scopedToolNames(ctx, b).includes('read'), false, 'other root keeps its restriction')
+      const recovered = await assemble(ctx, a)
+      assert.equal(recovered.tools.some(t => t.name === 'read'), false)
+      assert.equal((await execute(ctx, a, 'foreign')).isError, false)
+      await assemble(ctx, b)
+      assert.equal((await execute(ctx, b, 'foreign')).isError, false)
     } finally { await shutdown(ctx) }
   })
   await test('agent disposal lifts restrictions and remount does not retain old masks', async () => {

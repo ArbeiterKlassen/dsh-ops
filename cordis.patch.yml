@@ -1,5 +1,5 @@
 # Five independent components. The shell defaults on only on Windows; TUI is opt-in.
-# Strict official-tool hiding is independent and enabled by default.
+# Strict official-tool hiding is disabled until explicitly enabled for a complete native surface.
 # Existing dsh-ops/background rows load as a no-op stub.
 - insert:
     - id: dsh-ops-shell
@@ -28,6 +28,7 @@
         recentLimit: 8
     - id: dsh-ops-hide-official
       name: dsh-ops/hide-official
+      disabled: true
       config:
         strict: true
         additionalOfficialTools: []
