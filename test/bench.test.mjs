@@ -31,7 +31,7 @@ import { createObserver, decodeConsoleBytes, describeEvent, formatClock, OBSERVE
 import { describeModulePath } from '../bench/lib/env.mjs'
 import { buildSummary, createLogger, defaultRunFolder, dryRun, extractEndpoints, extractModel, parseArgs, pipedSpawnBlocker, prepareOut, probeEndpoints, repeatsById, main as runMain } from '../bench/run.mjs'
 import { main as compareMain, parseArgs as parseCompareArgs, renderMarkdown, reportDir, resolveSide } from '../bench/compare.mjs'
-import { parseArgs as parseSetupArgs, planProfilePatch, poisonedModulePath } from '../bench/setup.mjs'
+import { approvalPolicyFor, entryConfigValue, parseArgs as parseSetupArgs, permissionEntries, planEntryPatch, planPatchEntries, planProfilePatch, poisonedModulePath } from '../bench/setup.mjs'
 
 const LABEL = 'bench'
 
@@ -370,6 +370,27 @@ await test('verify covers each check type in both directions', async () => {
     assert.match(fail.checks[6].detail, /content changed: KEEP_1\.txt/)
     assert.match(fail.checks[7].detail, /missing: KEEP_9\.txt/)
     assert.match(fail.checks[8].detail, /non-empty fixture export/)
+  })
+})
+
+await test('contentHashes ignores the replace update-lock sidecars and nothing else', async () => {
+  await withTempDir('bench-verify-lock-', async (dir) => {
+    const sha = (text) => createHash('sha256').update(text, 'utf8').digest('hex')
+    const exports = { hashes: [{ name: 'core.js', sha256: sha('renamed') }] }
+    const check = [{ type: 'contentHashes', dir: '.', expect: 'hashes' }]
+    fs.writeFileSync(path.join(dir, 'core.js'), 'renamed', 'utf8')
+
+    // The candidate's `ops_replace` leaves these beside every file it edits: one per path,
+    // created on first use and never unlinked. They are tool state, not tree content.
+    fs.writeFileSync(path.join(dir, `.dsh-ops-update-${'a'.repeat(64)}.lock`), '', 'utf8')
+    const tolerated = await verifyWorkspace(dir, check, exports)
+    assert.equal(tolerated.passed, true, 'a 64-hex update-lock sidecar must not fail a byte-exact check')
+
+    // The tolerance is the documented shape only: a near miss is a real unexpected file.
+    fs.writeFileSync(path.join(dir, '.dsh-ops-update-abc.lock'), '', 'utf8')
+    const nearMiss = await verifyWorkspace(dir, check, exports)
+    assert.equal(nearMiss.passed, false, 'only `.dsh-ops-update-<64 hex>.lock` is tolerated')
+    assert.match(nearMiss.checks[0].detail, /unexpected: \.dsh-ops-update-abc\.lock/)
   })
 })
 
@@ -1423,6 +1444,57 @@ await test('setup refuses shapes it cannot merge safely instead of rewriting the
   assert.equal(planProfilePatch('tabs:\n\t- id: x\n', SHELL).action, 'manual')
 })
 
+await test('setup pins the permission mode with the approval preset it implies', () => {
+  assert.deepEqual(permissionEntries('danger-full-access'), [
+    { id: 'sandbox-policy', config: { mode: 'danger-full-access' } },
+    { id: 'approval', config: { policy: 'never' } },
+  ], 'full access carries the approval policy dsh-base derives')
+  assert.deepEqual(permissionEntries('workspace-write')[1].config, { policy: 'ask' })
+  assert.equal(approvalPolicyFor('read-only'), 'ask')
+
+  const planned = planPatchEntries(TEMPLATE_PATCH, permissionEntries('danger-full-access'))
+  assert.equal(planned.action, 'write')
+  assert.match(planned.text, /^- id: sandbox-policy\r?$/m)
+  assert.ok(planned.text.includes('    mode: danger-full-access'), 'the mode is indented under config')
+  assert.match(planned.text, /^- id: approval\r?$/m)
+  assert.ok(planned.text.includes('    policy: never'))
+  assert.ok(!planned.text.includes('[]'), 'the template placeholder is gone')
+  assert.ok(planned.text.startsWith('# Your patch layer'), 'the template comments survive')
+  assert.equal(planPatchEntries(planned.text, permissionEntries('danger-full-access')).action, 'noop', 'the same pin is not rewritten')
+})
+
+await test('the permission pin composes with the shell pin and refuses a foreign mode', () => {
+  const withShell = `- id: pwsh-sandbox\n  config:\n    pwshPath: ${SHELL}\n`
+  const planned = planPatchEntries(withShell, permissionEntries('workspace-write'))
+  assert.equal(planned.action, 'write')
+  assert.ok(planned.text.includes(`pwshPath: ${SHELL}`), 'the shell pin survives')
+  assert.match(planned.text, /- id: sandbox-policy\n  config:\n    mode: workspace-write/)
+  assert.match(planned.text, /- id: approval\n  config:\n    policy: ask/)
+
+  const existing = '- id: sandbox-policy\n  name: x\n  config:\n    mode: read-only\n'
+  const conflict = planPatchEntries(existing, permissionEntries('danger-full-access'))
+  assert.equal(conflict.action, 'conflict', 'a mode this script did not write is not overwritten')
+  assert.match(conflict.note, /--force/)
+  const forced = planPatchEntries(existing, permissionEntries('danger-full-access'), { force: true })
+  assert.equal(forced.action, 'write')
+  assert.equal(forced.text.split('mode:').length - 1, 1, 'the key is replaced, not duplicated')
+  assert.match(forced.text, /mode: danger-full-access/)
+  assert.equal(planEntryPatch('- id: sandbox-policy\n  config: { mode: read-only }\n', permissionEntries('danger-full-access')[0]).action, 'manual', 'an inline config is still refused')
+})
+
+await test('the composed-tree reader finds a key under the right entry only', () => {
+  const dump = [
+    '- id: telemetry', '  config:', '    mode: !!js process.env.DSH_TELEMETRY_MODE', '- id: sandbox-policy', '  config:',
+    '    mode: danger-full-access', '    workspaceRoot: !!js process.cwd()', '- id: approval', '  config:', '    policy: never', '',
+  ].join('\n')
+  assert.equal(entryConfigValue(dump, 'sandbox-policy', 'mode'), 'danger-full-access')
+  assert.equal(entryConfigValue(dump, 'approval', 'policy'), 'never')
+  assert.equal(entryConfigValue(dump, 'telemetry', 'mode'), '!!js process.env.DSH_TELEMETRY_MODE', 'the reader is scoped to one entry')
+  assert.equal(entryConfigValue(dump, 'sandbox-policy', 'approval'), null, 'a key of another entry does not leak in')
+  assert.equal(entryConfigValue(dump, 'nope', 'mode'), null)
+  assert.equal(entryConfigValue('', 'sandbox-policy', 'mode'), null)
+})
+
 await test('the PSModulePath probe flags only a directory that really ships the shadowing module', () => {
   const windows = 'C:\\Windows'
   const inBox = 'C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\Modules'
@@ -1441,6 +1513,10 @@ await test('setup argument handling fails closed on typos and names the plugin i
   assert.equal(parseSetupArgs([]).plugin, `dsh-ops@${version}`, 'the repo version is the default spec')
   assert.equal(parseSetupArgs(['--no-plugin']).plugin, 'none')
   assert.equal(parseSetupArgs(['--no-pin']).pinShell, null)
+  assert.equal(parseSetupArgs([]).permissionMode, 'danger-full-access', 'both profiles default to full access')
+  assert.equal(parseSetupArgs(['--permission-mode', 'workspace-write']).permissionMode, 'workspace-write')
+  assert.equal(parseSetupArgs(['--no-permission-mode']).permissionMode, 'none')
+  assert.throws(() => parseSetupArgs(['--permission-mode', 'yolo']), /--permission-mode/, 'an unknown mode is refused, not guessed')
   assert.equal(parseSetupArgs(['--plugin', 'local']).plugin, 'local')
   assert.throws(() => parseSetupArgs(['--pin']), /unknown option/, 'a typo must not silently skip the pin')
   assert.throws(() => parseSetupArgs(['--base-profile', 'headless']), /shipped template/)

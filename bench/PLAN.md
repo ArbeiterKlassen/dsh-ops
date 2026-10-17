@@ -258,7 +258,7 @@ Node 版本按 `engines`：`^22.19 || >=24`。
 | `fileContains` | `path`, `text`\|`expect` | 包含子串 |
 | `fileLines` | `path`, `lines`\|`expect` | trim 后非空行序列全等（有序） |
 | `countFiles` | `dir`, `prefix?`, `suffix?`, `extension?`, `count`\|`expect` | 递归计数全等 |
-| `contentHashes` | `dir`, `expect` | 目录内文件与 `[{name, sha256}]` 清单逐字节全等（缺失/改内容/多余文件都算失败）——证明"只改名，没动内容" |
+| `contentHashes` | `dir`, `expect` | 目录内文件与 `[{name, sha256}]` 清单逐字节全等（缺失/改内容/多余文件都算失败）——证明"只改名，没动内容"。唯一放行的是工具自己的协作锁 `.dsh-ops-update-<64 hex>.lock`（工具状态而非工作区内容，见 bench/README §4.2） |
 | `command` | `command`, `args?`, `exitCode?=0`, `cwd?="."` | spawn 退出码全等；`command:"node"` 映射 `process.execPath` 保证确定性 |
 
 单个检查失败不中断，全部跑完；结果 `{passed, checks:[{type,path?,passed,detail}]}`。
@@ -518,9 +518,11 @@ dsh 的压缩线（`compaction-basic` 在 0.8 × `contextWindow` 处触发、保
   `src/dirNN/fileNNN.js`，共 200 个文件；needle 以 `const MARK = "NEEDLE_X7Q"` 形式恰好出现在
   8 个确定文件里；其余文件保证不含该子串。exports：`matches`（8 个 POSIX 相对路径，字典序）。
 - prompt（要点）：找出所有包含精确 token `NEEDLE_X7Q` 的文件，把相对路径按字典序一行一个写入
-  `matches.txt`，不要写入其他内容。
+  `matches.txt`，不要写入其他内容；**每次搜索最多覆盖 50 个文件**（一条递归全树的搜索不合规），
+  因此至少 4 次搜索。
 - verify：`fileLines matches.txt expect=matches`。
-- 打点：搜索工具输出体积（200 文件树的 grep 结果会不会灌爆上下文）、来回步数。
+- 打点：搜索工具输出体积（200 文件树的 grep 结果会不会灌爆上下文）、分批搜索的步数；
+  "≤50/次"与 bulk-rename 一样是提示词约定，不是判卷条件（verify 只读 `matches.txt`）。
 - repeat 2（语料里偏贵，样本向轻任务倾斜）。
 
 ### 7.2 bulk-rename —— 批量操作
@@ -569,9 +571,11 @@ dsh 的压缩线（`compaction-basic` 在 0.8 × `contextWindow` 处触发、保
   `logs/app_00.log … app_49.log`，每行 `INFO|WARN|ERROR` 前缀 + 随机文本。
   exports：`report`（50 行 `"<文件名> <ERROR行数>"`，按文件名字典序，文件名不带 `logs/` 前缀）。
 - prompt：统计每个 `logs/*.log` 文件中包含 `ERROR`（区分大小写）的行数，
-  按 `<filename> <count>` 格式一行一个写入 `errors.txt`，按文件名字典序，文件名不带目录前缀。
+  按 `<filename> <count>` 格式一行一个写入 `errors.txt`，按文件名字典序，文件名不带目录前缀；
+  **每次工具调用最多处理 10 个日志文件**（一条读完全部的循环不合规），因此至少 5 批。
 - verify：`fileLines errors.txt expect=report`。
-- 打点：一条命令完成 vs 多次读文件；工具输出的裁剪与压缩。
+- 打点：5 批小步 vs 一条命令出全表；每批要把前几批的历史重新带进上下文，量每步固定开销；
+  "≤10/次"是提示词约定，不是判卷条件（verify 只读 `errors.txt`）。
 - repeat 5（模型不 dump 语料时 token 基本不随文件数增长，38k 档只能靠多采样出信号）。
 
 ### 7.6 config-hunt —— 分层配置求值（"这个值到底从哪来"）
@@ -622,21 +626,24 @@ dsh 的压缩线（`compaction-basic` 在 0.8 × `contextWindow` 处触发、保
 
 ### 7.9 api-rename —— 精确改名（含长相符号）
 
-- fixture `symbolTree{seed:31, files:40}`：
+- fixture `symbolTree{seed:31, files:60}`：
   - `src/core.js` 定义 `parsePayload`、`parsePayloadLegacy`、`parsePayloadAsync`，
     其中 `parsePayloadAsync` 的实现**调用** `parsePayload`；
-  - `src/` 下 40 个模块：4/5 同时 import 目标符号与 `parsePayloadLegacy`，
+  - `src/` 下 60 个模块：4/5 同时 import 目标符号与 `parsePayloadLegacy`，
     1/5 只 import `parsePayloadLegacy`（改名不应碰到它）；
   - 根目录 `check.mjs` import `decodePayload` 并断言行为，改名完成前必失败；
   - exports：`final`（`src/` 全部文件改后内容的 `{name, sha256}`，供 `contentHashes`）、
     `fixedFiles`（改后内容，供单测自证可答）、`from`、`to`。
 - prompt（要点）：把 `parsePayload` 改名为 `decodePayload`（定义、import、调用点），
-  `parsePayloadLegacy`/`parsePayloadAsync` 保持原名，不改行为、不增删 `src/` 下文件，
-  完成后 `node check.mjs` 必须 exit 0。
+  `parsePayloadLegacy`/`parsePayloadAsync` 保持原名，**只用文件工具改**（禁止 shell 文本
+  替换，如 sed 或脚本），不改行为、不增删 `src/` 下文件，完成后 `node check.mjs` 必须 exit 0。
 - verify：`contentHashes{dir:"src", expect:"final"}` + `command{node check.mjs, exitCode:0}`。
   逐文件字节比对意味着"漏改一个调用点"和"顺手改了长相符号"都会挂。
-- 打点：字面量替换的边界（前缀相同的符号）、`dryRun` 先看后写、token 与工具调用数。
-- repeat 2。
+- 打点：**能力探针**——base 的 edit 要先 read，逐文件处理受影响的 ~49 个文件意味着 ~2×49 次
+  调用；cand 的 `ops_replace` 支持 `glob`，理论上 3 条字面量替换即可覆盖全部文件。量的是
+  跨文件批量替换 vs 逐文件 read+edit，以及由此带出的步数与上下文差；"只用文件工具"是
+  提示词约定，不是判卷条件（verify 看不到用了什么工具）。
+- repeat 2，`timeoutMs` 1800000（base 侧调用数可能到 100 左右）。
 
 ### 7.10 long-corpus-ledger —— 256K 语料上的全量遍历
 

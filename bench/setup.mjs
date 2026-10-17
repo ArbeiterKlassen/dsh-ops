@@ -22,6 +22,14 @@
  *   layer, never into `bench/llm.patch.yml`: that overlay is shared by both sides, and on
  *   the candidate the plugin re-injects `pwshPath` at runtime — a shared overlay would
  *   leave the archived `dump-config.txt` claiming 5.1 while 7 actually executed.
+ * - **The permission mode is a measured condition too.** In `workspace-write` on Windows,
+ *   the candidate's `ops_replace` failed at its publish step (`ACCESS_DENIED`) while every
+ *   read and in-place write worked; the same call succeeds under `danger-full-access`, so
+ *   a default-mode sweep would measure the fallback path instead of the tool. Both profiles
+ *   are therefore pinned to `danger-full-access` in their **own** patch layer — the same
+ *   mode on both sides is what keeps the comparison fair — and the archived
+ *   `dump-config.txt` proves it. `--permission-mode` changes the pin; `none` leaves the
+ *   profiles alone.
  *
  * It never touches `$DSH_HOME/cordis.patch.yml` (the home layer, which composes into every
  * profile) and never edits a profile's `cordis.yml`. Patch-layer edits are line-local and
@@ -50,6 +58,14 @@ const REPO_ROOT = path.resolve(BENCH_DIR, '..')
  * `dsh-pwsh-local`'s config schema, whose only executable key is `pwshPath`. */
 const SHELL_ENTRY_ID = 'pwsh-sandbox'
 const SHELL_CONFIG_KEY = 'pwshPath'
+/** The patch entry that carries the sandbox mode, and the entry whose approval preset
+ * follows from it (`dsh-base` derives `never` only for `danger-full-access`). */
+const PERMISSION_ENTRY_ID = 'sandbox-policy'
+const PERMISSION_CONFIG_KEY = 'mode'
+const APPROVAL_ENTRY_ID = 'approval'
+const APPROVAL_CONFIG_KEY = 'policy'
+/** The modes a bench profile may be pinned to; `none` leaves the profiles alone. */
+export const PERMISSION_MODES = ['danger-full-access', 'workspace-write', 'read-only', 'none']
 /** Shipped template names, kept in step with `SHIPPED_PROFILES` in `run.mjs`. */
 const SHIPPED_PROFILES = ['headless', 'web', 'tui', 'acp', 'sdk', 'sdk-minimal', 'dsh-tui']
 
@@ -62,6 +78,10 @@ const USAGE = `usage: node bench/setup.mjs [options]
                           (default %SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe)
   --no-pin                leave the baseline's shell engine alone; it then resolves to
                           whatever PATH hands back — a PowerShell 7 (README §2.1)
+  --permission-mode <mode>  the sandbox mode both bench profiles are pinned to in their
+                          own patch layer: danger-full-access (default), workspace-write,
+                          read-only — or "none" to leave the profiles alone (README §2.2)
+  --no-permission-mode    alias for --permission-mode none
   --plugin <spec>         what to install into the candidate: an npm spec (default
                           dsh-ops@<package.json version>), "local" for this checkout
                           (pnpm file: snapshot — reinstall after every change), or "none"
@@ -69,7 +89,7 @@ const USAGE = `usage: node bench/setup.mjs [options]
   --reinstall             remove the plugin from the candidate before installing
   --dsh-home <dir>        isolate DSH_HOME (profiles + sessions) for the benchmark
   --dsh <path>            dsh's JS entry (lib/bin.js) or an executable; default: from PATH
-  --force                 overwrite a pwshPath this script did not write
+  --force                 overwrite a pwshPath or permission mode this script did not write
   --dry-run               plan only: print every write and command, change nothing`
 
 /**
@@ -79,6 +99,7 @@ const USAGE = `usage: node bench/setup.mjs [options]
  * @property {string} candProfile - the candidate profile name.
  * @property {string} template - the shipped profile both are created from.
  * @property {string|null} pinShell - the executable to pin, null with --no-pin.
+ * @property {string} permissionMode - the mode both profiles are pinned to, "none" for none.
  * @property {string} plugin - an npm spec, "local", or "none".
  * @property {boolean} reinstall - remove the plugin before installing.
  * @property {string|null} dshHome - --dsh-home.
@@ -100,12 +121,14 @@ export function parseArgs(argv) {
     // There is no Windows PowerShell to pin off Windows, and `dsh-pwsh-sandbox` is
     // Windows-gated in the composition anyway, so the default is "no pin" there.
     pinShell: process.platform === 'win32' ? defaultShellPath() : null,
+    permissionMode: 'danger-full-access',
     plugin: null, reinstall: false,
     dshHome: null, dsh: null, force: false, dryRun: false, help: false,
   }
   const values = {
     '--base-profile': 'baseProfile', '--cand-profile': 'candProfile', '--template': 'template',
     '--pin-shell': 'pinShell', '--plugin': 'plugin', '--dsh-home': 'dshHome', '--dsh': 'dsh',
+    '--permission-mode': 'permissionMode',
   }
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
@@ -118,6 +141,7 @@ export function parseArgs(argv) {
     if (name === '--force') { options.force = true; continue }
     if (name === '--reinstall') { options.reinstall = true; continue }
     if (name === '--no-pin') { options.pinShell = null; continue }
+    if (name === '--no-permission-mode') { options.permissionMode = 'none'; continue }
     if (name === '--no-plugin') { options.plugin = 'none'; continue }
     const target = values[name]
     if (!target) throw new Error(`unknown option "${name}"`)
@@ -136,6 +160,9 @@ export function parseArgs(argv) {
   if (options.baseProfile === options.candProfile) throw new Error('--base-profile and --cand-profile must differ')
   if (options.pinShell && process.platform === 'win32' && !path.isAbsolute(options.pinShell)) {
     throw new Error(`--pin-shell must be an absolute path, got "${options.pinShell}"`)
+  }
+  if (!PERMISSION_MODES.includes(options.permissionMode)) {
+    throw new Error(`--permission-mode must be one of ${PERMISSION_MODES.join(', ')}, got "${options.permissionMode}"`)
   }
   return options
 }
@@ -162,25 +189,35 @@ export function dshHomeFor(options) {
 }
 
 /**
- * Decide how to merge the pin into a profile patch layer, without a YAML library and
- * without rewriting a single character the script does not own.
+ * One patch entry this script owns: an `id` and the config keys it writes under it.
+ * @typedef {object} PatchEntry
+ * @property {string} id - the loader entry id the patch targets.
+ * @property {Record<string, string>} config - the keys and values to pin.
+ * @property {(current: string, wanted: string) => boolean} [same] - equality against a
+ *   value already in the file; defaults to an exact string comparison.
+ */
+
+/**
+ * Decide how to merge one patch entry into a profile patch layer, without a YAML library
+ * and without rewriting a single character the script does not own.
  * @param {string} text - the current file content.
- * @param {string} value - the executable to pin.
- * @param {{force?: boolean}} [flags] - `force` allows overwriting a value this script
- *   did not write.
+ * @param {PatchEntry} entry - the entry to pin.
+ * @param {{force?: boolean}} [flags] - `force` allows overwriting a value this script did
+ *   not write.
  * @returns {{action: 'write'|'noop'|'conflict'|'manual', text: string, note: string}}
  *   the plan: `write` carries the new file text, every other action leaves `text` as it
  *   was read.
  */
-export function planProfilePatch(text, value, { force = false } = {}) {
-  const entry = [`- id: ${SHELL_ENTRY_ID}`, '  config:', `    ${SHELL_CONFIG_KEY}: ${value}`]
+export function planEntryPatch(text, entry, { force = false } = {}) {
+  const block = [`- id: ${entry.id}`, '  config:', ...Object.entries(entry.config).map(([key, value]) => `    ${key}: ${value}`)]
   const lines = text.split(/\r?\n/)
   const content = lines.filter(line => line.trim() !== '' && !/^\s*#/.test(line))
+  const same = entry.same ?? ((current, wanted) => current === wanted)
 
   // A layer of comments only, or the template's `[]` placeholder: both are "nothing yet".
-  if (content.length === 0) return { action: 'write', text: joinLines([...trimTrailingBlanks(lines), ...entry]), note: '这一层 patch 原本只有注释' }
+  if (content.length === 0) return { action: 'write', text: joinLines([...trimTrailingBlanks(lines), ...block]), note: '这一层 patch 原本只有注释' }
   if (content.length === 1 && content[0].trim() === '[]') {
-    return { action: 'write', text: joinLines(replace(lines, lines.findIndex(line => line.trim() === '[]'), 1, entry)), note: '替换了模板的 [] 占位' }
+    return { action: 'write', text: joinLines(replace(lines, lines.findIndex(line => line.trim() === '[]'), 1, block)), note: '替换了模板的 [] 占位' }
   }
 
   // Anything that is not a plain top-level list: refuse instead of guessing.
@@ -188,31 +225,124 @@ export function planProfilePatch(text, value, { force = false } = {}) {
     return { action: 'manual', text, note: '这一层不是普通的顶层列表，没敢猜它的结构' }
   }
 
-  const found = collectEntries(lines).find(item => item.id === SHELL_ENTRY_ID)
-  if (!found) return { action: 'write', text: joinLines([...trimTrailingBlanks(lines), ...entry]), note: `追加了一个 ${SHELL_ENTRY_ID} 条目` }
+  const found = collectEntries(lines).find(item => item.id === entry.id)
+  if (!found) return { action: 'write', text: joinLines([...trimTrailingBlanks(lines), ...block]), note: `追加了一个 ${entry.id} 条目` }
 
   const own = found.lines
-  const keyAt = own.findIndex(line => new RegExp(`^\\s+${SHELL_CONFIG_KEY}:`).test(line))
-  if (keyAt !== -1) {
-    const current = own[keyAt].replace(new RegExp(`^\\s*${SHELL_CONFIG_KEY}:`), '').trim()
-    if (samePath(current, value)) return { action: 'noop', text, note: `已经钉在 ${current}` }
-    if (!force) return { action: 'conflict', text, note: `已有一条 ${SHELL_CONFIG_KEY}: ${current}，不是本脚本写的，不加 --force 不覆盖` }
-    const line = own[keyAt].replace(new RegExp(`${SHELL_CONFIG_KEY}:.*`), `${SHELL_CONFIG_KEY}: ${value}`)
-    return { action: 'write', text: joinLines(replace(lines, found.start + keyAt, 1, [line])), note: `把 ${SHELL_CONFIG_KEY} 换成 ${value}` }
+  // An inline config is refused: one key is easy to add, but guessing where a flow mapping
+  // ends is how a comment-preserving edit stops being one.
+  if (own.some(line => /^[ \t]+config:\s*\S/.test(line))) {
+    return { action: 'manual', text, note: `${entry.id} 的 config 是内联写法，手写一行比脚本改写安全` }
   }
 
   const configAt = own.findIndex(line => /^[ \t]+config:[ \t]*$/.test(line))
-  if (configAt !== -1) {
-    const indent = /^[ \t]*/.exec(own[configAt])[0]
-    return { action: 'write', text: joinLines(replace(lines, found.start + configAt + 1, 0, [`${indent}  ${SHELL_CONFIG_KEY}: ${value}`])), note: `在既有 config 块里加了 ${SHELL_CONFIG_KEY}` }
+  const ops = []
+  const missing = []
+  const changed = []
+  for (const [key, value] of Object.entries(entry.config)) {
+    const keyAt = own.findIndex(line => new RegExp(`^[ \\t]+${escapeRegExp(key)}:`).test(line))
+    if (keyAt === -1) { missing.push([key, value]); continue }
+    const current = own[keyAt].replace(new RegExp(`^\\s*${escapeRegExp(key)}:`), '').trim()
+    if (same(current, value)) continue
+    if (!force) return { action: 'conflict', text, note: `已有一条 ${key}: ${current}，不是本脚本写的，不加 --force 不覆盖` }
+    const indent = /^[ \t]*/.exec(own[keyAt])[0]
+    ops.push({ at: found.start + keyAt, count: 1, lines: [`${indent}${key}: ${value}`] })
+    changed.push(`${key} → ${value}`)
   }
+  if (missing.length > 0) {
+    const pairs = missing.map(([key, value]) => `${key}: ${value}`)
+    if (configAt !== -1) {
+      const indent = /^[ \t]*/.exec(own[configAt])[0]
+      ops.push({ at: found.start + configAt + 1, count: 0, lines: pairs.map(line => `${indent}  ${line}`) })
+      changed.push(`加了 ${missing.map(([key]) => key).join('、')}`)
+    } else {
+      const last = found.start + own.reduce((keep, line, offset) => (line.trim() === '' ? keep : offset), -1)
+      ops.push({ at: last + 1, count: 0, lines: ['  config:', ...pairs.map(line => `    ${line}`)] })
+      changed.push(`补了 config 块（${missing.map(([key]) => key).join('、')}）`)
+    }
+  }
+  if (ops.length === 0) {
+    return { action: 'noop', text, note: `已经钉在 ${Object.entries(entry.config).map(([key, value]) => `${key} = ${value}`).join('、')}` }
+  }
+  // Apply from the bottom up, so an earlier edit can never shift a later index.
+  let next = lines
+  for (const op of [...ops].sort((left, right) => right.at - left.at)) next = replace(next, op.at, op.count, op.lines)
+  return { action: 'write', text: joinLines(next), note: `把 ${entry.id} 的 ${changed.join('，')}` }
+}
 
-  // No config block. An inline one is refused; a missing one gets appended inside the entry.
-  if (own.some(line => /^[ \t]+config:\s*\S/.test(line))) {
-    return { action: 'manual', text, note: `${SHELL_ENTRY_ID} 的 config 是内联写法，手写一行比脚本改写安全` }
+/**
+ * Pin the baseline's PowerShell executable: {@link planEntryPatch} with the value equality
+ * a Windows path needs (case- and separator-insensitive, tolerant of quotes).
+ * @param {string} text - the current file content.
+ * @param {string} value - the executable to pin.
+ * @param {{force?: boolean}} [flags] - `force` allows overwriting a foreign value.
+ * @returns {{action: 'write'|'noop'|'conflict'|'manual', text: string, note: string}} the plan.
+ */
+export function planProfilePatch(text, value, flags = {}) {
+  return planEntryPatch(text, { id: SHELL_ENTRY_ID, config: { [SHELL_CONFIG_KEY]: value }, same: samePath }, flags)
+}
+
+/**
+ * Apply several entries to one patch layer in order, stopping at the first refusal so a
+ * partial edit never lands.
+ * @param {string} text - the current file content.
+ * @param {PatchEntry[]} entries - the entries to pin.
+ * @param {{force?: boolean}} [flags] - `force` allows overwriting foreign values.
+ * @returns {{action: 'write'|'noop'|'conflict'|'manual', text: string, note: string}} the plan.
+ */
+export function planPatchEntries(text, entries, flags = {}) {
+  let current = text
+  let changed = false
+  const notes = []
+  for (const entry of entries) {
+    const plan = planEntryPatch(current, entry, flags)
+    if (plan.action === 'conflict' || plan.action === 'manual') return plan
+    if (plan.action === 'write') { current = plan.text; changed = true }
+    notes.push(plan.note)
   }
-  const last = found.start + own.reduce((keep, line, offset) => (line.trim() === '' ? keep : offset), -1)
-  return { action: 'write', text: joinLines(replace(lines, last + 1, 0, entry.slice(1))), note: `给已有的 ${SHELL_ENTRY_ID} 条目补了 config 块` }
+  return { action: changed ? 'write' : 'noop', text: changed ? current : text, note: notes.join('；') }
+}
+
+/**
+ * The approval preset that goes with a sandbox mode, exactly as `dsh-base` derives it:
+ * `never` for full access, `ask` for everything else.
+ * @param {string} mode - the sandbox mode.
+ * @returns {'never'|'ask'} the approval policy the composition should carry.
+ */
+export function approvalPolicyFor(mode) {
+  return mode === 'danger-full-access' ? 'never' : 'ask'
+}
+
+/**
+ * The two patch entries that pin one permission mode into a profile.
+ * @param {string} mode - one of PERMISSION_MODES except "none".
+ * @returns {PatchEntry[]} the entries to pin.
+ */
+export function permissionEntries(mode) {
+  return [
+    { id: PERMISSION_ENTRY_ID, config: { [PERMISSION_CONFIG_KEY]: mode } },
+    { id: APPROVAL_ENTRY_ID, config: { [APPROVAL_CONFIG_KEY]: approvalPolicyFor(mode) } },
+  ]
+}
+
+/**
+ * Read one key's value out of one entry of a composed `--dump-config` tree.
+ * @param {string} text - the dumped tree.
+ * @param {string} id - the loader entry id.
+ * @param {string} key - the config key to read.
+ * @returns {string|null} the value, or null when the entry or the key is absent.
+ */
+export function entryConfigValue(text, id, key) {
+  const lines = String(text ?? '').split(/\r?\n/)
+  const start = lines.findIndex(line => new RegExp(`^- id:\\s*${escapeRegExp(id)}\\s*$`).test(line))
+  if (start === -1) return null
+  const rest = lines.slice(start + 1)
+  const end = rest.findIndex(line => /^- /.test(line))
+  for (const line of (end === -1 ? rest : rest.slice(0, end))) {
+    const match = new RegExp(`^[ \\t]+${escapeRegExp(key)}:[ \\t]*(.+?)[ \\t]*$`).exec(line)
+    if (match) return match[1]
+  }
+  return null
 }
 
 /** Split a top-level list into entries, each with its line range and the lines it owns.
@@ -251,6 +381,13 @@ function trimTrailingBlanks(lines) {
  * @param {string[]} lines - the file lines.
  * @returns {string} the text. */
 function joinLines(lines) { return `${lines.join('\n')}\n` }
+
+/** Escape a literal string so it can be embedded in a regular expression.
+ * @param {string} text - the literal.
+ * @returns {string} the escaped text. */
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 /** Compare two Windows paths, ignoring case and separators.
  * @param {string} left - one path, possibly quoted.
@@ -342,6 +479,92 @@ function pinBaseline(options, context) {
   fs.writeFileSync(file, plan.text, 'utf8')
   context.log(`  ${plan.note} → ${options.pinShell}`)
   return 'pinned'
+}
+
+/**
+ * Pin the permission mode into both profiles' own patch layers.
+ *
+ * Both sides, deliberately: the mode is a measured condition, so a sweep whose two sides
+ * run in different modes measures the modes. It goes into each profile's patch layer, and
+ * never into `bench/llm.patch.yml`, for the same reason the shell pin does.
+ * @param {Options} options - the options.
+ * @param {object} context - the run context.
+ * @returns {'pinned'|'noop'|'conflict'|'manual'|'absent'|'skipped'} the worst outcome. */
+function pinPermissionMode(options, context) {
+  if (options.permissionMode === 'none') {
+    context.log('  --permission-mode none：没动。两侧沿用 profile 原本的 mode（README §2.2 讲默认为什么钉全权限）')
+    return 'skipped'
+  }
+  context.log(`  两侧都钉 ${options.permissionMode} / approval ${approvalPolicyFor(options.permissionMode)}：和默认的 workspace-write 不是一个口径，别的口径跑出来的 run 目录不能直接比（README §2.2）`)
+  const outcomes = [options.baseProfile, options.candProfile].map(profile => pinOneProfileMode(profile, options, context))
+  const order = ['conflict', 'manual', 'absent', 'pinned', 'noop']
+  return order.find(outcome => outcomes.includes(outcome)) ?? 'noop'
+}
+
+/**
+ * Apply {@link pinPermissionMode} to one profile.
+ * @param {string} profile - the profile name.
+ * @param {Options} options - the options.
+ * @param {object} context - the run context.
+ * @returns {'pinned'|'noop'|'conflict'|'manual'|'absent'} the outcome. */
+function pinOneProfileMode(profile, options, context) {
+  const file = path.join(context.home, 'profiles', profile, 'cordis.patch.yml')
+  if (!fs.existsSync(file)) {
+    // Same dry-run allowance as the shell pin: step 1 is about to create this profile.
+    if (context.dryRun && !fs.existsSync(path.join(context.home, 'profiles', profile))) {
+      context.log(`  [dry-run] 计划：profile ${profile} 建好之后把 ${options.permissionMode} 写进 ${file}`)
+      return 'pinned'
+    }
+    context.log(`  ${profile}: 找不到 ${file}`)
+    return 'absent'
+  }
+  const plan = planPatchEntries(fs.readFileSync(file, 'utf8'), permissionEntries(options.permissionMode), { force: options.force })
+  if (plan.action === 'noop') { context.log(`  ${profile}: ${plan.note}`); return 'noop' }
+  if (plan.action === 'conflict' || plan.action === 'manual') {
+    context.log(`  ${profile}: ${plan.note}`)
+    const wanted = `${APPROVAL_ENTRY_ID}.${APPROVAL_CONFIG_KEY} 取 ${approvalPolicyFor(options.permissionMode)}`
+    context.log(`  手工做法：编辑 ${file}，让 ${PERMISSION_ENTRY_ID}.${PERMISSION_CONFIG_KEY} 取 ${options.permissionMode}、${wanted}`)
+    context.log(`    - id: ${PERMISSION_ENTRY_ID}\n      config:\n        ${PERMISSION_CONFIG_KEY}: ${options.permissionMode}\n    - id: ${APPROVAL_ENTRY_ID}\n      config:\n        ${APPROVAL_CONFIG_KEY}: ${approvalPolicyFor(options.permissionMode)}`)
+    return plan.action
+  }
+  if (context.dryRun) { context.log(`  [dry-run] 计划写入 ${file} — ${plan.note}`); return 'pinned' }
+  fs.writeFileSync(file, plan.text, 'utf8')
+  context.log(`  ${profile}: ${plan.note}`)
+  return 'pinned'
+}
+
+/**
+ * Read the composed tree back on both sides and prove the mode pin landed. The mode is
+ * what the tools actually run under, so the archived `dump-config.txt` has to show it.
+ * @param {Options} options - the options.
+ * @param {object} context - the run context.
+ * @returns {boolean} whether both profiles really compose to the requested mode. */
+function verifyPermissionMode(options, context) {
+  if (options.permissionMode === 'none') return true
+  const overlay = path.join(BENCH_DIR, 'llm.patch.yml')
+  const wantedApproval = approvalPolicyFor(options.permissionMode)
+  let ok = true
+  for (const profile of [options.baseProfile, options.candProfile]) {
+    const args = [...context.prefix, '--profile', profile]
+    if (fs.existsSync(overlay)) args.push('--patch', overlay)
+    args.push('--dump-config')
+    const result = context.invoke(args)
+    if (result.status !== 0) {
+      context.log(`  "dsh --profile ${profile} --dump-config" exit=${result.status}，没能读到组合树`)
+      ok = false
+      continue
+    }
+    const text = `${result.stdout}\n${result.stderr}`
+    const mode = entryConfigValue(text, PERMISSION_ENTRY_ID, PERMISSION_CONFIG_KEY)
+    const approval = entryConfigValue(text, APPROVAL_ENTRY_ID, APPROVAL_CONFIG_KEY)
+    if (mode === options.permissionMode && approval === wantedApproval) {
+      context.log(`  ${profile}: ${PERMISSION_ENTRY_ID}.${PERMISSION_CONFIG_KEY} = ${mode}，${APPROVAL_ENTRY_ID}.${APPROVAL_CONFIG_KEY} = ${approval} ✅`)
+      continue
+    }
+    context.log(`  ${profile}: 组合树里是 mode=${mode ?? '（没读到）'} / approval=${approval ?? '（没读到）'}，要求 ${options.permissionMode} / ${wantedApproval} ❌`)
+    ok = false
+  }
+  return ok
 }
 
 /**
@@ -474,16 +697,21 @@ export async function main(argv) {
   log('\n— 2) 基线 shell 引擎 —')
   const pin = pinBaseline(options, context)
 
-  log('\n— 3) 候选插件 —')
+  log('\n— 3) 权限模式 —')
+  const permissions = pinPermissionMode(options, context)
+
+  log('\n— 4) 候选插件 —')
   const plugin = prepareCandidate(options, context)
 
-  log('\n— 4) 回读组合树 —')
+  log('\n— 5) 回读组合树 —')
   let installedNow = installedPlugin(home, options.candProfile)
   let verified = true
+  let permissionsVerified = true
   if (options.dryRun) {
-    log('  [dry-run] 跳过回读：真跑时会用 dsh --dump-config 确认基线那行 pwshPath')
+    log('  [dry-run] 跳过回读：真跑时会用 dsh --dump-config 确认基线那行 pwshPath 和两侧的权限模式')
   } else {
     verified = verifyBaseline(options, context)
+    permissionsVerified = verifyPermissionMode(options, context)
     installedNow = installedPlugin(home, options.candProfile)
     if (options.plugin !== 'none') {
       log(installedNow ? `  候选 profile 里 dsh-ops@${installedNow} ✅` : '  候选 profile 里读不到 dsh-ops ❌（node_modules/dsh-ops/package.json 不在）')
@@ -508,9 +736,13 @@ export async function main(argv) {
     pin === 'conflict' ? 'pwshPath 已有别的值（要覆盖就 --force）' : '',
     pin === 'manual' ? '基线 patch 文件的形状需要手工处理（上面印了要贴的三行）' : '',
     pin === 'absent' ? '基线 profile 的 cordis.patch.yml 找不到' : '',
+    permissions === 'conflict' ? '权限模式已有别的值（要覆盖就 --force）' : '',
+    permissions === 'manual' ? '权限模式的 patch 形状需要手工处理（上面印了要贴的条目）' : '',
+    permissions === 'absent' ? '两侧 profile 的 cordis.patch.yml 有一个找不到' : '',
     plugin === 'failed' ? '插件安装失败' : '',
     options.plugin !== 'none' && !options.dryRun && !installedNow ? '候选 profile 里没有 dsh-ops，bench-ops 无从测起' : '',
     verified ? '' : '基线 shell 引擎没验证上',
+    permissionsVerified ? '' : '权限模式没验证上',
   ].filter(Boolean)
   if (options.plugin === 'none' && !installedNow) {
     console.warn('\n*** 候选 profile 里没有 dsh-ops（--no-plugin 是你自己给的）：装上之后再跑 bench-ops。')

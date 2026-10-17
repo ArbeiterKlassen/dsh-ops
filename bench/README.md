@@ -104,6 +104,7 @@ node bench/setup.mjs
 |---|---|---|
 | 建 profile | 不存在才执行 `dsh <name> --from-default-profile headless`（这条命令本身不幂等，脚本替你判断） | `--base-profile` / `--cand-profile` / `--template` |
 | 钉基线 shell | 把 `pwshPath` 写进 bench-base 自己的 patch 层，再用 `--dump-config` 回读确认（理由见 §2.1） | `--pin-shell` / `--no-pin` / `--force` |
+| 钉权限模式 | 把 `sandbox-policy.mode` + `approval.policy` 写进**两侧各自**的 patch 层，再用 `--dump-config` 回读确认（理由见 §2.2） | `--permission-mode` / `--no-permission-mode` / `--force` |
 | 装候选插件 | `dsh plugin --profile bench-ops add dsh-ops@<本仓库版本>`；已装就跳过 | `--plugin <spec\|local\|none>` / `--reinstall` |
 | 环境体检 | `PSModulePath` 污染（§1）、home 层 patch（§6）、`llm.patch.yml` 缺失，都在最后打出来 | — |
 
@@ -175,6 +176,29 @@ dsh bench-base --patch bench\llm.patch.yml --dump-config | findstr /n pwshPath
 - 钉完**基线要重跑**：shell 引擎换了，旧 run 目录与新口径不可比。`compare.mjs` 按 label 后缀匹配、
   多个命中取最新。label 现在与 profile 同名（`bench-base` / `bench-ops`），所以早先那批以
   `-base-stock`、`-cand-ops` 结尾的 run 目录不会再冒充新基线；要拿旧数据对比，就把那个 run 目录直接传给 `compare.mjs`。
+
+### 2.2 权限模式为什么也钉在 profile 里
+
+`dsh-base` 组合里 `sandbox-policy.mode` 读的是 `process.env.DSH_PERMISSION_MODE ?? 'workspace-write'`，
+而这行 `!!js` 是**每次运行组合配置时**才求值的：`set DSH_PERMISSION_MODE=...` 只对当前窗口里起的
+进程有效，建 profile 那一刻设过什么也不会被记住。要固化只能写进 profile 自己的 patch 层——
+`node bench/setup.mjs` 默认就把两侧都钉到 `danger-full-access`，然后用 `--dump-config` 回读确认。
+
+为什么要钉：Windows 上 `workspace-write` 的受限令牌让候选侧的 `ops_replace` 在**落盘那一步**
+拿到 `ACCESS_DENIED`（同一次调用的 dryRun、以及所有读操作都正常，宿主 `edit`/`write` 也正常），
+换成全权限后同一个调用成功。于是在默认口径下，候选侧只能退回 `edit` 逐文件改——量到的不是
+这个工具，而是它的退路。两侧钉同一个 mode 比较才仍然公平；`meta.json` 不记录 mode，
+`dump-config.txt` 才是存档证据。
+
+三条注意：
+
+- **口径变了**：`danger-full-access` 不是 Windows 默认的 `workspace-write`，和别的口径跑出来的
+  run 目录不能直接比。要退回默认口径用 `--permission-mode workspace-write`（代价是候选侧
+  `ops_replace` 基本不可用），`--no-permission-mode` 则完全不动 profile。
+- **approval 一起钉**：`dsh-base` 只在全权限下把 `approval.policy` 推成 `never`，其余模式是 `ask`；
+  脚本按同样的规则写。别只手改 `mode` 而留着旧的 policy。
+- **只写 profile 层**：和 `pwshPath` 一样不进 `bench/llm.patch.yml`——那是两侧共用的层，
+  放进去等于两侧都被改，而存档却只证明了一侧。
 
 ## 3. 冒烟：先确认 usage 存在
 
@@ -316,7 +340,9 @@ usage 不完整时报告只出步数/工具计数，token 列打印 `n/a`，分�
 模型进门只看到一句英文 prompt 和一个由 fixture 现场生成的临时 workspace；下表是
 `bench/tasks/*.task.json` 的现状（规格与打点意图见 PLAN §7，期望值全部由生成字节推导，模型看不到）。
 前五个（bulk-rename … log-stats）是挑给文件/批量类 ops 工具"有油水可赚"的合成题；
-接着四个（config-hunt … api-rename）是复盘中补的**贴近日常**的场景，它们不挑边，
+接着四个（config-hunt … api-rename）是复盘中补的**贴近日常**的场景：config-hunt /
+big-file-paging / noisy-test-triage 刻意不挑边，api-rename 现在收窄成"只用文件工具"
+的 capability probe（与 bulk-rename 的批量约束同类），
 测的是真实使用里反复出现而前五个没覆盖的形状；接着两道是 **256K 档**（见 §4.3），
 workspace 本身约 256K token，专门用来回答"之前那些差异是不是因为上下文太短"；
 最后一道 `gate-repair-loop` 是 **长跑档**（见 §4.4），workspace 很小而**步数**很多，
@@ -327,29 +353,38 @@ workspace 本身约 256K token，专门用来回答"之前那些差异是不是�
 | **bulk-rename** | `data/` 下 300 个 `TEMP_0001.dat`–`TEMP_0300.dat`（各 5 行十六进制） | 把文件名前缀 `TEMP_` 改成 `DATA_`，内容一个字节都不能动；每次工具调用最多改 10 个 | 三十批改名：会不会用一条循环命令绕过"每次 ≤10"；会不会误删/截断 | `countFiles` 数前缀 + `contentHashes` 逐文件 SHA-256：删了重建、改写内容都过不了 |
 | **csv-sum** | 8000 行 `data.csv`（`id,region,amount`，约 112KB） | 算出 `region=EU` 的 `amount` 总和，把纯整数写进 `answer.txt` | 是整读进上下文再心算，还是一条聚合命令就地求和（标题里的 "without drowning the context"） | `fileEquals`：与生成器边写边累加出的精确值比对 |
 | **fix-build** | 迷你 Node 项目：`test.js` + `src/` 三个文件，埋恰好 3 个单行 bug | 跑 `node test.js` 看它挂，只修 `src/` 让测试转绿；禁改 `test.js`/`package.json`、禁删断言 | 错误-重试闭环：读报错→定位→修→再跑；会不会改测试文件作弊 | `command` 要求 exit 0 + `test.js` 的 `invariant` 比对防篡改 |
-| **grep-sweep** | `src/dir00…dir09` 共 200 个 js 文件，恰好 8 个藏着 token `NEEDLE_X7Q` | 找出所有含该 token 的文件，相对路径按字典序写进 `matches.txt`，一行一个，不许夹带行号/计数 | 搜索工具用得对不对；排序与路径格式是否精确；噪音下不误报不漏报 | `fileLines` 与生成器记录的 8 条精确路径逐行比对 |
-| **log-stats** | `logs/` 下 `app_00.log`–`app_49.log`，各 400 行 `LEVEL\|时间戳\|消息` | 每个文件数出含 `ERROR` 的行数，按文件名序写成 `errors.txt`（`文件名 计数` 共 50 行） | 50 个文件做成 50 轮单文件操作，还是批处理一条命令出全表；计数精确到行 | `fileLines` 比对生成器逐文件算好的 50 行报告 |
+| **grep-sweep** | `src/dir00…dir09` 共 200 个 js 文件，恰好 8 个藏着 token `NEEDLE_X7Q` | 找出所有含该 token 的文件，每次搜索最多覆盖 50 个文件，相对路径按字典序写进 `matches.txt`，一行一个，不许夹带行号/计数 | 搜索工具用得对不对；分批搜索（≥4 次）与路径格式是否精确；噪音下不误报不漏报 | `fileLines` 与生成器记录的 8 条精确路径逐行比对 |
+| **log-stats** | `logs/` 下 `app_00.log`–`app_49.log`，各 400 行 `LEVEL\|时间戳\|消息` | 每个文件数出含 `ERROR` 的行数，每次工具调用最多处理 10 个日志文件，按文件名序写成 `errors.txt`（`文件名 计数` 共 50 行） | 5 批小步（每批 ≤10 个）vs 一次全表；计数精确到行 | `fileLines` 比对生成器逐文件算好的 50 行报告 |
 | **config-hunt** | 三层配置 JSON + 12 个包（每个包带一个**不参与合并**的 `config.json` 诱饵）+ 写明合并顺序的 `README.md`，四个文件的同一个 key 值互不相同 | 按 README 的顺序求出 production 下 `MAX_UPLOAD_MB` 的生效值，只把这个整数写进 `answer.txt` | "grep 到第一个数就交差"vs 读约定再求值；多文件探索的步数 × 每请求固定开销 | `fileEquals`：与最高优先级那一层的值比对 |
 | **big-file-paging** | 单个 `src/pipeline.js`，约 4200 行 / 170KB；`LIMIT_TABLE` 在 ~55% 处，`auditLimit()` 在最后 12 行读它；另有历史注释与 `LEGACY_LIMIT_TABLE` 两个错值 | 写出 `auditLimit('staging')` 的返回值，只把这一个整数写进 `answer.txt` | 整读 4 千行 vs 定位到两段远处区间各读一次：日常最高频的"在长文件里找答案" | `fileEquals`：与活表里的值比对（两个诱饵值都不同） |
 | **noisy-test-triage** | `runner.js` 打印 2400 行 `ok N - …`（每 250 行一条 `# progress`），恰好一行 `not ok N - …` 带断言诊断，退出码 1 | 跑 `node runner.js`，把失败用例名（`not ok <number> - ` 之后的原文）写进 `failure.txt` | 大输出的裁剪与定位：`\| grep`/有界搜索 vs 把 6 万字符日志灌进上下文 | `fileEquals` + 把"套件确实在挂"钉成 `invariant` 的 `command` 检查（前提破了 dry-run 拒绝这题） |
-| **api-rename** | `src/core.js` 有 `parsePayload` 与两个长相符号（`…Legacy`、`…Async`，后者**调用**目标函数）；40 个模块中 1/5 只用到长相符号；根目录 `check.mjs` import 改后的名字 | 把 `parsePayload` 改名为 `decodePayload`（定义/import/调用点），长相符号保持原名，不改行为、不增删 `src/` 文件，完成后 `node check.mjs` exit 0 | 字面量替换的边界（前缀相同的符号、长相符号体内的调用点）；`dryRun` 先看后写 | `contentHashes` 逐文件字节比对（漏改一处或顺手改错都挂）+ `command node check.mjs` exit 0 |
+| **api-rename** | `src/core.js` 有 `parsePayload` 与两个长相符号（`…Legacy`、`…Async`，后者**调用**目标函数）；60 个模块中 1/5 只用到长相符号；根目录 `check.mjs` import 改后的名字 | 把 `parsePayload` 改名为 `decodePayload`（定义/import/调用点），长相符号保持原名，**只用文件工具改**（禁止 shell 文本替换），不改行为、不增删 `src/` 文件，完成后 `node check.mjs` exit 0 | 跨文件批量替换 vs 逐文件 read+edit；字面量替换的边界（前缀相同的符号、长相符号体内的调用点） | `contentHashes` 逐文件字节比对（漏改一处或顺手改错都挂）+ `command node check.mjs` exit 0 |
 | **long-corpus-ledger** | `shards/shard-00.md`…`shard-31.md` 共 32 篇复盘（合计约 1.08MB ≈ 254K token），每篇 ~95% 是散文；根目录 `README.md` 写明判据：live settlement = `## Ledger` 里 `page=` 等于该篇 `## Index` 最大页的那条 | 逐 shard 求出 live settlement，按 shard 升序把 `shard-NN <amount>` 共 32 行写进 `report.txt` | 256K 语料上的**有界遍历**：整读进上下文已不可负担，能不能只带两个字段走完全部 32 篇（或一条脚本） | `fileLines` 与生成器逐 shard 算好的 32 行比对——**少一个 shard 就少一行**，覆盖是被判卷强制的 |
 | **deep-module-256k** | 单个 `src/pipeline.js`，约 27000 行 / 1.08MB ≈ 254K token；与 big-file-paging 同形状、6 倍行数：活表在 ~55%，`auditLimit()` 在最后 12 行读它，另有历史注释与 `LEGACY_LIMIT_TABLE` 两个错值 | 写出 `auditLimit('staging')` 的返回值，只把这一个整数写进 `answer.txt` | **短档的对照**：4200 行整读 4 万 token 负担得起，27000 行整读约 25 万 token 会越过压缩线 → 区间读从"省一点"变成"能不能做完" | `fileEquals`：与活表里的值比对（两个诱饵值都不同） |
 | **gate-repair-loop** | `gates/gate_00.js`–`gate_23.js` 共 24 个阶段模块（各 70 行惰性填充，把契约和代码隔开），加一个 **fail-fast** 的 `check.js`；每个阶段只有一个绑定常量与自己的契约注释不符 | 跑 `node check.js`（它逐阶段比对 golden 值、在第一个不符处停下），修 `gates/` 里失败的阶段直到 exit 0，再把门禁打印的最终值写进 `answer.txt` | **长跑形状**：24 个阶段 ⇒ 至少 24 轮"跑→读→改"，且第 N 轮要把前 N 个阶段累积的通过行重新带进上下文（末轮约 22KB）——考的是**步数**与每步的固定开销，不是单次上下文体积 | `command node check.js` exit 0 + `fileEquals answer.txt`；`check.js` 另挂 `fileEquals` 的 `invariant` 守卫防篡改 |
 
 规模本身就是被测信号：token、步数、工具调用数都进 metrics。前五题挑给文件/批量类
-ops 工具"有油水可赚"的任务族；中间四题刻意**不挑边**——它们更接近日常形状，谁赢是测出来的
-结果，不是设计出来的；接着两题把同一批形状抬到 256K 尺度，让"整读"这条捷径先失效；
+ops 工具"有油水可赚"的任务族；中间四题里 config-hunt / big-file-paging / noisy-test-triage
+仍是**不挑边**的日常形状，api-rename 则被收窄成"只用文件工具"的 probe，谁赢都能读出来；
+接着两题把同一批形状抬到 256K 尺度，让"整读"这条捷径先失效；
 最后一题反过来只放大**步数**（同一套工具面要付几十次，见 §4.4）。
 
-bulk-rename 的"每次最多 10 个"是**提示词约定**，不是判卷条件：`verify` 只读最终字节，
-一条循环命令把 300 个一起改完也照样通过（`countFiles` / `contentHashes` 分不出单次调用
-改了几个）。它测的是模型按不按批走——报告里的 `tool calls` / `steps` 与每步重发的上下文——
-而不是"≤10"本身；要把它变成判卷条件，只能让改名走一个带审计的 helper（判卷看审计），
-代价是任务从"自然批量改名"变成"按协议调用 helper"。
+bulk-rename 的"每次最多 10 个"、log-stats 的"每次最多 10 个日志"、grep-sweep 的"每次最多
+50 个文件"、api-rename 的"只用文件工具"都是**提示词约定，不是判卷条件**：`verify` 只读
+最终状态，一条循环命令或一次 `sed` 照样通过（`countFiles` / `contentHashes` / `fileLines`
+分不出用了什么过程）。它们测的是模型按不按批走、用不用文件工具——报告里的 `tool calls` /
+`steps` 与每步重发的上下文——而不是约束本身；要门禁化只能引入带审计的 helper（判卷看
+审计），代价是任务从"日常形状"变成"按协议做题"。
 
 `repeat` 已按任务成本分层（便宜题多采样，如 log-stats 5 次、grep-sweep 2 次；
 十二个任务缺省合计 30 次/侧），显式 `--repeat N` 会覆盖整个分层预算。
+
+`ops_replace` 每改一个文件会在同目录留下一个 `.dsh-ops-update-<sha256>.lock`。它**不是残留**：
+发布是原子改名，锁必须活在目标 inode 之外，所以插件按文件名哈希建一份持久协作锁、从不删除
+（`docs/windows-verification.md` W1h）。它是工具状态而不是工作区内容，判卷因此跳过这一种
+文件名——`contentHashes` 只对这一种形状放行，其余多余文件照旧判失败，提示词里"不增删文件"
+那条约定也照旧由它守着。注意 `ops_glob` / `ops_grep` 本来就不报它（隐藏组件规则），
+所以模型在 workspace 里看不见这些文件。
 
 ### 4.3 256K 长上下文档（`long-corpus-ledger` / `deep-module-256k`）
 

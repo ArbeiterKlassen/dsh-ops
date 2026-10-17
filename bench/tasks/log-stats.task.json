@@ -1,7 +1,7 @@
 {
   "id": "log-stats",
-  "title": "Summarize 50 log files into one line each",
-  "prompt": "The directory logs/ contains app_00.log through app_49.log. For each of those files, count the lines that contain ERROR (case-sensitive). Write the result to errors.txt: one line per log file in the form <filename> <count>, where <filename> is the bare file name without the logs/ directory prefix, ordered by file name ascending. Write nothing else.",
+  "title": "Summarize 50 log files, inspecting at most 10 per call",
+  "prompt": "The directory logs/ contains app_00.log through app_49.log. For each of those files, count the lines that contain ERROR (case-sensitive). Work in batches: each tool call may inspect at most 10 of the log files, and a single shell loop that reads more than 10 files at once does not follow this rule - so this needs at least 5 calls. Write the result to errors.txt: one line per log file in the form <filename> <count>, where <filename> is the bare file name without the logs/ directory prefix, ordered by file name ascending. Write nothing else.",
   "fixture": {
     "generator": "logStats",
     "params": { "seed": 13, "files": 50, "linesPerFile": 400 }

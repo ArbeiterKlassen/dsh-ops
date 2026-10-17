@@ -25,6 +25,19 @@ import { spawn } from 'node:child_process'
 export const CHECK_TYPES = ['fileExists', 'fileMissing', 'fileEquals', 'fileContains', 'fileLines', 'countFiles', 'contentHashes', 'command']
 
 /**
+ * The persistent update-lock sidecar `ops_replace` writes beside every file it edits:
+ * `.dsh-ops-update-<sha256 of the target's name>.lock`, created on first use and never
+ * unlinked (`native/src/file.rs` — a cooperative path lock, not debris, because
+ * publication is an atomic rename and the lock must outlive the target's inode).
+ *
+ * It is tooling state, not workspace content, so `contentHashes` ignores it: the task
+ * still fails on every file the model changed, added or removed, but a candidate that
+ * used `ops_replace` is not failed for the plugin's own bookkeeping. One directory per
+ * run and the fixture's own names never match, so no expected entry can be skipped.
+ */
+const REPLACE_LOCK_SIDECAR = /^\.dsh-ops-update-[0-9a-f]{64}\.lock$/
+
+/**
  * Verify a workspace against a task's check list.
  * @param {string} workspace - absolute directory the task ran in.
  * @param {object[]} checks - the task's `verify` array.
@@ -148,6 +161,9 @@ async function runCheck(workspace, check, fixtureExports, options) {
       const actual = new Map()
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (!entry.isFile()) continue
+        // The candidate's update-lock sidecars are excluded: they are the plugin's
+        // bookkeeping, not a change the model made to the tree (see REPLACE_LOCK_SIDECAR).
+        if (REPLACE_LOCK_SIDECAR.test(entry.name)) continue
         const digest = createHash('sha256').update(fs.readFileSync(path.join(dir, entry.name))).digest('hex')
         actual.set(entry.name, digest)
       }
