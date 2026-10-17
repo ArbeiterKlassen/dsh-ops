@@ -416,7 +416,6 @@ fn replace(request: &Request) -> Result<Value> {
     if serde_json::to_vec(&items)?.len() > MAX_OUTPUT_BYTES / 2 { return Err(Failure::new("OUTPUT_LIMIT", "Replacement receipts exceed the bounded output budget; narrow path/glob. No files changed.")); }
     if args.dry_run { return Ok(json!({"status":"completed","phase":"observe","changed":0,"matched":total,"skipped":skipped,"failed":0,"complete":true,"omitted":0,"dryRun":true,"items":items,"skippedPaths":skipped_paths})); }
     for item in &items { single::authorize_write(request, item["path"].as_str().unwrap_or(""))?; }
-    if cfg!(windows) { return Err(Failure::new("METADATA_UNSUPPORTED", "Overwrite requires proven Windows DACL/metadata preservation; dryRun is available but no file was changed.")); }
     let mut changed=0usize; for item in &mut items {
         let applied = (|| -> Result<()> { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
         // Trusted transport owns this allowlist. Re-check every selected file,
@@ -626,6 +625,8 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     // a rename, so the new inode arrives with none of it.
     #[cfg(unix)]
     let preserved = PreservedMetadata::of(&checked)?;
+    #[cfg(windows)]
+    let preserved = publication::Preserved::capture(&checked, true)?;
     let parent = &checked.parent;
     let name = &checked.name;
     sweep_debris(parent, name);
@@ -635,10 +636,8 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     // masks inherited ACL grants; never write sensitive bytes to a default 0666 inode.
     let prepared = (|| -> Result<Option<(Value, Vec<String>)>> {
         file.write_all(bytes)?;
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         let report = Some(preserved.restore(&file)?);
-        #[cfg(not(unix))]
-        let report = None;
         // Both bytes and restored mode/owner/ACL/xattrs must be durable before rename.
         file.sync_all()?;
         Ok(report)
@@ -649,13 +648,15 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
         Err(failure) => { let _ = parent.remove_file(&temporary); return Err(failure); }
     };
     // Publication stays handle-relative and does not traverse links.
-    let publish = parent.rename(&temporary, &parent, &name);
+    let publish = parent.rename(&temporary, parent, name);
     if let Err(error) = publish {
         let _ = parent.remove_file(&temporary);
         return Err(Failure::new("ACCESS_DENIED", format!("Atomic replacement publish: {error}")));
     }
+    #[cfg(windows)]
+    preserved.verify(parent, name)?;
     #[cfg(unix)]
-    if let Err(error) = crate::sync_directory(&parent) {
+    if let Err(error) = crate::sync_directory(parent) {
         // The rename already happened, so the file *is* replaced. Reporting the
         // default `effect_state: "none"` here would tell the caller that nothing
         // changed, which is the one answer a caller must never get wrong: it would

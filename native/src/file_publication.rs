@@ -8,6 +8,14 @@ pub(super) fn create_sibling(
     temporary: &str,
     source: Option<&crate::file_path::Target>,
 ) -> Result<File> {
+    #[cfg(windows)]
+    {
+        let _ = source;
+        let parent = parent.try_clone()?.into_std_file();
+        dsh_ops_windows_metadata::create_private(&parent, temporary)
+            .map(File::from_std)
+            .map_err(metadata_error)
+    }
     #[cfg(target_os = "macos")]
     if let Some(source) = source {
         // Darwin ACLs are not the Linux POSIX ACL xattr. APFS cloning keeps the
@@ -47,9 +55,11 @@ pub(super) fn create_sibling(
         }
         return prepared;
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", windows)))]
     let _ = source;
+    #[cfg(not(windows))]
     let mut options = OpenOptions::new();
+    #[cfg(not(windows))]
     options
         .write(true)
         .create_new(true)
@@ -59,5 +69,72 @@ pub(super) fn create_sibling(
         use cap_std::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    Ok(parent.open_with(temporary, &options)?)
+    #[cfg(not(windows))]
+    {
+        Ok(parent.open_with(temporary, &options)?)
+    }
+}
+
+#[cfg(windows)]
+fn metadata_error(error: std::io::Error) -> Failure {
+    if error.kind() == std::io::ErrorKind::Unsupported {
+        Failure::new("METADATA_UNSUPPORTED", error)
+    } else {
+        error.into()
+    }
+}
+#[cfg(windows)]
+pub(super) struct Preserved(dsh_ops_windows_metadata::Metadata);
+#[cfg(windows)]
+impl Preserved {
+    pub fn capture(source: &crate::file_path::Target, replacing: bool) -> Result<Self> {
+        let file = crate::file_path::read_file(source)?.into_std();
+        let metadata =
+            dsh_ops_windows_metadata::Metadata::capture(&file).map_err(metadata_error)?;
+        if replacing && metadata.readonly() {
+            return Err(Failure::new(
+                "ACCESS_DENIED",
+                "Readonly files cannot be overwritten",
+            ));
+        }
+        Ok(Self(metadata))
+    }
+    pub fn restore(&self, file: &File) -> Result<(Value, Vec<String>)> {
+        self.0
+            .restore(&file.try_clone()?.into_std())
+            .map_err(metadata_error)?;
+        Ok((
+            json!({"owner":true,"group":true,"dacl":true,"attributes":true}),
+            vec![],
+        ))
+    }
+    pub fn verify(&self, parent: &Dir, name: &str) -> Result<()> {
+        let verification = (|| -> Result<()> {
+            let file = parent
+                .open_with(
+                    name,
+                    OpenOptions::new().read(true).follow(FollowSymlinks::No),
+                )?
+                .into_std();
+            self.0.verify(&file).map_err(metadata_error)
+        })();
+        verification.map_err(|mut failure| {
+            failure.phase = "publish".into();
+            failure.effect_state = "applied".into();
+            failure.next_action =
+                "The file is already published. Inspect metadata; do not blindly retry.".into();
+            failure
+        })
+    }
+}
+
+/// Best-effort removal of our exact staging link. Windows may have restored a
+/// readonly bit or restrictive DACL; use the still-owned DELETE handle, not chmod.
+pub(super) fn discard_sibling(parent: &Dir, name: &str, file: File) {
+    #[cfg(windows)]
+    if let Ok(handle) = file.try_clone() {
+        let _ = dsh_ops_windows_metadata::discard(&handle.into_std());
+    }
+    drop(file);
+    let _ = parent.remove_file(name);
 }

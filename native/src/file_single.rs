@@ -347,14 +347,6 @@ fn write_single(
     authorize_write(request, raw)?;
     check_revision(optional_bytes(raw)?.as_deref(), expected)?;
     if original.is_some() {
-        // No unsafe Win32 security calls and no silent DACL inheritance: refuse until a
-        // metadata-preserving provider is available. Move/remove retain the original inode.
-        #[cfg(windows)]
-        return Err(Failure::new(
-            "METADATA_UNSUPPORTED",
-            "Overwrite requires proven Windows DACL/metadata preservation; no file was changed.",
-        ));
-        #[cfg(not(windows))]
         if let Some((metadata, warnings)) = atomic_write(&path, &next)? {
             output["items"][0]["metadata"] = metadata;
             if !warnings.is_empty() {
@@ -381,12 +373,7 @@ fn publish_new(
         true,
     )?;
     #[cfg(windows)]
-    if source.is_some() {
-        return Err(Failure::new(
-            "METADATA_UNSUPPORTED",
-            "Copy requires proven Windows DACL/metadata preservation; no file was changed.",
-        ));
-    }
+    let preserved = source.map(|source| publication::Preserved::capture(source, false)).transpose()?;
     #[cfg(unix)]
     let preserved = source.map(PreservedMetadata::of).transpose()?;
     let temporary = format!(".{}.dsh-ops-{}", checked.name, uuid::Uuid::new_v4());
@@ -400,8 +387,8 @@ fn publish_new(
                 .set_modified(metadata.modified()?.into_std());
             file.try_clone()?.into_std().set_times(times)?;
         }
-        #[cfg(unix)]
-        if let Some(preserved) = preserved {
+        #[cfg(any(unix, windows))]
+        if let Some(preserved) = &preserved {
             let (_, warnings) = preserved.restore(&file)?;
             if !warnings.is_empty() {
                 return Err(Failure::new(
@@ -413,24 +400,25 @@ fn publish_new(
         file.sync_all()?;
         Ok(())
     })();
-    drop(file);
     if let Err(error) = prepared {
-        let _ = checked.parent.remove_file(&temporary);
+        publication::discard_sibling(&checked.parent, &temporary, file);
         return Err(error);
     }
     if let (Some(source), Some(expected)) = (source, expected_source) {
         if let Err(error) =
             read_bytes(&source.display).and_then(|bytes| check_revision(Some(&bytes), expected))
         {
-            let _ = checked.parent.remove_file(&temporary);
+            publication::discard_sibling(&checked.parent, &temporary, file);
             return Err(error);
         }
     }
     let published = checked
         .parent
         .hard_link(&temporary, &checked.parent, &checked.name);
-    let _ = checked.parent.remove_file(&temporary);
+    publication::discard_sibling(&checked.parent, &temporary, file);
     published?;
+    #[cfg(windows)]
+    if let Some(preserved) = &preserved { preserved.verify(&checked.parent, &checked.name)?; }
     sync_applied(&checked.parent)
 }
 fn sync_applied(parent: &cap_std::fs::Dir) -> Result<()> {
@@ -566,7 +554,7 @@ fn remove_file(request: &Request) -> Result<Value> {
     )
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
     #[test]

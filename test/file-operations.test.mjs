@@ -17,7 +17,6 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const call = async (tool, args, root, options = {}) => envelopeOf(await callTool(tool, args, { root, ...options }), assert)
 const failed = (value, code) => { assert.equal(value.status, 'error', JSON.stringify(value)); assert.equal(value.error.code, code, JSON.stringify(value)); assert.equal(value.error.effectState, 'none') }
 const mutation = (value, target, content) => {
-  if (process.platform === 'win32') { failed(value, 'METADATA_UNSUPPORTED'); return false }
   assert.equal(value.status, 'completed', JSON.stringify(value)); assert.equal(fs.readFileSync(target, 'utf8'), content); return true
 }
 const rev = target => hash(fs.readFileSync(target))
@@ -60,7 +59,6 @@ await test('full writes create empty/Unicode files, refuse stale/absent overwrit
     assert.equal(dry.changed, 0); assert.equal(dry.revision, hash('')); assert.equal(fs.readFileSync(target, 'utf8'), 'α\r\nβ\n')
     const written = await call('write_file', { path: target, expectedRevision: created.revision, content: '' }, root)
     mutation(written, target, '')
-    if (process.platform === 'win32') assert.equal(fs.readFileSync(target, 'utf8'), 'α\r\nβ\n')
     const empty = await call('write_file', { path: path.join(root, 'empty'), expectedRevision: 'absent', content: '' }, root)
     assert.equal(empty.lineCount, 0); assert.equal(empty.bytes, 0)
     const noop = await call('write_file', { path: target, expectedRevision: rev(target), content: fs.readFileSync(target, 'utf8') }, root)
@@ -111,8 +109,7 @@ await test('copy/move/remove require source CAS, absent destination and regular 
     for (const tool of ['copy', 'move']) failed(await call(tool, { path: source, to, expectedRevision }, root), 'REVISION_CONFLICT')
     assert.equal(fs.readFileSync(to, 'utf8'), 'keep'); fs.unlinkSync(to)
     const copied = await call('copy', { path: source, to, expectedRevision }, root)
-    if (process.platform === 'win32') { failed(copied, 'METADATA_UNSUPPORTED'); assert.equal(fs.existsSync(to), false) }
-    else { assert.equal(copied.status, 'completed', JSON.stringify(copied)); assert.equal(rev(to), expectedRevision); fs.unlinkSync(to) }
+    assert.equal(copied.status, 'completed', JSON.stringify(copied)); assert.equal(rev(to), expectedRevision); fs.unlinkSync(to)
     const moved = await call('move', { path: source, to, expectedRevision }, root)
     assert.equal(moved.status, 'completed', JSON.stringify(moved)); assert.equal(fs.existsSync(source), false); assert.equal(rev(to), expectedRevision)
     const removed = await call('remove', { path: to, expectedRevision }, root)
@@ -133,7 +130,6 @@ await test('create-only concurrent writers publish exactly one entire file witho
   })
 })
 await test('concurrent full overwrites share a revision and only one publication survives', async () => {
-  if (process.platform === 'win32') return // explicit DACL refusal is exercised separately
   await withTempDir('file-overwrite-race', async root => {
     const target = path.join(root, 'raced'); fs.writeFileSync(target, 'original')
     const expectedRevision = rev(target)
@@ -184,8 +180,7 @@ await test('three authoritative modes, both transfer paths, credential fence, li
         session.mode = 'workspace-write'
         const beforeSourceNames = fs.readdirSync(outside).sort()
         const copySource = await invokeTool('copy', { path: source, to: 'external-copy', expectedRevision: rev(source) })
-        if (process.platform === 'win32') assert.equal(copySource.error.code, 'METADATA_UNSUPPORTED')
-        else { assert.equal(copySource.status, 'completed', JSON.stringify(copySource)); assert.equal(fs.readFileSync(path.join(root, 'external-copy'), 'utf8'), 'outside') }
+        assert.equal(copySource.status, 'completed', JSON.stringify(copySource)); assert.equal(fs.readFileSync(path.join(root, 'external-copy'), 'utf8'), 'outside')
         assert.deepEqual(fs.readdirSync(outside).sort(), beforeSourceNames, 'read-only source must not receive sidecar writes')
         assert.equal(fs.readFileSync(source, 'utf8'), 'outside')
         const target = path.join(root, 'new'); const created = await invokeTool('write_file', operations.write_file)
@@ -226,7 +221,7 @@ await test('native selector reasons never conflate credential or path restrictio
     assert.equal(fs.readFileSync(target, 'utf8'), 'keep')
   })
 })
-await test('Windows DACLs survive fail-closed overwrite/edit/replace/copy and inode-preserving move', async () => {
+await test('Windows protected DACLs survive successful overwrite/edit/replace/copy and move', async () => {
   if (process.platform !== 'win32') return
   await withTempDir('file-dacl', async root => {
     const source = path.join(root, 'secure'); fs.writeFileSync(source, 'keep')
@@ -237,10 +232,13 @@ await test('Windows DACLs survive fail-closed overwrite/edit/replace/copy and in
     const quoted = source.replaceAll("'", "''")
     ps(`$p='${quoted}'; $a=Get-Acl -LiteralPath $p; $a.SetAccessRuleProtection($true,$true); Set-Acl -LiteralPath $p -AclObject $a`)
     const acl = target => ps(`(Get-Acl -LiteralPath '${target.replaceAll("'", "''")}').Sddl`)
-    const before = acl(source); const expectedRevision = rev(source)
-    for (const [tool, args] of [['write_file', { content: 'bad', expectedRevision }], ['edit_file', { expectedRevision, edits: [{ oldText: 'keep', newText: 'bad' }] }], ['replace', { pattern: 'keep', replacement: 'bad' }], ['copy', { expectedRevision, to: path.join(root, 'copy') }]]) {
-      failed(await call(tool, { path: source, ...args }, root), 'METADATA_UNSUPPORTED'); assert.equal(acl(source), before); assert.equal(fs.readFileSync(source, 'utf8'), 'keep')
+    const before = acl(source)
+    for (const [tool, args] of [['write_file', { content: 'NEXT' }], ['edit_file', { edits: [{ oldText: 'NEXT', newText: 'FINAL' }] }], ['replace', { pattern: 'FINAL', replacement: 'keep' }], ['copy', { to: path.join(root, 'copy') }]]) {
+      const value = await call(tool, { path: source, ...(tool === 'replace' ? {} : { expectedRevision: rev(source) }), ...args }, root)
+      assert.equal(value.status, 'completed', JSON.stringify(value)); assert.equal(acl(source), before)
+      if (tool === 'copy') assert.equal(acl(args.to), before)
     }
+    const expectedRevision = rev(source)
     const dry = await call('replace', { path: source, pattern: 'keep', replacement: 'bad', dryRun: true }, root)
     assert.equal(dry.dryRun, true); assert.equal(dry.changed, 0)
     const dest = path.join(root, 'moved'); const moved = await call('move', { path: source, to: dest, expectedRevision }, root)
@@ -252,9 +250,56 @@ await test('Windows DACLs survive fail-closed overwrite/edit/replace/copy and in
     const holder = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(code, 'utf16le').toString('base64')], { stdio: ['pipe', 'pipe', 'pipe'] })
     try {
       await new Promise((resolve, reject) => { holder.stdout.once('data', resolve); holder.once('error', reject); holder.once('exit', code => reject(new Error(`holder exited ${code}`))) })
+      const blocked = await call('write_file', { path: source, content: 'blocked', expectedRevision }, root)
+      failed(blocked, 'ACCESS_DENIED'); assert.equal(fs.readFileSync(source, 'utf8'), 'keep'); assert.equal(acl(source), before)
       const partial = await call('move', { path: source, to: dest, expectedRevision }, root)
       assert.equal(partial.error.code, 'RESULT_PARTIAL', JSON.stringify(partial)); assert.equal(partial.error.effectState, 'applied'); assert.equal(fs.existsSync(source), true); assert.equal(fs.existsSync(dest), true)
     } finally { holder.stdin.end('release' + String.fromCharCode(10)); await new Promise(resolve => holder.once('close', resolve)) }
+  })
+})
+await test('Windows inherited and explicit deny ACLs survive writes and copies into a different parent', async () => {
+  if (process.platform !== 'win32') return
+  const ps = code => {
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from("$ErrorActionPreference='Stop';" + code, 'utf16le').toString('base64')], { encoding: 'utf8', env: { ...process.env, PSModulePath: '' } })
+    assert.equal(result.status, 0, result.stderr); return result.stdout.trim()
+  }
+  const quote = value => value.replaceAll("'", "''")
+  const acl = target => ps(`(Get-Acl -LiteralPath '${quote(target)}').Sddl`)
+  await withTempDir('file-windows-acls', async root => {
+    const destination = path.join(root, 'destination'); fs.mkdirSync(destination)
+    ps(`$p='${quote(destination)}'; $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; $a=[Security.AccessControl.DirectorySecurity]::new(); $a.SetAccessRuleProtection($true,$false); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow')); Set-Acl -LiteralPath $p -AclObject $a`)
+    for (const kind of ['inherited', 'protected', 'deny']) {
+      const source = path.join(root, kind); fs.writeFileSync(source, 'START')
+      if (kind !== 'inherited') ps(`$p='${quote(source)}'; $a=Get-Acl -LiteralPath $p; $a.SetAccessRuleProtection($true,$true); ${kind === 'deny' ? "$sid=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-546'); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'WriteData','Deny'));" : ''} Set-Acl -LiteralPath $p -AclObject $a`)
+      const before = acl(source)
+      if (kind === 'deny') assert.match(before, /\(D;;/u, 'fixture must really contain an explicit deny ACE')
+      if (kind === 'inherited') assert.match(before, /;ID;/u)
+      else assert.match(before, /D:P/u)
+      for (const [tool, args, content] of [
+        ['write_file', { content: 'NEXT' }, 'NEXT'],
+        ['edit_file', { edits: [{ oldText: 'NEXT', newText: 'FINAL' }] }, 'FINAL'],
+        ['replace', { pattern: 'FINAL', replacement: 'DONE' }, 'DONE'],
+      ]) {
+        const value = await call(tool, { path: source, ...(tool === 'replace' ? {} : { expectedRevision: rev(source) }), ...args }, root)
+        assert.equal(value.status, 'completed', JSON.stringify(value)); assert.equal(fs.readFileSync(source, 'utf8'), content); assert.equal(acl(source), before)
+      }
+      const to = path.join(destination, kind)
+      assert.equal((await call('copy', { path: source, to, expectedRevision: rev(source) }, root)).status, 'completed')
+      assert.equal(acl(to), before); assert.equal(fs.readFileSync(to, 'utf8'), 'DONE')
+      failed(await call('copy', { path: source, to, expectedRevision: rev(source) }, root), 'REVISION_CONFLICT')
+      fs.chmodSync(source, 0o444)
+      try {
+        failed(await call('write_file', { path: source, content: 'bad', expectedRevision: rev(source) }, root), 'ACCESS_DENIED')
+        const readonlyCopy = await call('copy', { path: source, to: path.join(destination, kind + '-readonly'), expectedRevision: rev(source) }, root)
+        assert.equal(readonlyCopy.status, 'completed', JSON.stringify(readonlyCopy)); assert.equal(acl(source), before)
+      } finally { fs.chmodSync(source, 0o666) }
+      assert.equal(fs.readdirSync(destination).some(name => /[.]dsh-ops-[0-9a-f-]{36}$/u.test(name)), false, 'no readonly staging link may leak')
+    }
+    const streamed = path.join(root, 'streamed'); fs.writeFileSync(streamed, 'keep'); fs.writeFileSync(streamed + ':private', 'secret')
+    for (const tool of ['write_file', 'copy']) {
+      failed(await call(tool, { path: streamed, expectedRevision: rev(streamed), ...(tool === 'copy' ? { to: path.join(destination, 'streamed') } : { content: 'bad' }) }, root), 'METADATA_UNSUPPORTED')
+      assert.equal(fs.readFileSync(streamed, 'utf8'), 'keep'); assert.equal(fs.readFileSync(streamed + ':private', 'utf8'), 'secret')
+    }
   })
 })
 await test('cross-device move rejects without copy/delete fallback when a second writable device is available', async () => {

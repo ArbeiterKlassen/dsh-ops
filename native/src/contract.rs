@@ -56,7 +56,7 @@ pub struct Job {
 pub struct Failure {
     pub code: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
+    pub reason: Option<Box<str>>,
     pub phase: Box<str>,
     pub retryable: bool,
     pub effect_state: Box<str>,
