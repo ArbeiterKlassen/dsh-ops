@@ -88,6 +88,29 @@ const installed = command => {
 const SETFACL = installed('setfacl') && installed('getfacl')
 const PYTHON = installed('python3')
 
+/**
+ * Setting and reading one `user.*` extended attribute, in both directions.
+ *
+ * Linux spells this with python3's `os.setxattr`. macOS CPython never shipped
+ * those calls — `os` there has neither `setxattr` nor `getxattr` — so a fixture
+ * that reached for python3 on Darwin died with `AttributeError` before a single
+ * assertion ran, which is exactly what a file's attributes must not do. Darwin
+ * uses the `xattr` tool the OS ships instead. Either way the fixture must really
+ * put an attribute on the file; `null` means this host cannot, and the caller
+ * says so rather than pretending the case passed.
+ */
+const XATTR = installed('/usr/bin/xattr')
+  ? {
+      set: (target, name, value) => execFileSync('/usr/bin/xattr', ['-w', name, value, target]),
+      get: (target, name) => execFileSync('/usr/bin/xattr', ['-p', name, target], { encoding: 'utf8' }).trim(),
+    }
+  : PYTHON
+    ? {
+        set: (target, name, value) => execFileSync('python3', ['-c', "import os,sys; os.setxattr(sys.argv[1],sys.argv[2],sys.argv[3].encode())", target, name, value]),
+        get: (target, name) => execFileSync('python3', ['-c', "import os,sys; sys.stdout.write(os.getxattr(sys.argv[1],sys.argv[2]).decode())", target, name], { encoding: 'utf8' }).trim(),
+      }
+    : null
+
 /** The low twelve bits, octal, so a comparison never depends on setuid or the file type. */
 const modeOf = target => (fs.statSync(target).mode & 0o7777).toString(8).padStart(4, '0')
 const octal = mode => mode.toString(8).padStart(4, '0')
@@ -183,18 +206,19 @@ await test('a dry run reports no metadata because it published nothing', async (
 await test('full overwrite, precise edit and copy retain private mode and user attributes', async () => {
   await withTempDir('file-metadata-new', async workspace => {
     const source = seed(path.join(workspace, 'private.txt'), 0o600)
-    if (PYTHON) execFileSync('python3', ['-c', "import os,sys; os.setxattr(sys.argv[1],'user.dsh-ops',b'kept')", source])
+    if (XATTR) XATTR.set(source, 'user.dsh-ops', 'kept')
+    else assert.ok(true, 'no user-attribute tool is installed (Darwin xattr or python3), so the attribute half of this case cannot be exercised here')
     const stat = () => callTool('stat', { path: source }, { root: workspace }).then(value => envelopeOf(value, assert))
     const written = envelopeOf(await callTool('write_file', { path: source, content: 'NEXT', expectedRevision: (await stat()).revision }, { root: workspace }), assert)
     assert.equal(written.status, 'completed', JSON.stringify(written)); assert.equal(modeOf(source), '0600')
     const edited = envelopeOf(await callTool('edit_file', { path: source, expectedRevision: written.revision, edits: [{ oldText: 'NEXT', newText: 'FINAL' }] }, { root: workspace }), assert)
     assert.equal(edited.status, 'completed', JSON.stringify(edited)); assert.equal(modeOf(source), '0600')
-    if (PYTHON) assert.equal(execFileSync('python3', ['-c', "import os,sys; print(os.getxattr(sys.argv[1],'user.dsh-ops').decode())", source], { encoding: 'utf8' }).trim(), 'kept')
+    if (XATTR) assert.equal(XATTR.get(source, 'user.dsh-ops'), 'kept')
     const to = path.join(workspace, 'copy.txt')
     const copied = envelopeOf(await callTool('copy', { path: source, to, expectedRevision: edited.revision }, { root: workspace }), assert)
     assert.equal(copied.status, 'completed', JSON.stringify(copied)); assert.equal(modeOf(to), '0600')
     assert.equal(fs.statSync(to).mtimeMs, fs.statSync(source).mtimeMs)
-    if (PYTHON) assert.equal(execFileSync('python3', ['-c', "import os,sys; print(os.getxattr(sys.argv[1],'user.dsh-ops').decode())", to], { encoding: 'utf8' }).trim(), 'kept')
+    if (XATTR) assert.equal(XATTR.get(to, 'user.dsh-ops'), 'kept')
   })
 })
 
