@@ -9,11 +9,20 @@ pub(super) fn open_update_lock(parent: &Dir, name: &str) -> Result<std::fs::File
     let file = {
         // A single validated sibling beneath an already-held no-follow directory.
         // Avoid cap-std's emulated create/open dance under simultaneous creators.
-        let fd = rustix::fs::openat(parent, name,
-            rustix::fs::OFlags::RDWR | rustix::fs::OFlags::CREATE | rustix::fs::OFlags::NOFOLLOW
-                | rustix::fs::OFlags::CLOEXEC | rustix::fs::OFlags::NONBLOCK,
-            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR)
-            .map_err(|error| Failure::from(std::io::Error::from(error)))?;
+        let flags = rustix::fs::OFlags::RDWR | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC | rustix::fs::OFlags::NONBLOCK;
+        // Darwin may return ENOENT to simultaneous non-exclusive O_CREAT opens.
+        // Elect one creator with O_EXCL; EEXIST selects the persistent inode.
+        // This is create-or-open, not a retry of a failed business operation.
+        let created = rustix::fs::openat(parent, name,
+            flags | rustix::fs::OFlags::CREATE | rustix::fs::OFlags::EXCL,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR);
+        let fd = match created {
+            Ok(fd) => fd,
+            Err(rustix::io::Errno::EXIST) => rustix::fs::openat(parent, name, flags, rustix::fs::Mode::empty())
+                .map_err(|error| Failure::from(std::io::Error::from(error)))?,
+            Err(error) => return Err(Failure::from(std::io::Error::from(error))),
+        };
         File::from_std(std::fs::File::from(fd))
     };
     #[cfg(windows)]
