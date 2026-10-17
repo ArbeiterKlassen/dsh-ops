@@ -58,6 +58,11 @@
         "name": "dsh-ops:repository-tooling:shell",
         "order": 3251,
         "summary": "Prefer bash; use the bundled PowerShell 7 for Windows-native functionality where that payload exists; removed when the shell component is off."
+      },
+      {
+        "name": "dsh-ops:repository-tooling:ptc",
+        "order": 3252,
+        "summary": "Scoped PTC batch/result guidance; absent when PTC tools are unavailable."
       }
     ],
     "x-tool-namespaces": [

@@ -303,7 +303,7 @@ for (const [index, entry] of namespaces.slice(1).entries()) {
 const sections = manifestRaw.contributes?.['x-prompt-sections'] ?? []
 const sectionNames = sections.map((section) => section.name)
 check(
-  sectionNames.length === 2 && ['file', 'shell'].every(component => sectionNames.includes(`${TOOLING_SECTION}:${component}`)),
+  sectionNames.length === 3 && ['file', 'shell', 'ptc'].every(component => sectionNames.includes(`${TOOLING_SECTION}:${component}`)),
   'the declared prompt sections match lib/policy.js',
   `declared ${sectionNames.join(', ')} vs policy ${TOOLING_SECTION}`,
 )
