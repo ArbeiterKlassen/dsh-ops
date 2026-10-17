@@ -263,9 +263,20 @@ await test('Windows failed overwrite unlinks restrictive staging through its own
     const originalAcl = ps(`(Get-Acl -LiteralPath '${quote(root)}').Sddl`)
     try {
       ps(`$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User; foreach($p in @('${quote(source)}','${quote(probe)}')) { $a=Get-Acl -LiteralPath $p; $a.SetAccessRuleProtection($true,$true); $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'Delete','Deny')); Set-Acl -LiteralPath $p -AclObject $a }; $p='${quote(root)}'; $a=Get-Acl -LiteralPath $p; $a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'DeleteSubdirectoriesAndFiles','Deny')); Set-Acl -LiteralPath $p -AclObject $a`)
-      // This is not merely an ACE-text fixture: ordinary pathname deletion must
-      // fail under the exact source/parent policy restored onto the staging inode.
-      assert.throws(() => fs.unlinkSync(probe), error => ['EPERM', 'EACCES'].includes(error.code))
+      // This is not merely an ACE-text fixture: ordinary pathname deletion must fail
+      // under the exact source/parent policy restored onto the staging inode. A hosted
+      // runner running as the built-in Administrator (RID 500, SDDL alias `LA`) is not
+      // stopped by an explicit deny ACE, and the publish this case needs would succeed
+      // there too -- replacing an existing target requires DELETE on it, exactly what
+      // the probe measures -- so restrictive staging cannot be reached on that host.
+      const probeAcl = ps(`(Get-Acl -LiteralPath '${quote(probe)}').Sddl`)
+      let probeError
+      try { fs.unlinkSync(probe) } catch (error) { probeError = error }
+      if (probeError === undefined) {
+        console.log(`  staging DELETE fixture unavailable: this host deleted a probe whose own and parent DACL deny DELETE (${probeAcl}), so restrictive staging cannot be reached here`)
+        return
+      }
+      assert.ok(['EPERM', 'EACCES'].includes(probeError.code), String(probeError))
       assert.equal(fs.readFileSync(probe, 'utf8'), 'probe')
       const before = ps(`(Get-Acl -LiteralPath '${quote(source)}').Sddl`)
       const result = await call('write_file', { path: source, expectedRevision: rev(source), content: 'SENSITIVE REPLACEMENT' }, root)
