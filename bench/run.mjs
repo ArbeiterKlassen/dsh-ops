@@ -628,7 +628,7 @@ export async function preflight(options, log = createLogger()) {
       if (probe.ok) log.info(`preflight: endpoint ${url} is reachable (${probe.host}:${probe.port} accepted a TCP connect in ${probe.ms} ms) — no request was sent, so this proves reachability, not auth`)
       else {
         log.warn(`preflight: endpoint ${url} is NOT reachable (${probe.host}:${probe.port} — ${probe.note})`)
-        warnings.push(`endpoint ${url} is not reachable: ${probe.note}. A sweep against it will sit at "request sent to the model" until the timeout, then report usage n/a (README §3).`)
+        warnings.push(`endpoint ${url} is not reachable: ${probe.note}. A sweep against it will sit at "request sent to the model" until the timeout, then report usage n/a (README §2).`)
       }
     }
   } else {
@@ -1407,13 +1407,13 @@ export async function main(argv) {
     // The cheapest honest answer to "will this machine and this profile work at all":
     // everything preflight knows, with no task spawned, no run directory and no token.
     log.info(`preflight-only: no task was spawned and no token was spent. profile "${options.profile}" → provider ${setup.model.provider ?? '?'} / model ${setup.model.model ?? '?'}, overlay ${setup.llmPatch ?? '(none)'}, home ${setup.home}`)
-    log.info('preflight-only: to smoke one real task anyway, use the §3 command in bench/README.md')
+    log.info('preflight-only: to smoke one real task anyway, use the bench:baseline --task example in bench/README.md §2')
     return 0
   }
   // The run directory is created only once the machine is known to be able to do
   // the run: a failed preflight should not litter bench/runs with empty archives.
   // It is filed under a group directory — the `--folder` the operator asked for, or
-  // the day's date when nobody did (README §2); `--out` is the escape hatch that names
+  // the day's date when nobody did; `--out` is the escape hatch that names
   // a directory outright and steps out of the layout, and then there is no group.
   const requestedFolder = options.folder
   const out = prepareOut(options)

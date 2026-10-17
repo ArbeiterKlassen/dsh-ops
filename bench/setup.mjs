@@ -107,10 +107,10 @@ const USAGE = `usage: node bench/setup.mjs [options]
   --pin-shell <path>      the PowerShell executable the baseline must use
                           (default %SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe)
   --no-pin                leave the baseline's shell engine alone; it then resolves to
-                          whatever PATH hands back — a PowerShell 7 (README §2.1)
+                          whatever PATH hands back — a PowerShell 7 (README §2)
   --permission-mode <mode>  the sandbox mode both bench profiles are pinned to in their
                           own patch layer: danger-full-access (default), workspace-write,
-                          read-only — or "none" to leave the profiles alone (README §2.2)
+                          read-only — or "none" to leave the profiles alone (README §2)
   --no-permission-mode    alias for --permission-mode none
   --plugin <spec>         what to install into the candidate: "local" (default) installs
                           this checkout, i.e. the local build — pnpm links the repo root
@@ -672,7 +672,7 @@ function ensureProfile(name, context) {
  * @returns {'pinned'|'noop'|'conflict'|'manual'|'absent'|'skipped'} the outcome. */
 function pinBaseline(options, context) {
   if (!options.pinShell) {
-    context.log('  --no-pin：没动。基线会命中 PATH 上的 pwsh 别名（README §2.1），两侧就都是 PowerShell 7')
+    context.log('  --no-pin：没动。基线会命中 PATH 上的 pwsh 别名（README §2），两侧就都是 PowerShell 7')
     return 'skipped'
   }
   const file = path.join(context.home, 'profiles', options.baseProfile, 'cordis.patch.yml')
@@ -711,10 +711,10 @@ function pinBaseline(options, context) {
  * @returns {'pinned'|'noop'|'conflict'|'manual'|'absent'|'skipped'} the worst outcome. */
 function pinPermissionMode(options, context) {
   if (options.permissionMode === 'none') {
-    context.log('  --permission-mode none：没动。两侧沿用 profile 原本的 mode（README §2.2 讲默认为什么钉全权限）')
+    context.log('  --permission-mode none：没动。两侧沿用 profile 原本的 mode（README §2）')
     return 'skipped'
   }
-  context.log(`  两侧都钉 ${options.permissionMode} / approval ${approvalPolicyFor(options.permissionMode)}：和默认的 workspace-write 不是一个口径，别的口径跑出来的 run 目录不能直接比（README §2.2）`)
+  context.log(`  两侧都钉 ${options.permissionMode} / approval ${approvalPolicyFor(options.permissionMode)}：和默认的 workspace-write 不是一个口径，别的口径跑出来的 run 目录不能直接比（README §2）`)
   const outcomes = [options.baseProfile, options.candProfile].map(profile => pinOneProfileMode(profile, options, context))
   const order = ['conflict', 'manual', 'absent', 'pinned', 'noop']
   return order.find(outcome => outcomes.includes(outcome)) ?? 'noop'
@@ -959,7 +959,7 @@ export async function main(argv) {
   }
   const homePatch = path.join(home, 'cordis.patch.yml')
   if (fs.existsSync(homePatch) && fs.readFileSync(homePatch, 'utf8').trim() !== '') {
-    warnings.push(`${homePatch} 存在且非空：home 层会组合进每一个 profile 并压过 profile 层，基线可能已经不 stock（README §6）。用 --dsh-home 隔离，或把它清空。`)
+    warnings.push(`${homePatch} 存在且非空：home 层会组合进每一个 profile 并压过 profile 层，基线可能已经不 stock（README §4）。用 --dsh-home 隔离，或把它清空。`)
   }
 
   log('\n— 1) LLM overlay —')
@@ -970,7 +970,7 @@ export async function main(argv) {
     // Same definition of "unfilled" as run.mjs's preflight, so setup and the sweep agree.
     const placeholders = placeholderLines(fs.readFileSync(LLM_OVERLAY, 'utf8'))
     if (placeholders.length > 0) {
-      warnings.push(`bench/llm.patch.yml 里还有模板占位符：${placeholders.join(' | ')} —— run.mjs preflight 会拒跑，先把服务器和模型填上（README §2 步骤 3）。`)
+      warnings.push(`bench/llm.patch.yml 里还有模板占位符：${placeholders.join(' | ')} —— run.mjs preflight 会拒跑，先把服务器和模型填上（README §2）。`)
     }
   }
 
