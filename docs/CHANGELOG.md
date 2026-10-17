@@ -9,6 +9,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Tools trial: `node scripts/tools-trial.mjs` calls every published tool on a real host and prints a
   per-tool table; CI runs it in a separate, non-required `tools-trial` job.
+- `npm run bench:setup` is now a shortcut for `node bench/setup.mjs`, so one-time benchmark
+  preparation (profiles, baseline shell pin, permission mode, candidate plugin) is one command.
+  Arguments pass through as usual: `npm run bench:setup -- --dry-run`. `run.mjs` and `compare.mjs`
+  keep their `node bench/…` entry points.
 
 ### The config-update marker goes to the profile patch, and never to the composed tree
 

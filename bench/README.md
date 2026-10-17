@@ -1,6 +1,6 @@
 # dsh-ops 端到端 Token Benchmark
 
-> 设计文档：[PLAN.md](PLAN.md)（接口事实、方法论、门禁口径都在那里，本文是使用说明）。
+> 本文是这套 harness 的说明：接口事实、方法论、门禁口径都在这里。
 > 状态：harness 已落地并进门禁（`node test/run.mjs bench`，本机 60 项检查全绿；
 > 管道受限的环境里 stub 端到端那几项会自我跳过并说明原因，数目因此随环境浮动）；
 > 步骤 6–10 的**真机实测**还差一台能连 OpenAI 兼容服务器的 Windows x64 机器。
@@ -40,9 +40,10 @@ node bench/compare.mjs bench-base bench-ops --folder ops-0.3.1 --fail-on both
 第一次在新机器上跑，**加 `--verbose`**；§4.1 把现场日志的每一行都解释了，`--preflight-only`
 则是花 200ms（不花 token）先问一句"这台机器和这个 profile 到底行不行"。
 
-bench 有意**不往根 `package.json` 里挂 npm script**（`bench/` 是仓库自己的测量工具，不该污染
-发布包的主干入口），唯一入口就是直接 `node bench/run.mjs …` / `node bench/setup.mjs` /
-`node bench/compare.mjs …`。想要短命令，在自己的 shell 里起别名即可，不必提交。
+入口分两种：一次性准备有 npm 快捷方式 `npm run bench:setup`（等价于 `node bench/setup.mjs`，
+参数照 `npm run bench:setup -- --dry-run` 这样透传）；`run.mjs` / `compare.mjs` 仍**不挂** npm
+script（`bench/` 是仓库自己的测量工具，跑分这些一次性命令不值得占发布包的主干入口），直接
+`node bench/run.mjs …` / `node bench/compare.mjs …`。想要更短的命令，在自己的 shell 里起别名即可。
 跑分脚本的门禁照旧走主干测试：`node test/run.mjs bench`（或 `npm test`，它会按名字选中
 `test/bench.test.mjs`）。
 
@@ -95,7 +96,7 @@ agent 会话里管道 spawn 会被拒（`EPERM`），preflight 会直接报出�
 
 ```console
 node bench/setup.mjs --dry-run   :: 只看计划：每个写入和每条命令都印出来，什么都不改
-node bench/setup.mjs
+node bench/setup.mjs             :: 就是 npm run bench:setup；带参数写 npm run bench:setup -- --dry-run
 ```
 
 它做的事，以及出问题时你要看的地方：
