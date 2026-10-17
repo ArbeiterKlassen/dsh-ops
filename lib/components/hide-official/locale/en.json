@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Official tool hiding",
+    "description": "Strict OPS takeover; refuses agent prompt assembly when replacements or host hiding APIs are incomplete."
+  }
+}
