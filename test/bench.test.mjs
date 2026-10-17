@@ -1544,11 +1544,14 @@ await test('the PSModulePath probe flags only a directory that really ships the 
   const bundled = 'C:\\Users\\x\\.dsh\\profiles\\p\\node_modules\\@dsh-ops\\pwsh-win32-x64\\bin\\Modules'
   const userModules = 'C:\\Users\\x\\Documents\\PowerShell\\Modules'
   const ships = file => file.toLowerCase().startsWith(bundled.toLowerCase())
-  assert.equal(poisonedModulePath(`${bundled};${inBox}`, windows, ships), bundled, 'the bundled PS7 modules dir is the real poison')
-  assert.equal(poisonedModulePath(`${userModules};${inBox}`, windows, ships), null, 'a PS7 user module folder is harmless')
-  assert.equal(poisonedModulePath(`${inBox};${bundled}`, windows, ships), null, 'order matters: after the in-box dir it cannot shadow')
-  assert.equal(poisonedModulePath(undefined, windows, ships), null)
-  assert.equal(poisonedModulePath('', windows, ships), null)
+  // PSModulePath is Windows-shaped even when the host running this suite is not, so the
+  // separator is pinned instead of read from `path.delimiter` (":" on macOS/Linux).
+  const sep = ';'
+  assert.equal(poisonedModulePath(`${bundled}${sep}${inBox}`, windows, ships, sep), bundled, 'the bundled PS7 modules dir is the real poison')
+  assert.equal(poisonedModulePath(`${userModules}${sep}${inBox}`, windows, ships, sep), null, 'a PS7 user module folder is harmless')
+  assert.equal(poisonedModulePath(`${inBox}${sep}${bundled}`, windows, ships, sep), null, 'order matters: after the in-box dir it cannot shadow')
+  assert.equal(poisonedModulePath(undefined, windows, ships, sep), null)
+  assert.equal(poisonedModulePath('', windows, ships, sep), null)
 })
 
 await test('setup argument handling fails closed on typos and names the plugin it would install', () => {
@@ -2039,9 +2042,12 @@ await test('a stderr written in the local code page arrives readable, not as moj
 await test('describeModulePath marks the entry that shadows Windows PowerShell', () => {
   const inBox = 'C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\Modules'
   const bundled = 'C:\\Users\\x\\.dsh\\profiles\\p\\node_modules\\@dsh-ops\\pwsh-win32-x64\\bin\\Modules'
-  const joined = ['C:\\Users\\x\\Documents\\PowerShell\\Modules', bundled, inBox].join(path.delimiter)
-  const line = describeModulePath(joined, bundled)
+  // Pinned to ";" for the same reason as the probe: this is a Windows variable being
+  // examined from whichever host happens to run the suite.
+  const joined = ['C:\\Users\\x\\Documents\\PowerShell\\Modules', bundled, inBox].join(';')
+  const line = describeModulePath(joined, bundled, ';')
   assert.match(line, /1\. C:.*Documents/, 'the search order is printed in order')
+  assert.match(line, /2\. C:.*pwsh-win32-x64.*Modules/, 'the bundled dir keeps its slot')
   assert.match(line, /<-- CORE MODULE ROOT AHEAD OF 5\.1/, 'and the shadowing entry is named')
   assert.equal(describeModulePath(undefined), 'PSModulePath is not set')
 })

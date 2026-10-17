@@ -32,6 +32,9 @@ import path from 'node:path'
  * @param {string|undefined} modulePath - the `PSModulePath` value.
  * @param {string} [windows] - the Windows root, for tests.
  * @param {(file: string) => boolean} [isDirectory] - the existence probe, for tests.
+ * @param {string} [delimiter] - the `PSModulePath` separator. Defaults to `path.delimiter`, but
+ *   `PSModulePath` is a Windows-only variable: its separator is `;` no matter which host reads
+ *   it. Tests pin it so a value full of `C:\…` does not get shredded at the drive-letter colons.
  * @returns {string|null} the offending entry, or null when nothing dangerous precedes the in-box path.
  */
 export function poisonedModulePath(modulePath, windows = process.env.SystemRoot ?? 'C:\\Windows', isDirectory = (file) => {
@@ -40,9 +43,9 @@ export function poisonedModulePath(modulePath, windows = process.env.SystemRoot 
   } catch {
     return false
   }
-}) {
+}, delimiter = path.delimiter) {
   if (!modulePath) return null
-  const entries = modulePath.split(path.delimiter).filter(Boolean)
+  const entries = modulePath.split(delimiter).filter(Boolean)
   const inBox = path.join(windows, 'system32', 'WindowsPowerShell', 'v1.0', 'Modules').toLowerCase()
   const atInBox = entries.findIndex((entry) => entry.toLowerCase() === inBox)
   const limit = atInBox === -1 ? entries.length : atInBox
@@ -57,11 +60,12 @@ export function poisonedModulePath(modulePath, windows = process.env.SystemRoot 
  * Render `PSModulePath` as one readable line, in search order.
  * @param {string|undefined} modulePath - the value.
  * @param {string|null} [poison] - the offending entry, when there is one.
+ * @param {string} [delimiter] - the `PSModulePath` separator, matching `poisonedModulePath`.
  * @returns {string} the line.
  */
-export function describeModulePath(modulePath, poison = null) {
+export function describeModulePath(modulePath, poison = null, delimiter = path.delimiter) {
   if (!modulePath || modulePath === '') return 'PSModulePath is not set'
-  const entries = modulePath.split(path.delimiter).filter(Boolean)
+  const entries = modulePath.split(delimiter).filter(Boolean)
   return entries
     .map((entry, index) => `${index + 1}. ${entry}${poison && entry === poison ? '  <-- CORE MODULE ROOT AHEAD OF 5.1 (README §1)' : ''}`)
     .join(' | ')
