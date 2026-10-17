@@ -2,12 +2,15 @@
 /**
  * One-shot preparation of the two benchmark profiles, idempotent.
  *
- * It does, in order: create the baseline and candidate profiles from the shipped
- * `headless` template when they do not exist yet, pin the baseline's PowerShell
- * executable to Windows PowerShell 5.1, install the plugin under test into the
- * candidate profile, then read the composed config tree back and prove the pin landed.
+ * It does, in order: copy `bench/llm.patch.example.yml` to `bench/llm.patch.yml` when that
+ * filled-in overlay does not exist yet (copy-only — an existing overlay is the operator's
+ * and is never rewritten), check the local build the candidate will execute, create the
+ * baseline and candidate profiles from the shipped `headless` template when they do not
+ * exist yet, pin the baseline's PowerShell executable to Windows PowerShell 5.1, install
+ * the plugin under test into the candidate profile — **this checkout by default**, not the
+ * published package — then read the composed config tree back and prove the pin landed.
  *
- * Why this is a script instead of four README steps:
+ * Why this is a script instead of a handful of README steps:
  *
  * - **Profile creation is not idempotent.** `--from-default-profile` fails when the
  *   profile already exists, so a README line can only ever say "skip it if it errors".
@@ -30,6 +33,26 @@
  *   mode on both sides is what keeps the comparison fair — and the archived
  *   `dump-config.txt` proves it. `--permission-mode` changes the pin; `none` leaves the
  *   profiles alone.
+ * - **The candidate has to measure the code you are editing.** The default spec is this
+ *   checkout (a `pnpm file:` install of the repo root, i.e. the local build), because a
+ *   sweep exists to comparison-test the working tree against the stock baseline; the
+ *   published `dsh-ops@<version>` would silently measure the last release instead. A
+ *   different version already sitting in the candidate is reported as a failure and named
+ *   with the fix (`--reinstall`), never skipped: "already installed" is not the same as
+ *   "installed what you meant". `--plugin dsh-ops@<version>` / `--plugin none` opt out.
+ * - **The overlay is a copy-once, never a rewrite.** `bench/llm.patch.yml` holds the bench
+ *   server, model and key variable name, is gitignored for exactly that reason, and a
+ *   benchmark script that "re-synced" it from the template would quietly point a sweep at
+ *   the template's placeholders. So the copy only ever fills an absence; an existing file
+ *   is reported and left untouched, `--dry-run` included.
+ * - **The local build is a measured condition, so it is checked before it is linked in.**
+ *   The candidate executes this checkout, and `runtime/<platform>-<arch>` — the Rust worker,
+ *   the Windows Bash IPC proxies — is gitignored build output. A missing worker, or a proxy
+ *   whose receipt no longer matches `native/bash-ipc`, breaks the candidate only: the
+ *   baseline keeps serving, and the sweep reads as a plugin regression. The shell payloads
+ *   (`@dsh-ops/<kind>-win32-x64`) are installed dependencies rather than build output, so
+ *   their absence is a warning — one that matters, because the candidate would otherwise
+ *   fall back to the machine's shells while the baseline keeps its own.
  *
  * It never touches `$DSH_HOME/cordis.patch.yml` (the home layer, which composes into every
  * profile) and never edits a profile's `cordis.yml`. Patch-layer edits are line-local and
@@ -43,10 +66,13 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
-import { pipedSpawnBlocker, resolveDshEntry } from './run.mjs'
+import { pipedSpawnBlocker, placeholderLines, resolveDshEntry } from './run.mjs'
 import { poisonedModulePath } from './lib/env.mjs'
+import { PLATFORMS, workerName } from '../lib/ptc/runtime.js'
+import { bundledShell } from '../lib/shells.js'
 
 /** The `PSModulePath` verdict lives in `lib/env.mjs` now, because preflight needs it too;
  * re-exported here so the documented `bench/setup` surface keeps answering. */
@@ -68,6 +94,10 @@ const APPROVAL_CONFIG_KEY = 'policy'
 export const PERMISSION_MODES = ['danger-full-access', 'workspace-write', 'read-only', 'none']
 /** Shipped template names, kept in step with `SHIPPED_PROFILES` in `run.mjs`. */
 const SHIPPED_PROFILES = ['headless', 'web', 'tui', 'acp', 'sdk', 'sdk-minimal', 'dsh-tui']
+/** The overlay `run.mjs` injects into every dsh call, and the committed template it is
+ * filled in from. The filled-in file is gitignored: it names the operator's bench server. */
+const LLM_OVERLAY = path.join(BENCH_DIR, 'llm.patch.yml')
+const LLM_OVERLAY_EXAMPLE = path.join(BENCH_DIR, 'llm.patch.example.yml')
 
 const USAGE = `usage: node bench/setup.mjs [options]
 
@@ -82,11 +112,17 @@ const USAGE = `usage: node bench/setup.mjs [options]
                           own patch layer: danger-full-access (default), workspace-write,
                           read-only — or "none" to leave the profiles alone (README §2.2)
   --no-permission-mode    alias for --permission-mode none
-  --plugin <spec>         what to install into the candidate: an npm spec (default
-                          dsh-ops@<package.json version>), "local" for this checkout
-                          (pnpm file: snapshot — reinstall after every change), or "none"
+  --plugin <spec>         what to install into the candidate: "local" (default) installs
+                          this checkout, i.e. the local build — pnpm links the repo root
+                          into the profile, so edits are what the next run executes; an npm
+                          spec (dsh-ops@<version>, a tarball, a dist tag) installs that
+                          instead; "none" installs nothing
   --no-plugin             alias for --plugin none
   --reinstall             remove the plugin from the candidate before installing
+  --no-build-check        skip the local-build check: the candidate runs this checkout, so a
+                          missing or stale runtime/<platform>-<arch> worker, a Bash IPC
+                          proxy built from changed sources, or a missing shell payload is
+                          otherwise reported — the build problems as failures
   --dsh-home <dir>        isolate DSH_HOME (profiles + sessions) for the benchmark
   --dsh <path>            dsh's JS entry (lib/bin.js) or an executable; default: from PATH
   --force                 overwrite a pwshPath or permission mode this script did not write
@@ -100,8 +136,9 @@ const USAGE = `usage: node bench/setup.mjs [options]
  * @property {string} template - the shipped profile both are created from.
  * @property {string|null} pinShell - the executable to pin, null with --no-pin.
  * @property {string} permissionMode - the mode both profiles are pinned to, "none" for none.
- * @property {string} plugin - an npm spec, "local", or "none".
+ * @property {string} plugin - "local" (this checkout, the default), an npm spec, or "none".
  * @property {boolean} reinstall - remove the plugin before installing.
+ * @property {boolean} noBuildCheck - skip the local-build check (--no-build-check).
  * @property {string|null} dshHome - --dsh-home.
  * @property {string|null} dsh - --dsh.
  * @property {boolean} force - overwrite a foreign pwshPath.
@@ -122,7 +159,9 @@ export function parseArgs(argv) {
     // Windows-gated in the composition anyway, so the default is "no pin" there.
     pinShell: process.platform === 'win32' ? defaultShellPath() : null,
     permissionMode: 'danger-full-access',
-    plugin: null, reinstall: false,
+    // The candidate measures the working tree: the default install is this checkout, so a
+    // sweep prepares itself from the code under edit without a publish or a version bump.
+    plugin: 'local', reinstall: false, noBuildCheck: false,
     dshHome: null, dsh: null, force: false, dryRun: false, help: false,
   }
   const values = {
@@ -141,6 +180,7 @@ export function parseArgs(argv) {
     if (name === '--force') { options.force = true; continue }
     if (name === '--reinstall') { options.reinstall = true; continue }
     if (name === '--no-pin') { options.pinShell = null; continue }
+    if (name === '--no-build-check') { options.noBuildCheck = true; continue }
     if (name === '--no-permission-mode') { options.permissionMode = 'none'; continue }
     if (name === '--no-plugin') { options.plugin = 'none'; continue }
     const target = values[name]
@@ -149,7 +189,7 @@ export function parseArgs(argv) {
     if (value === undefined) throw new Error(`${name} needs a value`)
     options[target] = value
   }
-  options.plugin ??= `dsh-ops@${repoVersion()}`
+  options.plugin ??= 'local'
   if (options.help) return options
   for (const [flag, value] of [['--base-profile', options.baseProfile], ['--cand-profile', options.candProfile]]) {
     if (!value) throw new Error(`${flag} needs a name`)
@@ -427,6 +467,185 @@ export function installedPlugin(home, profile) {
   } catch { return null }
 }
 
+/** The newest Rust input under `native/` — `<native>/src/**` plus the crate manifests —
+ * skipping `native/target`, which is build output rather than input.
+ * @param {string} nativeDir - the crate root.
+ * @returns {{file: string, mtimeMs: number}|null} the newest input, or null when there is none. */
+function newestRustInput(nativeDir) {
+  let newest = null
+  const visit = file => {
+    let stat
+    try { stat = fs.statSync(file) } catch { return }
+    if (stat.isDirectory()) {
+      for (const entry of fs.readdirSync(file, { withFileTypes: true })) visit(path.join(file, entry.name))
+      return
+    }
+    if (!newest || stat.mtimeMs > newest.mtimeMs) newest = { file, mtimeMs: stat.mtimeMs }
+  }
+  for (const input of ['src', 'Cargo.toml', 'Cargo.lock']) visit(path.join(nativeDir, input))
+  return newest
+}
+
+/**
+ * The Windows Bash IPC proxies are a local build too: the DLLs are compiled from
+ * `native/bash-ipc`, and the receipt carries the hashes of both the DLLs and the sources
+ * they came from — so "rebuilt from source that has since changed" is detectable instead
+ * of merely suspected.
+ * @param {string} root - the checkout root.
+ * @returns {{what: string, fix: string}[]} the problems; empty when present and current. */
+function bashIpcProblems(root) {
+  const fix = 'npm run build:bash-ipc（Windows x64 + VS C++ 工具链）'
+  const dir = path.join(root, 'runtime', 'win32-x64', 'bash-ipc')
+  const receiptFile = path.join(dir, 'provenance.json')
+  if (!fs.existsSync(receiptFile)) {
+    return [{ what: `本地 build 缺 Bash IPC 代理（${path.relative(root, receiptFile)} 不在）`, fix }]
+  }
+  let receipt
+  try { receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8')) } catch {
+    return [{ what: `Bash IPC 回执读不出来（${path.relative(root, receiptFile)}）`, fix }]
+  }
+  const sha256 = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+  const problems = []
+  for (const name of ['opsipc.dll', 'opsnt.dll']) {
+    const file = path.join(dir, name)
+    if (!fs.existsSync(file)) { problems.push({ what: `Bash IPC 代理缺 ${name}`, fix }); continue }
+    if (receipt.files?.[name] !== sha256(file)) {
+      problems.push({ what: `Bash IPC 代理 ${name} 和回执里的哈希对不上（被换过，或者压根没重建）`, fix })
+    }
+  }
+  for (const name of ['security.h', 'opsipc.cpp', 'opsnt.cpp']) {
+    const source = path.join(root, 'native', 'bash-ipc', name)
+    if (!fs.existsSync(source) || receipt.sources?.[name] !== sha256(source)) {
+      problems.push({ what: `Bash IPC 源码 ${name} 变了，代理还是旧的`, fix })
+    }
+  }
+  return problems
+}
+
+/**
+ * The plugin's own shells are payload packages rather than a local build, but the candidate
+ * measures *them*: a missing payload silently moves the candidate onto the machine's
+ * shells while the baseline keeps its own, which is a different experiment. Asked through
+ * the plugin's own resolver, so setup cannot disagree with what activation will find.
+ * @param {string} root - the checkout (the plugin package root, via the pnpm link).
+ * @param {string} arch - the host architecture.
+ * @returns {string[]} one line per unusable shell; empty when both are the plugin's own. */
+function shellPayloadWarnings(root, arch) {
+  const warnings = []
+  for (const kind of ['bash', 'pwsh']) {
+    const bundled = bundledShell({ kind, bundleRoot: root, platform: 'win32', arch })
+    if (!bundled.file) {
+      warnings.push(`插件自带的 ${kind} 不可用（${bundled.cause ?? '未知原因'}）：${bundled.detail ?? ''} —— 候选侧会退到系统 shell，和基线就不是同一个口径了；npm install 装回 optionalDependencies 再看`)
+    }
+  }
+  return warnings
+}
+
+/**
+ * What this checkout's local build is missing, split into fatal problems and warnings.
+ *
+ * The candidate runs from this checkout (a pnpm link), so an absent or stale native worker,
+ * or a Bash IPC proxy built from source that has since changed, is a condition of the
+ * candidate side only: the baseline keeps working, every candidate call that needs the
+ * artifact dies, and the sweep reads as a plugin regression. Structural facts only
+ * (presence, receipts, hashes); the binary itself — version tag, hash and PE/ELF/Mach-O
+ * architecture — is the canonical gate's question, which setup runs separately rather than
+ * re-implementing.
+ * @param {object} [options] - what to inspect.
+ * @param {string} [options.root] - the checkout root.
+ * @param {string} [options.platform] - the target platform (defaults to the host).
+ * @param {string} [options.arch] - the target architecture (defaults to the host).
+ * @returns {{problems: {what: string, fix: string}[], warnings: string[]}} the verdict.
+ */
+export function inspectLocalBuild({ root = REPO_ROOT, platform = process.platform, arch = process.arch } = {}) {
+  const target = `${platform}-${arch}`
+  const problems = []
+  const warnings = []
+  if (!PLATFORMS.includes(target)) {
+    problems.push({ what: `本机目标 ${target} 不在插件的 native 支持列表（${PLATFORMS.join('、')}）里：候选侧没有 worker，PTC/run_code 起不来`, fix: '换一台受支持的目标机器，或按 docs/linux-build.md 自建' })
+    return { problems, warnings }
+  }
+  const directory = path.join(root, 'runtime', target)
+  const worker = path.join(directory, workerName(target.split('-')[0]))
+  const receipt = path.join(directory, 'provenance.json')
+  if (!fs.existsSync(worker) || !fs.existsSync(receipt)) {
+    problems.push({ what: `本地 build 缺 ${target} 的 native worker（${path.relative(root, worker)} 或它旁边的 provenance.json 不在）`, fix: 'npm run build:ptc（编译并 stage 本机目标）' })
+  } else {
+    const rust = newestRustInput(path.join(root, 'native'))
+    if (rust && rust.mtimeMs > fs.statSync(worker).mtimeMs) {
+      warnings.push(`本地 worker 比 ${path.relative(root, rust.file)} 旧：这一轮量的可能不是当前 native/src 的构建（重建：npm run build:ptc）`)
+    }
+  }
+  // The proxies exist for win32-x64 only, and only when the sources shipped with them.
+  if (target === 'win32-x64' && fs.existsSync(path.join(root, 'native', 'bash-ipc'))) problems.push(...bashIpcProblems(root))
+  if (platform === 'win32') warnings.push(...shellPayloadWarnings(root, arch))
+  return { problems, warnings }
+}
+
+/**
+ * Check the local build the candidate will execute, and let the canonical gate judge the
+ * binary itself (`bin/native-runtime.mjs check --platform <target>`: version tag, hash, and
+ * the PE/ELF/Mach-O architecture, which this file deliberately does not re-implement).
+ *
+ * A `--plugin` that names a package makes the checkout's build irrelevant, and
+ * `--no-build-check` is the operator's own call; both are reported rather than silent.
+ * @param {Options} options - the options.
+ * @param {object} context - the run context.
+ * @returns {{problems: {what: string, fix: string}[], warnings: string[]}} the verdict. */
+function checkLocalBuild(options, context) {
+  if (options.plugin !== 'local') {
+    context.log(`  --plugin ${options.plugin}：候选装的是现成的包，本地 build 不参与这一轮，没查`)
+    return { problems: [], warnings: [] }
+  }
+  if (options.noBuildCheck) {
+    context.log('  --no-build-check：没查。缺 worker / 代理时候选侧会在跑起来之后才现原形')
+    return { problems: [], warnings: [] }
+  }
+  const target = `${process.platform}-${process.arch}`
+  const { problems, warnings } = inspectLocalBuild({ root: REPO_ROOT })
+  for (const problem of problems) context.log(`  ✗ ${problem.what} —— ${problem.fix}`)
+  if (problems.length > 0) return { problems, warnings }
+  context.log(`  runtime/${target} 在，worker、Bash IPC 回执和哈希都对得上`)
+  if (context.dryRun) {
+    context.log(`  [dry-run] 计划执行 node bin/native-runtime.mjs check --platform ${target}`)
+    return { problems, warnings }
+  }
+  const script = path.join(REPO_ROOT, 'bin', 'native-runtime.mjs')
+  const started = Date.now()
+  const result = runCapture(process.execPath, [script, 'check', '--platform', target], process.env)
+  const took = Math.max(1, Date.now() - started)
+  context.log(`  ↳ node bin/native-runtime.mjs check --platform ${target} → exit=${result.status ?? `起不来（${result.errorCode ?? '?'}）`}，用时 ${took < 1000 ? `${took}ms` : `${(took / 1000).toFixed(1)}s`}`)
+  if (result.status === 0) return { problems, warnings }
+  const detail = (result.stderr || result.stdout).trim().split('\n').filter(Boolean).slice(-2).join(' / ')
+  problems.push({ what: `native runtime 自检没通过：${detail || `exit=${result.status}`}`, fix: 'npm run build:ptc' })
+  return { problems, warnings }
+}
+
+/**
+ * Copy the committed overlay template into place when the filled-in overlay is absent.
+ *
+ * Copy-only, in one direction: `bench/llm.patch.yml` names the bench server, model and the
+ * environment variable holding the key, and it is the operator's file (gitignored for that
+ * reason). An existing overlay is reported and left byte-for-byte as it was — never
+ * re-synced from the template, never overwritten, `--dry-run` included.
+ * @param {object} paths - what to look at.
+ * @param {string} paths.overlay - the overlay `run.mjs` injects into every dsh call.
+ * @param {string} paths.example - the committed template to copy from.
+ * @param {boolean} [paths.dryRun] - plan only: name the copy, write nothing.
+ * @param {(line: string) => void} [paths.log] - where to narrate the outcome.
+ * @returns {'created'|'exists'|'missing-example'} what happened. */
+export function ensureLlmOverlay({ overlay, example, dryRun = false, log = () => {} }) {
+  if (fs.existsSync(overlay)) { log(`  ${overlay} 已存在，没动它`); return 'exists' }
+  if (!fs.existsSync(example)) {
+    log(`  没有 ${example}：没有模板可复制（跑分也可以用 run.mjs --no-llm-patch，但两侧就没有统一路由了）`)
+    return 'missing-example'
+  }
+  if (dryRun) { log(`  计划复制 ${example} → ${overlay}`); return 'created' }
+  fs.copyFileSync(example, overlay)
+  log(`  没有 ${overlay}，从 ${path.basename(example)} 复制了一份；填好服务器和模型再开跑（README §2）`)
+  return 'created'
+}
+
 /**
  * Create a profile from the shipped template when it does not exist yet.
  * @param {string} name - the profile name.
@@ -568,19 +787,48 @@ function verifyPermissionMode(options, context) {
 }
 
 /**
+ * The version a plugin spec would land in the profile, when the spec names exactly one.
+ * `local` means "whatever this checkout's package.json says"; a dist tag (`@latest`) or a
+ * tarball URL pins nothing this script can compare against, so it answers null.
+ * @param {string} spec - an npm spec, or "local".
+ * @returns {string|null} the version, or null when the spec does not name one.
+ */
+export function specVersion(spec) {
+  const named = spec === 'local' ? repoVersion() : /^dsh-ops@(.+)$/.exec(spec)?.[1]
+  return named && /^\d/.test(named) ? named : null
+}
+
+/**
  * Install (or deliberately leave) the plugin under test in the candidate profile.
+ *
+ * The default spec is this checkout, so the candidate carries the working tree; a profile
+ * whose copy is a different version is a failure with the fix named, not a silent skip —
+ * otherwise a sweep happily measures the last release instead of the code under edit.
  * @param {Options} options - the options.
  * @param {object} context - the run context.
- * @returns {'installed'|'present'|'skipped'|'failed'} the outcome. */
+ * @returns {'installed'|'present'|'stale'|'skipped'|'failed'} the outcome. */
 function prepareCandidate(options, context) {
   const installed = installedPlugin(context.home, options.candProfile)
   if (options.plugin === 'none') {
     context.log(installed ? `  已装 dsh-ops@${installed}，--no-plugin 没动它` : '  --no-plugin：候选 profile 里也没有 dsh-ops，候选侧还没法测')
     return installed ? 'present' : 'skipped'
   }
-  const spec = options.plugin === 'local' ? REPO_ROOT : options.plugin
+  const local = options.plugin === 'local'
+  const spec = local ? REPO_ROOT : options.plugin
+  const wanted = specVersion(options.plugin)
+  const what = local ? `本地 checkout（${REPO_ROOT}）` : spec
   if (installed && !options.reinstall) {
-    context.log(`  已装 dsh-ops@${installed}（本仓库 ${repoVersion()}）。checkout 改过就加 --reinstall：pnpm file: 是快照拷贝，不重装测的还是旧代码（README §2）`)
+    if (wanted && installed !== wanted) {
+      if (context.dryRun) {
+        context.log(`  候选侧已装 dsh-ops@${installed}，要的是 ${wanted}：真跑时会先 remove 再 add ${what}`)
+        return 'installed'
+      }
+      context.log(`  候选侧已装 dsh-ops@${installed}，要的是 ${wanted}（${what}）——不重装这一轮测的就是那个旧版本；加 --reinstall`)
+      return 'stale'
+    }
+    context.log(local
+      ? `  已装 dsh-ops@${installed}（${what}）。pnpm 把本地目录链进 profile，代码改动下一轮就生效；改了依赖或版本再用 --reinstall 重装一遍`
+      : `  已装 dsh-ops@${installed}，和 ${spec} 对得上，没动它`)
     return 'present'
   }
   const steps = installed && options.reinstall ? [['remove', 'dsh-ops'], ['add', spec]] : [['add', spec]]
@@ -596,7 +844,7 @@ function prepareCandidate(options, context) {
       return 'failed'
     }
   }
-  context.log(`  候选侧装的是 ${options.plugin === 'local' ? `本地 checkout ${REPO_ROOT}` : spec}，运行时会把 pwshPath 注入成插件自带 pwsh`)
+  context.log(`  候选侧装的是 ${what}${wanted ? `，dsh-ops@${wanted}` : ''}，运行时会把 pwshPath 注入成插件自带 pwsh`)
   return 'installed'
 }
 
@@ -685,25 +933,41 @@ export async function main(argv) {
   if (fs.existsSync(homePatch) && fs.readFileSync(homePatch, 'utf8').trim() !== '') {
     warnings.push(`${homePatch} 存在且非空：home 层会组合进每一个 profile 并压过 profile 层，基线可能已经不 stock（README §6）。用 --dsh-home 隔离，或把它清空。`)
   }
-  if (!fs.existsSync(path.join(BENCH_DIR, 'llm.patch.yml'))) {
-    warnings.push('bench/llm.patch.yml 还不存在：先 copy bench\\llm.patch.example.yml bench\\llm.patch.yml 并填服务器与模型（README §2 步骤 3）。')
+
+  log('\n— 1) LLM overlay —')
+  const overlay = ensureLlmOverlay({ overlay: LLM_OVERLAY, example: LLM_OVERLAY_EXAMPLE, dryRun: options.dryRun, log })
+  if (overlay === 'missing-example') {
+    warnings.push(`没有 ${LLM_OVERLAY_EXAMPLE}：bench/llm.patch.yml 建不出来，跑分只能用 run.mjs --no-llm-patch（两侧没有统一路由）。`)
+  } else if (fs.existsSync(LLM_OVERLAY)) {
+    // Same definition of "unfilled" as run.mjs's preflight, so setup and the sweep agree.
+    const placeholders = placeholderLines(fs.readFileSync(LLM_OVERLAY, 'utf8'))
+    if (placeholders.length > 0) {
+      warnings.push(`bench/llm.patch.yml 里还有模板占位符：${placeholders.join(' | ')} —— run.mjs preflight 会拒跑，先把服务器和模型填上（README §2 步骤 3）。`)
+    }
   }
 
-  log('\n— 1) profile —')
+  log('\n— 2) 本地 build —')
+  const build = checkLocalBuild(options, context)
+  warnings.push(...build.warnings)
+  if (options.dryRun) {
+    for (const problem of build.problems) warnings.push(`[dry-run] 本地 build 会卡住：${problem.what} —— ${problem.fix}`)
+  }
+
+  log('\n— 3) profile —')
   const base = ensureProfile(options.baseProfile, context)
   const cand = ensureProfile(options.candProfile, context)
   if (base === 'failed' || cand === 'failed') return 1
 
-  log('\n— 2) 基线 shell 引擎 —')
+  log('\n— 4) 基线 shell 引擎 —')
   const pin = pinBaseline(options, context)
 
-  log('\n— 3) 权限模式 —')
+  log('\n— 5) 权限模式 —')
   const permissions = pinPermissionMode(options, context)
 
-  log('\n— 4) 候选插件 —')
+  log('\n— 6) 候选插件 —')
   const plugin = prepareCandidate(options, context)
 
-  log('\n— 5) 回读组合树 —')
+  log('\n— 7) 回读组合树 —')
   let installedNow = installedPlugin(home, options.candProfile)
   let verified = true
   let permissionsVerified = true
@@ -733,6 +997,7 @@ export async function main(argv) {
   // A deliberate --no-plugin leaves the candidate unprepared without being a failure; a
   // plugin that was asked for and is still missing is one, because bench-ops cannot run.
   const unresolved = [
+    ...(options.dryRun ? [] : build.problems.map(problem => `${problem.what} —— ${problem.fix}`)),
     pin === 'conflict' ? 'pwshPath 已有别的值（要覆盖就 --force）' : '',
     pin === 'manual' ? '基线 patch 文件的形状需要手工处理（上面印了要贴的三行）' : '',
     pin === 'absent' ? '基线 profile 的 cordis.patch.yml 找不到' : '',
@@ -740,6 +1005,7 @@ export async function main(argv) {
     permissions === 'manual' ? '权限模式的 patch 形状需要手工处理（上面印了要贴的条目）' : '',
     permissions === 'absent' ? '两侧 profile 的 cordis.patch.yml 有一个找不到' : '',
     plugin === 'failed' ? '插件安装失败' : '',
+    plugin === 'stale' ? '候选 profile 里的 dsh-ops 版本不对（加 --reinstall 重装成本次要测的那份）' : '',
     options.plugin !== 'none' && !options.dryRun && !installedNow ? '候选 profile 里没有 dsh-ops，bench-ops 无从测起' : '',
     verified ? '' : '基线 shell 引擎没验证上',
     permissionsVerified ? '' : '权限模式没验证上',

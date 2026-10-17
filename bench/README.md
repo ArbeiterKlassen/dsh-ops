@@ -15,6 +15,9 @@ node bench/run.mjs --label bench-ops  --profile bench-ops
 node bench/compare.mjs bench-base bench-ops --fail-on both
 ```
 
+这三步也可以一条命令跑完：`npm run bench:baseline`（Windows 入口，全量语料 + 报告，见 §4.0）；
+下面这些单侧命令留着调参、重跑单侧和排查用。
+
 label 与 profile 同名：run 目录因此是 `bench/runs/<当天>/<UTC 时间戳>-bench-base` 和
 `bench/runs/<当天>/<UTC 时间戳>-bench-ops`，翻 `bench/runs/` 不用先猜哪个 label 是哪一侧。
 同一侧换插件版本再跑时（"旧版 vs 新版 dsh-ops"）另起一个 label 就行，例如 `--label ops-0.3.1`。
@@ -22,7 +25,8 @@ label 与 profile 同名：run 目录因此是 `bench/runs/<当天>/<UTC 时间�
 不传 `--folder` 时，run 自动归到**本地当天日期**的组目录 `bench/runs/2026-10-16/` 下（目录按需创建）：
 一天的跑分就是一只架子，`bench/runs/` 不再被历次 sweep 摊平堆满。run 目录名里的时间戳仍是 UTC，
 变的只是外面那层架子；`compare.mjs` 不传 `--folder` 时会在 `bench/runs/` 根目录**及其下一级各组**里
-按 label 取最新，所以同日两侧直接比就行，不用多写参数。
+按 label 取最新，所以同日两侧直接比就行，不用多写参数。（整轮入口 `npm run bench:baseline` 不给
+`--folder` 时另有一套自动编号，见 §4.0。）
 
 要按实验或版本命名一轮（不同实验、不同版本、重测），给同一轮的两侧都加同一个 `--folder <名称>`：
 run 目录落在 `bench/runs/<folder>/<UTC 时间戳>-<label>/`。folder 同样自动创建、可反复复用，
@@ -41,9 +45,10 @@ node bench/compare.mjs bench-base bench-ops --folder ops-0.3.1 --fail-on both
 则是花 200ms（不花 token）先问一句"这台机器和这个 profile 到底行不行"。
 
 入口分两种：一次性准备有 npm 快捷方式 `npm run bench:setup`（等价于 `node bench/setup.mjs`，
-参数照 `npm run bench:setup -- --dry-run` 这样透传）；`run.mjs` / `compare.mjs` 仍**不挂** npm
-script（`bench/` 是仓库自己的测量工具，跑分这些一次性命令不值得占发布包的主干入口），直接
-`node bench/run.mjs …` / `node bench/compare.mjs …`。想要更短的命令，在自己的 shell 里起别名即可。
+参数照 `npm run bench:setup -- --dry-run` 这样透传）；整轮 A/B + 报告有 `npm run bench:baseline`
+（Windows 入口，§4.0）。单侧的 `run.mjs` / `compare.mjs` 仍**不挂** npm script（`bench/` 是仓库
+自己的测量工具，跑分这些一次性命令不值得占发布包的主干入口），直接 `node bench/run.mjs …` /
+`node bench/compare.mjs …`。想要更短的命令，在自己的 shell 里起别名即可。
 跑分脚本的门禁照旧走主干测试：`node test/run.mjs bench`（或 `npm test`，它会按名字选中
 `test/bench.test.mjs`）。
 
@@ -92,7 +97,7 @@ agent 会话里管道 spawn 会被拒（`EPERM`），preflight 会直接报出�
 
 ## 2. 一次性准备
 
-一条命令做完 profile 创建 + 基线钉版本 + 候选装插件 + 回读验证；幂等，可以反复跑：
+一条命令做完 LLM overlay 就位 + 本地 build 体检 + profile 创建 + 基线钉版本 + 候选装**本地 checkout** + 回读验证；幂等，可以反复跑：
 
 ```console
 node bench/setup.mjs --dry-run   :: 只看计划：每个写入和每条命令都印出来，什么都不改
@@ -103,14 +108,22 @@ node bench/setup.mjs             :: 就是 npm run bench:setup；带参数写 np
 
 | 步骤 | 行为 | 相关开关 |
 |---|---|---|
+| LLM overlay | `bench/llm.patch.yml` **不存在时**才从 `bench/llm.patch.example.yml` 复制一份；已存在就报一句"没动它"，绝不覆盖（里面有你的服务器和模型） | — |
+| 本地 build | 候选装的是这棵 checkout，所以先查 `runtime/<platform>-<arch>/`：worker + 回执、Bash IPC 代理的 DLL/源码哈希，再跑 canonical 的 `native-runtime check`；缺了直接失败（理由见 §2.3）；shell 载荷缺失只 warning | `--no-build-check` |
 | 建 profile | 不存在才执行 `dsh <name> --from-default-profile headless`（这条命令本身不幂等，脚本替你判断） | `--base-profile` / `--cand-profile` / `--template` |
 | 钉基线 shell | 把 `pwshPath` 写进 bench-base 自己的 patch 层，再用 `--dump-config` 回读确认（理由见 §2.1） | `--pin-shell` / `--no-pin` / `--force` |
 | 钉权限模式 | 把 `sandbox-policy.mode` + `approval.policy` 写进**两侧各自**的 patch 层，再用 `--dump-config` 回读确认（理由见 §2.2） | `--permission-mode` / `--no-permission-mode` / `--force` |
-| 装候选插件 | `dsh plugin --profile bench-ops add dsh-ops@<本仓库版本>`；已装就跳过 | `--plugin <spec\|local\|none>` / `--reinstall` |
-| 环境体检 | `PSModulePath` 污染（§1）、home 层 patch（§6）、`llm.patch.yml` 缺失，都在最后打出来 | — |
+| 装候选插件 | 默认装**本地 checkout**（`dsh plugin --profile bench-ops add <repo>`，pnpm 把仓库目录链进 profile）；要测已发布版本才写 spec；已装且版本对得上就跳过，版本对不上直接报错并让你加 `--reinstall` | `--plugin <spec\|local\|none>` / `--reinstall` |
+| 环境体检 | `PSModulePath` 污染（§1）、home 层 patch（§6）、overlay 里还剩模板占位符，都在最后打出来 | — |
 
-`--plugin local` 装的是当前 checkout 的 pnpm `file:` **快照**，改完代码要 `--reinstall` 重装，
-否则测的还是旧快照（"旧版 vs 新版 dsh-ops"就是靠这个开关加 `--reinstall`）。
+默认装的是**当前 checkout**（`--plugin local`，也是默认值）：跑分是为了量"这棵树相对 stock 基线"，
+装已发布版本就会安静地量到上一版。所以候选里已经装着一个**别的版本**时，脚本不会跳过，而是报错让你
+加 `--reinstall`——"已安装"不等于"装的是你要测的那份"。`--plugin dsh-ops@<version>` 或 tarball 是
+可复现性场景（"旧版 vs 新版"）的出口；`--plugin none` 完全不动。
+
+本地目录走 pnpm 的 link 语义：profile 里的 `node_modules/dsh-ops` 是一个**指回 checkout 的 symlink**
+（实测 pnpm 12），所以改代码下一轮跑的就是新代码。改了 `package.json` 的依赖或版本号之后用 `--reinstall`
+重装一遍最稳——装的那份版本号和工作区对不上时，`bench:setup` 不会装作没事，会直接报错让你重装。
 用隔离 home 的人把 `--dsh-home` 一起带上：`node bench/setup.mjs --dsh-home D:\bench\dsh-home`。
 
 脚本跑不通时的手工等价步骤：
@@ -120,9 +133,11 @@ node bench/setup.mjs             :: 就是 npm run bench:setup；带参数写 np
 dsh bench-base --from-default-profile headless --dump-config >NUL
 dsh bench-ops --from-default-profile headless --dump-config >NUL
 
-:: 2) 候选 profile 安装被测插件（可复现性优先 published 版本或 npm pack tarball；
-::    本地目录是 pnpm file: 快照拷贝语义，checkout 改动后要重装）
-dsh plugin --profile bench-ops add dsh-ops@0.3.0
+:: 2) 候选 profile 安装被测插件（脚本默认装本地 checkout；这里用目录形式等价）
+::    本地目录被 pnpm 链进 profile（symlink），代码改动下一轮生效；改了依赖或版本号
+::    要 --reinstall。可复现性优先 published 版本或 npm pack tarball
+::    （node bench/setup.mjs --plugin dsh-ops@x.y.z）
+dsh plugin --profile bench-ops add <repo>
 ```
 
 基线那条 `pwshPath` 的手工写法在 §2.1 末尾。
@@ -132,7 +147,8 @@ LLM endpoint **不手工改 profile 的 `cordis.patch.yml`**，改用 `--patch` 
 两侧 provider/model 一致由构造保证（PLAN §2.7）。
 
 ```console
-:: 3) 复制模板并填写服务器与模型
+:: 3) 填写服务器与模型（`node bench/setup.mjs` 已在文件缺失时替你从模板复制；
+::    已存在的 llm.patch.yml 它不会碰，手工等价步骤是下面这句 copy）
 copy bench\llm.patch.example.yml bench\llm.patch.yml
 
 :: 4) API key 只放环境变量（patch 文件里只有变量名；密钥不进任何仓库文件）
@@ -201,6 +217,28 @@ dsh bench-base --patch bench\llm.patch.yml --dump-config | findstr /n pwshPath
 - **只写 profile 层**：和 `pwshPath` 一样不进 `bench/llm.patch.yml`——那是两侧共用的层，
   放进去等于两侧都被改，而存档却只证明了一侧。
 
+### 2.3 本地 build 为什么在准备阶段就查
+
+候选 profile 装的是**这棵 checkout**（pnpm 把仓库目录链进去），而候选侧真正执行的原生件是
+`runtime/<platform>-<arch>/`——gitignored 的构建产物：Rust worker（`dsh-ops-worker.exe`）、Windows 的
+Bash IPC 代理（`opsipc.dll` / `opsnt.dll`）。它们是**只有候选侧才用**的东西：缺了或者旧了，基线照常
+出数，候选侧每一个要 shell / run_code 的调用先死，整轮看起来就像"插件回归"。
+
+所以 `node bench/setup.mjs` 的第 2 步会：
+
+- 查 `runtime/win32-x64/` 里 worker + `provenance.json` 在不在，缺了直接失败（exit 1），
+  并给出 `npm run build:ptc`；
+- 查 Bash IPC 代理：**回执里的 DLL 哈希**和 `native/bash-ipc` 三个源码文件的哈希都当证据，
+  被换过、或者源码改了没重建，都会点名（`npm run build:bash-ipc`）；
+- 再跑一次 canonical 的门禁 `node bin/native-runtime.mjs check --platform <target>`
+  （版本号、哈希、PE/ELF/Mach-O 架构），准备脚本不自己重写一遍二进制解析；
+- worker 比 `native/src` 新文件还旧时给一条 warning（构建可能没跟上源码）；
+- 插件自带的 `bash` / `pwsh` 载荷（`@dsh-ops/*-win32-x64`）不是本地构建产物而是依赖，
+  缺了只算 warning——但同样会改变口径：候选侧会退到机器上的 shell 而基线仍用自己的。
+
+`--plugin` 指向 npm spec 时这一步自动跳过（跑的不是本地 build）；`--no-build-check` 是显式跳过，
+`--dry-run` 下把它当 warning 打出来而不改 exit code。
+
 ## 3. 冒烟：先确认 usage 存在
 
 **先做免费的那一步**：`--preflight-only` 只跑体检——不建 run 目录、不 spawn 任务、不花 token，
@@ -240,11 +278,44 @@ dsh --profile bench-ops --patch <repo>\bench\llm.patch.yml --json "Use the pwsh 
 `7.6.x` + `…\profiles\bench-ops\node_modules\@dsh-ops\pwsh-win32-x64\bin\pwsh.exe`。候选侧如果报
 `DSH workspace preparation failed (not a user permission denial)`，那是 §1 的 `PSModulePath` 污染，
 不是权限问题，也不是插件回归：本仓库版本的插件会在准备子进程里把抢在 in-box 根前面的那个 Core 根
-摘掉，所以**先确认候选 profile 里装的是不是旧版**（`node bench/setup.mjs --plugin local --reinstall`），
+摘掉，所以**先确认候选 profile 里装的确实是本地 checkout**（`node bench/setup.mjs`；装的是别处版本就
+`--reinstall`），
 再看 `runner.log` 里那行 stderr——它现在会被按本地代码页解码，是一句可读的中文，不再是一串乱码。
 在没有这条修复的版本上跑出来的候选数据全部作废。
 
 ## 4. 日常跑分与对比
+
+### 4.0 一条命令跑完：`npm run bench:baseline`
+
+```console
+npm run bench:baseline                    :: 全量语料：base 跑一遍、ops 跑一遍、再出对比报告
+npm run bench:baseline -- --show          :: 只打印解析结果和三条命令，什么都不跑
+npm run bench:baseline -- --task csv-sum --repeat 1
+npm run bench:baseline -- --folder ops-0.3.1 --verbose
+```
+
+等价于依次执行（Windows 入口 `bench\platform\win-ab.bat`，它会先 `cd` 到仓库根目录）：
+
+```console
+node bench/run.mjs --label bench-base --profile bench-base --folder benchmark-test-NN
+node bench/run.mjs --label bench-ops  --profile bench-ops  --folder benchmark-test-NN
+node bench/compare.mjs bench-base bench-ops --folder benchmark-test-NN
+```
+
+- **三步一个退出码**：任一侧 run 失败 → 立刻停，exit 1 并说清是哪一侧；两侧都跑完则 exit code
+  就是 compare 门禁的结果（0 = 过，非 0 = 回归或通过率下降）。
+- **`--folder` 可以不给**：wrapper 扫一遍 `bench/runs/`，取第一个空号 `benchmark-test-01`、`-02`…，
+  然后**三条命令共用这一个组**（`bench/lib/next-folder.mjs` 分配，任何同名条目都算占用，
+  大小写不敏感，所以残留的空目录或同名文件都不会被复用）。控制台那行
+  `[ab] folder : bench\runs\benchmark-test-01 [auto]` 告诉你这轮的组名；想命名/复现一轮就显式传
+  `--folder`。注意这条只属于 `bench:baseline`：直接跑 `node bench/run.mjs` 时缺省仍是当天日期目录（见开头）。
+- **缺省是全量**：不传 `--task` 就跑整个 `bench/tasks` 语料，不传 `--repeat` 就用每个任务自己的预算。
+- **参数透传**：`--task`（可重复）/ `--repeat` / `--folder` / `--base` / `--cand` 由 wrapper 自己
+  处理，其余（`--verbose`、`--timeout`、`--no-probe-endpoint` …）原样交给 `bench/run.mjs`。
+- **前提**：先跑过 `npm run bench:setup`（§2），且这是 Windows（`cmd.exe` 入口）。
+- 报告落在 `bench/runs/<folder>/`，控制台同时打一份 markdown 摘要。
+
+单侧命令仍然可用，调试时更细粒度：
 
 ```console
 node bench/run.mjs --list                        :: 打印任务语料

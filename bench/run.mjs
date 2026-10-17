@@ -678,20 +678,30 @@ function resolveOverlay(options) {
 }
 
 /**
- * Refuse to run against the template's placeholders — that is how a "baseline"
- * quietly becomes a run that fails on every task.
+ * The non-comment lines still carrying the template's `<...>` placeholders — that is how a
+ * "baseline" quietly becomes a run that fails on every task. Shared with `bench/setup.mjs`
+ * so its seeding step and this preflight agree on what "unfilled" means.
+ * @param {string} text - the overlay YAML.
+ * @returns {string[]} the offending lines, trimmed, in file order.
+ */
+export function placeholderLines(text) {
+  return String(text ?? '')
+    .split(/\r?\n/)
+    .filter((line) => !line.trim().startsWith('#'))
+    .filter((line) => /<[^>\n]*>/.test(line))
+    .map((line) => line.trim())
+}
+
+/**
+ * Refuse to run against the template's placeholders.
  * @param {string} text - the overlay YAML.
  * @param {string} file - where it came from.
  * @returns {void}
  */
 function assertNoPlaceholders(text, file) {
-  const offenders = text
-    .split(/\r?\n/)
-    .filter((line) => !line.trim().startsWith('#'))
-    .filter((line) => /<[^>\n]*>/.test(line))
-    .map((line) => line.trim())
+  const offenders = placeholderLines(text)
   if (offenders.length > 0) {
-    throw new Error(`${file} still contains placeholders: ${offenders.join(' | ')}. Copy bench/llm.patch.example.yml and fill it in (PLAN §8).`)
+    throw new Error(`${file} still contains placeholders: ${offenders.join(' | ')}. Fill in the server and model (bench/setup.mjs seeds the file from the example when it is missing; PLAN §8).`)
   }
 }
 

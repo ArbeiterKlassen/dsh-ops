@@ -20,6 +20,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { assert, report, test, withTempDir, TEST_HOME } from './lib/harness.mjs'
 
 import { GENERATORS, generate, mulberry32, brokenProject, configTree, deepCorpus, deepModule, gatePipeline, grepTree, largeCsv, logStats, noisySuite, renameTree, symbolTree } from '../bench/lib/fixtures.mjs'
@@ -29,9 +30,10 @@ import { aggregateTask, compareSummaries, geometricMeanPct, median, minValue, pe
 import { DEFAULT_TIMEOUT_MS, loadTasks, selectTasks, TASKS_DIR, validateTask } from '../bench/lib/tasks.mjs'
 import { createObserver, decodeConsoleBytes, describeEvent, formatClock, OBSERVER_LEVELS } from '../bench/lib/observe.mjs'
 import { describeModulePath } from '../bench/lib/env.mjs'
-import { buildSummary, createLogger, defaultRunFolder, dryRun, extractEndpoints, extractModel, parseArgs, pipedSpawnBlocker, prepareOut, probeEndpoints, repeatsById, main as runMain } from '../bench/run.mjs'
+import { buildSummary, createLogger, defaultRunFolder, dryRun, extractEndpoints, extractModel, parseArgs, pipedSpawnBlocker, placeholderLines, prepareOut, probeEndpoints, repeatsById, main as runMain } from '../bench/run.mjs'
 import { main as compareMain, parseArgs as parseCompareArgs, renderMarkdown, reportDir, resolveSide } from '../bench/compare.mjs'
-import { approvalPolicyFor, entryConfigValue, parseArgs as parseSetupArgs, permissionEntries, planEntryPatch, planPatchEntries, planProfilePatch, poisonedModulePath } from '../bench/setup.mjs'
+import { approvalPolicyFor, ensureLlmOverlay, entryConfigValue, inspectLocalBuild, parseArgs as parseSetupArgs, permissionEntries, planEntryPatch, planPatchEntries, planProfilePatch, poisonedModulePath, specVersion } from '../bench/setup.mjs'
+import { nextFolderName } from '../bench/lib/next-folder.mjs'
 
 const LABEL = 'bench'
 
@@ -1551,7 +1553,15 @@ await test('the PSModulePath probe flags only a directory that really ships the 
 
 await test('setup argument handling fails closed on typos and names the plugin it would install', () => {
   const version = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
-  assert.equal(parseSetupArgs([]).plugin, `dsh-ops@${version}`, 'the repo version is the default spec')
+  // The candidate must measure the working tree: the default install is this checkout, not
+  // the published package, so a sweep needs no publish and no version bump to be honest.
+  assert.equal(parseSetupArgs([]).plugin, 'local', 'this checkout is the default spec')
+  assert.equal(specVersion('local'), version, 'local resolves to the repo version, which is what a stale copy is compared against')
+  assert.equal(specVersion('dsh-ops@0.2.1'), '0.2.1', 'an exact npm spec names the version to compare')
+  assert.equal(specVersion('dsh-ops@0.3.1-rc.2'), '0.3.1-rc.2')
+  assert.equal(specVersion('dsh-ops@latest'), null, 'a dist tag pins nothing to compare against')
+  assert.equal(specVersion('./some/checkout.tgz'), null, 'a tarball path pins nothing either')
+  assert.equal(parseSetupArgs(['--plugin', 'dsh-ops@0.2.1']).plugin, 'dsh-ops@0.2.1', 'a published spec stays available')
   assert.equal(parseSetupArgs(['--no-plugin']).plugin, 'none')
   assert.equal(parseSetupArgs(['--no-pin']).pinShell, null)
   assert.equal(parseSetupArgs([]).permissionMode, 'danger-full-access', 'both profiles default to full access')
@@ -1562,6 +1572,189 @@ await test('setup argument handling fails closed on typos and names the plugin i
   assert.throws(() => parseSetupArgs(['--pin']), /unknown option/, 'a typo must not silently skip the pin')
   assert.throws(() => parseSetupArgs(['--base-profile', 'headless']), /shipped template/)
   assert.throws(() => parseSetupArgs(['--base-profile', 'x', '--cand-profile', 'x']), /must differ/)
+})
+
+await test('setup seeds the LLM overlay only when it is missing, and never overwrites one', async () => {
+  await withTempDir('bench-overlay-', async (dir) => {
+    const example = path.join(dir, 'llm.patch.example.yml')
+    const overlay = path.join(dir, 'llm.patch.yml')
+    const template = '# 模板\nproviders:\n  bench-server:\n    baseURL: https://<你的服务器>/v1\n    models:\n      - id: <模型id>\n'
+    fs.writeFileSync(example, template, 'utf8')
+    const lines = []
+    const log = line => lines.push(line)
+
+    // No template, no copy: a half-prepared overlay is worse than a named absence.
+    assert.equal(ensureLlmOverlay({ overlay, example: path.join(dir, 'gone.yml'), log }), 'missing-example')
+    assert.equal(fs.existsSync(overlay), false, 'nothing is invented without a template')
+
+    assert.equal(ensureLlmOverlay({ overlay, example, log }), 'created')
+    assert.equal(fs.readFileSync(overlay, 'utf8'), template, 'the copy is the template, verbatim')
+
+    // The operator fills the copy in; the next setup run must not put the placeholders back.
+    const filled = 'providers:\n  bench-server:\n    baseURL: https://bench.example/v1\n'
+    fs.writeFileSync(overlay, filled, 'utf8')
+    assert.equal(ensureLlmOverlay({ overlay, example, log }), 'exists')
+    assert.equal(fs.readFileSync(overlay, 'utf8'), filled, 'an existing overlay is the operator\'s file')
+
+    // A plan names the copy and writes nothing.
+    fs.unlinkSync(overlay)
+    assert.equal(ensureLlmOverlay({ overlay, example, dryRun: true, log }), 'created')
+    assert.equal(fs.existsSync(overlay), false, '--dry-run never copies')
+
+    assert.deepEqual(placeholderLines(template), ['baseURL: https://<你的服务器>/v1', '- id: <模型id>'], 'template placeholders are named outside comments')
+    assert.deepEqual(placeholderLines('# 注释里的 <占位符> 不算\nbaseURL: https://bench.example/v1\n'), [], 'a comment mentioning one is not an unfilled value')
+    assert.match(lines.join('\n'), /没动它/, 'the existing file is reported, not silently accepted')
+  })
+})
+
+await test('setup checks the local build the candidate will execute, and names each rebuild', async () => {
+  await withTempDir('bench-build-', async (dir) => {
+    const write = (relative, content = 'x') => {
+      const file = path.join(dir, relative)
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, content)
+      return file
+    }
+    const sha = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+
+    // A target the plugin does not carry is named, not silently "ok".
+    const unsupported = inspectLocalBuild({ root: dir, platform: 'sunos', arch: 'sparc' })
+    assert.equal(unsupported.problems.length, 1)
+    assert.match(unsupported.problems[0].what, /sunos-sparc/)
+
+    // Empty checkout: the worker is the first thing missing, with its build command.
+    let report = inspectLocalBuild({ root: dir, platform: 'win32', arch: 'x64' })
+    assert.match(report.problems.map(problem => `${problem.what} ${problem.fix}`).join('\n'), /native worker[\s\S]*npm run build:ptc/)
+
+    // Sources first, then the artifacts built from them — otherwise the worker would look stale.
+    for (const name of ['security.h', 'opsipc.cpp', 'opsnt.cpp']) write(`native/bash-ipc/${name}`, `// ${name}\n`)
+    write('native/src/main.rs', 'fn main() {}\n')
+    write('native/Cargo.toml', '[package]\n')
+    write('native/Cargo.lock', '# lock\n')
+    write('runtime/win32-x64/dsh-ops-worker.exe')
+    write('runtime/win32-x64/provenance.json', JSON.stringify({ version: '1', target: 'win32-x64', executable: 'dsh-ops-worker.exe' }))
+    const ipc = 'runtime/win32-x64/bash-ipc'
+    write(`${ipc}/opsipc.dll`, 'proxy-a')
+    write(`${ipc}/opsnt.dll`, 'proxy-b')
+    const ipcReceipt = () => JSON.stringify({
+      version: 1, platform: 'win32-x64',
+      files: { 'opsipc.dll': sha(path.join(dir, ipc, 'opsipc.dll')), 'opsnt.dll': sha(path.join(dir, ipc, 'opsnt.dll')) },
+      sources: Object.fromEntries(['security.h', 'opsipc.cpp', 'opsnt.cpp'].map(name => [name, sha(path.join(dir, 'native', 'bash-ipc', name))])),
+    })
+    const pristine = ipcReceipt()
+    write(`${ipc}/provenance.json`, pristine)
+
+    // The shell payloads are dependencies rather than build output: still reported, but as warnings.
+    report = inspectLocalBuild({ root: dir, platform: 'win32', arch: 'x64' })
+    assert.deepEqual(report.problems, [], 'a staged worker and current proxies are enough')
+    assert.equal(report.warnings.length, 2, 'both payloads are named when neither is installed')
+    write('package.json', JSON.stringify({ name: 'fixture', optionalDependencies: { '@dsh-ops/bash-win32-x64': '0.2.1', '@dsh-ops/pwsh-win32-x64': '0.2.1' } }))
+    for (const [name, exe] of [['bash', 'bash.exe'], ['pwsh', 'pwsh.exe']]) {
+      write(`node_modules/@dsh-ops/${name}-win32-x64/package.json`, JSON.stringify({ name: `@dsh-ops/${name}-win32-x64`, version: '0.2.1' }))
+      write(`node_modules/@dsh-ops/${name}-win32-x64/bin/${exe}`)
+    }
+    report = inspectLocalBuild({ root: dir, platform: 'win32', arch: 'x64' })
+    assert.deepEqual(report, { problems: [], warnings: [] }, 'a whole local build is quiet')
+
+    // A proxy swapped behind the receipt's back is caught by the hash, not by hope.
+    write(`${ipc}/opsnt.dll`, 'proxy-b-tampered')
+    report = inspectLocalBuild({ root: dir, platform: 'win32', arch: 'x64' })
+    assert.match(report.problems.map(problem => problem.what).join('\n'), /opsnt\.dll 和回执里的哈希对不上/)
+    write(`${ipc}/opsnt.dll`, 'proxy-b')
+    write(`${ipc}/provenance.json`, pristine)
+
+    // Rebuilding the proxy sources without rebuilding the proxy is the other silent case.
+    write('native/bash-ipc/opsipc.cpp', '// changed\n')
+    report = inspectLocalBuild({ root: dir, platform: 'win32', arch: 'x64' })
+    assert.match(report.problems.map(problem => problem.what).join('\n'), /opsipc\.cpp 变了，代理还是旧的/)
+    write('native/bash-ipc/opsipc.cpp', '// opsipc.cpp\n')
+    write(`${ipc}/provenance.json`, pristine)
+
+    // A worker older than the Rust it was built from is a warning: the build may be behind.
+    const future = new Date(Date.now() + 60_000)
+    fs.utimesSync(path.join(dir, 'native', 'src', 'main.rs'), future, future)
+    report = inspectLocalBuild({ root: dir, platform: 'win32', arch: 'x64' })
+    assert.deepEqual(report.problems, [])
+    assert.match(report.warnings.join('\n'), /本地 worker 比 native[\\/]src[\\/]main\.rs 旧/)
+
+    // Off Windows the payload warning does not apply, and the x64 proxies are not expected.
+    fs.utimesSync(path.join(dir, 'native', 'src', 'main.rs'), new Date(0), new Date(0))
+    write('runtime/linux-x64/dsh-ops-worker')
+    write('runtime/linux-x64/provenance.json', JSON.stringify({ version: '1', target: 'linux-x64', executable: 'dsh-ops-worker' }))
+    assert.deepEqual(inspectLocalBuild({ root: dir, platform: 'linux', arch: 'x64' }), { problems: [], warnings: [] })
+  })
+})
+
+await test('the auto folder walks benchmark-test-NN and skips whatever already answers', async () => {
+  await withTempDir('bench-folders-', async (dir) => {
+    assert.equal(nextFolderName(dir), 'benchmark-test-01', 'a missing runs root starts at 01')
+    for (const name of ['benchmark-test-01', 'benchmark-test-02']) fs.mkdirSync(path.join(dir, name))
+    assert.equal(nextFolderName(dir), 'benchmark-test-03', 'the first free number wins')
+    // Anything with the name reserves it — an empty directory from a failed sweep, or a file.
+    fs.mkdirSync(path.join(dir, 'benchmark-test-04'))
+    assert.equal(nextFolderName(dir), 'benchmark-test-03', 'a gap is filled before a higher number')
+    fs.writeFileSync(path.join(dir, 'benchmark-test-03'), 'reserved by a file')
+    assert.equal(nextFolderName(dir), 'benchmark-test-05', 'a collision is any entry, not just a directory')
+    fs.mkdirSync(path.join(dir, 'ops-0.3.1'))
+    assert.equal(nextFolderName(dir), 'benchmark-test-05', 'other group names do not consume a number')
+    // Windows compares names case-insensitively: the scan must too, or it hands out a twin.
+    fs.mkdirSync(path.join(dir, 'BENCHMARK-TEST-05'))
+    assert.equal(nextFolderName(dir), 'benchmark-test-06', 'a differently-cased collision blocks the name')
+    // Past 99 the width simply grows rather than wrapping or colliding.
+    for (let number = 6; number <= 99; number += 1) fs.mkdirSync(path.join(dir, `benchmark-test-${String(number).padStart(2, '0')}`))
+    assert.equal(nextFolderName(dir), 'benchmark-test-100')
+  })
+})
+
+await test('the bench:baseline wrapper runs base, candidate and compare as one command', async () => {
+  if (process.platform !== 'win32') return // cmd.exe batch wrapper
+  await withTempDir('bench-ab-', async (dir) => {
+    // A `node` shim on PATH records each invocation, so the wrapper's three steps run
+    // without spawning dsh, spending a token, or needing a prepared profile.
+    const bin = path.join(dir, 'bin')
+    fs.mkdirSync(bin)
+    const log = path.join(dir, 'calls.log')
+    fs.writeFileSync(path.join(bin, 'node.cmd'), [
+      '@echo off',
+      'echo %*>>"%AB_LOG%"',
+      'echo %*| findstr /c:"bench/compare.mjs" >nul',
+      'if not errorlevel 1 exit /b %AB_COMPARE_RC%',
+      'exit /b 0',
+      '',
+    ].join('\r\n'))
+    const bat = fileURLToPath(new URL('../bench/platform/win-ab.bat', import.meta.url))
+    const invoke = (args, compareRc = '0') => spawnSync(bat, args, {
+      cwd: dir, shell: true, encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, AB_LOG: log, AB_COMPARE_RC: compareRc },
+    })
+
+    // Launched from an unrelated cwd: the wrapper has to find the checkout on its own.
+    const ok = invoke(['--task', 'csv-sum', '--repeat', '1', '--folder', 'ab-test'])
+    assert.equal(ok.status, 0, ok.stderr)
+    assert.match(ok.stdout, /1\/3 baseline/, 'the baseline side is step one')
+    assert.match(ok.stdout, /2\/3 candidate/, 'the candidate side is step two')
+    assert.match(ok.stdout, /3\/3 compare/, 'the report is step three')
+    const calls = fs.readFileSync(log, 'utf8').trim().split(/\r?\n/)
+    assert.equal(calls.length, 3, calls.join('\n'))
+    assert.match(calls[0], /bench\/run\.mjs --label bench-base --profile bench-base --task csv-sum --repeat 1 --folder ab-test/)
+    assert.match(calls[1], /bench\/run\.mjs --label bench-ops --profile bench-ops --task csv-sum --repeat 1 --folder ab-test/)
+    assert.match(calls[2], /bench\/compare\.mjs bench-base bench-ops --folder ab-test/)
+
+    // The compare gate's exit code is the command's exit code — not swallowed by the batch.
+    const gate = invoke(['--folder', 'ab-gate'], '3')
+    assert.equal(gate.status, 3, 'a failing gate fails the one command')
+    assert.match(gate.stdout, /compare exit code 3/)
+
+    // Without --folder the wrapper allocates one fresh group and gives it to all three steps.
+    const show = spawnSync(bat, ['--show'], { cwd: dir, shell: true, encoding: 'utf8', windowsHide: true })
+    assert.equal(show.status, 0, show.stderr)
+    const allocated = show.stdout.match(/folder : bench\\runs\\(benchmark-test-\d+)/)?.[1]
+    assert.ok(allocated, show.stdout)
+    assert.match(show.stdout, /\[auto\]/, 'the allocated group is marked as an automatic one')
+    const shown = show.stdout.split(/\r?\n/).filter(line => line.startsWith('node '))
+    assert.equal(shown.length, 3)
+    for (const line of shown) assert.match(line, new RegExp(`--folder ${allocated}$`), 'all three commands share the allocated group')
+  })
 })
 
 // ---------------------------------------------------------------- narration

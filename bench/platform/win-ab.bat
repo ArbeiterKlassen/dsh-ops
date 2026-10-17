@@ -7,28 +7,42 @@ rem     node bench/run.mjs     --label bench-base --profile bench-base ...
 rem     node bench/run.mjs     --label bench-ops  --profile bench-ops  ...
 rem     node bench/compare.mjs  bench-base bench-ops --folder ...
 rem
+rem  This is the Windows entry point behind `npm run bench:baseline`; it chdirs to
+rem  the repository root first, because both node commands resolve `bench/`
+rem  relatively, wherever the script was launched from.
+rem
 rem  Usage:
-rem     bench\ab-compare.bat [--task ^<id^>]... [--repeat ^<N^>] [--folder ^<name^>]
-rem                          [--base ^<label^>] [--cand ^<label^>]
-rem                          [extra run.mjs flags...] [--show] [--help]
+rem     npm run bench:baseline -- [flags]
+rem     bench\platform\win-ab.bat [--task ^<id^>]... [--repeat ^<N^>] [--folder ^<name^>]
+rem                               [--base ^<label^>] [--cand ^<label^>]
+rem                               [extra run.mjs flags...] [--show] [--help]
 rem
 rem  --task    optional, repeatable. default: the whole bench/tasks corpus.
 rem  --repeat  optional. default: each task's own budget (see bench/README.md).
-rem  --folder  optional. default: today's local date, YYYY-MM-DD. Both runs and
-rem            the compare use the SAME group, so labels resolve inside it.
+rem  --folder  optional. default: the first free bench\runs\benchmark-test-NN
+rem            (01, 02, ...), allocated once here so both runs AND the compare
+rem            resolve their labels inside the SAME new group.
 rem  --base    optional baseline label AND profile (default: bench-base).
 rem  --cand    optional candidate label AND profile  (default: bench-ops).
-rem  --show    print the three commands and exit, run nothing.
+rem  --show    print the resolved root and the three commands, run nothing.
 rem
 rem  Examples:
-rem     bench\ab-compare.bat --task csv-sum --repeat 1
-rem     bench\ab-compare.bat --task csv-sum --task gate-repair-loop --folder ops-0.3.1
-rem     bench\ab-compare.bat --verbose --probe-endpoint
+rem     npm run bench:baseline
+rem     npm run bench:baseline -- --task csv-sum --repeat 1
+rem     npm run bench:baseline -- --folder ops-0.3.1
+rem     npm run bench:baseline -- --verbose --probe-endpoint
 rem
 rem  Exit code: the compare gate result (0 = passed), 1 when a run failed.
 rem ===========================================================================
 
-pushd "%~dp0.." || exit /b 1
+rem %~dp0 already ends with a separator: ..\.. is the repository root.
+pushd "%~dp0..\.." || exit /b 1
+if not exist "bench\run.mjs" (
+  echo [ab] error: bench\run.mjs not found under "%CD%" 1>&2
+  echo [ab] this wrapper belongs to a dsh-ops checkout; run it from that tree 1>&2
+  popd
+  exit /b 2
+)
 
 set "BASE=bench-base"
 set "CAND=bench-ops"
@@ -78,11 +92,19 @@ goto parse
 
 :parsed
 
-rem Default group = today's local date, the folder run.mjs picks on its own.
+rem Default group: the first free bench\runs\benchmark-test-NN. Allocated ONCE, here, and
+rem handed to both runs and the compare — a per-process default would put the baseline in
+rem one group and the candidate in the next one.
+set "AUTO="
 if not defined FOLDER (
-  for /f "usebackq delims=" %%i in (`node -p "new Date().toLocaleDateString('en-CA')"`) do set "FOLDER=%%i"
+  for /f "usebackq delims=" %%i in (`node "bench\lib\next-folder.mjs"`) do set "FOLDER=%%i"
+  if defined FOLDER set "AUTO=1"
 )
-if not defined FOLDER ( echo [ab] error: cannot resolve today's date 1>&2 & popd & exit /b 2 )
+if not defined FOLDER (
+  echo [ab] error: cannot allocate a folder under bench\runs - see bench\lib\next-folder.mjs 1>&2
+  popd
+  exit /b 2
+)
 
 set "RUN=!TASKS!"
 if defined REPEAT set "RUN=!RUN! --repeat !REPEAT!"
@@ -92,12 +114,13 @@ if defined RUN set "RUN=!RUN:~1!"
 
 echo [ab] base   : !BASE!
 echo [ab] cand   : !CAND!
-echo [ab] folder : bench\runs\!FOLDER!
+if defined AUTO (echo [ab] folder : bench\runs\!FOLDER! [auto]) else (echo [ab] folder : bench\runs\!FOLDER!)
 if defined TASKS (echo [ab] tasks  : !TASKS:~1!) else (echo [ab] tasks  : full corpus)
 if defined REPEAT (echo [ab] repeat : !REPEAT! per task) else (echo [ab] repeat : per-task budget)
 
 if defined SHOW (
   echo.
+  echo [ab] root   : %CD%
   echo node bench/run.mjs --label !BASE! --profile !BASE! !RUN!
   echo node bench/run.mjs --label !CAND! --profile !CAND! !RUN!
   echo node bench/compare.mjs !BASE! !CAND! --folder !FOLDER!
@@ -107,17 +130,19 @@ if defined SHOW (
 
 echo.
 echo [ab] 1/3 baseline: node bench/run.mjs --label !BASE! --profile !BASE! !RUN!
-node bench/run.mjs --label %BASE% --profile %BASE% !RUN!
+rem `call` matters: it returns control to this script even when `node` resolves to a
+rem .cmd/.bat shim on PATH (a batch file invoked without `call` would replace this one).
+call node bench/run.mjs --label %BASE% --profile %BASE% !RUN!
 if errorlevel 1 ( echo [ab] baseline run failed 1>&2 & popd & exit /b 1 )
 
 echo.
 echo [ab] 2/3 candidate: node bench/run.mjs --label !CAND! --profile !CAND! !RUN!
-node bench/run.mjs --label %CAND% --profile %CAND% !RUN!
+call node bench/run.mjs --label %CAND% --profile %CAND% !RUN!
 if errorlevel 1 ( echo [ab] candidate run failed 1>&2 & popd & exit /b 1 )
 
 echo.
 echo [ab] 3/3 compare: node bench/compare.mjs !BASE! !CAND! --folder !FOLDER!
-node bench/compare.mjs %BASE% %CAND% --folder %FOLDER%
+call node bench/compare.mjs %BASE% %CAND% --folder %FOLDER%
 set "RC=!ERRORLEVEL!"
 popd
 echo.
@@ -126,16 +151,16 @@ exit /b !RC!
 
 :missing_value
 echo [ab] error: this flag needs a value: %~1
-echo [ab] run "bench\ab-compare.bat --help" for usage
+echo [ab] run "bench\platform\win-ab.bat --help" for usage
 popd
 exit /b 2
 
 :usage
-echo usage: bench\ab-compare.bat [--task ^<id^>]... [--repeat ^<N^>] [--folder ^<name^>] [--base ^<label^>] [--cand ^<label^>] [extra run.mjs flags...] [--show]
+echo usage: bench\platform\win-ab.bat [--task ^<id^>]... [--repeat ^<N^>] [--folder ^<name^>] [--base ^<label^>] [--cand ^<label^>] [extra run.mjs flags...] [--show]
 echo.
 echo   --task    optional, repeatable; default: every bench/tasks/*.task.json
 echo   --repeat  optional; default: each task's own budget
-echo   --folder  optional; default: today's local date YYYY-MM-DD, used by both runs and the compare
+echo   --folder  optional; default: first free bench\runs\benchmark-test-NN (01, 02, ...), used by both runs and the compare
 echo   --base    optional baseline label and profile, default bench-base
 echo   --cand    optional candidate label and profile, default bench-ops
 echo   --show    print the three commands, run nothing

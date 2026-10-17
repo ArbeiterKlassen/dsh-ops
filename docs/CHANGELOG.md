@@ -13,6 +13,40 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   preparation (profiles, baseline shell pin, permission mode, candidate plugin) is one command.
   Arguments pass through as usual: `npm run bench:setup -- --dry-run`. `run.mjs` and `compare.mjs`
   keep their `node bench/…` entry points.
+- `bench/setup.mjs` installs **this checkout** into the candidate profile by default (what
+  `--plugin local` used to be opt-in for), so a sweep measures the working tree instead of the last
+  published version and needs neither a publish nor a version bump to be honest. A candidate copy at a
+  different version is now a failure that names `--reinstall`, not a silent skip; `--plugin
+  dsh-ops@<version>`, a tarball spec and `--plugin none` still opt out of the default.
+- `bench/setup.mjs` now seeds `bench/llm.patch.yml` from the committed
+  `llm.patch.example.yml` when that file is absent, so a fresh checkout no longer starts with a
+  warning telling the operator to copy it by hand. The copy is one-way: an existing overlay holds
+  the bench server, model and key variable, so it is reported and left untouched. A copied overlay
+  whose `<...>` placeholders are still in place is called out at the end, since a sweep cannot
+  reach an unfilled endpoint.
+- `bench/setup.mjs` checks the local build before linking it into the candidate: the staged
+  `runtime/<platform>-<arch>` worker and its receipt, the Windows Bash IPC proxies against the
+  hashes of both the DLLs and `native/bash-ipc` sources, then the canonical
+  `native-runtime check --platform <target>` for version, hash and binary architecture. A missing
+  or stale artifact fails the preparation with the rebuild command named, because those files are
+  gitignored build output the candidate alone executes — the baseline keeps working and the sweep
+  would read as a plugin regression. Missing `@dsh-ops/*-win32-x64` shell payloads, and a worker
+  older than `native/src`, are warnings: they change what the candidate measures rather than
+  whether it runs. `--no-build-check` skips the step, `--plugin <spec>` skips it automatically.
+- `npm run bench:baseline` runs a whole A/B sweep as one command on Windows: the baseline side,
+  the candidate side, then the comparison whose gate result becomes the command's exit code. It
+  is the Windows wrapper `bench/platform/win-ab.bat`, which resolves the repository root itself
+  (so it works from any cwd or from `npm`), forwards `--task`/`--repeat`/`--folder`/`--base`/
+  `--cand` to its own handling and everything else to `bench/run.mjs`, and defaults to the full
+  corpus with each task's own budget. `--show` prints the resolved root and the three commands
+  without running them. A failing side stops the sweep with exit 1 and names the side.
+- `npm run bench:baseline` no longer needs `--folder`: the wrapper allocates the first free
+  `bench/runs/benchmark-test-NN` (`01`, `02`, …) once per sweep and hands that one group to both
+  runs and the compare, so two sides can never end up in different groups. Allocation lives in
+  `bench/lib/next-folder.mjs`, treats any entry with the name as taken (a leftover empty
+  directory or a file counts), compares names case-insensitively for Windows, and keeps growing
+  past `99`. The console line says `[auto]` when the name was chosen, and an explicit `--folder`
+  still wins.
 
 ### The config-update marker goes to the profile patch, and never to the composed tree
 
