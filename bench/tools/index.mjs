@@ -10,9 +10,9 @@
  * fixture families byte-identical or the comparison loses its baseline.
  *
  * `runTools` does not parse argv and does not call `process.exit*`: it returns
- * `{ report, output, exitCode }` so the CLI (P1) can own the help text, the
- * flag validation and the final exit code. Wiring `bench/cli.mjs`'s `tools`
- * command to this module is a later slice's job.
+ * `{ report, output, exitCode }`, and {@link main} below owns the flags and the
+ * final exit code so `bench/cli.mjs` can dispatch here like any other subcommand.
+ * The flag names are #103's, so an invocation written against it keeps working.
  *
  * @module dsh-ops/bench/tools
  */
@@ -149,5 +149,93 @@ export async function runTools(options = {}) {
     return await compareFiles({ ...options, tempDir, scale, seed: SEED, corpus })
   } finally {
     if (!injected) cleanupOwned(corpus)
+  }
+}
+
+/** The flag names `bench tools` accepts — #103's names, unchanged. */
+const TOOLS_FLAGS = {
+  '--baseline': 'baseline',
+  '--candidate': 'candidate',
+  '--out': 'out',
+  '--temp-dir': 'tempDir',
+  '--scale': 'scale',
+  '--timeout-ms': 'timeoutMs',
+}
+
+/** The `bench tools` help text. */
+export const TOOLS_USAGE = [
+  'usage: node bench/cli.mjs tools --baseline <worker> --candidate <worker> --out <report.json>',
+  '                                  [--temp-dir <dir>] [--scale <n>] [--timeout-ms <ms>]',
+  '',
+  'Model-free, deterministic comparison of two worker binaries over the fixed size-boundary',
+  'corpus. The verdict is MATCH / EXPECTED_DIFFERENCE / EXPECTED_REJECTION / MISMATCH /',
+  'UNSTABLE: timings are printed as evidence and never asserted. The report is created',
+  'exclusively, so a rerun cannot overwrite evidence — delete it or choose another --out.',
+].join('\n')
+
+/**
+ * Parse `bench tools` argv. Unknown flags and missing values are usage errors, not crashes.
+ * @param {string[]} argv - the arguments after the subcommand name.
+ * @returns {{help: boolean, baseline: string|null, candidate: string|null, out: string|null, tempDir: string|null, scale: number|null, timeoutMs: number|null}} the parsed options.
+ */
+export function parseToolsArgs(argv) {
+  const options = { help: false, baseline: null, candidate: null, out: null, tempDir: null, scale: null, timeoutMs: null }
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index]
+    if (flag === '-h' || flag === '--help') { options.help = true; continue }
+    const key = TOOLS_FLAGS[flag]
+    if (!key) throw new Error(`unknown flag "${flag}"`)
+    const value = argv[index + 1]
+    if (value === undefined || value === '' || value.startsWith('--')) throw new Error(`this flag needs a value: ${flag}`)
+    if (key === 'scale' || key === 'timeoutMs') {
+      const parsed = Number(value)
+      if (!Number.isFinite(parsed)) throw new Error(`${flag} needs a number, got ${value}`)
+      options[key] = parsed
+    } else options[key] = value
+    index += 1
+  }
+  if (options.help) return options
+  for (const [key, flag] of [['baseline', '--baseline'], ['candidate', '--candidate'], ['out', '--out']]) {
+    if (options[key] === null) throw new Error(`${flag} is required`)
+  }
+  return options
+}
+
+/**
+ * The `bench tools` entry: flags and exit code here, the comparison in {@link runTools}.
+ * @param {string[]} argv - the arguments after `tools`.
+ * @param {object} [io] - `out`/`err`/`table` sinks; defaults to the console.
+ * @returns {Promise<number>} 0 when every case matched, 1 on a mismatch or a failure, 2 on usage.
+ */
+export async function main(argv, io = {}) {
+  const out = io.out ?? (line => console.log(line))
+  const err = io.err ?? (line => console.error(line))
+  let options
+  try {
+    options = parseToolsArgs(argv)
+  } catch (error) {
+    err(`bench tools: ${String(error?.message ?? error)}`)
+    err('run "node bench/cli.mjs tools --help" for usage')
+    return 2
+  }
+  if (options.help) {
+    out(TOOLS_USAGE)
+    return 0
+  }
+  try {
+    const result = await runTools({
+      baseline: options.baseline,
+      candidate: options.candidate,
+      out: options.out,
+      ...(options.tempDir === null ? {} : { tempDir: options.tempDir }),
+      ...(options.scale === null ? {} : { scale: options.scale }),
+      ...(options.timeoutMs === null ? {} : { timeoutMs: options.timeoutMs }),
+      io: { out, err, table: io.table ?? (rows => console.table(rows)) },
+    })
+    if (result.output) out(`Report: ${result.output}`)
+    return Number.isInteger(result.exitCode) ? result.exitCode : 1
+  } catch (error) {
+    err(`bench tools: ${String(error?.message ?? error)}`)
+    return 1
   }
 }
