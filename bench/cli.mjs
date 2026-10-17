@@ -6,8 +6,10 @@
  * runs through a shell: a `.cmd`/`.ps1` shim cannot be piped, and a shell would
  * re-quote every argument. This file owns parsing, help and exit codes; a subcommand
  * whose slice has not landed exits `3` and names that slice and its future file —
- * never a silent success. Once that file exports `main(argv, io)`, this CLI calls it,
- * so a later slice wires itself in without editing this file.
+ * never a silent success. The same holds when the file landed before its wiring did
+ * (slices merge independently, so that state is normal, not a bug). Once that file
+ * exports `main(argv, io)`, this CLI calls it, so a later slice wires itself in
+ * without editing this file.
  *
  * @module dsh-ops/bench/cli
  */
@@ -28,7 +30,7 @@ export const COMMANDS = [
   { name: 'ab', slice: 'P1 (plan) + P7/P8 + P11 (run)', target: 'bench/run.mjs', summary: 'baseline then candidate then compare, one group folder' },
   { name: 'report', slice: 'P11', target: 'bench/compare.mjs', summary: 'render report.md from a sealed run.json' },
   { name: 'panel', slice: 'P12', target: 'bench/report/panel.mjs', summary: 'write/open panel.html that reads run.json' },
-  { name: 'tools', slice: 'P13', target: 'bench/tools/measure.mjs', summary: 'model-free deterministic tool-level comparison' },
+  { name: 'tools', slice: 'P13', target: 'bench/tools/index.mjs', summary: 'model-free deterministic tool-level comparison' },
 ]
 
 const AB_FLAGS_WITH_VALUE = ['--task', '--repeat', '--folder', '--base', '--cand']
@@ -156,8 +158,10 @@ async function dispatch(command, argv, io) {
   if (fs.existsSync(target)) {
     const module = await import(pathToFileURL(target).href)
     if (typeof module.main !== 'function') {
-      io.err(`bench ${command.name}: ${command.target} exists but exports no main(argv, io)`)
-      return EXIT.failure
+      // The file can land before its wiring does: slices merge one at a time, so this is
+      // a pending state, not a crash. Say which slice still owes the export.
+      io.err(`bench ${command.name}: ${command.target} exists but exports no main(argv, io) — the wiring for slice ${command.slice} is still pending`)
+      return EXIT.pending
     }
     return (await module.main(argv, io)) ?? EXIT.ok
   }
