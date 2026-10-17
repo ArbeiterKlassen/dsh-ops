@@ -7,6 +7,19 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### PTC paging and discoverability (#171, #160)
+
+- PTC remains opt-in pending the separate #170 default-policy decision. Enabled PTC-only scopes
+  receive batch/result usage guidance; native/hybrid scopes do not inherit that guidance or tools.
+- Argument schemas use the pinned host's supported JSON Schema subset, retaining numeric limits
+  as descriptions and native validation. Actual host SDK rendering is tested against `unknown`.
+- Result pages expose expiry, sourceTotal and stable ordered-row contentHash before projection or
+  filtering. Hashes are observations, never authority. First/last/beyond-end pages, invalid IDs,
+  ownership, expiry, release and oversized rows have executable assertions, including real run_code.
+- Expired references return `REFERENCE_EXPIRED` with release/reobserve guidance; batch audit pages
+  have `expires: null` and cannot be released. Current authority and PTC presentation are rechecked
+  before execution; changed authority never silently reuses the producing request's permissions.
+
 ### Safety and atomicity (#168)
 
 - Replacement receipts hash observed bytes, not a second racy read. Cooperating writers retain

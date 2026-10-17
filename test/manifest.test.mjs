@@ -112,7 +112,7 @@ await test('the declared namespace documents the upstream names and the public p
 
 await test('the declared prompt sections are the registered ones', () => {
   const declared = raw.contributes['x-prompt-sections'].map((section) => section.name)
-  assert.deepEqual([...declared].sort(), ['file', 'shell'].map(name => `${TOOLING_SECTION}:${name}`).sort())
+  assert.deepEqual([...declared].sort(), ['file', 'shell', 'ptc'].map(name => `${TOOLING_SECTION}:${name}`).sort())
   // The background stub still loads for existing rows but is no longer a declared component.
   assert.equal(raw.contributes['x-components'].some((component) => component.entry === 'dsh-ops/background'), false)
 })
