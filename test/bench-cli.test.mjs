@@ -2,8 +2,9 @@
  * The P1 floor: the cross-platform CLI, the folder allocator, the task-shape
  * validator, the portable `PSModulePath` ordering rule, and the `run.json` contract.
  * Everything is deterministic — no sweep, no model, no dsh. One check is a deliberate
- * tripwire: `setup`/`report`/`panel`/`tools` must exit non-zero while their slice is
- * missing; the slice that lands one of those modules updates that expectation here.
+ * tripwire: `setup`/`report`/`tools` must exit non-zero while their slice is missing;
+ * the slice that lands one of those modules updates that expectation here (P12 did:
+ * `panel` is implemented and is exercised by `test/bench-panel.test.mjs`).
  */
 
 import fs from 'node:fs'
@@ -53,7 +54,7 @@ await test('an unknown command or option exits 2 and names what it saw', async (
   assert.match(option.text(), /unknown option "--bogus"/)
 })
 await test('a declared-but-missing subcommand exits 3 and names its slice', async () => {
-  for (const [name, slice] of [['setup', 'P9/P10'], ['report', 'P11'], ['panel', 'P12'], ['tools', 'P13']]) {
+  for (const [name, slice] of [['setup', 'P9/P10'], ['report', 'P11'], ['tools', 'P13']]) {
     const cli = invoke([name])
     assert.equal(await cli.run(), EXIT.pending, name)
     assert.match(cli.text(), new RegExp(`${name}: not implemented`))
