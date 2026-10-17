@@ -230,16 +230,12 @@ fn segment_match(pattern: &str, value: &str) -> bool {
     while pi < p.len() && p[pi] == b'*' { pi += 1; }
     pi == p.len()
 }
-fn hash_file(path: &Path) -> Result<String> {
-    let bytes = read_bytes(path)?;
-    Ok(format!("{:x}", Sha256::digest(&bytes)))
-}
 fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     let raw = path.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;
     let target = crate::file_path::checked(raw)?;
     let mut file = crate::file_path::read_file(&target)?;
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
+    std::io::Read::by_ref(&mut file).take(MAX_FILE_BYTES + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_FILE_BYTES { return Err(Failure::new("OUTPUT_LIMIT", "File exceeds the bounded read budget")); }
     Ok(bytes)
 }
@@ -304,6 +300,7 @@ fn inspect(request: &Request) -> Result<Value> {
     let path = target(&args.path, false)?;
     if !path.is_file() { return Err(Failure::new("INVALID_ARGUMENT", "path is a directory; use ops_glob or ops_grep")); }
     let bytes = read_bytes(&path)?;
+    let facts = content_facts(&bytes);
     if bytes.len() as u64 > MAX_FILE_BYTES { return Err(Failure::new("OUTPUT_LIMIT", "file exceeds the inspect size budget")); }
     if args.view == "hex" {
         // `offset` means the same thing in both views: the 1-based unit to start
@@ -313,14 +310,16 @@ fn inspect(request: &Request) -> Result<Value> {
         // `minimum: 1` left no way to ask for it back: any file of at most 16
         // bytes read back as an empty string. In this view `skipped` and the item
         // `offset` are byte counts, not row counts.
-        let start = args.offset.saturating_sub(1).saturating_mul(16).min(bytes.len()); let end = (start + args.limit * 16).min(bytes.len());
+        let start = args.offset.saturating_sub(1).saturating_mul(16).min(bytes.len()); let end = (start + args.limit.min(1900) * 16).min(bytes.len());
         let text = bytes[start..end].iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
-        return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":1,"skipped":start,"failed":0,"complete":end == bytes.len(),"omitted":bytes.len().saturating_sub(end),"bytesTotal":bytes.len(),"items":[{"path":path,"view":"hex","offset":start,"text":text}]}));
+        return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":1,"skipped":start,"failed":0,"complete":end == bytes.len(),"truncated":end < bytes.len(),"nextOffset":end.div_ceil(16)+1,"omitted":bytes.len().saturating_sub(end),"bytesTotal":bytes.len(),"revision":facts["revision"],"bytes":facts["bytes"],"lineCount":facts["lineCount"],"items":[{"path":path,"view":"hex","offset":start,"text":text}]}));
     }
     if args.view != "text" { return Err(Failure::new("INVALID_ARGUMENT", "view must be text or hex")); }
     let text = String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "file is not valid UTF-8"))?;
     let lines: Vec<_> = text.lines().enumerate().skip(args.offset.saturating_sub(1)).take(args.limit).map(|(i, line)| json!({"path":path,"line":i+1,"text":line})).collect();
-    Ok(result(lines, text.lines().count(), args.offset.saturating_sub(1), args.offset, text.lines().count(), false))
+    let mut output = result(lines, text.lines().count(), args.offset.saturating_sub(1), args.offset, text.lines().count(), false);
+    for key in ["revision", "bytes", "lineCount"] { output[key] = facts[key].clone(); }
+    Ok(output)
 }
 fn glob(request: &Request) -> Result<Value> {
     let args: GlobArgs = serde_json::from_value(request.args.clone())?;
@@ -400,7 +399,7 @@ fn grep(request: &Request) -> Result<Value> {
     Ok(result(matches.into_iter().skip(args.offset).take(args.limit).collect(), total, args.offset, args.offset, match_count, walked.truncated))
 }
 fn replace(request: &Request) -> Result<Value> {
-    if request.read_only { return Err(Failure::new("POLICY_DENIED", "replace is unavailable in read-only mode")); }
+    if request.read_only { return Err(Failure::policy("read-only", "replace is unavailable in read-only mode")); }
     let args: ReplaceArgs = serde_json::from_value(request.args.clone())?;
     if args.pattern.is_empty() || args.max_replacements == 0 || args.max_replacements > 100_000 { return Err(Failure::new("INVALID_ARGUMENT", "pattern and maxReplacements are required")); }
     let walked = files_for(&args.path, &args.glob, request)?; let mut plans = Vec::new(); let mut total = 0usize; let mut binary: Vec<PathBuf> = Vec::new();
@@ -410,32 +409,40 @@ fn replace(request: &Request) -> Result<Value> {
     // impossible, and the error named no file, so the caller could not even narrow the request.
     for file in walked.files { let bytes=read_bytes(&file)?; match String::from_utf8(bytes.clone()) { Ok(text) => { let count=text.match_indices(&args.pattern).count(); if count>0 { total += count; plans.push((file, bytes, text, count)); } } Err(_) => binary.push(file) } }
     let skipped = binary.len();
-    let skipped_paths: Vec<Value> = binary.iter().take(16).map(|file| json!(relative_display(&request.root_path(), file))).collect();
+    let skipped_paths: Vec<Value> = binary.iter().take(8).map(|file| json!(relative_display(&request.root_path(), file))).collect();
     if total > args.max_replacements { return Err(Failure::new("OUTPUT_LIMIT", format!("{total} matches exceed maxReplacements ({}); no file was changed. maxReplacements is a ceiling, not a truncation: raise it to {total} or more and retry.", args.max_replacements))); }
-    let mut items=Vec::new(); for (file, original, text, count) in plans { let revision=hash_file(&file)?; let next=text.replace(&args.pattern,&args.replacement); items.push(json!({"path":file,"replacements":count,"revision":revision,"bytesBefore":original.len(),"bytesAfter":next.len()})); }
+    let mut items=Vec::new(); for (file, original, text, count) in plans { let revision=format!("{:x}", Sha256::digest(&original)); let next=text.replace(&args.pattern,&args.replacement); items.push(json!({"path":file,"replacements":count,"revision":revision,"revisionAfter":format!("{:x}", Sha256::digest(next.as_bytes())),"bytesBefore":original.len(),"bytesAfter":next.len(),"lineCountBefore":text.lines().count(),"lineCount":next.lines().count()})); }
+    if serde_json::to_vec(&items)?.len() > MAX_OUTPUT_BYTES / 2 { return Err(Failure::new("OUTPUT_LIMIT", "Replacement receipts exceed the bounded output budget; narrow path/glob. No files changed.")); }
     if args.dry_run { return Ok(json!({"status":"completed","phase":"observe","changed":0,"matched":total,"skipped":skipped,"failed":0,"complete":true,"omitted":0,"dryRun":true,"items":items,"skippedPaths":skipped_paths})); }
-    let mut changed=0usize; for item in &mut items { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
-        // Trusted transport owns this allowlist. Re-check every selected file,
-        // not only the initial search root, immediately before publication.
-        if let Some(roots) = &request.write_roots {
-            let canonical = std::fs::canonicalize(&file)?;
-            if !roots.iter().any(|root| std::fs::canonicalize(root).is_ok_and(|r| canonical.starts_with(r))) {
-                return Err(Failure::new("POLICY_DENIED", "User authorized workspace writes only; target is outside DSH writable roots. Ask the user to select full access; do not retry or bypass."));
-            }
-        }
+    for item in &items { publication::authorize_write(request, item["path"].as_str().unwrap_or(""))?; }
+    let mut changed=0usize; for item in &mut items {
+        let applied = (|| -> Result<()> { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
+        // Compare the held no-follow ancestry, not a replaceable leaf handle.
+        // On Darwin, canonicalize's F_GETPATH can race with atomic unlink/rename.
+        publication::authorize_write(request, file.to_str().unwrap_or(""))?;
         // Hold the update lock across the check, the read and the publish, so a
         // peer cannot slip in between them and lose our write, or make us lose
         // its. The guard is named, not `_`, so it lives to the end of this pass.
         let (_update, bytes) = lock_and_read_for_update(&file)?;
         // The revision is checked against the bytes the lock returned, so the check
         // and the write cannot be separated by another open — see the lock for why.
-        let expected=item["revision"].as_str().unwrap_or(""); if format!("{:x}", Sha256::digest(&bytes)) != expected { return Err(Failure::new("REVISION_CONFLICT", "file changed between observe and execute")); }
+        let expected=item["revision"].as_str().unwrap_or(""); publication::check_revision(Some(&bytes), expected)?;
         let text=String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "replace only supports UTF-8 files"))?; let next=text.replace(&args.pattern,&args.replacement);
         // Report what the replacement kept. The fields are additive, so a caller
         // that ignores them sees exactly the envelope it saw before.
         if let Some((metadata,warnings))=atomic_write(&file,next.as_bytes())? { item["metadata"]=metadata; if !warnings.is_empty() { item["metadataWarnings"]=json!(warnings); } }
+        Ok(()) })();
+        if let Err(mut error) = applied {
+            if changed > 0 { error.effect_state = "applied".into(); error.next_action = "Earlier files were already replaced. Inspect postconditions; do not repeat the batch blindly.".into(); }
+            return Err(error);
+        }
         changed += item["replacements"].as_u64().unwrap_or(0) as usize; }
-    Ok(json!({"status":"completed","phase":"verify","changed":changed,"matched":total,"skipped":skipped,"failed":0,"complete":true,"omitted":0,"items":items,"skippedPaths":skipped_paths}))
+    let count = items.len();
+    let mut output = result(items, count, 0, 0, total, walked.truncated);
+    output["changed"] = json!(changed); output["skipped"] = json!(skipped);
+    // Do not let optional skipped path names defeat the serialized receipt budget.
+    output["skippedPaths"] = if serde_json::to_vec(&output)?.len() < MAX_OUTPUT_BYTES / 2 { json!(skipped_paths) } else { json!([]) };
+    Ok(output)
 }
 /// A POSIX ACL is exposed as this attribute, so preserving ACLs needs no libacl.
 #[cfg(unix)]
@@ -548,7 +555,10 @@ impl PreservedMetadata {
         for (name, value) in &self.xattrs {
             match rustix::fs::fsetxattr(file, name.as_str(), value, rustix::fs::XattrFlags::empty()) { Ok(()) => restored.push(name.clone()), Err(error) => warnings.push(format!("extended attribute {name} was not restored ({error})")) }
         }
-        Ok((json!({"mode": format!("{:04o}", self.mode & 0o7777), "owner": owner, "acl": acl, "xattrs": restored}), warnings))
+        let omitted = restored.len().saturating_sub(16); restored.truncate(16);
+        let omitted_warnings = warnings.len().saturating_sub(16); warnings.truncate(16);
+        if omitted_warnings > 0 { warnings.push(format!("{omitted_warnings} additional metadata warnings omitted")); }
+        Ok((json!({"mode": format!("{:04o}", self.mode & 0o7777), "owner": owner, "acl": acl, "xattrs": restored, "xattrsOmitted": omitted}), warnings))
     }
 }
 
@@ -564,13 +574,15 @@ fn lock_and_read_for_update(file: &Path) -> Result<(std::fs::File, Vec<u8>)> {
     // The lock inode must survive replacement of the target inode. Keep a
     // persistent, hidden sidecar per path; unlinking it after unlock would let
     // another process lock a different inode under the same lock name.
-    let key = format!("{:x}", Sha256::digest(checked.name.as_bytes()));
+    let key = format!("{:x}", Sha256::digest(checked.name.to_lowercase().as_bytes()));
     let lock_name = format!(".dsh-ops-update-{key}.lock");
     let mut options = cap_std::fs::OpenOptions::new();
     options.read(true).write(true).create(true).follow(FollowSymlinks::No);
     #[cfg(unix)]
     { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
-    let lock = checked.parent.open_with(lock_name, &options)?.into_std();
+    let lock = checked.parent.open_with(lock_name, &options)?;
+    crate::file_path::regular(&lock.metadata()?, false)?;
+    let lock = lock.into_std();
     FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this path; nothing was changed, retry"))?;
     let bytes = read_bytes(file)?;
     Ok((lock, bytes))
@@ -609,54 +621,43 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     // a rename, so the new inode arrives with none of it.
     #[cfg(unix)]
     let preserved = PreservedMetadata::of(&checked)?;
-    let parent = checked.parent;
-    let name = checked.name;
-    sweep_debris(&parent, &name);
+    #[cfg(windows)]
+    let preserved = publication::Preserved::capture(&checked, true)?;
+    let parent = &checked.parent;
+    let name = &checked.name;
+    sweep_debris(parent, name);
     let temporary = format!(".{name}.dsh-ops-{}", uuid::Uuid::new_v4());
-    #[cfg(target_os = "macos")]
-    {
-        // APFS cloning preserves Darwin's extended ACL (not the Linux POSIX
-        // ACL xattr). Fail closed on filesystems without clone support rather
-        // than silently publishing an inode that lost a deny entry.
-        let source = crate::file_path::read_file(&crate::file_path::checked(raw)?)?;
-        rustix::fs::fclonefileat(&source, &parent, temporary.as_str(), rustix::fs::CloneFlags::empty())
-            .map_err(|error| Failure::new("ACCESS_DENIED", format!("Atomic replacement requires APFS metadata-preserving clone support: {error}")))?;
-        let mut cloned_options = cap_std::fs::OpenOptions::new(); cloned_options.read(true).follow(FollowSymlinks::No);
-        let cloned = parent.open_with(&temporary, &cloned_options)?;
-        rustix::fs::fchmod(&cloned, rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR).map_err(|error| Failure::new("ACCESS_DENIED", error))?;
-    }
-    #[cfg(target_os = "macos")]
-    let mut options = { let mut value = cap_std::fs::OpenOptions::new(); value.write(true).truncate(true).follow(FollowSymlinks::No); value };
-    #[cfg(not(target_os = "macos"))]
-    let mut options = { let mut value = cap_std::fs::OpenOptions::new(); value.write(true).create_new(true).follow(FollowSymlinks::No); value };
-    #[cfg(unix)]
-    { use cap_std::fs::OpenOptionsExt; options.mode(0o600); }
-    let mut file = parent.open_with(&temporary, &options).map_err(|e| Failure::new("ACCESS_DENIED", format!("Atomic replacement create: {e}")))?;
+    let mut file = publication::create_sibling(parent, &temporary, Some(&checked))?;
     // Keep content private until final metadata is restored. Creation mode also
     // masks inherited ACL grants; never write sensitive bytes to a default 0666 inode.
     let prepared = (|| -> Result<Option<(Value, Vec<String>)>> {
         file.write_all(bytes)?;
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         let report = Some(preserved.restore(&file)?);
-        #[cfg(not(unix))]
-        let report = None;
         // Both bytes and restored mode/owner/ACL/xattrs must be durable before rename.
         file.sync_all()?;
         Ok(report)
     })();
-    drop(file);
     let report = match prepared {
         Ok(report) => report,
-        Err(failure) => { let _ = parent.remove_file(&temporary); return Err(failure); }
+        Err(failure) => { publication::discard_sibling(parent, &temporary, file)?; return Err(failure); }
     };
+    // Recheck the leaf before publication as well as during initial traversal.
+    if let Err(failure) = parent.symlink_metadata(name).map_err(Failure::from).and_then(|metadata| crate::file_path::regular(&metadata, false)) {
+        publication::discard_sibling(parent, &temporary, file)?;
+        return Err(failure);
+    }
     // Publication stays handle-relative and does not traverse links.
-    let publish = parent.rename(&temporary, &parent, &name);
+    let publish = parent.rename(&temporary, parent, name);
     if let Err(error) = publish {
-        let _ = parent.remove_file(&temporary);
+        publication::discard_sibling(parent, &temporary, file)?;
         return Err(Failure::new("ACCESS_DENIED", format!("Atomic replacement publish: {error}")));
     }
+    drop(file);
+    #[cfg(windows)]
+    preserved.verify(parent, name)?;
     #[cfg(unix)]
-    if let Err(error) = crate::sync_directory(&parent) {
+    if let Err(error) = crate::sync_directory(parent) {
         // The rename already happened, so the file *is* replaced. Reporting the
         // default `effect_state: "none"` here would tell the caller that nothing
         // changed, which is the one answer a caller must never get wrong: it would
@@ -669,3 +670,8 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<String>)
     }
     Ok(report)
 }
+
+#[path = "file_publication.rs"]
+mod publication;
+
+use publication::content_facts;

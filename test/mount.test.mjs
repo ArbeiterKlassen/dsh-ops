@@ -195,7 +195,10 @@ await test('bash is scoped to authorized sessions, responds to mode changes, and
     await ctx.serial('session/event', full.session, { type: 'sandbox/mode' })
     await visible(ctx, full, [BASH_TOOL])
     if (process.platform === 'win32') {
-      await assert.rejects(() => definition.execute({ command: 'echo no' }, { agent: full }), /supported MSYS payload layout/)
+      const unavailable = await definition.execute({ command: 'echo no' }, { agent: full })
+      assert.equal(unavailable.status, 'failed')
+      assert.match(unavailable.error, /EXECUTOR_UNAVAILABLE/)
+      assert.equal(unavailable.permission, undefined)
     } else {
       const value = await definition.execute({ command: 'echo no' }, { agent: full, signal: new AbortController().signal })
       assert.equal(value.sandbox.mode, 'read-only')

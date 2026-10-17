@@ -98,6 +98,7 @@
     "native/Cargo.toml",
     "native/Cargo.lock",
     "native/src",
+    "native/windows-metadata",
     "native/bash-ipc"
   ],
   "scripts": {
