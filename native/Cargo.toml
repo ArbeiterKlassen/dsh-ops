@@ -25,3 +25,10 @@ uuid = { version = "1.26", features = ["v4"] }
 
 [lints.rust]
 unsafe_code = "forbid"
+
+[target.'cfg(windows)'.dependencies.dsh-ops-windows-metadata]
+path = "windows-metadata"
+
+[workspace]
+members = ["windows-metadata"]
+resolver = "3"
