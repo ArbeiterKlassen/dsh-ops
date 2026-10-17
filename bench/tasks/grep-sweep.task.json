@@ -1,0 +1,12 @@
+{
+  "id": "grep-sweep",
+  "title": "Find every file containing an exact token across a 200-file tree",
+  "prompt": "In the current working directory there is a source tree under src/. Exactly some of its files contain the exact token NEEDLE_X7Q. Find every file under src/ whose content contains that token, and write their paths to matches.txt: one path per line, relative to the working directory with forward slashes, sorted ascending (lexicographically), and nothing else in the file - no line numbers, no counts, no blank line at the end beyond the final newline.",
+  "fixture": {
+    "generator": "grepTree",
+    "params": { "seed": 1, "dirs": 10, "filesPerDir": 20, "linesPerFile": 40, "needle": "NEEDLE_X7Q", "needleFiles": 8 }
+  },
+  "verify": [{ "type": "fileLines", "path": "matches.txt", "expect": "matches" }],
+  "repeat": 2,
+  "timeoutMs": 900000
+}

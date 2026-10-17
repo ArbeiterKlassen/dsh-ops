@@ -1,0 +1,16 @@
+{
+  "id": "bulk-rename",
+  "title": "Rename 300 files in one directory without touching their contents",
+  "prompt": "The directory data/ contains files named TEMP_0001.dat through TEMP_0300.dat. Rename every file there whose name starts with TEMP_ so the name starts with DATA_ instead, keeping the rest of the name identical (so data/TEMP_0001.dat becomes data/DATA_0001.dat). Do not change any file content, do not delete anything, and do not touch files that do not start with TEMP_. When you are done there must be exactly 300 files with the DATA_ prefix in data/ and no TEMP_ files left.",
+  "fixture": {
+    "generator": "renameTree",
+    "params": { "seed": 2, "count": 300 }
+  },
+  "verify": [
+    { "type": "countFiles", "dir": "data", "prefix": "DATA_", "count": 300 },
+    { "type": "countFiles", "dir": "data", "prefix": "TEMP_", "count": 0 },
+    { "type": "contentHashes", "dir": "data", "expect": "hashes" }
+  ],
+  "repeat": 3,
+  "timeoutMs": 900000
+}

@@ -1,0 +1,12 @@
+{
+  "id": "log-stats",
+  "title": "Summarize 50 log files into one line each",
+  "prompt": "The directory logs/ contains app_00.log through app_49.log. For each of those files, count the lines that contain ERROR (case-sensitive). Write the result to errors.txt: one line per log file in the form <filename> <count>, where <filename> is the bare file name without the logs/ directory prefix, ordered by file name ascending. Write nothing else.",
+  "fixture": {
+    "generator": "logStats",
+    "params": { "seed": 13, "files": 50, "linesPerFile": 400 }
+  },
+  "verify": [{ "type": "fileLines", "path": "errors.txt", "expect": "report" }],
+  "repeat": 5,
+  "timeoutMs": 900000
+}

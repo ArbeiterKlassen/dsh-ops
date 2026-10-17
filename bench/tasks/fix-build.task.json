@@ -1,0 +1,15 @@
+{
+  "id": "fix-build",
+  "title": "Close an error-retry loop on a project with three injected bugs",
+  "prompt": "Run node test.js in the current working directory. It fails. Fix the bugs in the three files under src/ so that node test.js exits successfully. Do not modify test.js or package.json, do not weaken or delete any assertion, and do not add new dependencies: only repair src/. Keep every existing exported function name and signature working.",
+  "fixture": {
+    "generator": "brokenProject",
+    "params": { "seed": 11 }
+  },
+  "verify": [
+    { "type": "command", "command": "node", "args": ["test.js"], "exitCode": 0 },
+    { "type": "fileEquals", "path": "test.js", "expect": "testSource", "invariant": true }
+  ],
+  "repeat": 4,
+  "timeoutMs": 900000
+}
