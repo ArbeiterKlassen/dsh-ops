@@ -7,6 +7,20 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Platform default baseline guarded (#170; policy decision pending)
+
+- No default flip is shipped by this patch: PTC remains opt-in (`disabled: true`,
+  `defaultEnabled: false`); shell remains enabled on Windows/Linux/macOS; hide-official remains
+  opt-in. Existing explicit profile choices are not migrated or overwritten.
+- The catalog's unused POSIX `shellDefaultEnabled: false` claim now matches the actual enabled
+  bundle/manifest default. A dedicated test guards all three defaults against that 0.3.1 baseline.
+- The #151 proposal to enable PTC globally and disable POSIX shell is not adopted without an
+  explicit product decision. No token saving is claimed; #145/#148's reported cost increases
+  are not answered by a benchmark here. PTC opt-in users can enable `dsh-ops-ptc` explicitly.
+- No `defaultEnabledPlatforms` field or platform `!!js` expression is introduced: this patch does
+  not claim the pinned host consumes that extension or exposes process during patch evaluation.
+  A future flip must prove those host contracts and document migration before changing defaults.
+
 ### PTC paging and discoverability (#171, #160)
 
 - PTC remains opt-in pending the separate #170 default-policy decision. Enabled PTC-only scopes

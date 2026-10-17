@@ -29,7 +29,7 @@ await test('strict hiding is disabled opt-in and the pinned platform surface is 
   assert.equal(hiding.disabled, true)
   assert.deepEqual(resolveHidingConfig(hiding.config), { strict: true, additionalOfficialTools: [] })
   for (const platform of ['win32', 'linux', 'darwin']) {
-    assert.deepEqual(platformSurface(platform), { retainedCommand: platform === 'win32' ? 'pwsh' : 'bash', shellDefaultEnabled: platform === 'win32' })
+    assert.deepEqual(platformSurface(platform), { retainedCommand: platform === 'win32' ? 'pwsh' : 'bash', shellDefaultEnabled: true })
   }
   assert.throws(() => platformSurface('freebsd'), /Unsupported/)
 })
