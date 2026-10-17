@@ -23,18 +23,12 @@ repository history and in the published tarballs of the versions that carried th
 
 0.3.1 targets Windows x64, Linux x64 and macOS Apple Silicon (`darwin-arm64`). Intel Mac and other ARM64 targets are not supported. Exact target pairs live in `PLATFORMS` and component `targets`; npm os/cpu filters are only their coarse projection. Windows Bash/pwsh remain pinned Windows-only optional dependencies; POSIX uses host Bash. No postinstall downloader is included.
 
-The fixed native file worker implements eleven bounded tools: inspect, glob, grep,
-stat, diff, literal replace, CAS create/overwrite, exact edit, and single-file
-copy/move/remove. It receives session-cwd paths plus authoritative DSH write policy,
-rechecks the writable-root allowlist in Rust before mutation, and uses the trusted
-DSH fs-sandbox operation model with no-follow paths, revision checks and host
-subprocess governance. Windows overwrite/edit/replace/copy preserve owner/group/ordered DACL
-and supported basic attributes/timestamps through the isolated `native/windows-metadata`
-adapter (the business crate still forbids unsafe). ADS, EA and special storage fail
-with `METADATA_UNSUPPORTED`; SACL/audit-label fidelity is not claimed. macOS overwrite/copy
-require APFS metadata-preserving clones. The adapter uses windows-permissions 0.2.4 (MIT,
-https://github.com/danieldulaney/windows-permissions-rs), windows-sys 0.59 and winapi 0.3.9;
-only required handle-level Win32/NT calls are unsafe with documented ownership invariants.
+The fixed file worker implements inspect/glob/grep/replace, receives session-cwd
+paths plus authoritative DSH write policy, and rechecks the writable-root allowlist
+in Rust before replacement. It uses the trusted-operation threat model of DSH
+fs-sandbox, with no-follow paths, revision checks and host subprocess governance.
+Arbitrary Bash/PTC code still uses the original DSH OS confinement; Windows
+partial enforcement is reported unchanged.
 
 Windows owned workspace roots get backed-up directory-only WRITE_OWNER before
 outer run_code/pwsh launch, with no recursive grants/owner changes/denial removal.
@@ -51,11 +45,13 @@ All three workers are staged with version/target/hash receipts. Formal release c
 
 ## Historical development evidence
 
-The file component is no longer a FastCtx client. `native/src/file.rs` and its
-single-file operation modules implement eleven bounded operations; `lib/file/`
-obtains the authoritative DSH session cwd and sandbox policy, forwards
-cancellation, and maps worker JSON into the DSH structured output contract. Legacy
-FastCtx remains only behind the optional compatibility background component.
+The file component is no longer a FastCtx client. `native/src/file.rs` implements
+bounded inspect, glob, grep and replace; `native/src/file_path.rs` implements
+absolute host-resolved path validation and component-by-component no-follow
+checks. The host adapter in `lib/file/` obtains the authoritative DSH session
+cwd and sandbox policy, forwards cancellation, and maps worker JSON into the DSH
+structured output contract. The initial exact-argv file confinement below was
+superseded by the fixed trusted-operation fence described above.
 
 At the time of the Windows-only 0.3.0 development, the worker was built with the
 managed Rust `1.97.1` toolchain and staged under `runtime/win32-x64` with a

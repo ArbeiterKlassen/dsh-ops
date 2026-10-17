@@ -31,7 +31,7 @@ Bash and PowerShell npm binary payloads remain **Windows-only optional dependenc
 
 ## PTC and filesystem boundaries
 
-- file and PTC-only PTC (default enabled; opt-in strict hiding blocks reserved run_code) use the independent Rust worker, not FastCtx.
+- file and opt-in PTC use the independent Rust worker.
 - PTC tools publish only in pure PTC presentation. `batch.root` must be absolute when supplied; result paging of a batch audit must use the same root when it differs from the session root.
 - macOS `/tmp` and `/var` are system aliases. The file bridge canonicalizes the **parent chain**, preserving the final entry for no-follow checks. Descendants of those aliases work; directly naming a symlink still fails closed. Canonical write-root checks remain in force.
 - `replace` on macOS requires APFS clone support to preserve extended ACL metadata. Unsupported clone operations fail before publication rather than dropping a deny entry. Ordinary mode/owner/xattrs are restored before the final fsync and rename.

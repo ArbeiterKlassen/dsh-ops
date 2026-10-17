@@ -1,13 +1,5 @@
 # Changelog
 
-## Unreleased local five-component integration
-
-- Default bundle: Windows shell, eleven native file tools, PTC-only batch/result; strict scoped official-tool hiding and TUI are opt-in; POSIX retains official bash. Legacy background entry is outside the bundle.
-- Foreground Bash diagnostics are opt-in; unproven process lifecycle tools were withdrawn. File receipts carry hashes/bytes/line counts; PTC source hashes are stable across pages.
-- Full-stack takeover is **READINESS_BLOCKED** where official capabilities lack reviewed equivalents or run_code cannot be hidden. Readiness and retryable assembly failures are scope-local; healthy scopes retain verified masks. Windows overwrite/edit/replace/copy preserve supported owner/group/DACL/basic metadata through a narrow handle-only adapter; restrictive failed-publication staging is removed through the owned DELETE handle. Unsupported metadata fails explicitly; Darwin copy shares the APFS clone path.
-- Local benchmark added; no release, publish, CI invocation, GUI acceptance or POSIX deployment acceptance is implied.
-
-
 All notable changes to this package are recorded here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
@@ -15,15 +7,58 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Platform defaults confirmed by the operator (#170)
+
+- PTC enhancement is enabled by default (`defaultEnabled: true`, no disabled bundle row).
+  This changes the published 0.3.0/0.3.1 opt-in baseline, but does not force PTC presentation:
+  native/hybrid sessions do not acquire batch/result tools or their scoped guidance.
+- Shell stays enabled on Windows, Linux and macOS. Strict official-tool hiding stays opt-in.
+  Existing explicit profile choices are not migrated or overwritten; users can disable the
+  PTC component explicitly. Enabling the component does not raise filesystem permissions.
+- The catalog's POSIX shell-default claim now agrees with the bundle/manifest. No unsupported
+  `defaultEnabledPlatforms` field or platform `!!js` expression is needed.
+- No token saving is claimed. The pinned-host declaration-cost check is recorded in
+  `docs/ptc-cost.md`: PTC-only added 4,671 prompt characters in the isolated Windows sample;
+  native/hybrid added zero. This is not a tokenizer or net-usage measurement. #145/#148
+  comparisons require equal-task usage/latency/retry evidence before claiming savings.
+
+### PTC paging and discoverability (#171, #160)
+
+- Default enablement is decided separately in #170. Enabled PTC-only scopes
+  receive batch/result usage guidance; native/hybrid scopes do not inherit that guidance or tools.
+- Argument schemas use the pinned host's supported JSON Schema subset, retaining numeric limits
+  as descriptions and native validation. Actual host SDK rendering is tested against `unknown`.
+- Result pages expose expiry, sourceTotal and stable ordered-row contentHash before projection or
+  filtering. Hashes are observations, never authority. First/last/beyond-end pages, invalid IDs,
+  ownership, expiry, release and oversized rows have executable assertions, including real run_code.
+- Expired references return `REFERENCE_EXPIRED` with release/reobserve guidance; batch audit pages
+  have `expires: null` and cannot be released. Current authority and PTC presentation are rechecked
+  before execution; changed authority never silently reuses the producing request's permissions.
+
+### Safety and atomicity (#168)
+
+- Darwin nonempty extended ACLs now fail closed with `METADATA_UNSUPPORTED` before staging.
+  APFS cloning alone is not an exact ACL guarantee; deny-delete entries also prevent safe
+  staging rename/unlink. Use a dedicated metadata-aware tool for ACL-bearing files; changing
+  DSH permissions is not a repair. Plain files still require supported metadata-preserving cloning.
+
+- Replacement receipts hash observed bytes, not a second racy read. Cooperating writers retain
+  the persistent path lock across CAS and atomic publication. Later-file failures retain
+  `effectState: applied` when earlier files have changed; receipt output is bounded before writes.
+- Only trusted host anchors are canonicalized; descendant links remain subject to native
+  no-follow validation. Session temp paths never fall back to the shared root.
+- Windows replacement preserves supported owner/group/DACL/basic metadata through the existing
+  metadata crate. Darwin requires metadata-preserving cloning. Unsupported metadata returns
+  `METADATA_UNSUPPORTED` with repair guidance, not permission-selector advice.
+- `CREDENTIAL_DENIED`, `PATH_RESTRICTED`, `AUTHORITY_CHANGED` and `EXECUTION_RESTRICTED` distinguish
+  credential/path fences, changed authority and OS execution restrictions from actual DSH denials.
+- This cut retains four public file tools. The seven additional tools and end-to-end
+  `expectedRevision` acceptance belong to #167; the shared revision primitive is tested here.
+  Locks serialize cooperating OPS writers, not unrelated programs. Cross-compilation is not
+  macOS/Linux runtime acceptance; repeated macOS/APFS concurrency remains an acceptance gate.
+
 - Tools trial: `node scripts/tools-trial.mjs` calls every published tool on a real host and prints a
   per-tool table; CI runs it in a separate, non-required `tools-trial` job.
-- Suites (#172): the symlink check in `linux-sandbox` expects `PATH_RESTRICTED` like the rest of the
-  no-follow contract; the `mount` bash fixture gives its session an id, so read-only `ops_bash`
-  reaches the policy instead of failing early (and the Windows branch asserts the real restricted
-  runtime reason); the Rust copy-CAS test resolves the macOS `/var` symlink in its temp root; the
-  Windows restrictive-staging check names its fixture as unavailable on a host that deletes through
-  a DELETE-deny DACL instead of failing on the precondition. `docs/CONTRIBUTING.md` and
-  `docs/贡献指南.md` are now a full bilingual pair.
 - Documentation now matches the shipped 0.3.1 surface (no behavior change): the component reference
   describes `ops_inspect_local_file` as the bounded UTF-8/hex reader it implements (not multi-range,
   extra encodings or PDF), calls `ops_replace` a literal replacement, states that read-only refuses

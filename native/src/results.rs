@@ -35,7 +35,7 @@ pub fn referenced_items(store: &Store, request: &Request, id: &str) -> Result<Ve
     {
         return Err(Failure::new("POLICY_DENIED", "Reference scope mismatch"));
     }
-    if record.expires < now() {
+    if record.expires <= now() {
         return Err(Failure::new(
             "REFERENCE_EXPIRED",
             "Result observation expired",
@@ -93,6 +93,9 @@ pub fn run(store: &Store, request: &Request) -> Result<Value> {
             let (items, expires) = if id.starts_with("j-") {
                 let job: Job = store.read(id)?;
                 batch::authorize(&job, request)?;
+                if args.action == "release" {
+                    return Err(Failure::new("INVALID_ARGUMENT", "Job audits are read-only and cannot be released"));
+                }
                 (
                     job.items
                         .into_iter()
@@ -112,7 +115,7 @@ pub fn run(store: &Store, request: &Request) -> Result<Value> {
                         "Reference belongs to another scope",
                     ));
                 }
-                if record.expires < now() && args.action != "release" {
+                if record.expires <= now() && args.action != "release" {
                     return Err(Failure::new(
                         "REFERENCE_EXPIRED",
                         "Result expired; release it and acquire a new observation",

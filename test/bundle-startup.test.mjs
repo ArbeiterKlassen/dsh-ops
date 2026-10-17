@@ -15,10 +15,8 @@ import { resolveWorker } from '../lib/ptc/runtime.js'
 
 const { parse } = YAML
 resolveWorker({})
-// !!js is evaluated only for this checked-in, trusted bundle activation expression.
-const rows = parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'cordis.patch.yml'), 'utf8'), {
-  customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: value => Function(`return (${value})`)() }],
-})[0].insert
+// Parse the shipped data-only bundle; executable YAML tags are not supported.
+const rows = parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'cordis.patch.yml'), 'utf8'))[0].insert
 assert.equal(rows.find(row => row.id === 'dsh-ops-hide-official').disabled, true)
 assert.equal(rows.find(row => row.id === 'dsh-ops-tui').disabled, true)
 
@@ -49,7 +47,7 @@ for (const mode of ['read-only', 'workspace-write', 'danger-full-access']) {
           const names = () => ctx.get('tools').schemas(agent).map(tool => tool.name)
           await waitFor(() => names().includes('ops_stat') && names().includes('read') && names().includes('grep') &&
             names().includes('ops_batch') === (presentation === 'ptc') &&
-            (process.platform !== 'win32' || names().includes('ops_bash')), { what: `${mode}/${presentation} default publication` })
+            names().includes('ops_bash'), { what: `${mode}/${presentation} default publication` })
           const assembled = await ctx.get('systemPrompt').assemble({ scope: agent, signal: new AbortController().signal })
           assert.equal(assembled.tools.some(tool => tool.name === 'run_code'), presentation !== 'native')
           assert.ok(assembled.sections.length > 0)

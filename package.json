@@ -99,6 +99,7 @@
     "native/Cargo.lock",
     "native/src",
     "native/windows-metadata",
+    "native/darwin-metadata",
     "native/bash-ipc"
   ],
   "scripts": {

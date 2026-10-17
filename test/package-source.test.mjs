@@ -11,9 +11,10 @@ await test('npm pack includes native workspace/path-crate sources, never build c
   assert.equal(result.status, 0, result.stderr)
   const files = JSON.parse(result.stdout)[0].files.map(file => file.path)
   const required = ['native/Cargo.toml', 'native/Cargo.lock', 'native/src/lib.rs',
-    'native/windows-metadata/Cargo.toml', 'native/windows-metadata/src/lib.rs']
+    'native/windows-metadata/Cargo.toml', 'native/windows-metadata/src/lib.rs',
+    'native/darwin-metadata/Cargo.toml', 'native/darwin-metadata/src/lib.rs']
   for (const name of required) assert.ok(files.includes(name), `missing source-build dependency: ${name}`)
-  assert.equal(files.some(name => /^native\/(?:target[^/]*|windows-metadata\/target)\//u.test(name)), false)
+  assert.equal(files.some(name => /^native\/(?:target[^/]*|(?:windows|darwin)-metadata\/target)\//u.test(name)), false)
   const manifest = fs.readFileSync(path.join(PACKAGE_ROOT, 'native/Cargo.toml'), 'utf8')
   for (const match of manifest.matchAll(/^path\s*=\s*"([^"]+)"/gmu)) {
     // src/lib.rs is a file; the adapter dependency is a directory with a manifest.

@@ -148,13 +148,11 @@ No. It is FastCtx's reusable shared process, started by earlier versions with th
 
 ### There is no bundled bash or PowerShell payload
 
-macOS has no dsh-ops shell payload. The default bundle therefore disables
-`dsh-ops/shell` and retains the official host `bash`; it does not publish
-`ops_bash`. The strict hiding component defaults disabled; when explicitly enabled it reports
-`READINESS_BLOCKED` until every non-exempt official capability has a reviewed OPS
-equivalent. Do not add `bashPath` to a removed background row to infer support.
-PowerShell 7 can be provisioned separately, but the host disables its pwsh rows
-outside Windows.
+macOS ships no `@dsh-ops/bash-darwin-arm64` or `@dsh-ops/pwsh-darwin-arm64`
+package, and no portable upstream bash exists for macOS. Select the shell the
+plugin should use with `bashPath` (for example `/opt/homebrew/bin/bash`) on the
+`dsh-ops/shell` row. PowerShell 7 can be provisioned, but the host disables its `pwsh-sandbox` and
+`tool-pwsh` rows outside Windows, so no pwsh tool appears on macOS.
 
 ### The file tools reject a path under `/tmp`
 
