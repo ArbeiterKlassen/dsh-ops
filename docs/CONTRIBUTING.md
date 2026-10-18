@@ -197,3 +197,10 @@ The settings integration tests use exact development-only host settings, profile
 editor packages at `0.2.0-rc.2`, with matching Cordis loader/group/include, CosmoKit and Schemastery
 patch versions. They exercise the real profile writer and component reload instead of substituting
 an in-memory save. These packages are not production dependencies or host runtime imports.
+
+Browser settings are strict TSX. The build uses the existing TypeScript compiler to produce the
+host's lazy `./client` factory, with React supplied by the host. Exact development-only React 18.3.1,
+React type packages, jsdom 26.1.0 and the pinned `0.2.0-rc.2` client contracts support compilation,
+DOM interactions and the real host slot lifecycle tests. No browser bundler or production dependency
+is added. `settings-ui`, `settings-client`, `settings-host` and `settings-runtime` suites cover the
+form-to-profile and reviewed-action boundaries.
