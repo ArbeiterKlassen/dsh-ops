@@ -56,6 +56,8 @@ Read bounded UTF-8 text lines, or a hex view of one path. Directories are reject
 
 Find regular files below `path`. `pattern` is an **array** of globs matched segment by segment against paths relative to `path` (ASCII case-insensitive), e.g. `["**/*.md","!vendor/**"]`: `*.md` matches the top level only and `**/*.md` any depth; a `!` prefix excludes, and at least one positive entry is required. A bare string is rejected; there is no `include` field.
 
+`outputMode: "details"` adds `bytes` (the on-disk size) and `modified`, a real modification time in **milliseconds since the Unix epoch** — the same quantity and unit `ops_stat` reports as `modifiedMs`, and `null` when the filesystem cannot report one. `sort: "modified"` orders newest first and is stable: equal timestamps keep the walk's path order. `sort: "path"` and an omitted `sort` both keep that walk order.
+
 | Parameter | Type | Notes |
 | --- | --- | --- |
 | `path` | string | Search root |
@@ -84,6 +86,8 @@ Search UTF-8 files below `path` with Rust regex, bounded output, paging and opti
 ### `ops_replace`
 
 Perform a deterministic UTF-8 replacement under `path`. `pattern` is **literal text, not a regex**; `glob` works as in `ops_grep`. `dryRun` observes only; writes use revision checks and atomic replacement. Read-only sessions are rejected.
+
+Cooperating writers serialise on a persistent, hidden update-lock sidecar beside each target (`.dsh-ops-update-<sha256 of the lowercased name>.lock`). It is created before the target is read, so a refused call can leave it behind; see [Update-lock sidecars](native-ptc.md#update-lock-sidecars) for why it is not removed and who may clean it up.
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
