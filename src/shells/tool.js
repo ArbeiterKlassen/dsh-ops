@@ -123,6 +123,7 @@ export function renderBashResult(value) {
  * value that does not satisfy it is what the host reports as "returned invalid
  * output".
  */
+/** @type {import('@deepseek-ai/dsh-tools').JsonSchemaNode} */
 export const BASH_OUTPUT_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
@@ -172,8 +173,8 @@ export const BASH_OUTPUT_SCHEMA = Object.freeze({
  * Stamp one settled result with its one-word outcome, so ops_bash shares the
  * `status` field the file tools use (#44). Only a clean zero exit is
  * `completed`; any error, restriction, signal, cancellation or timeout is `failed`.
- * @param {object} value - the canonical result value, without `status`.
- * @returns {object} the same value with `status` (re)computed.
+ * @param {import('./types.js').ShellResult} value - the canonical result value, without `status`.
+ * @returns {import('./types.js').SettledShellResult} the same value with `status` (re)computed.
  */
 export function withBashStatus(value) {
   const completed = value.exitCode === 0 && value.error === undefined && value.permission === undefined && value.restriction === undefined
@@ -210,11 +211,8 @@ export function bashToolDescription() {
  * reaching a host service through `ctx.get` needs no import, and it buys the
  * harness's real credential scrub and process governance instead of a
  * hand-rolled spawn.
- * @param {object} options - the tool inputs.
- * @param {string} options.file - the resolved bash executable.
- * @param {string} options.source - where that executable came from, for diagnostics.
- * @param {{spawn: (spec: object) => object}} options.subprocess - the harness subprocess service.
- * @returns {object} the definition `ctx.tools.register()` accepts.
+ * @param {import('./types.js').ShellExecutorOptions} options - the typed host executor inputs.
+ * @returns {import('./types.js').LegacyShellDefinition} the legacy executor definition wrapped by the host projection.
  */
 export function bashToolDefinition({ file, source, subprocess, prepareArgv, env = {}, projectResult = withBashStatus }) {
   const definition = {

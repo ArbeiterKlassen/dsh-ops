@@ -1,5 +1,9 @@
 // Adapted from @deepseek-ai/dsh-tool-bash 0.2.0-rc.2 (MIT). See licenses/deepseek-harness/LICENSE.
 /** Host-compatible consumer over an OPS-owned executor; host services stay scoped and borrowed. */
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
+import type { ShellContext, ShellBase, ShellCall, ShellPolicy, CreateShellExecution, StartShell, HostBashResult, HostShellDefinition } from './types.js'
+import { errorMessage } from './types.js'
 import { BashArgumentError, isBashArgumentError } from './argument-error.js'
 import { approveBashPolicy } from './approval.js'
 import { HOST_BASH_OUTPUT_SCHEMA, hostFailure, hostForeground, renderHostBash } from './host-contract.js'
@@ -7,9 +11,10 @@ import { startBashJob, waitOnBashJob } from './jobs.js'
 
 export const HOST_MAX_BASH_TIMEOUT_MS = 600_000
 
-export function hostBashDefinition(ctx, base, createExecution, resolveWorkdir) {
+export function hostBashDefinition(ctx: ShellContext, base: ShellBase, createExecution: CreateShellExecution,
+  resolveWorkdir: (args: Record<string, unknown>, session: NonNullable<ShellCall['agent']>['session'] | undefined) => unknown): HostShellDefinition {
   const jobs = ctx.get('jobs')
-  const parameters = { ...base.parameters, required: ['description'], properties: {
+  const parameters: JsonSchemaNode & { properties: Record<string, JsonSchemaNode> } = { ...base.parameters, required: ['description'], properties: {
     ...base.parameters.properties,
     description: { type: 'string', description: 'Required: clear active-voice description of this command, 5–10 words.' },
     timeoutMs: { type: 'number', description: 'Defaults to 120000 ms; capped at 600000 ms. With host jobs, expiry hands the running command to job_output/job_kill; otherwise it stops the command.' },
@@ -20,18 +25,20 @@ export function hostBashDefinition(ctx, base, createExecution, resolveWorkdir) {
   return {
     ...base,
     description: 'Execute a Bash command in a fresh shell using the host sandbox, approvals and jobs. Relative workdir uses the current session workspace. Output is bounded with spill paths. Use command for host-compatible calls; script_path is an OPS extension for an existing script file. Verify resolved absolute targets before delete or move. Never bypass a sandbox denial by switching shells.',
-    parameters,
-    output: { schema: HOST_BASH_OUTPUT_SCHEMA, render: (_args, value) => [{ type: 'text', text: renderHostBash(value) }] },
-    async execute(args, exec = {}) {
+    parameters: { ...parameters },
+    // The host validates this value against the declared schema before invoking its renderer.
+    output: { schema: HOST_BASH_OUTPUT_SCHEMA, render: (_args, value) => [{ type: 'text', text: renderHostBash(value as unknown as HostBashResult) }] },
+    async execute(input: unknown, exec: ShellCall = {}): Promise<HostBashResult> {
       let timeoutMs = 120_000
-      let policy
+      let policy: ShellPolicy | undefined
       try {
-        if (!args || typeof args !== 'object' || Array.isArray(args)) throw new BashArgumentError('invalid arguments: expected an object', 'arguments')
+        if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BashArgumentError('invalid arguments: expected an object', 'arguments')
+        const args = input as Record<string, unknown>
         const unknown = Object.keys(args).find(key => !Object.hasOwn(parameters.properties, key))
         if (unknown !== undefined) throw new BashArgumentError(`invalid arguments: unknown key ${JSON.stringify(unknown)}; this tool accepts ${Object.keys(parameters.properties).join(', ')}`, unknown)
         if (args.run_in_background !== undefined && typeof args.run_in_background !== 'boolean') throw new BashArgumentError('invalid run_in_background: expected a boolean', 'run_in_background')
         const { run_in_background, sandbox_permissions, justification, ...local } = args
-        if (local.timeoutMs !== undefined && (!Number.isFinite(local.timeoutMs) || local.timeoutMs <= 0)) throw new BashArgumentError('invalid timeoutMs: expected a positive finite number', 'timeoutMs')
+        if (local.timeoutMs !== undefined && (typeof local.timeoutMs !== 'number' || !Number.isFinite(local.timeoutMs) || local.timeoutMs <= 0)) throw new BashArgumentError('invalid timeoutMs: expected a positive finite number', 'timeoutMs')
         timeoutMs = Math.min(local.timeoutMs ?? 120_000, HOST_MAX_BASH_TIMEOUT_MS)
         local.timeoutMs = timeoutMs
         local.workdir = resolveWorkdir(local, exec.agent?.session)
@@ -40,25 +47,26 @@ export function hostBashDefinition(ctx, base, createExecution, resolveWorkdir) {
         if (typeof args.description !== 'string' || !args.description.trim()) throw new BashArgumentError('invalid description: expected a non-empty string', 'description')
         if (!exec.agent?.session?.id) return hostFailure('EXECUTOR_UNAVAILABLE: an authoritative session is required.', timeoutMs)
         const standing = ctx.get('sandboxPolicy')?.resolve({ session: exec.agent.session })
-        if (!['read-only', 'workspace-write', 'danger-full-access'].includes(standing?.mode)) return hostFailure('EXECUTOR_UNAVAILABLE: authoritative session policy is unavailable.', timeoutMs)
+        if (!standing || !['read-only', 'workspace-write', 'danger-full-access'].includes(standing.mode)) return hostFailure('EXECUTOR_UNAVAILABLE: authoritative session policy is unavailable.', timeoutMs)
         policy = await approveBashPolicy(ctx, args, exec, standing)
         exec.signal?.throwIfAborted()
         const dshEnv = ctx.get('shellEnv')?.collect(exec) ?? {}
-        const start = (execution, options) => createExecution(local, execution, standing, policy, dshEnv, options)
+        const approvedPolicy = policy
+        const start: StartShell = (execution, options) => createExecution(local, execution, standing, approvedPolicy, dshEnv, options)
         if (jobs && ctx.get('jobs') === jobs) {
           let attached
-          try { attached = startBashJob(jobs, args, exec, start) }
+          try { attached = startBashJob(jobs, args as { command?: string; script_path?: string }, exec, start) }
           catch (error) {
             if (run_in_background) throw error
-            ctx.logger?.warn?.(`Bash job admission refused; using the foreground deadline: ${error.message}`)
+            ctx.logger?.warn?.(`Bash job admission refused; using the foreground deadline: ${errorMessage(error)}`)
           }
           if (attached) return run_in_background ? { kind: 'background', jobId: attached.id } : await waitOnBashJob(jobs, attached, exec, timeoutMs)
         } else if (run_in_background) return hostFailure('EXECUTOR_UNAVAILABLE: the host job registry is unavailable.', timeoutMs)
         return hostForeground(await (await start(exec, {})).result())
       } catch (error) {
         if (isBashArgumentError(error)) throw error
-        return { ...hostFailure(String(error?.message ?? error), timeoutMs), ...(exec.signal?.aborted ? { aborted: true, cancelled: true } : {}), ...(policy ? { sandbox: { mode: policy.mode, denied: false } } : {}) }
+        return { ...hostFailure(errorMessage(error), timeoutMs), ...(exec.signal?.aborted ? { aborted: true, cancelled: true } : {}), ...(policy ? { sandbox: { mode: policy.mode, denied: false } } : {}) }
       }
     },
-  }
+  } satisfies ToolDefinition
 }

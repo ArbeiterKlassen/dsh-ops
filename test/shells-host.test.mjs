@@ -218,4 +218,11 @@ await test('an unresolved executable is refused before the host can search PATH'
   assert.match(value.error, /resolved absolute executable path/); assert.equal(f.calls.length, 0)
 })
 
+await test('a session executor without an authoritative agent refuses before consulting services', () => {
+  const ctx = { get() { throw new Error('unexpected service lookup') } }
+  const policy = { mode: 'danger-full-access', workspaceRoot: TEST_HOME }
+  assert.throws(() => startSessionBash({ ctx, bash: { file: process.execPath, source: 'config' }, active: () => true },
+    { command: 'true' }, {}, policy, policy, {}, {}), /EXECUTOR_UNAVAILABLE: an authoritative session is required/)
+})
+
 report('shells-host')

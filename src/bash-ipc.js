@@ -121,6 +121,8 @@ function sourceState(root, dll){
   sourceMemo.set(root,state)
   return state
 }
+/** @param {string} file
+ * @param {{home?: string, platform?: NodeJS.Platform, source?: string}} options */
 export function confinedBash(file, {home=process.env.DSH_HOME ?? path.join(os.homedir(),'.dsh'), platform=process.platform, source}={}) {
   if(platform!=='win32')return {file}
   const root=msysRoot(file)

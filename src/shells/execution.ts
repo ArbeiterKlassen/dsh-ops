@@ -1,12 +1,14 @@
 /** Live Bash command over the host subprocess service; no service registration. */
 import { Buffer } from 'node:buffer'
+import type { SubprocessHandle, SubprocessOutputReader, SubprocessOutputRead } from '@deepseek-ai/dsh-subprocess'
+import type { ShellExecutorOptions, ShellExecutionSpec, ShellCall, ShellExecution, ShellResult, ShellStream } from './types.js'
 import { DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_MAX_SPILL_BYTES, shellEnvOverrides } from './constants.js'
 import { formatBashSpawnError } from './spawn-error.js'
 
-const emptyRead = () => ({ text: '', nextOffset: 0, lossy: false })
+const emptyRead = (): SubprocessOutputRead => ({ text: '', nextOffset: 0, lossy: false })
 
 /** Read the retained stream after settlement, preserving honest truncation facts. */
-export function settledStream(reader, includeMetadata = false) {
+export function settledStream(reader: SubprocessOutputReader | undefined, includeMetadata = false): ShellStream {
   const read = reader?.readFrom?.(0) ?? emptyRead()
   const text = typeof read.text === 'string' ? read.text : ''
   return {
@@ -26,33 +28,33 @@ export function settledStream(reader, includeMetadata = false) {
  * process containment, collection and disposal. A job can observe output without consuming it.
  * `onExpiry: none` disables only this executor's deadline, never caller cancellation.
  */
-export function startBashExecution({ file, source, subprocess, prepareArgv, env = {}, projectResult }, spec, exec = {}) {
+export function startBashExecution({ file, source, subprocess, prepareArgv, env = {}, projectResult }: ShellExecutorOptions, spec: ShellExecutionSpec, exec: ShellCall = {}): ShellExecution {
   const controller = new AbortController()
   const callerSignal = exec.signal
   const startedAt = performance.now()
-  let cause
-  let handle
-  let timer
-  const stop = (kind, reason) => {
+  let cause: 'cancelled' | 'timeout' | undefined
+  let handle: SubprocessHandle | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const stop = (kind: 'cancelled' | 'timeout', reason: unknown) => {
     if (controller.signal.aborted) return
     cause = kind
     controller.abort(reason)
   }
-  const onCallerAbort = () => stop('cancelled', callerSignal.reason)
+  const onCallerAbort = () => stop('cancelled', callerSignal?.reason)
   if (callerSignal?.aborted) onCallerAbort()
   else callerSignal?.addEventListener('abort', onCallerAbort, { once: true })
   if (spec.onExpiry !== 'none' && !controller.signal.aborted) {
     timer = setTimeout(() => stop('timeout', new Error(`command timed out after ${spec.timeoutMs}ms`)), spec.timeoutMs)
     timer.unref?.()
   }
-  const reader = stream => ({ readFrom: offset => handle?.collected?.[stream]?.readFrom(offset) ?? { ...emptyRead(), nextOffset: offset } })
-  const process = {
+  const reader = (stream: 'stdout' | 'stderr'): SubprocessOutputReader => ({ readFrom: offset => handle?.collected?.[stream]?.readFrom(offset) ?? { ...emptyRead(), nextOffset: offset } })
+  const process: ShellExecution = {
     status: 'running',
     get started() { return handle !== undefined },
     observed: { stdout: reader('stdout'), stderr: reader('stderr') },
     kill: reason => stop('cancelled', new Error(reason ?? 'bash execution cancelled')),
     result: () => result,
-    done: undefined,
+    done: Promise.resolve(),
   }
   const flags = () => ({
     timedOut: cause === 'timeout',
@@ -63,16 +65,16 @@ export function startBashExecution({ file, source, subprocess, prepareArgv, env 
       executor: { kind: 'subprocess', source },
     } } : {}),
   })
-  const run = async () => {
-    let value
+  const run = async (): Promise<ShellResult> => {
+    let value: ShellResult
     try {
       controller.signal.throwIfAborted()
-      const argv = spec.command === undefined ? [file, spec.scriptPath] : [file, '-c', spec.command]
+      const argv = spec.command === undefined ? [file, spec.scriptPath!] : [file, '-c', spec.command]
       // Race preparation so an unavailable provider cannot strand a cancelled job.
       let preparedArgv = argv
       if (prepareArgv) {
-        let abort
-        const cancelled = new Promise((_, reject) => {
+        let abort!: () => void
+        const cancelled = new Promise<never>((_, reject) => {
           abort = () => reject(controller.signal.reason)
           controller.signal.addEventListener('abort', abort, { once: true })
         })
@@ -80,9 +82,11 @@ export function startBashExecution({ file, source, subprocess, prepareArgv, env 
         finally { controller.signal.removeEventListener('abort', abort) }
       }
       controller.signal.throwIfAborted()
+      if (!subprocess) throw new Error('Host subprocess service is unavailable')
       handle = subprocess.spawn({
         argv: preparedArgv,
-        cwd: spec.workdir,
+        // Legacy direct executor callers can omit cwd; scoped host calls resolve it before this seam.
+        cwd: spec.workdir!,
         stdio: {
           stdin: 'ignore',
           stdout: { maxBytes: DEFAULT_MAX_OUTPUT_BYTES, spill: { maxBytes: DEFAULT_MAX_SPILL_BYTES } },

@@ -7,6 +7,12 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Type the shell execution and host boundary (#261)
+
+- Migrate the new shell executor, host contract, approvals, jobs and session integration to strict
+  TypeScript. Validate the published definition against the pinned SDK with type-only imports;
+  retain existing emitted paths and explicit types for the remaining JavaScript adapters.
+
 ### Make Windows Bash an explicit optional runtime (#261)
 
 - Add Bash status/install/remove and Git/managed selection commands. Removal previews by default,

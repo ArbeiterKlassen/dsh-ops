@@ -1,14 +1,16 @@
 // Adapted from @deepseek-ai/dsh-tool-bash 0.2.0-rc.2 (MIT). See licenses/deepseek-harness/LICENSE.
 /** Per-call widening follows the pinned host approval vocabulary; grants are never cached. */
+import type { ShellContext, ShellCall, ShellPolicy } from './types.js'
 import { BashArgumentError } from './argument-error.js'
 import { BASH_TOOL_NAME } from './constants.js'
 
-const modes = ['read-only', 'workspace-write', 'danger-full-access']
+const modes: ShellPolicy['mode'][] = ['read-only', 'workspace-write', 'danger-full-access']
+type EscalationArgs = Record<string, unknown> & { sandbox_permissions?: 'workspace-write' | 'danger-full-access'; justification?: string }
 
-export function validateBashEscalation(args, standing) {
+export function validateBashEscalation(args: Record<string, unknown>, standing: ShellPolicy): asserts args is EscalationArgs {
   const target = args.sandbox_permissions
   const reason = args.justification
-  if (target !== undefined && !modes.slice(1).includes(target)) {
+  if (target !== undefined && target !== 'workspace-write' && target !== 'danger-full-access') {
     throw new BashArgumentError('invalid sandbox_permissions: expected workspace-write or danger-full-access', 'sandbox_permissions')
   }
   if (reason !== undefined && typeof reason !== 'string') throw new BashArgumentError('invalid justification: expected a string', 'justification')
@@ -21,13 +23,13 @@ export function validateBashEscalation(args, standing) {
   }
 }
 
-export async function approveBashPolicy(ctx, args, exec, standing) {
+export async function approveBashPolicy(ctx: ShellContext, args: Record<string, unknown>, exec: ShellCall, standing: ShellPolicy): Promise<ShellPolicy> {
   validateBashEscalation(args, standing)
   if (args.sandbox_permissions === undefined || args.sandbox_permissions === standing.mode) return standing
   const approval = ctx.get('approval')
   if (!exec?.agent || !approval?.request) throw new Error('APPROVAL_UNAVAILABLE: no command executed; approval is unavailable. Do not bypass the session policy.')
   const outcome = await approval.request({ agent: exec.agent, callId: exec.callId, toolName: BASH_TOOL_NAME,
-    reason: args.justification, signal: exec.signal })
+    reason: args.justification!, signal: exec.signal })
   if (outcome !== 'allowed-once') throw new Error(`APPROVAL_${String(outcome).toUpperCase().replaceAll('-', '_')}: no command executed; the requested wider mode was not granted. Do not retry or bypass this decision.`)
   exec.signal?.throwIfAborted()
   const current = ctx.get('sandboxPolicy')?.resolve({ session: exec.agent.session })

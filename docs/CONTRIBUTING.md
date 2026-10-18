@@ -65,7 +65,9 @@ be edited by hand. Package exports, component entries and tests continue to load
 Run `npm run build` after changing source or assets and before invoking a suite directly with
 `node test/run.mjs <filter>`. `npm test`, `npm run test:ptc` and `npm run verify` build first;
 `npm run typecheck` checks the compiler configuration and migrated TypeScript without emitting
-files. JavaScript type checking remains disabled during the migration.
+files. JavaScript type checking remains disabled during the migration. The shell execution handle,
+host contract, approvals, jobs, session executor and runtime manager use strict TypeScript; older
+resolver, IPC and mount modules remain JavaScript with typed boundaries while their migration is staged.
 
 For a local or Git-source installation, build and pack a checkout before installing it into DSH:
 

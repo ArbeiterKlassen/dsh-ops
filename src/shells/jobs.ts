@@ -1,17 +1,19 @@
 // Adapted from @deepseek-ai/dsh-tool-bash 0.2.0-rc.2 (MIT). See licenses/deepseek-harness/LICENSE.
 /** Adapt one OPS execution to the host job registry without replacing its lifecycle. */
+import type { ShellJobs, ShellCall, StartShell, ShellExecution, ShellJobView, HostBashResult } from './types.js'
+import { errorMessage } from './types.js'
 import { hostForeground } from './host-contract.js'
 
-const running = view => ['running', 'stopping'].includes(view.status)
+const running = (view: ShellJobView): boolean => ['running', 'stopping'].includes(view.status)
 
-export function startBashJob(jobs, args, exec, start) {
-  let process
-  let stopped
-  const output = ['stdout', 'stderr'].map(stream => ({
+export function startBashJob(jobs: ShellJobs, args: { command?: string; script_path?: string }, exec: ShellCall, start: StartShell) {
+  let process: ShellExecution | undefined
+  let stopped: string | undefined
+  const output = (['stdout', 'stderr'] as const).map(stream => ({
     channel: stream,
-    read: offset => process?.observed[stream].readFrom(offset) ?? { text: '', nextOffset: offset, lossy: false },
+    read: (offset: number) => process?.observed[stream].readFrom(offset) ?? { text: '', nextOffset: offset, lossy: false },
   }))
-  const id = jobs.start({ kind: 'bash', label: args.command ?? args.script_path,
+  const id = jobs.start({ kind: 'bash', label: args.command ?? args.script_path ?? 'Bash',
     ...(exec.agent ? { owner: exec.agent.id } : {}), output,
     run: () => {
       const cancellation = new AbortController()
@@ -20,21 +22,21 @@ export function startBashJob(jobs, args, exec, start) {
         process = await start({ ...exec, signal: cancellation.signal }, { onExpiry: 'none' })
         if (cancellation.signal.aborted) process.kill(stopped)
         const value = await process.result()
-        const state = value.cancelled || value.signal || value.timedOut ? 'killed' : value.error ? 'failed' : 'completed'
+        const state: 'killed' | 'failed' | 'completed' = value.cancelled || value.signal || value.timedOut ? 'killed' : value.error ? 'failed' : 'completed'
         const detail = value.error ?? (value.signal ? `signal: ${value.signal}` : `exit code: ${value.exitCode ?? 0}`)
         const sandbox = value.sandbox?.runnerFailed ? '; sandbox runner failed before the command ran'
           : value.sandbox?.denied ? `; sandbox denied file access under ${value.sandbox.mode} mode` : ''
         return { status: state, detail: detail + sandbox }
-      }).catch(error => ({ status: cancellation.signal.aborted ? 'killed' : 'failed', detail: String(error?.message ?? error) }))
+      }).catch((error: unknown): { status: 'killed' | 'failed'; detail: string } => ({ status: cancellation.signal.aborted ? 'killed' : 'failed', detail: errorMessage(error) }))
       return { done, cancel: reason => { stopped = reason; cancellation.abort(new Error(reason)); process?.kill(reason) } }
     },
   })
   return { id, process: () => process, stopped: () => stopped }
 }
 
-export async function waitOnBashJob(jobs, attached, exec, timeoutMs) {
+export async function waitOnBashJob(jobs: ShellJobs, attached: ReturnType<typeof startBashJob>, exec: ShellCall, timeoutMs: number): Promise<HostBashResult> {
   const owner = exec.agent?.id
-  const stop = async reason => {
+  const stop = async (reason: string) => {
     jobs.kill(attached.id, owner, reason)
     const settled = await jobs.wait(attached.id, timeoutMs, owner)
     if (!running(settled)) jobs.remove(attached.id, owner)

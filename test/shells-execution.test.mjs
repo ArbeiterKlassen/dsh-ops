@@ -83,4 +83,13 @@ await test('the first stop cause wins when timeout and caller cancellation race'
   assert.equal(value.cancelled, undefined)
 })
 
+await test('an unavailable subprocess service settles without starting a command', async () => {
+  const definition = bashToolDefinition({ file: process.execPath, source: 'config' })
+  const execution = definition.start({ command: 'true' })
+  const value = await execution.result()
+  assert.equal(execution.started, false)
+  assert.equal(value.status, 'failed')
+  assert.match(value.error, /Host subprocess service is unavailable/)
+})
+
 report('shells-execution')
