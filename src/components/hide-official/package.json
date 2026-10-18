@@ -1,6 +1,6 @@
 {
   "name": "dsh-ops-hide-official",
-  "description": "Strict scoped takeover of official tools, with replacement readiness and fail-closed surface verification.",
+  "description": "Opt-in reviewed read/glob/grep alternatives with per-tool selection and scoped readiness checks.",
   "icon": "./icon.png",
   "type": "module"
 }

@@ -2,7 +2,7 @@
  * Plugin configuration: one plain object read from the `dsh-ops` row in
  * `cordis.yml`, validated here.
  *
- * The plugin deliberately exports no Schemastery `Config`: this host half must
+ * Validation uses plain data and Standard Schema without host value imports. This host half must
  * resolve with no `@deepseek-ai/*` value import of its own (the profile loader
  * supplies those names, and every extra one is another way for the plugin to
  * fail to load). Validation is therefore explicit and fails loud, naming the
@@ -10,6 +10,8 @@
  *
  * @module dsh-ops/config
  */
+
+import { OFFICIAL_REPLACEMENTS } from './official-tool-catalog.js'
 
 /**
  * Keys only the removed FastCtx surface read. Existing rows still carry them
@@ -194,14 +196,27 @@ export function resolveConfig(rawConfig) {
   }
 }
 
-/** Independent strict takeover row; disabling the row is the only opt-out. */
+/** Explicit reviewed replacements. Legacy blanket settings are validated but inert. */
 export function resolveHidingConfig(raw = {}) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new ConfigError('hiding config must be an object')
-  for (const key of Object.keys(raw)) if (!['strict', 'additionalOfficialTools'].includes(key)) throw new ConfigError(`unknown hiding key: ${key}`)
-  if (raw.strict !== undefined && raw.strict !== true) throw new ConfigError('strict must be true; disable the component row to restore host tools')
+  const keys = ['replaceTools', 'strict', 'scope', 'additionalOfficialTools']
+  for (const key of Object.keys(raw)) if (!keys.includes(key)) throw new ConfigError(`unknown hiding key: ${key}`)
+  // Saved 0.3 rows must not regain blanket hiding after an update. Retain old
+  // validation for diagnostics, but only replaceTools grants new authority.
+  if (raw.strict !== undefined && raw.strict !== true) throw new ConfigError('strict is a legacy key and must be true when present')
+  if (raw.scope != null && !['takeover', 'extended', 'off'].includes(raw.scope)) {
+    throw new ConfigError('scope is a legacy key and must be takeover, extended or off')
+  }
   const aliases = raw.additionalOfficialTools ?? []
   if (!Array.isArray(aliases) || aliases.some(n => typeof n !== 'string' || !/^[A-Za-z0-9_-]+$/.test(n) || n.startsWith('ops_'))) {
     throw new ConfigError('additionalOfficialTools must be an array of official tool names (not ops_* replacements)')
   }
-  return { strict: true, additionalOfficialTools: [...new Set(aliases)] }
+  const selected = raw.replaceTools === undefined ? [] : raw.replaceTools
+  if (!Array.isArray(selected)) throw new ConfigError('replaceTools must be an array of reviewed official tool names')
+  for (const tool of selected) {
+    if (typeof tool !== 'string' || !Object.hasOwn(OFFICIAL_REPLACEMENTS, tool)) {
+      throw new ConfigError(`replaceTools contains unsupported tool: ${JSON.stringify(tool)}; choose read, glob or grep`)
+    }
+  }
+  return { replaceTools: [...new Set(selected)] }
 }

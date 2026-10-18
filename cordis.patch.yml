@@ -1,7 +1,7 @@
 
 # Six independent components. PTC enhancement and shell are enabled by default;
 # PTC capabilities are still published only to authoritative PTC-only sessions.
-# The read-only TUI panel and strict official-tool hiding remain opt-in.
+# The read-only TUI panel and per-tool official replacements remain opt-in.
 # The panel row is inserted enabled so its config is addressable in the settings
 # editor, and its own switch (`capture`, the settings item 「启动数据检测」) is off
 # by default: an untouched row registers nothing and writes nothing.
@@ -42,5 +42,4 @@
       name: dsh-ops/hide-official
       disabled: true
       config:
-        strict: true
-        additionalOfficialTools: []
+        replaceTools: []

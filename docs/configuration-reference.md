@@ -15,7 +15,7 @@ The bundle declares six independently toggled components. On first installation 
 | `dsh-ops/ptc` | Native PTC batches | Off |
 | `dsh-ops/panel` | Data capture, off at the switch | Row on, `capture: false` |
 | `dsh-ops/tui` | Read-only sidebar, separate config | Off |
-| `dsh-ops/hide-official` | Strict official-tool hiding, separate config | Off |
+| `dsh-ops/hide-official` | Per-tool official replacements, separate config | Off |
 
 A `dsh-ops/background` row left over from an earlier version loads as a no-op stub (the FastCtx background component was removed); it ignores its config and can be deleted.
 
@@ -115,52 +115,28 @@ config:
 
 ---
 
-## Strict official-tool hiding (`dsh-ops/hide-official`)
+## Per-tool official replacements (`dsh-ops/hide-official`)
 
-The row is inserted **disabled**; enabling it is an operator decision. It accepts
-exactly `strict`, `scope` and `additionalOfficialTools`, and rejects any other key
-by name.
+The row is **disabled by default** and `replaceTools` defaults to `[]`. Enabling an untouched row hides nothing. Choose any subset of the reviewed official names `read`, `glob`, and `grep`; unselected tools stay visible without warnings. These are deliberate alternative workflows: read the [mapping and coverage differences](component-reference.md#dsh-opshide-official--per-tool-replacements) before selecting them.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `strict` | boolean | `true` | Must be `true`. Disable the row to restore the host tools; there is no `strict: false`. |
-| `scope` | `takeover` \| `extended` \| `off` | `takeover` | How wide the takeover is. `takeover` (default) is the reviewed shell/file/ptc scope and preserves the existing behaviour exactly; `extended` is that scope plus every name in `additionalOfficialTools`; `off` takes over nothing at all (no hiding, no warning, no readiness gate). |
-| `additionalOfficialTools` | string[] | `[]` | Extra official names (for example `custom_delegate`). Inside the scope, a name with no reviewed equivalent fails closed with both ways out. Outside the scope, `takeover` warns about it and ignores it, `extended` promotes it into the scope, and `off` ignores it silently. |
+| `replaceTools` | string[] | `[]` | Official tools to replace. Only `read`, `glob`, `grep` are accepted; duplicates are removed. Unknown keys and unsupported names produce errors naming the key/value. |
 
-The reviewed scope — the default and the previous behaviour, so `scope` can be omitted:
+For example, replace only host read and grep while retaining host glob:
 
 ```yaml
 - name: dsh-ops/hide-official
   config:
-    strict: true
-    scope: takeover          # default; may be omitted
-    additionalOfficialTools: []
+    replaceTools: [read, grep]
 ```
 
-Promote an out-of-scope official tool so `strict` really covers it. Without a
-reviewed equivalent the scope fails closed at assembly and names the fix:
+Set `replaceTools: []` or disable the row to restore every official tool. A selected OPS counterpart must be registered and visible in each agent scope. If any is missing, that scope restores its masks and refuses prompt assembly and execution with `READINESS_BLOCKED`; healthy scopes remain usable. Restore the counterpart, remove that selection, or disable the row. Unrelated OPS tools are not required.
 
-```yaml
-- name: dsh-ops/hide-official
-  config:
-    strict: true
-    scope: extended
-    additionalOfficialTools: [subagent]
-```
+**Migration from 0.3:** `strict`, `scope`, and `additionalOfficialTools` are accepted only for compatibility and validated with their old types/values. They grant no hiding authority, including `scope: extended` and aliases. An existing row containing only those keys becomes inert. Explicit `replaceTools` is the sole source of selections even if legacy keys remain. No saved profile is rewritten by this component.
 
-Neutralize the row without deleting it (staged rollouts, profiles shared across machines):
+Configuration is validated by Cordis through `StandardSchemaV1`. In the pinned DSH 0.2.0-rc.2 host, this does not automatically create a settings selector: a browser component registered in `plugins.row.config` is required. This slice supplies configuration-array selection; the browser multi-select remains separate UI work.
 
-```yaml
-- name: dsh-ops/hide-official
-  config:
-    strict: true
-    scope: off
-```
-
-Which official tools are hidden, which stay visible, and why: the
-[component reference](component-reference.md#dsh-opshide-official--takeover-scope).
-Enabling the row never blocks a session for an out-of-scope tool: those stay
-visible and produce one warning that names them (#207/#238).
 
 ---
 

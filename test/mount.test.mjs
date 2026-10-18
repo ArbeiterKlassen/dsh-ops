@@ -336,7 +336,7 @@ await test('real file replacement surface hides duplicates, keeps the PTC transp
     await fileMount(ctx)
     for (const name of ['read', 'glob', 'grep', process.platform === 'win32' ? 'pwsh' : 'bash']) ctx.tools.register(foreignTool(name))
     const { apply: hideOfficial } = await import('../lib/official-tool-hiding.js')
-    const hiding = await ctx.plugin({ name: 'real-file-takeover', apply: hideOfficial }, {})
+    const hiding = await ctx.plugin({ name: 'real-file-takeover', apply: hideOfficial }, { replaceTools: ['read', 'glob', 'grep'] })
     await new Promise(resolve => setImmediate(resolve))
     const current = await agent(ctx, 'real-file-takeover')
     const assembly = await ctx.get('systemPrompt').assemble({ scope: current })
@@ -347,8 +347,7 @@ await test('real file replacement surface hides duplicates, keeps the PTC transp
     assert.equal(names.some(name => name.startsWith('ops_process_')), false)
     ctx.provide('ptcRuntime', { language: 'typescript' })
     const restore = current.ctx.tools.presentAs('both')
-    // run_code is inside the PTC face with no reviewed replacement, so strict
-    // keeps it visible and warns instead of failing the session (#238).
+    // The unselected host transport remains visible alongside selected replacements.
     const withTransport = await ctx.get('systemPrompt').assemble({ scope: current })
     const transported = withTransport.tools.map(tool => tool.name)
     assert.ok(transported.includes('run_code'))
