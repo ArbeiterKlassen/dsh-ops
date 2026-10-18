@@ -36,16 +36,18 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
     ? [...NATIVE_FILE_TOOLS, ...(levels?.bash ? IN_PROCESS_TOOLS : [])].map(publicToolName) : []))
   if (levels?.pwsh) names.add('pwsh')
   if (!shellComponent) names.delete('pwsh')
+  const hasDiscovery = names.has(publicToolName('discover'))
   const hasFiles = NATIVE_FILE_TOOLS.some(name => names.has(publicToolName(name)))
   const hasBash = names.has(BASH_TOOL)
   const hasPwsh = shellComponent && names.has('pwsh')
-  if (!hasFiles && !hasBash && !hasPwsh) return ''
+  if (!hasFiles && !hasBash && !hasPwsh && !hasDiscovery) return ''
   const heading = hasBash ? '# Shell routing: bash → PowerShell 7'
-    : hasFiles ? '# Repository file tools' : '# Windows-native shell'
+    : hasFiles || hasDiscovery ? '# Repository file tools' : '# Windows-native shell'
   const lines = [heading, '', '| Task | Tool |', '| --- | --- |']
   const row = (raw: string, task: string) => {
     if (names.has(publicToolName(raw))) lines.push(`| ${task} | ${publicToolName(raw)} |`)
   }
+  row('discover', 'Find advanced capabilities for the next model step')
   row('read_many', 'Read UTF-8 ranges from multiple files')
   row('edit_many', 'Atomic original-text edits in one file (CAS)')
   row('inspect_local_file', 'Bounded UTF-8 lines / hex')
@@ -64,12 +66,15 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
   row('bash', 'General commands / builds / git / pipelines / scripts — preferred command executor')
   if (names.has('pwsh')) lines.push(`| Windows-native cmdlets / registry / services only | pwsh (${pwsh7 || levels?.pwsh ? 'bundled PowerShell 7 via host' : 'host PowerShell'}) |`)
   lines.push('', '- ops_* arguments are strict: pass only declared fields.')
-  if (hasFiles) lines.push('- Use file tools for file operations and batch independent requests.')
+  if (hasFiles) lines.push('- Use published file tools for file operations.')
+  if (hasDiscovery) lines.push('- Discover a capability when needed; selection makes it available on the next model step and performs no file action.')
   if (names.has(publicToolName('grep'))) lines.push('- ops_grep: summary for aggregate file/match totals; count for per-file counts; content for matching text. Follow nextOffset for remaining pages, but do not loop blindly on truncated/failed scans: they are not exhaustive.')
   if (hasFiles) lines.push(
-    '- Single-file tools use `path`, resolved relative to the current DSH session cwd. `to` on copy/move uses the same base. Use `/` separators; do not pass workspace, cwd, or file_path aliases.',
-    '- Native file tools are UTF-8 first and bounded. glob and grep do not traverse symlinks, junctions, reparse points, hidden files, or `.git`.',
+    '- Single-file tools use `path`, resolved relative to the current DSH session cwd. Use `/` separators; do not pass workspace, cwd, or file_path aliases.',
+    '- Native file tools are UTF-8 first and bounded.',
   )
+  if (names.has(publicToolName('copy')) || names.has(publicToolName('move'))) lines.push('- The destination `to` uses the same session cwd base as `path`.')
+  if (names.has(publicToolName('glob')) || names.has(publicToolName('grep'))) lines.push('- Published searches exclude symlinks, junctions, reparse points, hidden files and `.git`.')
   if (names.has(publicToolName('result'))) lines.push(`- ${publicToolName('result')} accepts the original reference root; page completeness describes stored rows only.`)
   if (names.has(publicToolName('read_many'))) lines.push(`- ${publicToolName('read_many')} takes files with independent ranges and per-file recovery.`)
   const globbing = ['glob', 'grep', 'replace'].filter(raw => names.has(publicToolName(raw)))
@@ -79,7 +84,7 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
     lines.push(`- ${arrays} ${arrays.includes(' and ') ? 'are ARRAYS' : 'is an ARRAY'} of globs relative to \`path\`, e.g. \`["**/*.md","!vendor/**"]\`; \`*.md\` matches the top level only.${notes.length ? ` ${notes.join('; ')}.` : ''}`)
   }
   if (hasFiles) lines.push('- ops file tools never throw: check `status` and `error.code`/`error.nextAction`; a try/catch alone misses their failures.')
-  if (names.has(publicToolName('write_file')) || names.has(publicToolName('edit_file'))) lines.push('- Read/stat first; reuse SHA-256 `revision` as `expectedRevision` (write create-only: `absent`). Receipts include new hash, bytes and lineCount; Windows preserves owner/group/ordered DACL and supported basic attributes/timestamps; readonly overwrite is refused and unsupported streams/EA/special storage fail with METADATA_UNSUPPORTED. SACL/audit labels are not preserved. Unsupported metadata is not a permission escalation. Edit hunks target the same original and must be unique/nonoverlapping; CRLF/BOM are literal.')
+  if (names.has(publicToolName('write_file')) || names.has(publicToolName('edit_file'))) lines.push('- Read the current file state first; reuse SHA-256 `revision` as `expectedRevision` (write create-only: `absent`). Receipts include new hash, bytes and lineCount; Windows preserves owner/group/ordered DACL and supported basic attributes/timestamps; readonly overwrite is refused and unsupported streams/EA/special storage fail with METADATA_UNSUPPORTED. SACL/audit labels are not preserved. Unsupported metadata is not a permission escalation. Edit hunks target the same original and must be unique/nonoverlapping; CRLF/BOM are literal.')
   if (hasFiles) lines.push('- Follow error.nextAction; authorization denials require the user to change mode, not retries. After applied/unknown effects inspect postconditions; do not switch to a shell workaround.')
   if (names.has(BASH_TOOL)) lines.push('- Prefer bash for command execution. Use PowerShell only when Windows-native functionality is necessary; fix bash errors in bash, do not switch shells or mix their syntax.',
     '- Use command only for short commands and pipelines. For scripts longer than about 1 KB or containing heredocs, quotes, backslashes or non-ASCII text, write the script to a file first and pass script_path.',

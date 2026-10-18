@@ -16,13 +16,13 @@ const allPresentations = Object.freeze(['native', 'ptc', 'both'] as const)
 
 export const FILE_CAPABILITIES = Object.freeze(fileOrder.map(rawName => Object.freeze({
   rawName, component: 'file' as const, presentations: allPresentations,
-  availability: 'resident' as const, mutates: fileMutations.has(rawName),
+  availability: rawName === 'read_many' ? 'resident' as const : 'discoverable' as const, mutates: fileMutations.has(rawName),
   concurrencySafe: !fileMutations.has(rawName),
   parameters: fileParameters[rawName], description: fileDescriptions[rawName], output: fileOutput(rawName),
 } satisfies SchemaCapability)))
 export const PTC_CAPABILITIES = Object.freeze((Object.keys(ptcParameters) as PtcToolName[]).map(rawName => Object.freeze({
   rawName, component: 'ptc' as const, presentations: rawName === 'result' ? allPresentations : Object.freeze(['ptc'] as const),
-  ...(rawName === 'result' ? { nativeProjection: { component: 'file' as const, parameters: NATIVE_RESULT_PARAMETERS, description: NATIVE_RESULT_DESCRIPTION } } : {}),
+  ...(rawName === 'result' ? { nativeProjection: { component: 'file' as const, availability: 'discoverable' as const, parameters: NATIVE_RESULT_PARAMETERS, description: NATIVE_RESULT_DESCRIPTION } } : {}),
   availability: 'resident' as const, mutates: true, concurrencySafe: false,
   parameters: ptcParameters[rawName], description: ptcDescriptions[rawName], output: ptcOutput,
 } satisfies SchemaCapability)))
@@ -47,6 +47,7 @@ export function capabilitiesFor(component: Component): readonly Capability[] {
 }
 export const FILE_TOOLS = Object.freeze(FILE_CAPABILITIES.map(capability => capability.rawName))
 export const NATIVE_FILE_TOOLS = Object.freeze([...FILE_TOOLS, ...PTC_CAPABILITIES.filter(entry => entry.nativeProjection?.component === 'file').map(entry => entry.rawName)])
+export const NATIVE_RESIDENT_FILE_TOOLS = Object.freeze(FILE_CAPABILITIES.filter(capability => capability.availability === 'resident').map(capability => capability.rawName))
 export const FILE_MUTATIONS = Object.freeze(FILE_CAPABILITIES.filter(capability => capability.mutates).map(capability => capability.rawName))
 export const PTC_TOOLS = PTC_CAPABILITIES.map(capability => capability.rawName)
 export const IN_PROCESS_TOOLS = Object.freeze(SHELL_CAPABILITIES.map(capability => capability.rawName))

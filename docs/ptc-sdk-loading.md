@@ -2,7 +2,7 @@
 
 The PTC row owns its file APIs independently of the Native file row. A PTC-only agent starts with `ops_inspect_local_file`, `ops_result` and `ops_sdk`. The host generates the typed SDK from the registered argument and Outcome output schemas. Native and both presentations receive no SDK loader.
 
-Call `tools.ops_sdk({ tools: ['grep', 'read_many'] })` inside `run_code`. A completed Outcome contains `data.tools` and `data.nextTurn: true`. Finish that code call; the requested APIs become visible at the next agent pre-step. They are absent from the current frozen SDK snapshot. Prompt assembly, diagnostic assembly and registry notifications never activate queued names.
+Call `tools.ops_sdk({ tools: ['grep', 'read_many'] })` inside `run_code`. A completed Outcome contains `data.tools` and `data.nextTurn: true`. Finish the current tool round; the owning session's committed `step/end` makes the requested APIs visible in the immediately following provider request. They are absent from the current frozen SDK snapshot. Prompt and diagnostic assembly before that boundary, and registry notifications, never activate queued names. Assembly waits for owned publication and obtains a fresh public snapshot when needed; internal presentation probes bypass that barrier to avoid recursion.
 
 The PTC row accepts these settings through central config validation:
 

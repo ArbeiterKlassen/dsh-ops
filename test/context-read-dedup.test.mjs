@@ -136,7 +136,8 @@ await test('missing content generation, separate owners and agent disposal canno
   full(await read({ owner: mint('other-session') }))
   full(await read({ owner: { id: 'old-host', session: { id: 'old-host', header: agent.session.header } } }))
   await ctx.serial('agent/disposed', { agent })
-  full(await read())
+  assert.equal(ctx.get('tools').get(READ, agent), undefined)
+  full(await read({ owner: { id: agent.id, session: agent.session } }))
 }))
 
 await test('failed or superseded ordinary requests cannot restore stale provider evidence', () => fixture(async ({ adapter, request, read }) => {
