@@ -22,6 +22,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   consolidated harness, so its commits are part of `main` even though its superseded
   artifacts (`bench/lib/fixtures.mjs`, `test/bench.test.mjs`, `bench/platform/win-ab.bat`)
   were replaced by the split fixtures, the per-slice suites and the cross-platform CLI.
+- #103 is merged into this history the same way: its branch is an ancestor of the merge that
+  landed the consolidated harness, so its commits are part of `main` while its superseded
+  artifacts (`bench/measure.mjs`, `bench/files.mjs`, `bench/fixtures.mjs`, `bench/results/*`,
+  `test/file-bench.test.mjs`) were replaced by `bench/tools/**` and the opt-in smoke job.
 - Git-level credit for both: the harness entered `main` as a **rewrite** (each slice
   re-implemented the source pull requests), so this entry's commit carries
   `Co-authored-by:` trailers for @OldLigant and @Richeir.
