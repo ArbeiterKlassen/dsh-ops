@@ -11,6 +11,8 @@ struct Record {
     stored_bytes: usize,
     version: u32, scope: String, root: String, root_identity: String, authority_id: String,
     producer_tool: String, created_at: u64, ttl_ms: u64, items: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<Value>,
 }
 fn now_ms() -> u64 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64 }
 fn segment(text: &str) -> String {
@@ -93,7 +95,7 @@ pub fn run(request: &Request) -> Result<Value> {
         if request.read_only { return Err(Failure::policy("read-only", "Read-only calls cannot create references")); }
         let id = uuid::Uuid::new_v4().to_string();
         let record = Record { stored_bytes: 0, version: 1, scope: request.scope.clone(), root: request.root.clone(), root_identity: request.root_identity.clone(),
-            authority_id: context.authority_id.clone(), producer_tool: request.tool.clone(), created_at: now_ms(), ttl_ms, items };
+            authority_id: context.authority_id.clone(), producer_tool: request.tool.clone(), created_at: now_ms(), ttl_ms, items, source: None };
         let reference = record.reference(&id)?;
         Cache::open(request)?.save(&id, &record)?;
         return Ok(json!({"status":"completed","id":reference.ref_id,"reference":reference,"total":record.items.len(),"complete":false,"omitted":record.items.len(),"nextAction":"Page this reference; it grants no authority. Reference pages never spill into another reference."}));
@@ -124,6 +126,7 @@ fn page(record: &Record, args: &ResultArgs, id: &str) -> Result<Value> {
     let rows: Vec<_> = record.items.iter().filter(|item| args.equals.as_ref().is_none_or(|filter| filter.iter().all(|(key, value)| item.get(key) == Some(value)))).collect();
     let total = rows.len(); let start = args.offset.min(total);
     let mut value = json!({"id":reference.ref_id,"reference":reference,"items":[],"sourceTotal":record.items.len(),"contentHash":format!("sha256:{:x}", Sha256::digest(serde_json::to_vec(&record.items)?)),"total":total,"nextOffset":total,"complete":false,"omitted":total});
+    if let Some(source) = &record.source { value["source"] = source.clone(); }
     let header = serde_json::to_vec(&value)?.len() + 1;
     if header > budget { return Err(Failure::new("OUTPUT_LIMIT", "Reference metadata exceeds page budget; increase maxBytes. A reference page never creates another reference.")); }
     let mut room = budget - header; let mut items = Vec::new();
@@ -142,4 +145,18 @@ fn page(record: &Record, args: &ResultArgs, id: &str) -> Result<Value> {
     let next = start + items.len(); value["items"] = json!(items); value["nextOffset"] = json!(next);
     value["omitted"] = json!(total - next); value["complete"] = json!(next == total);
     Ok(value)
+}
+
+/// Store already bounded canonical capture. Only the trusted request supplies cache authority.
+pub fn store_snapshot(request: &Request, items: Vec<Value>, source: Value) -> Result<StorageReference> {
+    if request.read_only { return Err(Failure::policy("read-only", "Read-only calls cannot create references")); }
+    let context = request.storage.as_ref().ok_or_else(|| Failure::new("POLICY_DENIED", "Trusted storage context is required"))?;
+    context.authorize(&request.tool)?;
+    if items.iter().any(nested_reference) { return Err(Failure::new("INVALID_ARGUMENT", "Reference handles cannot be captured inside another reference")); }
+    let id = uuid::Uuid::new_v4().to_string();
+    let record = Record { stored_bytes: 0, version: 1, scope: request.scope.clone(), root: request.root.clone(), root_identity: request.root_identity.clone(),
+        authority_id: context.authority_id.clone(), producer_tool: request.tool.clone(), created_at: now_ms(), ttl_ms: 0, items, source: Some(source) };
+    let reference = record.reference(&id)?;
+    Cache::open(request)?.save(&id, &record)?;
+    Ok(reference)
 }

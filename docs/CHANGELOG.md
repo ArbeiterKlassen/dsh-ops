@@ -21,6 +21,17 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Add edit_many as a single-file atomic CAS edit operation with short receipts. Bound escaped
   read output using actual metadata bytes; an incomplete line retains its offset and hex guidance.
 - 新增多文件范围读取与单文件原子多段编辑；逐文件报告版本、错误及未读范围，保持权限边界与短回执。
+### Spill oversized canonical output into bounded session snapshots (#261, 6b/16)
+
+- Preserve a useful head and original operation root, execution facts and mutation effects while
+  storing requested file/search rows as bounded, losslessly reconstructable tagged JSON records.
+- Keep original scan coverage separate from stored-page and capture completeness; quota rollback
+  never leaves partial logical JSON. Cache errors remain separate from business effects.
+- Authorize trusted cache roots independently of business write roots, preserving no-follow,
+  credential and readonly boundaries; reference pages never create nested references.
+- 大结果保留有界开头与原始根目录，并以可无损重建的分块引用缓存请求范围；区分扫描、捕获和
+  分页完整性，缓存失败不覆盖业务副作用，缓存专用授权不扩大业务写入范围。
+
 ### Add private session snapshot references (#261, 6a/16)
 
 - Add trusted-envelope `ref://session/tool/uuid` storage with 10 MiB snapshot and 100 MiB session
