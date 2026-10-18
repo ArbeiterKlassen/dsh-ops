@@ -6,6 +6,8 @@ import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { publicToolName } from '../../lib/policy.js'
+import * as Discovery from '../../lib/components/discovery/index.js'
+import { DISCOVERABLE_TOOLS } from '../../lib/discovery/config.js'
 import { assert, withTempDir } from './harness.mjs'
 import { bootHost, mountPlugin, shutdown } from './host.mjs'
 
@@ -45,7 +47,11 @@ export async function fixture(run) {
       await ctx.plugin(inner => inner.provide('sandboxPolicy', {
         resolve: ({ session }) => { policyReads.count++; return { mode: modes.get(session) ?? 'danger-full-access', workspaceRoot: session.header.cwd, sessionId: session.id } },
       }))
-      const { fiber } = await mountPlugin({ ctx, config: { required: true } })
+      const { fiber: fileFiber } = await mountPlugin({ ctx, config: { required: true } })
+      const discoveryFiber = await ctx.plugin(Discovery, { enabled: false, required: true,
+        alwaysLoaded: ['inspect_local_file', 'read_many'].filter(name => DISCOVERABLE_TOOLS.includes(name)) })
+      const fiber = { dispose: async () => { await discoveryFiber.dispose(); await fileFiber.dispose() } }
+      const admitted = new WeakSet()
       const adapter = new RecordingAdapter()
       ctx.get('llm').registerAdapter(['fixture'], adapter)
       let sequence = 0
@@ -61,6 +67,11 @@ export async function fixture(run) {
         return chunks
       }
       const read = async ({ args = { path: file }, owner = agent, parent, commit = true, callId = `read-${++sequence}`, name = READ } = {}) => {
+        if (!admitted.has(owner)) {
+          owner.ctx ??= createScope(ctx, owner).ctx
+          await ctx.serial('agent/created', { agent: owner })
+          admitted.add(owner)
+        }
         const assistant = createAssistantMessage({ source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'tool-call', id: callId, name, arguments: JSON.stringify(args) }] })
         if (commit && owner.session.append) owner.session.append('assistant/message', { turn: 1, step: sequence, message: assistant, stream: [] }, { surfaceOp: 'append' })
         const result = await ctx.get('tools').execute({ agent: owner, callId, name, arguments: args, signal: new AbortController().signal, ...(parent ? { parent } : {}) })
