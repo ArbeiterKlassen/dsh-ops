@@ -378,15 +378,10 @@ await test('glob details report a real mtime, and sort:modified orders by it rat
   })
 })
 
-await test('a refused update leaves only the documented update-lock sidecar', async () => {
-  // #240 P5, the documented branch of the choice. The sidecar is created before
-  // the target is read, so a refusal after the lock has already left it; unlinking
-  // it on the refusal path would let a waiter hold a lock on an inode the path no
-  // longer names while the next writer locks a fresh one (see
-  // native/src/file.rs lock_and_read_for_update). This test pins the declaration
-  // instead of hiding the artifact: which refusals leave it, that it is a single
-  // zero-byte hidden file per target name that is reused and never accumulates,
-  // that nothing else moves, and that no selection tool can see it.
+await test('pre-lock refusals leave no sidecar and published locks remain invisible', async () => {
+  // #244 checks pure snapshots before acquiring a single-file update lock.
+  // Published writes and replace scans still retain the persistent lock inode;
+  // selection tools must never expose or rewrite that cooperative sidecar.
   await withTempDir('update-lock-refusal', async workspace => {
     const target = path.join(workspace, 'notes.txt')
     fs.writeFileSync(target, 'one TOKEN two\n')
@@ -399,25 +394,30 @@ await test('a refused update leaves only the documented update-lock sidecar', as
 
     assert.deepEqual(snapshot(), declared('notes.txt'), 'the fixture starts with one file')
 
-    // A stale revision is refused after write_single has taken the lock.
+    // A stale revision is refused before write_single takes the lock.
     const stale = '0'.repeat(64)
     const first = envelopeOf(await callTool('write_file', { path: target, content: 'three TOKEN four\n', expectedRevision: stale }, { root: workspace }), assert)
     assert.equal(first.status, 'error')
     assert.equal(first.error.code, 'REVISION_CONFLICT')
-    assert.deepEqual(snapshot(), declared('notes.txt', sidecarOf('notes.txt')), 'the declared sidecar is the only new entry')
-    assert.equal(fs.statSync(path.join(workspace, sidecarOf('notes.txt'))).size, 0, 'the sidecar carries no payload')
+    assert.deepEqual(snapshot(), declared('notes.txt'), 'a stale revision must not create a sidecar')
     assert.deepEqual(fs.readFileSync(target), before, 'a refused write must not touch the target')
     assert.equal(fs.statSync(target).mtimeMs, beforeStat.mtimeMs, 'a refused write must not restamp the target')
 
-    // Reused, not accumulated: the same refusal twice leaves the same one entry.
+    // Repeating a pre-lock refusal still creates nothing.
     const second = envelopeOf(await callTool('write_file', { path: target, content: 'three TOKEN four\n', expectedRevision: stale }, { root: workspace }), assert)
     assert.equal(second.error.code, 'REVISION_CONFLICT')
-    assert.deepEqual(snapshot(), declared('notes.txt', sidecarOf('notes.txt')), 'the sidecar is reused, never accumulated')
+    assert.deepEqual(snapshot(), declared('notes.txt'), 'repeated refusals leave no sidecar')
 
     // A read-only refusal is decided before the lock, so it adds nothing at all.
     const frozen = envelopeOf(await callTool('write_file', { path: target, content: 'x', expectedRevision: stale }, { root: workspace, readOnly: true }), assert)
     assert.equal(frozen.error.code, 'POLICY_DENIED')
-    assert.deepEqual(snapshot(), declared('notes.txt', sidecarOf('notes.txt')), 'a fence decided before the lock leaves no new entry')
+    assert.deepEqual(snapshot(), declared('notes.txt'), 'a fence decided before the lock leaves no new entry')
+
+    // A successful no-op write acquires the persistent lock without restamping the target.
+    const noOp = envelopeOf(await callTool('write_file', { path: target, content: before.toString(), expectedRevision: createHash('sha256').update(before).digest('hex') }, { root: workspace }), assert)
+    assert.equal(noOp.status, 'completed', JSON.stringify(noOp))
+    assert.deepEqual(snapshot(), declared('notes.txt', sidecarOf('notes.txt')))
+    assert.equal(fs.statSync(path.join(workspace, sidecarOf('notes.txt'))).size, 0, 'the sidecar carries no payload')
 
     // Invisible to every selection tool, including a directory-wide replace.
     const globbed = envelopeOf(await callTool('glob', { path: workspace, pattern: ['**/*'] }, { root: workspace }), assert)
