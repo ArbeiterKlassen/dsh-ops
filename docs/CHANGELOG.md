@@ -18,6 +18,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   strictly created (never overwritten) reports, and the fixed size-boundary fixture corpus.
 - The model-driven token A/B skeleton is adopted from #183 (@Richeir): pass-drop before
   cost, per-task pairing, the geomean summary and the archive of the raw evidence.
+- #183 is merged into this history: its branch is an ancestor of the merge that landed the
+  consolidated harness, so its commits are part of `main` even though its superseded
+  artifacts (`bench/lib/fixtures.mjs`, `test/bench.test.mjs`, `bench/platform/win-ab.bat`)
+  were replaced by the split fixtures, the per-slice suites and the cross-platform CLI.
 - Git-level credit for both: the harness entered `main` as a **rewrite** (each slice
   re-implemented the source pull requests), so this entry's commit carries
   `Co-authored-by:` trailers for @OldLigant and @Richeir.
