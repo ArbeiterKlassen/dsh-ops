@@ -36,6 +36,8 @@ await test('the prompt states the real file-tool syntax and result contract (#44
   assert.equal(text.includes('ops_bash requires description'), false)
   const bash = renderToolingPolicy({ published: [BASH_TOOL] })
   assert.match(bash, /ops_bash requires description.*foreground, background or promoted.*job_output\/job_kill/)
+  assert.match(bash, /Failures, including invalid arguments, return values with failure\.code, failure\.effectState and failure\.retry/)
+  assert.equal(bash.includes('Invalid arguments throw'), false)
   assert.equal(bash.includes('never throw'), false, 'no file-tool contract without file tools')
   assert.equal(bash.includes('include'), false)
 })
