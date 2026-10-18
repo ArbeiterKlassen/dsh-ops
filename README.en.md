@@ -21,23 +21,37 @@
 
 # dsh-ops
 
-A plugin dedicated to improving the token efficiency of DSH plugins, boosting AI performance, reducing token consumption, and cutting total task time. It removes the token, time, and model-attention waste caused by DSH repeatedly hitting PowerShell errors on Windows, and will keep being updated.
+OPS adds bounded file and document tools to DSH. Native mode returns compact, line-numbered text;
+PTC code receives typed Outcome values from the same one-shot Rust worker. Host integration is
+strict TypeScript, compiled to the existing JavaScript package paths.
 
-Main features of this plugin:
+> [!IMPORTANT]
+> This branch is the **0.4.0 release candidate**, not a published release. Release is blocked:
+> BM-01 does not meet its output-reduction threshold, and the full default Windows Native schema
+> exceeds BM-03's 400-token budget. Functional CI does not satisfy these performance gates.
+> See [release status and limitations](docs/release-0.4.0.md). Commands using `@latest` below select
+> the published package; build and pack this checkout to evaluate the candidate.
 
-- A set of more advanced always-on tools written in Rust. Compared with the built-ins, these tools use fewer input and output tokens, run faster, cover more ground, and impose less mental load on the AI; they also carry brief hash checks, line/position info, and similar messages to reduce token overhead.
-- Planned on the [roadmap](docs/roadmap.md): everyday tools such as DOC/PDF operations, web search, and crawl4ai-style HTML-to-Markdown tools, added through progressive disclosure so the AI avoids writing one-off code or scripts to reach its goal. **The current release does not ship them yet.**
-- Provides an option to disable the built-in tools, to maximize savings on the AI's mental load and the fixed system prompt.
-- On Windows it additionally provides the `ops_bash` tool — the AI is far more fluent with bash than with pwsh. Run `dsh-ops bash-runtime install` to acquire the verified optional Bash, or select an existing Git Bash through `bashPath`. Neither Bash nor PowerShell is an npm payload dependency. `dsh-ops upgrade-host-pwsh` previews a standard Windows PowerShell 7 installation; add `--yes` to execute it, then restart DSH. Custom host `pwshPath` settings remain unchanged.
+- Native starts with `ops_read_many` and `ops_discover`; eligible Windows sessions also receive
+  `ops_bash`. Advanced tools activate in the owning agent's next provider request.
+- The PTC SDK catalogue has 19 APIs: 16 file/document tools, batch, result references and its loader.
+  Only the configured resident or selected APIs are exposed. Native and PTC use separate outputs.
+- Discover bounded CSV/TSV, DOCX main-body paragraphs and a restricted PDF text layer. Binary DOC,
+  OCR, general PDF rendering, web search and HTML crawling are not implemented. Read the
+  [document-format limits](docs/native-kernel.md) before choosing a reader.
+- Seven independently toggled rows preserve saved profile IDs and settings. Per-tool official
+  replacements are off by default. [Settings](docs/configuration-reference.md) include validated
+  built-in forms and optional browser pages with an explicit offline carrier migration.
+- Windows Bash is optional: install a verified managed copy with `dsh-ops bash-runtime install`
+  or choose Git Bash through `bashPath`. PowerShell stays host-managed; its upgrade command previews
+  the standard installation and requires `--yes` to execute. Neither shell is an npm payload.
 
-Plugin traits:
+OPS publishes its own scoped tools and optional routing guidance; it does not rewrite the shared
+tool registry. Permissions and cancellation are checked per call. Windows restricted Bash retains
+its documented partial enforcement and runtime-compatibility limits.
 
-- Low intrusion and high compatibility: it does not change runtime logic, inject into the system prompt or modify system variables — it only adds new, easy-to-use high-level tools, so it stays compatible with almost any plugin.
-
-> [!NOTE]
-> A rigorous benchmark and a concrete test plan for token savings and performance gains will ship in the next version, covering most common scenarios. The 97% token reduction reported for the previous version only describes the **"single, complex task delivered from a complete, explicit and specific prompt"** scenario — with short prompts the model's search for a conclusion is too random to control the variables.
-
-> tips: "ops" here is short for the broad sense of operations (running operations), indicating that this plugin sits in the base-tool position between DSH and system/code/file operations. This is not an operations (ops/SRE) plugin.
+Historical token-saving claims are not evidence that this candidate meets its release gates.
+The name “ops” means general operations, not an operations/SRE product.
 
 ## Install, update and uninstall
 

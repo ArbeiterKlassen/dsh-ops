@@ -1,8 +1,11 @@
 # 发布流程与如何启用
 
+> 0.4.0 仍是[未发布候选](0.4.0发布候选.md)，BM-01/BM-03 未通过。下面的仓库工作流状态是历史记录，实际发布前须重新检查；本次更新不启用发布、不打 tag、不发布包。
+> The [0.4.0 candidate](release-0.4.0.md) remains blocked by BM-01/BM-03. Workflow state below is historical and must be checked before any release; this update does not enable publishing, tag or publish packages.
+
 对象是 `.github/workflows/release.yml`（workflow 名 `Release`）。发布目标只有一个：**GitHub Release**（tag + 自动 notes + 一个可安装主包 tarball + `SHA256SUMS`）。npm publish 不在这条流水线里，理由见下。
 
-## 当前状态：`disabled_manually`，推 tag 不会发布
+## 历史状态记录：`disabled_manually`
 
 ```
 $ gh api repos/T-Auto/dsh-ops/actions/workflows --jq '.workflows[]|"\(.name) | \(.state)"'

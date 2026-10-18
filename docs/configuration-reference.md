@@ -83,24 +83,26 @@ A `dsh-ops/background` row left over from an earlier version loads as a no-op st
 
 ## 🔴 Which key belongs to which component
 
-`dsh-ops/tui` uses only `maxSessions`, `maxActive` and `recentLimit`; see [sidebar limits](tui-panel.md#limits). The following legacy configuration does not apply to the tui row. The table below gives the **owning component** for each key. Putting a key on a row that does not own it is rejected by configuration validation, which names the offending key.
+`dsh-ops/tui` uses only `maxSessions`, `maxActive` and `recentLimit`; see [sidebar limits](tui-panel.md#limits). The table lists where each setting is used. File/root and shell retain their shared legacy validator, so some compatibility keys may be accepted without affecting that row. PTC, discovery, panel, TUI and replacement use their own strict key sets; do not copy general file/shell settings into them. The Loader row switch is disabled, outside config.
 
 | Key | Type | Default | Owning component |
 | --- | --- | --- | --- |
-| `configUpdateVersion` | non-negative integer | `0` | any (migration marker) |
-| `binaryPath` | string path | — | file / ptc |
+| `configUpdateVersion` | non-negative integer | `0` | file / shell (migration marker) |
+| `binaryPath` | absolute path | — | file / ptc / discovery |
 | `bashPath` | string path | — | shell |
 | `publishBashTool` | boolean | `true` | shell |
-| `promptPolicy` | boolean | `true` | all |
-| `extraGuidance` | string | empty | all |
-| `required` | boolean | `false` | all |
+| `promptPolicy` | boolean | `true` | file / shell |
+| `extraGuidance` | string | empty | file / shell |
+| `required` | boolean | `false` | file / ptc / discovery |
 | `shellPolicy` | `advise` \| `deny-host-shell` | `advise` | shell |
 | `deniedHostTools` | string array | `[pwsh, bash, pwsh_persistent]` | shell |
 | `allowSystemShellFallback` | boolean | `false` | shell |
-| `denyCredentialReads` | boolean | `true` | file / ptc |
+| `denyCredentialReads` | boolean | `true` | file / discovery |
 | `capture` | boolean | `true` | panel (row defaults off) |
 | `textLimit` | integer | `2000` | panel |
 | `maxSessionBytes` | integer | `8388608` | panel |
+
+PTC accepts exactly binaryPath, required, allowedTools and alwaysLoaded; its credential fence stays enabled. Its always-loaded list is independent of the dynamic allowed pool. Discovery additionally owns enabled, maxResults and denyCredentialReads, and requires alwaysLoaded to be a subset of allowedTools. See [PTC settings](ptc-sdk-loading.md) and [discovery settings](discovery.md) for defaults and exact names. Replacement owns replaceTools plus its inert legacy compatibility keys; panel and TUI have only their documented capture/display fields.
 
 ### The credential fence (`denyCredentialReads`)
 
@@ -129,7 +131,7 @@ config:
   publishBashTool: true
   shellPolicy: advise
   allowSystemShellFallback: false
-  # bashPath: 'C:\tools\bash.exe'   # honoured in danger-full-access only; see bashPath below
+  # bashPath: 'C:\tools\bash.exe'   # restricted Windows execution requires matching MSYS/IPC; see below
 ```
 
 The `dsh-ops/file` row:
@@ -202,14 +204,14 @@ With the slim Native defaults, configure discovery `alwaysLoaded: [inspect_local
 
 **Migration from 0.3:** `strict`, `scope`, and `additionalOfficialTools` are accepted only for compatibility and validated with their old types/values. They grant no hiding authority, including `scope: extended` and aliases. An existing row containing only those keys becomes inert. Explicit `replaceTools` is the sole source of selections even if legacy keys remain. No saved profile is rewritten by this component.
 
-Cordis validates configuration through `StandardSchemaV1`; detached public settings descriptors expose editable arrays in the built-in Settings/ConfigEditor. Accepted changes persist and reload the row. The custom browser multi-select remains separate UI work.
+Cordis validates configuration through `StandardSchemaV1`; detached public settings descriptors expose editable arrays in the built-in Settings/ConfigEditor. Accepted changes persist and reload the row. The optional browser multi-select uses the client carrier described above; the default legacy row does not activate it.
 
 
 ---
 
 ## Prompt registration
 
-Prompts are registered as independent runtime sections, **not written to AGENTS.md**: shell OFF withdraws bash/pwsh routing; file OFF withdraws native file guidance. The file component uses its independent Rust worker. Four native file tools and `ops_bash` are added by default. These changes reduce fixed declaration costs. The Minimal preset overrides additional system sections; PTC mode calls the underlying tools through the SDK with unchanged permission gates.
+Prompts are registered as scoped runtime sections, not written to AGENTS.md. Disabling shell withdraws its routing; disabling file withdraws its Native file guidance. Fresh Native file publishes only ops_read_many, discovery publishes ops_discover, and eligible Windows shell scopes add ops_bash. Advanced Native tools are discovered or explicitly always loaded. PTC owns its separate typed SDK and current permission checks. Fixed-schema costs are measured separately; full-default BM-03 remains unresolved.
 
 ---
 
@@ -221,8 +223,7 @@ Prompts are registered as independent runtime sections, **not written to AGENTS.
 
 ## Host settings forms
 
-The enabled shell, discovery and official-replacement rows expose validated fields to the host
-settings service. Saving uses the profile revision the form read; a stale revision or invalid
+All seven enabled rows expose their supported validated fields to the host settings service. Saving uses the profile revision the form read; a stale revision or invalid
 selection is rejected before writing. The host persists accepted changes and reloads the affected
 row, so the running configuration follows the saved selection. Ordinary row fields are preserved.
 A disabled row has no editable form; re-enable it with the host's built-in row switch first.
