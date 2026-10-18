@@ -230,4 +230,45 @@ await test('recursive file requests and batch copies enforce credential policy o
   })
 })
 
+await test('the fence refuses writes and copy destinations, and the wording names both directions', async () => {
+  await withTempDir('credential-directions', async workspace => {
+    const home = path.join(workspace, 'home')
+    fs.mkdirSync(path.join(home, '.ssh'), { recursive: true })
+    const key = path.join(home, '.ssh', 'id_ed25519')
+    fs.writeFileSync(key, 'PRIVATE\n')
+    fs.writeFileSync(path.join(workspace, 'plain.txt'), 'PLAIN\n')
+    let spawned = false
+    const ctx = { get: name => ({
+      sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: workspace }) },
+      subprocess: { spawn: () => { spawned = true; throw new Error('the fence must refuse before spawning') } },
+    })[name] }
+    const exec = { agent: { session: { id: 's-directions', header: { cwd: workspace } } } }
+    const worker = path.join(workspace, 'worker')
+    const config = { denyCredentialReads: true }
+    await withFakeHome(home, async () => {
+      const read = await invoke(ctx, worker, 'inspect_local_file', { path: key }, exec, undefined, config)
+      const written = await invoke(ctx, worker, 'write', { path: key, content: 'OVERWRITTEN\n' }, exec, undefined, config)
+      const copied = await invoke(ctx, worker, 'copy', { path: path.join(workspace, 'plain.txt'), to: key }, exec, undefined, config)
+      for (const [label, refused] of [['a read', read], ['a write', written], ['a copy destination', copied]]) {
+        assert.equal(refused.error?.code, 'CREDENTIAL_DENIED', label + ' must be refused: ' + JSON.stringify(refused))
+        assert.match(refused.error.message, /credential location/)
+      }
+      assert.equal(spawned, false, 'every refusal must happen before the worker is spawned')
+      assert.equal(fs.readFileSync(key, 'utf8'), 'PRIVATE\n', 'a refused write must not touch the file')
+    })
+
+    // The refusal is direction-neutral on purpose: a caller stopped from writing must not read the
+    // wording as "reads are fenced, writes are fine" (#204 P4).
+    const refusal = credentialRefusal(key, '~/.ssh')
+    assert.match(refusal.message, /neither read nor write/)
+    assert.ok(!/do not read credentials/.test(refusal.message))
+
+    // And the configuration reference states the same reach the implementation has, so the two
+    // cannot drift apart silently.
+    const doc = fs.readFileSync(new URL('../docs/configuration-reference.md', import.meta.url), 'utf8')
+    assert.match(doc, /The credential fence/)
+    assert.match(doc, /as a write/)
+  })
+})
+
 report('credential-fence')
