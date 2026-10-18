@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Compact each fully returned Native range's metadata receipt by removing its repeated notice label; keep exact source text, full revisions, continuation/EOF facts and the aggregate notice.
+- 删除 Native 完整返回范围的逐文件元数据回执中重复的提示标签；保留精确正文、完整版本标识、续读/文件结束事实及汇总提示。
+
 - Fetch baseline Git history in full CI gates, optional benchmark smoke and the release gate so exact 0.3.1 provenance checks work on fresh checkouts.
 - 完整 CI 门禁、可选基准冒烟与发布门禁获取基线 Git 历史，确保全新检出能校验 0.3.1 的精确来源。
 

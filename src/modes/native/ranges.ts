@@ -44,7 +44,7 @@ export function compactRanges(input: Row, value: Row): string[] | undefined {
     output.push(`=== FILE: ${quoted(base ? path.basename(item.path) : item.path)} (Lines ${span} of ${item.total}) ===`)
     for (const line of item.lines) output.push(`${line.line}|${encodeSourceLine(line.text)}`)
     if (!item.lines.length) output.push(item.total === 0 ? '(empty file)' : '(no lines in this range)')
-    output.push(`[Notice: revision=${item.revision}; ${item.complete ? 'end of file; complete=true' : `more lines; nextOffset=${item.next}`}.]`)
+    output.push(`[revision=${item.revision}; ${item.complete ? 'end of file; complete=true' : `more lines; nextOffset=${item.next}`}]`)
   }
   output.push(`[Notice: ${observed.length}/${input.files.length} requested ranges returned.]`)
   return output

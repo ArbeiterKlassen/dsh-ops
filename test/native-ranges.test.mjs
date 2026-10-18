@@ -15,6 +15,8 @@ await test('real bounded ranges keep exact body, shared path base, full revision
   for (const [index, item] of value.items.entries()) {
     assert.ok(text.includes(`=== FILE: ${JSON.stringify(path.basename(files[index].path))}`))
     assert.ok(text.includes('revision=' + item.revision))
+    const continuation = item.complete ? 'end of file; complete=true' : `more lines; nextOffset=${item.nextOffset}`
+    assert.ok(text.split('\n').includes(`[revision=${item.revision}; ${continuation}]`), 'compact per-file receipt retains the full revision and continuation without a repeated notice label')
     assert.equal(item.bytes, Buffer.byteLength(inputs[index]), 'byte metadata remains canonical')
   }
   assert.match(text, /^1\|one$/m); assert.match(text, /^2\|two\\rthree$/m)
@@ -22,6 +24,7 @@ await test('real bounded ranges keep exact body, shared path base, full revision
   assert.match(text, /more lines; nextOffset=3/); assert.match(text, /\(empty file\)/)
   assert.match(text, /end of file; complete=true/); assert.match(text, /3\/3 requested ranges returned/)
   assert.doesNotMatch(text, /worker-limit|bytes=|lineCount=|matched=/)
+  assert.equal(text.split('\n').filter(line => line.startsWith('[Notice:')).length, 1, 'one aggregate notice covers all fully returned ranges')
   assert.equal(JSON.stringify(value), before)
 }))
 await test('different parents retain absolute quoted paths; path control characters cannot inject headers', () => {
