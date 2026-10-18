@@ -29,6 +29,7 @@ import { PACKAGE_ROOT, TEST_HOME, assert, report, test, withTempDir } from './li
 
 /** The CLI under test. */
 const CLI = path.join(PACKAGE_ROOT, 'bin', 'dsh-ops.mjs')
+const PACKAGE_VERSION = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')).version
 
 /**
  * Run the CLI with one throwaway home and one redirected user home.
@@ -752,7 +753,7 @@ await test('on POSIX the profile CLI fallback launches dsh, not the Windows cmd 
     })
     assert.match(run.stdout, /Official CLI: dsh;/, `${run.stdout}${run.stderr}`)
     assert.equal(fs.existsSync(marker), true, `the POSIX CLI must have been launched: ${run.stdout}${run.stderr}`)
-    assert.equal(fs.readFileSync(marker, 'utf8').trim(), 'plugin --profile web add dsh-ops@0.3.1')
+    assert.equal(fs.readFileSync(marker, 'utf8').trim(), `plugin --profile web add dsh-ops@${PACKAGE_VERSION}`)
     assert.equal(run.status, 0, `${run.stdout}${run.stderr}`)
   })
 })
