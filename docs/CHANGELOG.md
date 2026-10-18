@@ -7,6 +7,12 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Type the trusted Native worker boundary (#261, 16/16)
+
+- Compile host policy, observations and Native worker invocation under strict TypeScript; reject
+  non-object arguments before spawn and retain unknown effects for malformed process results.
+- Native 桥使用严格宿主类型；非对象参数在启动前拒绝，非法进程结果保留未知副作用且不误记成功读取。
+
 ### Type worker resolution and Native runtime ownership (#261, 16/16)
 
 - Compile worker discovery and Native lifecycle as strict TypeScript; preserve runtime .js paths,

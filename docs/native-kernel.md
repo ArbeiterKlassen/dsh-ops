@@ -305,3 +305,9 @@ Worker selection and Native runtime lifecycle are strict TypeScript. Resolution 
 success/path or failure/reason value; configuration and Native tool names are checked at compile
 time. Missing runtime initialization returns an unavailable value before creating call state.
 The shipped runtime paths remain .js, with the same provenance, scope and cancellation behavior.
+
+The Native worker bridge also compiles under strict TypeScript, using host policy, filesystem and
+execution types with unknown-valued input/output records. Non-object arguments fail before spawning;
+malformed or non-object process results report unknown effects and never record a successful read.
+Receipt observations preserve the provider's version facts. This validation does not change the fixed
+Native subprocess path, permission checks or the separate PTC confinement path.

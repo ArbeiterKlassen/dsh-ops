@@ -24,3 +24,16 @@ if (selected.ok) {
   void selected.file
   void reason
 }
+
+import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { invoke as fileCall, failure as fileFailure } from '../../src/file/worker.js'
+declare const exec: ToolRunContext
+const nativeValue: unknown = await fileCall(ctx, '/worker', 'stat', { path: 'safe' }, exec, undefined, { denyCredentialReads: true })
+// @ts-expect-error The transport result must be narrowed before accessing canonical fields.
+void nativeValue.status
+// @ts-expect-error A worker executable path cannot be a number.
+void fileCall(ctx, 3, 'stat', {}, exec)
+// @ts-expect-error Credential policy configuration is boolean.
+void fileCall(ctx, '/worker', 'stat', {}, exec, undefined, { denyCredentialReads: 'true' })
+// @ts-expect-error Effect state must be an explicit kernel fact.
+void fileFailure('RESULT_UNKNOWN', 'lost output', 'execute', 'success')
