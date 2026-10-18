@@ -20,6 +20,7 @@ import { profileCommand } from '../lib/profile-install.js'
 import { cargoBuild, findCargo } from '../lib/rust.js'
 import { commandLadder } from '../lib/cli/report.js'
 import { commandProvisionShells } from '../lib/cli/provision-shells.js'
+import { commandUpgradeHostPwsh } from '../lib/cli/pwsh-upgrade.js'
 import { commandBashRuntime } from '../lib/cli/bash-runtime.js'
 import { commandUninstall } from '../lib/cli/uninstall.js'
 
@@ -51,6 +52,9 @@ Usage:
   dsh-ops bash-runtime [status|install|remove|git|managed] [--yes] [--dry-run]
                                   Manage optional Bash; git/managed prints a bashPath selection
                                   for the host config editor. remove previews unless --yes.
+  dsh-ops upgrade-host-pwsh [--yes] [--dry-run]
+                                  Preview/run standard Windows PowerShell 7 installation through
+                                  WinGet. Restart DSH; custom host pwshPath remains authoritative.
   dsh-ops help                    This text
 
 Environment:
@@ -111,6 +115,8 @@ async function main() {
     return 2
   }
   switch (command) {
+    case 'upgrade-host-pwsh':
+      return commandUpgradeHostPwsh({ yes: values.yes, dryRun: values['dry-run'] })
     case 'bash-runtime':
       return commandBashRuntime(positionals[1], { yes: values.yes, dryRun: values['dry-run'], force: values.force, configFile: values.config })
     case 'ladder':

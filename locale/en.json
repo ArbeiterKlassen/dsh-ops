@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "dsh-ops",
-    "description": "Provides bash, PowerShell 7, and a suite of high-performance tools written in Rust for DSH to enhance token efficiency"
+    "description": "Provides optional Bash and native Rust tools for DSH to improve token efficiency; PowerShell remains host-managed"
   }
 }

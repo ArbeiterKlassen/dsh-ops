@@ -52,10 +52,11 @@ await test('resident-only routing omits unavailable operation hints and includes
   assert.match(discovery, /next model step/)
   for (const name of files) assert.equal(discovery.includes(name), false)
 })
-await test('shell routing prefers bash and names bundled pwsh only when available', () => {
-  const text = renderToolingPolicy({ published: [BASH_TOOL, 'pwsh'], pwsh7: true })
-  assert.match(text, /^# Shell routing: bash → PowerShell 7/)
-  assert.match(text, /bundled PowerShell 7 via host/)
+await test('shell routing prefers bash and leaves PowerShell ownership with the host', () => {
+  const text = renderToolingPolicy({ published: [BASH_TOOL, 'pwsh'] })
+  assert.match(text, /^# Shell routing: bash → host PowerShell/)
+  assert.match(text, /pwsh \(host PowerShell\)/)
+  assert.equal(text.includes('bundled'), false)
   assert.match(text, /fix bash errors in bash, do not switch shells/)
   assert.match(text, /longer than about 1 KB.*script_path/)
   assert.equal(renderToolingPolicy({ published: ['pwsh'] }).includes('bundled PowerShell'), false)

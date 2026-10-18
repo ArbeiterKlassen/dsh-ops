@@ -44,7 +44,7 @@ export function printInjection(context) {
     console.log(`  ${own ? '+' : ' '} ${name}: ${range}`)
   }
   console.log('  (+ marks a platform package this release injects; the rest came from the committed manifest)')
-  console.log('  (the remaining platform package carries ready-to-run Windows binaries)\n')
+  console.log('  (shell binary payloads are not npm dependencies)\n')
 }
 
 /**

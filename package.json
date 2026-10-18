@@ -21,7 +21,7 @@
     "x64",
     "arm64"
   ],
-  "description": "Native file and PTC tools for DSH on Windows x64, Linux x64 and macOS Apple Silicon; Windows-only optional Bash and PowerShell 7 payloads",
+  "description": "Native file and PTC tools for DSH on Windows x64, Linux x64 and macOS Apple Silicon; optional managed Bash and host PowerShell integration",
   "icon": "./docs/assets/icon.png",
   "keywords": [
     "dsh",
@@ -147,9 +147,6 @@
     "@deepseek-ai/dsh": {
       "optional": true
     }
-  },
-  "optionalDependencies": {
-    "@dsh-ops/pwsh-win32-x64": "0.2.1"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",

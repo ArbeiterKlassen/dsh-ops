@@ -20,7 +20,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { resolveWorker, workerName } from '../lib/ptc/runtime.js'
-import { mountBundledPwsh } from '../lib/session-pwsh.js'
 import { assert, report, test, withTempDir } from './lib/harness.mjs'
 
 function stageWorker(root) {
@@ -63,25 +62,6 @@ await test('a malformed provenance receipt is a parse failure, not a leaked raw 
     assert.match(error.message, /provenance receipt at runtime\/[^/]+\/provenance\.json is not valid JSON \(SyntaxError\)/)
     assert.ok(!error.message.includes(dir), `the message leaked the install path: ${error.message}`)
   })
-})
-
-await test('one pwsh row that refuses the overlay does not strand the rows behind it', () => {
-  const warnings = []
-  const refusingRef = { get: () => 'original', [Symbol.for('cosmokit.volatile.write')]() { throw new Error('row refuses') } }
-  const following = { current: 'original' }
-  const followingRef = { get: () => following.current, [Symbol.for('cosmokit.volatile.write')](next) { following.current = next } }
-  const row = (ref) => ({ options: { id: 'pwsh-sandbox', name: '@deepseek-ai/dsh-pwsh-sandbox', config: { pwshPath: 'original', retained: true } },
-    fiber: { state: 2, config: { pwshPath: ref } } })
-  const fixture = { inject(_deps, body) { body({
-    get: () => ({ entries: () => [row(refusingRef), row(followingRef)] }),
-    on: () => () => {},
-    effect: (callback) => { callback() },
-    logger: { warn: (message) => warnings.push(message) },
-  }) } }
-  mountBundledPwsh(fixture, { pwsh: { available: true, file: 'C:/pwsh.exe' } })
-  assert.equal(following.current, 'C:/pwsh.exe')
-  assert.equal(warnings.length, 1, 'the refusal is reported once')
-  assert.match(warnings[0], /rejected the overlay: row refuses/)
 })
 
 report('hardening')

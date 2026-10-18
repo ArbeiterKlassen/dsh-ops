@@ -121,9 +121,7 @@ jobs:
   gate:
     name: Verify the release closure and assemble the publish directory
     needs: native
-    # Assembly is Windows-only by design: the remaining platform payload this
-    # release publishes is a Windows payload. The gate reads every target's bytes and
-    # does not need to execute them.
+    # Windows validates the IPC payload while checking every target artifact.
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -190,8 +188,8 @@ jobs:
         run: npm run verify:release
 
       - name: Assemble and pack the publish directory
-        # Materializes the remaining Windows platform package from its pinned upstream
-        # assets, packs everything, and writes provenance.json + SHA256SUMS under
+        # Packs the main plugin without shell payload dependencies and writes
+        # provenance.json + SHA256SUMS under
         # $env:DIST. A non-zero exit fails the run; nothing is published from here.
         run: node scripts/build-platform-packages.mjs --dist "$env:DIST"
 

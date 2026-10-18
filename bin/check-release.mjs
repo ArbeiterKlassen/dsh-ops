@@ -22,10 +22,9 @@ if (!sameSet(pkg.os ?? [], PLATFORMS.map(target => target.split('-')[0]).filter(
 for (const id of ['dsh-ops-file', 'dsh-ops-shell']) {
   if (!sameSet(components.find(component => component.id === id)?.targets ?? [], PLATFORMS)) throw Error(`${id} target declarations disagree`)
 }
-if (pkg.optionalDependencies?.['@dsh-ops/bash-win32-x64'] || pkg.dependencies?.['@dsh-ops/bash-win32-x64']) throw Error('Bash must be an explicit optional acquisition, not a package dependency')
-for (const kind of ['pwsh']) {
+for (const kind of ['bash', 'pwsh']) {
   const name = `@dsh-ops/${kind}-win32-x64`
-  if (pkg.optionalDependencies?.[name] !== '0.2.1') throw Error(`${name} must remain the pinned Windows-only optional dependency`)
+  if (pkg.optionalDependencies?.[name] || pkg.dependencies?.[name]) throw Error(`${name} must not be a package dependency; shell acquisition is an explicit operator action`)
 }
 if (pkg.scripts?.postinstall) throw Error('Release must not download shell payloads from postinstall')
 const runtimeDir = path.join(root, 'runtime')
