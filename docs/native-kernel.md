@@ -131,10 +131,11 @@ retain the legacy transport contract; the host supplies recovery guidance when s
 
 ## CSV/TSV worker observations (15a/16)
 
-The new ops-documents crate handles `table_read` in the same one-shot worker. This slice exposes
-only the worker capability; discovery/host registration is separate. It adds no external packages:
+The new ops-documents crate handles `table_read` in the same one-shot worker. The capability stays outside
+the default schema: Native uses `ops_discover` and PTC uses `ops_sdk` to activate `table_read`
+for the next agent step. Siblings and descendants require their own selection. It adds no external packages:
 serde/serde_json and sha2 reuse the existing locked workspace dependency graph. PDF/DOC parsing
-remains separate work requiring its own dependency review.
+requires separate dependency review.
 
 Arguments are `{ path, format?, encoding?, header?, offset?, limit? }`. The host resolves path
 against current cwd before sending an absolute path. Format is csv or tsv, inferred as tsv only
@@ -172,3 +173,11 @@ objects. Oversized requested rows use the existing bounded spill sink before dis
 references contain exact typed row JSON, source retains table/coverage facts, and captureComplete
 is independent of scanComplete. Page with the original referenceRoot. Cache effects never imply
 business writes; table_read is classified as read-only even in a writable session.
+
+Native renders positional JSON cells with physical LF ranges and explicit non-exhaustive gap notices.
+PTC exposes lexical `string[]` cells through generated declarations. Stable complete scans with
+remaining rows supply read-only forward continuations; callers must compare revisions across calls.
+Malformed/changed input and physical scan limits retain prefix data and recovery advice, with no
+continuation that would repeat the same gap. Native reference pages and PTC result pages preserve
+original table coverage separately from stored-row pagination. Shared admission, current authority,
+credential checks, cancellation and storage bindings apply unchanged.
