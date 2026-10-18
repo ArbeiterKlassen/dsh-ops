@@ -82,7 +82,9 @@
           "stat",
           "copy",
           "move",
-          "remove"
+          "remove",
+          "read_many",
+          "edit_many"
         ],
         "shellPermission": "Per-call DSH sandbox policy and native subprocess"
       },

@@ -6,8 +6,8 @@ import { capNativeText, NATIVE_OUTPUT_BYTES } from '../lib/modes/native/render.j
 import { renderToolingPolicy, publicToolName } from '../lib/policy.js'
 import { assert, test, report } from './lib/harness.mjs'
 
-await test('all eleven file argument schemas remain discoverable without unknown types', () => {
-  assert.equal(FILE_TOOLS.length, 11)
+await test('all thirteen file argument schemas remain discoverable without unknown types', () => {
+  assert.equal(FILE_TOOLS.length, 13)
   for (const tool of FILE_TOOLS) {
     const schema = PARAMETERS[tool]
     assertSupportedJsonSchema(schema)
@@ -174,4 +174,27 @@ await test('routing and native guide distinguish aggregate totals and errors-as-
   assert.match(guide, /summary.*aggregate/)
   assert.equal(typeof policy, 'string')
 })
+await test('search schemas and Native notices expose scan gaps, stable cursors and recovery', () => {
+  for (const name of ['glob', 'grep']) {
+    const tool = definition(name, async () => null)
+    assertSupportedJsonSchema(tool.parameters)
+    assertSupportedJsonSchema(tool.output.schema)
+    assert.equal(tool.parameters.properties.continuation.type, 'string')
+    for (const field of ['scanComplete', 'pageComplete', 'scannedFiles', 'skipReasons', 'matchedObserved', 'matchedTotal', 'continuation']) {
+      assert.ok(Object.hasOwn(tool.output.schema.properties, field), `${name}.${field}`)
+    }
+    const partial = render(name, { scanComplete: false, pageComplete: true, matchedObserved: 2, skippedFiles: 1,
+      skipReasons: { 'invalid-encoding': 1 }, complete: false, items: [], nextAction: 'Narrow path/glob and start fresh.' })
+    assert.match(partial, /scanComplete=false; pageComplete=true/)
+    assert.match(partial, /skipReasons=.*invalid-encoding/)
+    assert.match(partial, /matchedObserved=2/)
+    assert.doesNotMatch(partial, /matchedTotal=/)
+    assert.match(partial, /Next: Narrow path\/glob/)
+    const page = render(name, { scanComplete: true, pageComplete: true, matchedTotal: 3,
+      complete: false, items: [], continuation: 'opaque-cursor', nextOffset: 2 })
+    assert.match(page, /matchedTotal=3/)
+    assert.match(page, /continuation=opaque-cursor/)
+  }
+})
+
 report('file-sdk-render')

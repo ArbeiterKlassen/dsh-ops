@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 pub mod envelope;
+pub mod search;
 pub mod storage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

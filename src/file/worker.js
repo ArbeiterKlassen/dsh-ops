@@ -8,6 +8,7 @@ import { inside, canonicalAnchor, anchoredPath, sessionAnchors } from '../author
 import { resolveWorker } from '../ptc/runtime.js'
 import { FILE_MUTATIONS } from '../policy.js'
 import { normalizeArguments } from './contract.js'
+import { resolveReadMany } from './read-many.js'
 
 export { resolveWorker }
 
@@ -78,15 +79,19 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
 
   args = normalizeArguments(tool, args)
   const mutates = FILE_MUTATIONS.includes(tool)
+  const reads = tool === 'read_many' ? resolveReadMany(args, cwd) : undefined
+  if (reads?.error) return failure('INVALID_ARGUMENT', reads.error)
   const operationPath = absoluteTarget(args?.path ?? '.', cwd)
   if (!operationPath) return failure('INVALID_ARGUMENT', 'path must be a non-empty path.')
   // Credential locations are refused before the worker is spawned, so no read of one ever reaches a
   // result. On by default; a row can turn the fence off for itself (report: credential fence).
   if ((config?.denyCredentialReads ?? true) !== false) {
-    const verdict = credentialPath(operationPath)
-    if (verdict.denied) {
-      const refusal = credentialRefusal(operationPath, verdict.matched)
-      return credentialDenied(refusal.message)
+    for (const target of reads ? reads.files.map(file => file.path) : [operationPath]) {
+      const verdict = credentialPath(target)
+      if (verdict.denied) {
+        const refusal = credentialRefusal(target, verdict.matched)
+        return credentialDenied(refusal.message)
+      }
     }
   }
   const destination = ['copy', 'move'].includes(tool) ? absoluteTarget(args?.to, cwd) : undefined
@@ -128,7 +133,9 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
 
   // Do NOT realpath the caller's parents here: that would erase a symlink/junction before
   // the no-follow native traversal could reject it (especially on create-only writes).
-  const workerArgs = { ...args, path: trustedPath(operationPath), ...(destination ? { to: trustedPath(destination) } : {}) }
+  const workerArgs = reads
+    ? { ...args, files: reads.files.map(file => ({ ...file, path: trustedPath(file.path) })) }
+    : { ...args, path: trustedPath(operationPath), ...(destination ? { to: trustedPath(destination) } : {}) }
   // Traversals skip credential directories by identity, so a glob or grep cannot even name a private
   // key that sits below one.
   const denyRoots = (config?.denyCredentialReads ?? true) !== false ? credentialRoots() : []
@@ -145,6 +152,7 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
     const fsService = hostFs(ctx)
     // Stat before reading, like host read: a concurrent change records the older version and fails stale later.
     const readObservation = ['inspect_local_file', 'stat'].includes(tool) ? await hostObservation(fsService, operationPath, cwd, signal) : undefined
+    const readObservations = reads ? await Promise.all(reads.files.map(file => hostObservation(fsService, file.path, cwd, signal))) : []
     signal?.throwIfAborted?.()
     const current = policyService.resolve({ session })
     if (current.mode !== policy.mode || current.workspaceRoot !== policy.workspaceRoot) {
@@ -165,6 +173,11 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
     try { value = JSON.parse(stdout.text) } catch { return failure('RESULT_UNKNOWN', 'Worker returned invalid JSON; inspect postconditions.', 'verify', 'unknown') }
     // Report reads/writes to the host's read-before-edit table, exactly like host read/edit. (#17)
     if (['inspect_local_file', 'stat'].includes(tool) && value?.status === 'completed') emitObserved(ctx, readObservation, exec)
+    if (reads && Array.isArray(value?.items)) {
+      for (const [index, item] of value.items.entries()) {
+        if (item?.status === 'completed') emitObserved(ctx, readObservations[index], exec)
+      }
+    }
     if (mutates) await observeReplaced(ctx, fsService, value, cwd, exec, signal)
     value = normalizeNativeDenial(value, policy, tool, mutates ? requiredMode(policy) : 'workspace-write')
     return { ...value, sandbox: { mode: policy.mode, enforcement: 'policy', boundary: 'trusted-native-file-operations' } }

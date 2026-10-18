@@ -9,9 +9,9 @@ const fields = tool => Object.fromEntries(Object.entries(PARAMETERS[tool].proper
 await test('grep, glob and replace parameters are pinned exactly', () => {
   assert.deepEqual(fields('grep'), {
     path: 'string', pattern: 'string', glob: 'array', outputMode: 'string', caseInsensitive: 'boolean',
-    lineNumbers: 'boolean', beforeContext: 'integer', afterContext: 'integer', multiline: 'boolean', offset: 'integer', limit: 'integer',
+    lineNumbers: 'boolean', beforeContext: 'integer', afterContext: 'integer', multiline: 'boolean', offset: 'integer', limit: 'integer', continuation: 'string',
   })
-  assert.deepEqual(fields('glob'), { path: 'string', pattern: 'array', outputMode: 'string', sort: 'string', offset: 'integer', limit: 'integer' })
+  assert.deepEqual(fields('glob'), { path: 'string', pattern: 'array', outputMode: 'string', sort: 'string', offset: 'integer', limit: 'integer', continuation: 'string' })
   assert.deepEqual(fields('replace'), { path: 'string', pattern: 'string', replacement: 'string', glob: 'array', maxReplacements: 'integer', dryRun: 'boolean' })
   for (const tool of ['grep', 'glob', 'replace']) assert.equal(PARAMETERS[tool].properties.include, undefined)
 })

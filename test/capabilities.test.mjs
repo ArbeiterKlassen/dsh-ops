@@ -9,10 +9,10 @@ import { BASH_TOOL_NAME } from '../lib/shells/constants.js'
 import { assert, test, report } from './lib/harness.mjs'
 
 await test('the catalogue covers every owned file, PTC and shell tool exactly once', () => {
-  assert.equal(CAPABILITIES.length, 14)
+  assert.equal(CAPABILITIES.length, 16)
   assert.equal(new Set(CAPABILITIES.map(item => item.rawName)).size, CAPABILITIES.length)
-  assert.deepEqual(FILE_TOOLS, ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove'])
-  assert.deepEqual(FILE_MUTATIONS, ['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove'])
+  assert.deepEqual(FILE_TOOLS, ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_many', 'edit_many'])
+  assert.deepEqual(FILE_MUTATIONS, ['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove', 'edit_many'])
   assert.deepEqual(PTC_TOOLS, ['batch', 'result'])
   assert.deepEqual(IN_PROCESS_TOOLS, ['bash'])
   assert.equal(BASH_TOOL_NAME, BASH_TOOL)
@@ -43,10 +43,10 @@ const snapshot = (names, definition) => names.map(name => {
   return { name: d.name, description: d.description, parameters: d.parameters, output: d.output.schema,
     concurrent: d.isConcurrencySafe?.({}) ?? false, timeoutMs: d.timeoutMs ?? null }
 })
-await test('serialized host schemas, descriptions, ordering and execution metadata match 00237b8', () => {
+await test('unchanged file definitions and PTC definitions retain their original serialized contracts', () => {
   // Captured before this migration, covering every argument/output contract and published description.
   const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-  assert.equal(hash(snapshot(FILE_TOOLS, fileDefinition)), '8b89dff420471db5b3bd13729cdf8a30c07e8e7636e5d22795ab343b5ae8e267')
+  assert.equal(hash(snapshot(FILE_TOOLS.filter(name => !['glob', 'grep', 'read_many', 'edit_many'].includes(name)), fileDefinition)), 'f32e33306b4052fdb3d19a11e0fe9d65c255a87d2d485de08a9d7b1275e958fc')
   assert.equal(hash(snapshot(PTC_TOOLS, ptcDefinition)), '74e6a50db799da1aa80c745e18c67be577426cc41441f9d0f8c87673c04f3c43')
 })
 

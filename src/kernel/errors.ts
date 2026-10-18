@@ -16,6 +16,7 @@ export const ERROR_POLICIES: Readonly<Record<string, ErrorPolicy>> = Object.free
   REVISION_CONFLICT: policy('conflict', 'after-state-change'),
   INVALID_ARGUMENT: invalid,
   EDIT_CONFLICT: invalid,
+  SEARCH_STALE: invalid,
   NOT_FOUND: invalid,
   IS_DIRECTORY: invalid,
   OUTPUT_LIMIT: invalid,

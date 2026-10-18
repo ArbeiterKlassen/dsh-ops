@@ -17,6 +17,14 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Preserve Windows private-temp capability isolation; real confined create/reopen/readonly and
   foreign-session denial assertions cover the protected cache ACL.
 
+### Read multiple file ranges and apply atomic multi-edits (#261)
+
+- Add read_many with 1-32 independently reported UTF-8 ranges in one worker call, current-session
+  paths, credential preflight, per-file revisions/errors and explicit pending-file/line recovery.
+- Add edit_many as a single-file atomic CAS edit operation with short receipts. Bound escaped
+  read output using actual metadata bytes; an incomplete line retains its offset and hex guidance.
+- 新增多文件范围读取与单文件原子多段编辑；逐文件报告版本、错误及未读范围，保持权限边界与短回执。
+
 ### Render Native file results as bounded, readable text (#261)
 
 - Show file headings and physical line numbers, concise mutation receipts, and explicit
@@ -36,6 +44,14 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Add typed Outcome, search coverage and result-reference contracts plus explicit error/retry
   policies for subsequent adapter slices. Incomplete searches cannot claim a known total.
 - Pin Node 22 declarations and check valid/invalid contracts in the regular test runner.
+
+### Report search coverage and validate continuation state (#261)
+
+- Search reports distinguish scan coverage from page delivery, count skip reasons, and omit full
+  totals after unreadable, encoding, size or execution-budget gaps. Bounded rescan continuations
+  reject changed queries, authority and observed filesystem state; incomplete traversals require
+  a narrower fresh query. Search retains physical LF accounting and bounded output prefixes.
+
 ### Version the one-shot worker request protocol (#261)
 
 - Send strict v1 requests with per-call IDs, component provenance, and enforced deadline/output

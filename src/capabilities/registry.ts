@@ -1,20 +1,20 @@
 /** One catalogue for owned tools. This module never registers tools or imports host values. */
-import { PARAMETERS as fileParameters, DESCRIPTIONS as fileDescriptions, OUTPUT as fileOutput } from './file.js'
+import { PARAMETERS as fileParameters, DESCRIPTIONS as fileDescriptions, fileOutput } from './file.js'
 import { PARAMETERS as ptcParameters, DESCRIPTIONS as ptcDescriptions, OUTPUT as ptcOutput } from './ptc.js'
 import type { CapabilityMetadata, Component, SchemaCapability } from './types.js'
 
 export type FileToolName = keyof typeof fileParameters
 export type PtcToolName = keyof typeof ptcParameters
 // Preserve the published registration order independently of schema object key order.
-const fileOrder = ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove'] as const satisfies readonly FileToolName[]
-const fileMutations = new Set<FileToolName>(['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove'])
+const fileOrder = ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_many', 'edit_many'] as const satisfies readonly FileToolName[]
+const fileMutations = new Set<FileToolName>(['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove', 'edit_many'])
 const allPresentations = Object.freeze(['native', 'ptc', 'both'] as const)
 
 export const FILE_CAPABILITIES = Object.freeze(fileOrder.map(rawName => Object.freeze({
   rawName, component: 'file' as const, presentations: allPresentations,
   availability: 'resident' as const, mutates: fileMutations.has(rawName),
   concurrencySafe: !fileMutations.has(rawName),
-  parameters: fileParameters[rawName], description: fileDescriptions[rawName], output: fileOutput,
+  parameters: fileParameters[rawName], description: fileDescriptions[rawName], output: fileOutput(rawName),
 } satisfies SchemaCapability)))
 export const PTC_CAPABILITIES = Object.freeze((Object.keys(ptcParameters) as PtcToolName[]).map(rawName => Object.freeze({
   rawName, component: 'ptc' as const, presentations: Object.freeze(['ptc'] as const),
