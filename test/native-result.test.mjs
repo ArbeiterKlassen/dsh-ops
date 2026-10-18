@@ -10,7 +10,7 @@ import { bootHost, mountPlugin, shutdown } from './lib/host.mjs'
 import { WORKER, requireWorker } from './lib/boundary.mjs'
 import { invoke } from '../lib/ptc/worker.js'
 import * as ptc from '../lib/ptc/index.js'
-import { applyComponent } from '../lib/index.js'
+import { mountNativeCatalogue } from './lib/native-catalogue.mjs'
 import { resultStorage } from '../lib/kernel/result-storage.js'
 import { resultDefinition } from '../lib/file/result.js'
 import { CAPABILITIES, NATIVE_FILE_TOOLS } from '../lib/capabilities/registry.js'
@@ -21,7 +21,7 @@ async function setup(root) {
   const { ctx } = await bootHost()
   await ctx.plugin(Subprocess); await ctx.plugin(Sandbox)
   await ctx.plugin(inner => inner.provide('sandboxPolicy', { resolve: ({ session }) => ({ mode: session.mode, workspaceRoot: root, sessionId: session.id }) }))
-  const file = await mountPlugin({ ctx, config: { binaryPath: WORKER, required: true }, expectTools: NATIVE_FILE_TOOLS.length })
+  const file = { fiber: await mountNativeCatalogue(ctx, { binaryPath: WORKER, required: true }) }
   return { ctx, file }
 }
 async function agent(ctx, cwd, presentation = 'native', parent) {
@@ -51,7 +51,7 @@ await test('one catalogue entry exposes distinct SDK-valid Native and PTC result
   assert.ok(entry[0].parameters.properties.ttlMs); assert.ok(entry[0].output.properties.reference)
 })
 
-await test('file-only Native SDK execution pages/releases with cwd binding, defaults and no business writes', async () => {
+await test('Native discovery without PTC SDK execution pages/releases with cwd binding, defaults and no business writes', async () => {
   await withTempDir('native-reference', async root => {
     const cwd = path.join(root, 'nested'); fs.mkdirSync(cwd); fs.writeFileSync(path.join(cwd, 'keep'), 'unchanged')
     const { ctx } = await setup(root)
@@ -75,7 +75,7 @@ await test('file-only Native SDK execution pages/releases with cwd binding, defa
   })
 })
 
-await test('file-only Native spill pages reconstruct one large escaped line exactly through the real host', async () => {
+await test('Native discovery without PTC spill pages reconstruct one large escaped line exactly through the real host', async () => {
   await withTempDir('native-spill-roundtrip', async root => {
     const cwd = path.join(root, 'nested'); fs.mkdirSync(cwd)
     const original = '\u0000'.repeat(22000) + '😀end'
@@ -142,7 +142,7 @@ await test('Native pager denies hidden producers, other sessions, narrower autho
   })
 })
 
-await test('Native children of PTC parents retain page-only projection and file unload preserves PTC put', async () => {
+await test('Native children of PTC parents retain page-only projection and Native component unload preserves PTC put', async () => {
   await withTempDir('native-reference-scopes', async root => {
     const { ctx, file } = await setup(root)
     try {
@@ -181,7 +181,7 @@ await test('agent-scoped file rows isolate sibling pagers and yield only their e
       const component = await ctx.plugin(ptc, { binaryPath: WORKER, required: true })
       const parent = await agent(ctx, root, 'ptc'), left = await agent(ctx, root, 'native', parent), right = await agent(ctx, root, 'native', parent)
       const current = value => ctx.get('tools').get('ops_result', value)
-      const mount = value => value.ctx.plugin({ name: 'scoped-file-' + value.id, apply(inner) { return applyComponent(inner, { binaryPath: WORKER, required: true }, 'file') } })
+      const mount = value => mountNativeCatalogue(value.ctx, { binaryPath: WORKER, required: true })
       const leftFile = await mount(left)
       await waitFor(() => current(left)?.parameters.properties.action.enum.length === 2, { timeoutMs: 5000, what: 'left scoped Native pager' })
       assert.equal(current(right), undefined, 'a sibling cannot borrow the left file executor')

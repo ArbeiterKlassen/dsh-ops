@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "dsh-ops-file",
-    "description": "有界 Native 文件读取、编辑、搜索与会话结果引用分页。"
+    "description": "有界原生文件读取；高级操作通过工具发现按需加载。"
   }
 }

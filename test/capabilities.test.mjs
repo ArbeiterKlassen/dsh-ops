@@ -1,9 +1,10 @@
 /** Registry migration preserves the complete previously published host definitions. */
 import { createHash } from 'node:crypto'
-import { CAPABILITIES, NATIVE_FILE_TOOLS, FILE_CAPABILITIES, PTC_CAPABILITIES, SHELL_CAPABILITIES, capability, capabilitiesFor } from '../lib/capabilities/registry.js'
+import { CAPABILITIES, NATIVE_FILE_TOOLS, NATIVE_RESIDENT_FILE_TOOLS, FILE_CAPABILITIES, PTC_CAPABILITIES, SHELL_CAPABILITIES, capability, capabilitiesFor } from '../lib/capabilities/registry.js'
 import { FILE_TOOLS, FILE_MUTATIONS, IN_PROCESS_TOOLS, BASH_TOOL, publicToolName } from '../lib/policy.js'
 import { definition as fileDefinition, PARAMETERS as fileParameters, DESCRIPTIONS as fileDescriptions } from '../lib/file/contract.js'
 import { definition as ptcDefinition, PTC_TOOLS, PARAMETERS as ptcParameters, DESCRIPTIONS as ptcDescriptions } from '../lib/ptc/contract.js'
+import { DISCOVERABLE_TOOLS } from '../lib/discovery/config.js'
 import { NativeFileTools } from '../lib/file/runtime.js'
 import { BASH_TOOL_NAME } from '../lib/shells/constants.js'
 import { assert, test, report } from './lib/harness.mjs'
@@ -29,11 +30,13 @@ await test('the catalogue covers every owned file, PTC and shell tool exactly on
   for (const name of ['unknown', 'toString', '__proto__']) assert.equal(capability(name), undefined)
 })
 
-await test('metadata preserves current mode availability and conservative concurrency', () => {
+await test('metadata separates the Native resident core from discoverable capabilities', () => {
   for (const entry of [...FILE_CAPABILITIES, ...SHELL_CAPABILITIES]) assert.deepEqual(entry.presentations, ['native', 'ptc', 'both'])
   for (const entry of PTC_CAPABILITIES) assert.deepEqual(entry.presentations, entry.rawName === 'result' ? ['native', 'ptc', 'both'] : ['ptc'])
+  assert.deepEqual(NATIVE_RESIDENT_FILE_TOOLS, ['read_many'])
+  assert.deepEqual(FILE_CAPABILITIES.filter(entry => entry.availability === 'discoverable').map(entry => entry.rawName).sort(), DISCOVERABLE_TOOLS.filter(name => name !== 'result').sort())
   for (const entry of CAPABILITIES) {
-    assert.equal(entry.availability, 'resident')
+    assert.equal(entry.availability, entry.component === 'file' && entry.rawName !== 'read_many' ? 'discoverable' : 'resident')
     assert.equal(entry.concurrencySafe, entry.component === 'file' && !entry.mutates)
   }
 })

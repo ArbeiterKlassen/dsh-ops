@@ -3,8 +3,9 @@ import { discoveryMountChecks } from './lib/discovery.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { NATIVE_FILE_TOOLS } from '../lib/capabilities/registry.js'
-import { BASH_TOOL, TOOLING_SECTION, publicToolName } from '../lib/policy.js'
+import { BASH_TOOL, FILE_TOOLS, TOOLING_SECTION, publicToolName } from '../lib/policy.js'
+import { NATIVE_RESIDENT_FILE_TOOLS } from '../lib/capabilities/registry.js'
+import * as discovery from '../lib/components/discovery/index.js'
 import { applyComponent } from '../lib/index.js'
 import * as ptc from '../lib/ptc/index.js'
 import { resolveWorker } from '../lib/ptc/runtime.js'
@@ -18,7 +19,7 @@ import { officialToolHidingMountChecks } from './lib/official-tool-hiding.mjs'
 
 // Component 4 has no native runtime dependency; always exercise its real mounts.
 await officialToolHidingMountChecks()
-const EXPECTED = NATIVE_FILE_TOOLS.map(publicToolName).sort()
+const EXPECTED = NATIVE_RESIDENT_FILE_TOOLS.map(publicToolName).sort()
 const FILE_SECTION = `${TOOLING_SECTION}:file`
 const SHELL_SECTION = `${TOOLING_SECTION}:shell`
 const BG_SECTION = `${TOOLING_SECTION}:background`
@@ -52,7 +53,11 @@ async function agentForCall(ctx, cwd, mode = 'danger-full-access') {
   const result = { id: 'file-call', session: { id: 'file-call', mode, header: { cwd } } }
   const { createScope } = await import('@deepseek-ai/dsh-scope')
   result.ctx = createScope(ctx, result).ctx
+  await ctx.serial('agent/created', { agent: result, source: 'startup' })
   return result
+}
+async function advancedMount(ctx, names) {
+  return ctx.plugin(discovery, { required: true, enabled: false, allowedTools: names, alwaysLoaded: names })
 }
 async function component(ctx, name, config = {}) {
   return ctx.plugin({ name: `fixture-${name}`, apply(inner) { return applyComponent(inner, { ...config }, name) } })
@@ -143,6 +148,7 @@ await test('real native file calls return data and propagate errors promptly', a
   const { ctx } = await bootHost()
   try {
     await fileMount(ctx)
+    await advancedMount(ctx, ['inspect_local_file', 'write_file', 'stat', 'glob'])
     await withTempDir('glob', async dir => {
       fs.writeFileSync(path.join(dir, 'alpha.txt'), 'alpha\n')
       const agent = await agentForCall(ctx, dir)
@@ -162,6 +168,7 @@ await test('native file paths resolve from session cwd and enforce workspace-wri
   const { ctx } = await bootHost()
   try {
     await fileMount(ctx)
+    await advancedMount(ctx, ['inspect_local_file', 'glob', 'replace'])
     await withTempDir('native-paths', async dir => {
       fs.writeFileSync(path.join(dir, 'cwd.txt'), 'cwd\n')
       const workspace = await agentForCall(ctx, dir, 'workspace-write')
@@ -335,33 +342,19 @@ await test('an old background row loads as a no-op: no tools, no section, one wa
 await test('the host half refuses to mount a background component itself', () => {
   assert.throws(() => applyComponent({}, {}, 'background'), /unknown component "background"/)
 })
-await test('real file replacement surface hides duplicates, keeps the PTC transport visible, and never publishes unready processes', async () => {
+await test('legacy blanket hiding fails closed when the file row publishes only its resident core', async () => {
   const { ctx } = await bootHost()
   try {
     await fileMount(ctx)
-    for (const name of ['read', 'glob', 'grep', process.platform === 'win32' ? 'pwsh' : 'bash']) ctx.tools.register(foreignTool(name))
+    for (const name of ['read', 'glob', 'grep']) ctx.tools.register(foreignTool(name))
     const { apply: hideOfficial } = await import('../lib/official-tool-hiding.js')
-    const hiding = await ctx.plugin({ name: 'real-file-takeover', apply: hideOfficial }, {})
-    await new Promise(resolve => setImmediate(resolve))
-    const current = await agent(ctx, 'real-file-takeover')
-    const assembly = await ctx.get('systemPrompt').assemble({ scope: current })
-    const names = assembly.tools.map(tool => tool.name)
-    for (const name of ['read', 'glob', 'grep']) assert.equal(names.includes(name), false)
-    for (const name of EXPECTED) assert.ok(names.includes(name))
-    assert.equal(new Set(names).size, names.length)
-    assert.equal(names.some(name => name.startsWith('ops_process_')), false)
-    ctx.provide('ptcRuntime', { language: 'typescript' })
-    const restore = current.ctx.tools.presentAs('both')
-    // run_code is inside the PTC face with no reviewed replacement, so strict
-    // keeps it visible and warns instead of failing the session (#238).
-    const withTransport = await ctx.get('systemPrompt').assemble({ scope: current })
-    const transported = withTransport.tools.map(tool => tool.name)
-    assert.ok(transported.includes('run_code'))
-    assert.equal(transported.includes('read'), false)
-    restore()
-    await ctx.get('systemPrompt').assemble({ scope: current })
+    const hiding = await ctx.plugin({ name: 'legacy-file-takeover', apply: hideOfficial }, {})
+    const current = await agent(ctx, 'legacy-file-takeover')
+    await assert.rejects(() => ctx.get('systemPrompt').assemble({ scope: current }), /READINESS_BLOCKED/)
     await hiding.dispose()
-    assert.ok(scopedToolNames(ctx, current).includes('read'))
+    const assembly = await ctx.get('systemPrompt').assemble({ scope: current })
+    for (const name of ['read', 'glob', 'grep', ...EXPECTED]) assert.ok(assembly.tools.some(tool => tool.name === name))
+    assert.equal(assembly.tools.some(tool => tool.name.startsWith('ops_process_')), false)
   } finally { await shutdown(ctx) }
 })
 report('mount')

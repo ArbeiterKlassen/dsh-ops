@@ -44,6 +44,14 @@ await test('partial tool availability never advertises missing tools', () => {
   assert.ok(text.includes(files[0]))
   for (const name of files.slice(1)) assert.equal(text.includes(name), false)
 })
+await test('resident-only routing omits unavailable operation hints and includes discovery only when published', () => {
+  const reader = renderToolingPolicy({ published: [publicToolName('inspect_local_file')], shellComponent: false })
+  for (const text of ['glob', 'grep', 'copy/move', 'ops_stat', 'ops_discover']) assert.equal(reader.includes(text), false)
+  const discovery = renderToolingPolicy({ published: [publicToolName('discover')], shellComponent: false })
+  assert.ok(discovery.includes(publicToolName('discover')))
+  assert.match(discovery, /next model step/)
+  for (const name of files) assert.equal(discovery.includes(name), false)
+})
 await test('shell routing prefers bash and names bundled pwsh only when available', () => {
   const text = renderToolingPolicy({ published: [BASH_TOOL, 'pwsh'], pwsh7: true })
   assert.match(text, /^# Shell routing: bash → PowerShell 7/)

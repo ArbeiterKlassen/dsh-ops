@@ -7,7 +7,7 @@ What each of the six components publishes, with parameters and permission requir
 | Row `name` | Description | Default | Published tools |
 | --- | --- | --- | --- |
 | `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
-| `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Native file tools and ops_result page/release |
+| `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | `ops_inspect_local_file`; advanced tools load through discovery |
 | `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
 | `dsh-ops/panel` | Data capture, off at the switch: new conversations write `<cwd>/.dsh-ops/panel/<sessionId>.json` plus the viewer `panel.html` | Row on, `capture: false` | None; see the [configuration reference](configuration-reference.md) |
 | `dsh-ops/tui` | Read-only current-session OPS sidebar | Off | None; see [sidebar guide](tui-panel.md) |
@@ -35,6 +35,8 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 ---
 
 ## `dsh-ops/file` — file tools
+
+Only the bounded reader is resident. The advanced contracts below are activated through [tool discovery](discovery.md) or explicit always-loaded choices. Routing lists only the tools currently published.
 
 All file tools resolve relative paths against the DSH session cwd, accept a single `path`, and expose no `root`, `workspace`, `cwd` or `file_path` alias. All are UTF-8 first with bounded output; glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
 

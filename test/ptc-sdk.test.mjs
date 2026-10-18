@@ -10,7 +10,7 @@ import { assert, test, report, withTempDir, waitFor } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
 import { WORKER, requireWorker } from './lib/boundary.mjs'
 import * as ptc from '../lib/ptc/index.js'
-import { applyComponent } from '../lib/index.js'
+import { mountNativeCatalogue } from './lib/native-catalogue.mjs'
 import { resolvePtcConfig } from '../lib/config.js'
 import { sdkDefinition, requestedApis } from '../lib/ptc/sdk.js'
 requireWorker('ptc-sdk')
@@ -24,7 +24,7 @@ async function setup(root, { native = false, config = {}, real = false } = {}) {
     if (!real) inner.provide('ptcRuntime', { language: 'typescript' })
   })
   if (real) await ctx.plugin(NodePtc, {})
-  const mountFile = target => target.plugin({ apply(inner) { applyComponent(inner, { binaryPath: WORKER, required: true }, 'file') } })
+  const mountFile = target => mountNativeCatalogue(target, { binaryPath: WORKER, required: true })
   if (native) await mountFile(ctx)
   const component = await ctx.plugin(ptc, { binaryPath: WORKER, required: true, ...config })
   async function agent(mode = 'ptc', parent) {
