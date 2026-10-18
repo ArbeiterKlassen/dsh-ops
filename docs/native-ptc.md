@@ -54,8 +54,8 @@ Rust >=1.88 is required. Build uses `cargo build --release --locked` against
 session toolchain before building; do not add multi-version toolchains to global PATH.
 
 The `dsh-ops/ptc` bundle row is enabled by default after #170; existing explicit
-profile disablement is preserved. Its only config keys are `required`
-(default false) and an optional absolute `binaryPath`. `DSH_OPS_WORKER_BIN` can
+profile disablement is preserved. Config accepts `required` (default false), an optional
+absolute `binaryPath`, `allowedTools`, and `alwaysLoaded`; see [SDK loading](ptc-sdk-loading.md). `DSH_OPS_WORKER_BIN` can
 select a build; otherwise the component uses `runtime/<platform>-<arch>/dsh-ops-worker[.exe]` before `native/target/release`.
 Published 0.3.1 packages include the runtime bytes
 of every supported platform; source checkouts stage them explicitly with
@@ -66,7 +66,9 @@ The session must already use DSH's **PTC-only** presentation. The component does
 not force presentation, replace the registry, or create a REPL. It recognizes the
 host's public prompt assembly (`tools:ptc-only` section plus the reserved-only wire
 schema), not private `modeFor`, run_code existence alone or a guessed session key.
-This PTC row adds no batch/put capability or extra prompt in Native/both scopes. The file row independently supplies Native ops_result page/release; see [result budgets](result-budgets.md#native-and-ptc-reference-pages). 文件组件独立提供 Native 引用分页/释放，详见[结果预算](结果预算.md#native-与-ptc-引用分页)。
+This PTC row publishes its independent SDK only in PTC-only scopes, with inspect/result and the
+loader initially resident. Other APIs require next-step activation or `alwaysLoaded`. It adds
+no bindings or extra prompt in Native/both scopes. The file row independently supplies Native ops_result page/release; see [result budgets](result-budgets.md#native-and-ptc-reference-pages). 文件组件独立提供 Native 引用分页/释放，详见[结果预算](结果预算.md#native-与-ptc-引用分页)。
 The host generates SDK declarations from the same tool schemas; no duplicate guide
 or dynamic plan IDs are added to the system prefix.
 
@@ -283,7 +285,7 @@ input is bounded stdin JSON, never a shell command or argv-sized path list. Unlo
 aborts and waits for in-flight work. Authority downgrade aborts active workers.
 If host jobs/controller admission is available, batch foreground work uses that
 registry's owner, cancel and progress surfaces, waits once, then removes its own
-collected terminal record. Otherwise it remains a 5-minute bounded foreground call.
+collected terminal record. Otherwise it remains a bounded foreground call; the shared host ceiling is 30 seconds.
 No second background scheduler, detached-job polling tool or cloned REPL is created.
 Progress is currently preflight/settlement only, not per-file live reporting.
 
