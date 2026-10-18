@@ -162,3 +162,12 @@ settings service. Saving uses the profile revision the form read; a stale revisi
 selection is rejected before writing. The host persists accepted changes and reloads the affected
 row, so the running configuration follows the saved selection. Ordinary row fields are preserved.
 A disabled row has no editable form; re-enable it with the host's built-in row switch first.
+
+Runtime actions use the host's authenticated gateway and managed subprocess service. Installation,
+removal and upgrade require a preview followed by execution of that current preview; expired,
+changed or reused plans are refused. Only one action runs at a time. Closing/unloading the owning
+shell component cancels outstanding work and waits for settlement; cancellation after launch may
+leave changes and reports an unknown effect. Bash install refuses a store containing unowned
+version directories. The PowerShell action targets the standard WinGet installation and requires
+a DSH restart; an explicit host `pwshPath` remains authoritative. Installer output stays in host
+logs; use the previewed command in a terminal if WinGet needs interactive input.

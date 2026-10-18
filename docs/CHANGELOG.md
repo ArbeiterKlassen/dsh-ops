@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Connect runtime settings actions to the host gateway (#261)
+
+- Add typed, package-owned gateway descriptors for runtime inventory, Bash selection and explicit install/remove/PowerShell-upgrade previews. Execute only current one-use plans through host subprocess governance; preserve cancellation and partial-effect facts.
+- 通过宿主网关提供运行时清单、Bash 选择和显式安装/删除/PowerShell 升级预览；仅执行有效的一次性计划，并保留取消和部分副作用信息。
 ### Validate and persist host settings forms (#261)
 
 - Expose shell executor, discovery pool/always-loaded and per-tool replacement fields through detached settings descriptors and existing validators. Accepted changes persist through the host profile writer and reload the row; stale/invalid writes preserve the profile.
