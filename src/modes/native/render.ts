@@ -42,7 +42,7 @@ function notices(value: Row, displayed: number): string[] {
     `${displayed} item${displayed === 1 ? '' : 's'} displayed`,
     `complete=${value.complete === undefined ? (incomplete ? 'false' : 'unspecified') : value.complete}`,
     `TruncatedBy: ${value.truncatedBy ?? (incomplete ? 'worker-limit' : 'none')}`,
-    facts(value, ['nextOffset', 'omitted', 'total', 'matched', 'files', 'matches', 'skippedFiles', 'skippedPaths', 'failed', 'continuation']),
+    facts(value, ['nextOffset', 'nextIndex', 'pending', 'omitted', 'total', 'matched', 'files', 'matches', 'skippedFiles', 'skippedPaths', 'failed', 'continuation']),
   ].filter(Boolean)
   const output = [`[Notice: ${details.join('; ')}.]`]
   for (const item of rows(value.items)) {
@@ -159,6 +159,7 @@ export function renderNative(tool: string, args: unknown, result: unknown): stri
   const input = record(args) ? args : {}
   let lines: string[]
   if (record(result.error) || ['error', 'rejected', 'conflict', 'unknown', 'failed'].includes(String(result.status))) lines = failure(result)
+  else if (tool === 'read_many') lines = readMany(result)
   else if (tool === 'inspect_local_file') lines = inspect(input, result)
   else if (mutations.has(tool)) lines = receipts(tool, result)
   else if (tool === 'stat') lines = stat(input, result)
@@ -167,4 +168,14 @@ export function renderNative(tool: string, args: unknown, result: unknown): stri
   return capNativeText(lines.join('\n'), NATIVE_OUTPUT_BYTES, mutations.has(tool)
     ? 'Inspect current state before another mutation; do not repeat the write to recover undisplayed receipts.'
     : undefined)
+}
+
+function readMany(value: Row): string[] {
+  const output: string[] = []
+  for (const item of rows(value.items)) {
+    if (record(item.error)) output.push(`=== FILE: ${label(item.path)} ===`, ...failure(item))
+    else output.push(...inspect(item, item))
+  }
+  output.push(...notices(value, rows(value.items).length))
+  return output
 }

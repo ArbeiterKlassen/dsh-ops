@@ -12,7 +12,13 @@ const bounded = (properties: Record<string, JsonSchemaNode>, required: string[] 
 const revision: JsonSchemaNode = { type: 'string', description: '64 lowercase hex SHA-256 revision returned by inspect/stat; absent is create-only, never an overwrite wildcard.' }
 const existingRevision: JsonSchemaNode = { type: 'string', description: '64 lowercase hex SHA-256 revision returned by inspect/stat; absent is not accepted.' }
 
+const edits = bounded({ path: string, expectedRevision: existingRevision, edits: { type: 'array', description: '1-100 nonoverlapping edits against the same original bytes.', items: bounded({ oldText: { ...string, description: 'Nonempty text that occurs exactly once in the original.' }, newText: string }, ['oldText', 'newText']) }, dryRun: { type: 'boolean' } }, ['path', 'expectedRevision', 'edits'])
+
 export const PARAMETERS = Object.freeze({
+  read_many: bounded({ files: { type: 'array', description: '1-32 UTF-8 file ranges.', items: bounded({
+    path: string, offset: { type: 'integer', description: '1-based line; minimum 1, default 1.' }, limit: range(1, 10000, 'Default 200.'),
+  }, ['path']) } }, ['files']),
+  edit_many: edits,
   inspect_local_file: bounded({
     path: string,
     offset: { type: 'integer', description: '1-based line or 16-byte hex row; default 1. Legacy 0 also reads the first unit.' },
@@ -44,7 +50,7 @@ export const PARAMETERS = Object.freeze({
   stat: bounded({ path: string }, ['path']),
   diff: bounded({ path: string, content: string, offset: integer, limit: range(1, 1000, 'Default 100.') }, ['path', 'content']),
   write_file: bounded({ path: string, content: string, expectedRevision: revision, dryRun: { type: 'boolean' } }, ['path', 'content', 'expectedRevision']),
-  edit_file: bounded({ path: string, expectedRevision: existingRevision, edits: { type: 'array', description: '1-100 nonoverlapping edits against the same original bytes.', items: bounded({ oldText: { ...string, description: 'Nonempty text that occurs exactly once in the original.' }, newText: string }, ['oldText', 'newText']) }, dryRun: { type: 'boolean' } }, ['path', 'expectedRevision', 'edits']),
+  edit_file: edits,
   copy: bounded({ path: string, to: string, expectedRevision: existingRevision }, ['path', 'to', 'expectedRevision']),
   move: bounded({ path: string, to: string, expectedRevision: existingRevision }, ['path', 'to', 'expectedRevision']),
   remove: bounded({ path: string, expectedRevision: existingRevision }, ['path', 'expectedRevision']),
@@ -72,16 +78,27 @@ export const OUTPUT: JsonSchemaNode = {
   },
 }
 
+export const READ_MANY_OUTPUT: JsonSchemaNode = {
+  type: 'object', properties: {
+    status: string, complete: { type: 'boolean' }, nextIndex: { type: 'integer' }, pending: { type: 'integer' },
+    total: { type: 'integer' }, failed: { type: 'integer' }, truncated: { type: 'boolean' }, effectState: string,
+    items: { type: 'array', items: { ...OUTPUT, properties: { ...OUTPUT.properties, path: string } } }, error: { type: 'object' },
+  },
+}
+
 // Failures are returned values, never thrown: a try/catch alone misses them (#44).
 const RESULT = ' Failures resolve as {status:"error"|"rejected", error.code}; they are not thrown.'
+const EDIT_DESCRIPTION = 'Precisely patch one UTF-8 file using 1-100 oldText/newText edits against the SAME original bytes. Every nonempty oldText must occur exactly once; overlapping edits reject all. Required expectedRevision from inspect/stat. Atomic CAS; dryRun previews. Darwin nonempty extended ACLs fail closed with METADATA_UNSUPPORTED. Preserve CRLF/BOM explicitly in text. Windows preserves owner/group/ordered DACL and supported basic attributes/timestamps; readonly overwrite is refused and unsupported streams/EA/special storage fail with METADATA_UNSUPPORTED. SACL/audit labels are not preserved.' + RESULT
 export const DESCRIPTIONS = Object.freeze({
+  read_many: 'Read UTF-8 ranges in one call. Paths use the current session cwd. Check each file complete/error; nextOffset continues its lines, nextIndex only resumes pending files. Binary data requires a binary reader.' + RESULT,
   inspect_local_file: 'Read bounded UTF-8 text lines or a hex view from path relative to the DSH session cwd. Directories are rejected; use ops_glob or ops_grep.' + RESULT,
   glob: 'Find regular files below path. pattern is an ARRAY of globs matched against paths relative to path, e.g. ["**/*.md","!vendor/**"]: "*.md" matches the top level only, "!" excludes, at least one positive entry. Symlinks, reparse points, hidden files and .git are not traversed.' + RESULT,
   grep: 'Search UTF-8 files below path. pattern is ONE Rust regex string; filter files with glob, an ARRAY of the same relative globs ("!" excludes). There is no include field. Use summary for aggregate file/match totals, count for per-file counts, content for matching text (default); limit defaults to 100 items. Paging uses 0-based offset/nextOffset. Follow nextOffset until complete:true, but do not loop blindly on truncated/failed scans. Totals cover scanned readable UTF-8 files within file-size limits; truncated scans are not exhaustive. Each page rescans candidates to count totals while materializing only its requested window. Optional line context.' + RESULT,
   stat: 'Inspect one regular file: SHA-256 revision, bytes, UTF-8 lineCount (null for binary), timestamps and permissions; no content. Missing paths return exists:false, revision:absent.' + RESULT,
   diff: 'Read-only comparison of one UTF-8 file with content. Returns one prefix/suffix-trimmed replacement hunk (not a minimal diff), paged 0-based offset/limit (default 100). Includes old/new hashes and line counts; no publication.' + RESULT,
   write_file: 'Create or fully overwrite one UTF-8 file; parents must exist. Required expectedRevision is the observed SHA-256, or absent for create-only. Atomic CAS, short receipt with new revision/bytes/lineCount; dryRun only previews. Darwin nonempty extended ACLs fail closed with METADATA_UNSUPPORTED. Read-only denies even dryRun. Windows preserves owner/group/ordered DACL and supported basic attributes/timestamps; readonly overwrite is refused and unsupported streams/EA/special storage fail with METADATA_UNSUPPORTED. SACL/audit labels are not preserved.' + RESULT,
-  edit_file: 'Precisely patch one UTF-8 file using 1-100 oldText/newText edits against the SAME original bytes. Every nonempty oldText must occur exactly once; overlapping edits reject all. Required expectedRevision from inspect/stat. Atomic CAS; dryRun previews. Darwin nonempty extended ACLs fail closed with METADATA_UNSUPPORTED. Preserve CRLF/BOM explicitly in text. Windows preserves owner/group/ordered DACL and supported basic attributes/timestamps; readonly overwrite is refused and unsupported streams/EA/special storage fail with METADATA_UNSUPPORTED. SACL/audit labels are not preserved.' + RESULT,
+  edit_file: EDIT_DESCRIPTION,
+  edit_many: EDIT_DESCRIPTION,
   copy: 'Copy ONE regular file to absent to (relative to session cwd); parents must exist. Required expectedRevision checks source. Atomic no-clobber destination; preserves metadata or fails closed. Windows preserves owner/group/ordered DACL and supported basic attributes/timestamps; readonly overwrite is refused and unsupported streams/EA/special storage fail with METADATA_UNSUPPORTED. SACL/audit labels are not preserved. Darwin requires APFS cloning and currently refuses nonempty extended ACLs with METADATA_UNSUPPORTED before staging; use a dedicated metadata-aware tool for ACL-bearing files. No directories/links; recursive work uses ops_batch when available.' + RESULT,
   move: 'Move ONE regular file to absent to, same filesystem only. Required source expectedRevision. Atomic no-clobber destination then source unlink; failures after publication carry effectState:applied. No copy-delete fallback, directories or links.' + RESULT,
   remove: 'Unlink ONE regular file with required expectedRevision from inspect/stat. No recursion/directories/links. Atomic unlink; no trash. Read-only denies all mutations.' + RESULT,
