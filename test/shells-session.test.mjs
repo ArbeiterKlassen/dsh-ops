@@ -15,7 +15,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import { assert, report, skipSuite, test, waitFor, withTempDir } from './lib/harness.mjs'
+import { assert, report, scenarioDir, skipSuite, test, waitFor, withTempDir } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
 import { resolveShells, withBashStatus } from '../lib/shells.js'
 import { BASH_ARGUMENT_ERROR_CODE } from '../lib/shells/argument-error.js'
@@ -47,14 +47,21 @@ async function publishOpsBash(ctx, id, workspace) {
   return { agent, scope, tool: ctx.get('tools').get('ops_bash', agent) }
 }
 
-await test('a relative workdir runs in the session workspace, not the helper cwd (#237)', async () => {
+/** The real-shell check for #237; registered on POSIX only, for the reason at its registration. */
+async function relativeWorkdirRunsInTheSession() {
   const { ctx } = await bootHost()
   const previous = process.cwd()
   try {
     await withTempDir('shells-session-workspace', async workspace => {
       const child = path.join(workspace, 'retest-dir')
       fs.mkdirSync(child)
-      await withTempDir('shells-session-helper', async helper => {
+      // The helper directory is deliberately NOT a `withTempDir`. On Windows a directory a process
+      // has used as its working directory cannot be removed while the handle is still open, and the
+      // fixture's `rmSync` then fails with EPERM before any assertion is reported (windows-latest
+      // validate). A scenario directory goes away with the rest of the suite home, after this
+      // process has exited, which is when Windows lets it go.
+      const helper = scenarioDir('shells-session-helper')
+      {
         // The same directory name exists under the helper cwd, so a wrong resolution would succeed
         // in the wrong place: only the resolved path proves which one the command ran in.
         fs.mkdirSync(path.join(helper, 'retest-dir'))
@@ -77,13 +84,20 @@ await test('a relative workdir runs in the session workspace, not the helper cwd
             }
           } finally { await scope.dispose() }
         } finally { process.chdir(previous) }
-      })
+      }
     })
   } finally {
     process.chdir(previous)
     await shutdown(ctx)
   }
-})
+}
+
+// Registered on POSIX only. The bundled bash on Windows answers `pwd -P` with a POSIX path
+// (`/d/a/...`) for the same directory this suite builds as `D:\a\...`, so a comparison there
+// would assert the shell's path rendering rather than the anchoring. The Windows resolution rules
+// (session-drive relative, cross-drive refusal) are asserted without a shell in
+// `test/shells-guards.test.mjs`, which runs everywhere.
+if (process.platform !== 'win32') await test('a relative workdir runs in the session workspace, not the helper cwd (#237)', relativeWorkdirRunsInTheSession)
 
 await test('a wrong argument reaches the caller as itself, not as invalid output (#235)', async () => {
   const { ctx } = await bootHost()
