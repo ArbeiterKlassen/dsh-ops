@@ -7,6 +7,49 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### The 0.3.2 real-machine findings, fixed (#204, #235, #236, #237, #240)
+
+Four findings from the 0.3.2 Linux x64 session run in #204. Three are behaviour changes, and
+each one is pinned by a suite that would fail without it.
+
+- **`ops_bash` argument errors are refusals again (#235, F1).** A regression in the 0.3.2
+  delivery stack folded *every* thrown error from the session wrapper into a value, so an
+  invalid argument came back as a value that did not satisfy the output schema and the host
+  reported `returned invalid output` — the caller never saw `invalid workdir: …`. Argument
+  validation now raises a typed refusal (`BashArgumentError`, `code:
+  INVALID_BASH_ARGUMENT`) that the wrapper re-throws with the field named, while a runtime
+  failure is still folded into a value — and a folded value now carries the full
+  `BASH_OUTPUT_SCHEMA` shape (`status`/`timedOut`/`timeoutMs`/`stdout`/`stderr`). A
+  suite asserts both halves.
+- **A relative `workdir` is resolved against the session workspace (#237, F3).** It used to
+  be passed through verbatim, so `.` or `sub` was resolved by the helper process's own
+  working directory: commands ran in the wrong directory *without an error*. Relative paths
+  now anchor to `session.header.cwd` (absolute paths unchanged, empty or whitespace still
+  falls back to the session directory, and on Windows a drive-relative path resolves against
+  the session's drive or is refused). A workspace that disappeared is reported as
+  `invalid workdir: must be an existing directory, got <session directory>`; a spawn ENOENT
+  whose `workdir` is gone no longer wears the "missing bash payload" remedy.
+- **`ops_glob` reports a real modification time (#236, F2).** `details.modified` returned the
+  file's *byte count* (`symlink_metadata().len()`), which also made `sort: "modified"` a
+  size sort. It is now milliseconds since the Unix epoch — the same quantity and unit
+  `ops_stat` reports as `modifiedMs`, and `null` when the filesystem cannot report one —
+  and `sort: "modified"` orders newest first, stably, so equal timestamps keep the walk's
+  path order. `bytes`, `sort: "path"` and the pagination envelope are unchanged.
+- **The credential fence is documented by what it does (#240, F6).** The module comment
+  claimed the fence was on *reads only* while the write path, the `copy`/`move` destination
+  and `replace` were refused as well, and the refusal text told a writer not to *read*
+  credentials. The comment, the refusal message and the configuration reference now state
+  the real reach (path-based: reads, writes, and copy/move destinations; a `.env` cannot be
+  created either), and a suite asserts the wording, the refusals and the documented reach
+  together.
+- **The update-lock sidecar is declared behaviour (#240, P5).** A write leaves a persistent
+  0-byte `.dsh-ops-update-<sha256(lowercased name)>.lock` beside the target, including on a
+  rejected update; unlinking it would let a waiter hold a lock on an orphaned inode while
+  the next writer locks a fresh one, which is two writers on one path. The sidecar is now
+  documented in `docs/native-ptc.md` (who creates it, which refusals leave one, why
+  `glob`/`grep` never see it, and how an operator removes it) instead of being silently
+  present.
+
 ### `strict` official-tool hiding no longer blocks session readiness (#238, #207)
 
 **Behaviour change.** `dsh-ops/hide-official` used to treat *any* presented official

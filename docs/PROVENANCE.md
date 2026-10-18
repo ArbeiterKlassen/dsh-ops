@@ -506,7 +506,7 @@ Rules that follow, and that this repository must not regress:
 - **The platform packages and the pins, against a real tag.** The release step
   declares `@dsh-ops/fastctx-<platform>-<arch>` and the two pins, and the shell
   layouts they can resolve to are exercised against a temporary install in
-  `test/shells.test.mjs` — including the L3 expression agreeing with the plugin's own
+  `test/shells-resolution.test.mjs` — including the L3 expression agreeing with the plugin's own
   probe on every layout. What has never run is the release pipeline itself: no tag has
   been pushed and nothing has been published, so no tarball and no Release asset has
   been fetched from a release, and no deployment has yet resolved a runtime from one.
