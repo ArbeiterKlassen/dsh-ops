@@ -9,7 +9,7 @@ import { BASH_TOOL_NAME } from '../lib/shells/constants.js'
 import { assert, test, report } from './lib/harness.mjs'
 
 await test('the catalogue covers every owned file, PTC and shell tool exactly once', () => {
-  assert.equal(CAPABILITIES.length, 17)
+  assert.equal(CAPABILITIES.length, 18)
   assert.equal(new Set(CAPABILITIES.map(item => item.rawName)).size, CAPABILITIES.length)
   assert.deepEqual(FILE_TOOLS, ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_many', 'edit_many'])
   assert.deepEqual(FILE_MUTATIONS, ['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove', 'edit_many'])
@@ -25,7 +25,7 @@ await test('the catalogue covers every owned file, PTC and shell tool exactly on
       assert.equal(entry.description, descriptions[entry.rawName])
     }
   }
-  for (const component of ['file', 'ptc', 'shell']) assert.deepEqual(capabilitiesFor(component), CAPABILITIES.filter(item => item.component === component))
+  for (const component of ['file', 'ptc', 'shell', 'discovery']) assert.deepEqual(capabilitiesFor(component), CAPABILITIES.filter(item => item.component === component))
   for (const name of ['unknown', 'toString', '__proto__']) assert.equal(capability(name), undefined)
 })
 

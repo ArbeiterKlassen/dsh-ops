@@ -1,3 +1,4 @@
+import { DISCOVERY_PARAMETERS, DISCOVERY_DESCRIPTION, DISCOVERY_OUTPUT } from './discovery.js'
 /** One catalogue for owned tools. This module never registers tools or imports host values. */
 import { PARAMETERS as fileParameters, DESCRIPTIONS as fileDescriptions, fileOutput } from './file.js'
 import { PARAMETERS as ptcParameters, DESCRIPTIONS as ptcDescriptions, OUTPUT as ptcOutput } from './ptc.js'
@@ -30,7 +31,12 @@ export const SHELL_CAPABILITIES = Object.freeze([Object.freeze({
   rawName: 'bash', component: 'shell', presentations: allPresentations,
   availability: 'resident', mutates: true, concurrencySafe: false,
 } as const satisfies CapabilityMetadata)])
-export const CAPABILITIES = Object.freeze([...FILE_CAPABILITIES, ...PTC_CAPABILITIES, ...SDK_CAPABILITIES, ...SHELL_CAPABILITIES])
+export const DISCOVERY_CAPABILITIES = Object.freeze([Object.freeze({
+  rawName: 'discover', component: 'discovery', presentations: Object.freeze(['native', 'both'] as const),
+  availability: 'resident', mutates: false, concurrencySafe: false,
+  parameters: DISCOVERY_PARAMETERS, description: DISCOVERY_DESCRIPTION, output: DISCOVERY_OUTPUT,
+} as const satisfies SchemaCapability)])
+export const CAPABILITIES = Object.freeze([...FILE_CAPABILITIES, ...PTC_CAPABILITIES, ...SDK_CAPABILITIES, ...SHELL_CAPABILITIES, ...DISCOVERY_CAPABILITIES])
 export type Capability = typeof CAPABILITIES[number]
 export type ToolName = Capability['rawName']
 const byName = new Map<string, Capability>(CAPABILITIES.map(capability => [capability.rawName, capability]))

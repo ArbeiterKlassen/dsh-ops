@@ -65,6 +65,12 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the lock and audit namespace and reports partial cleanup honestly.
 - Preserve Windows private-temp capability isolation; real confined create/reopen/readonly and
   foreign-session denial assertions cover the protected cache ACL.
+### Discover advanced tools in the requesting Native scope (#261)
+
+- Add `dsh-ops/discovery` and `ops_discover`: deterministic allowed-pool selection, a 1-5 per-call cap, and always-loaded choices. Publish pending capabilities only at the next model-step boundary, with scope isolation, permission withdrawal and owned cleanup.
+- Add pinned schema token measurement and real Cordis/native-worker lifecycle checks. Discovery alone measures 120 cl100k_base tokens; this is not a whole-OPS or PDF acceptance claim.
+- 新增按需发现组件与 `ops_discover`：允许池、单次 1-5 项上限和始终加载选择；仅在下一模型步骤挂载，并保证作用域隔离、权限变更撤销及卸载清理。
+- 新增固定分词器的 schema 计量和真实 Cordis/原生 worker 生命周期测试；发现入口为 120 cl100k_base tokens，不代表全体 OPS 或 PDF 验收通过。
 
 ### Render Native file results as bounded, readable text (#261)
 

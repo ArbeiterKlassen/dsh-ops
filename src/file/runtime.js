@@ -18,18 +18,18 @@ export class NativeFileTools {
     this.stopped = false
   }
 
-  async start() {
+  async start(names = NATIVE_FILE_TOOLS) {
     this.file = this.config.workerPath
     if (!this.file) {
       if (this.config.required) throw new Error('Native file worker path is unavailable.')
       return []
     }
-    const definitions = NATIVE_FILE_TOOLS.map(rawName => {
+    const definitions = names.map(rawName => {
       const execute = (args, exec) => this.call(rawName, args, exec)
       return rawName === 'result' ? resultDefinition(execute) : definition(rawName, execute)
     })
     this.unregisterProvider = await registerNativeProvider(this.ctx, definitions, tool => this.ctx.tools.register(tool))
-    return NATIVE_FILE_TOOLS.map(publicToolName)
+    return names.map(publicToolName)
   }
 
   async call(tool, args, exec) {
@@ -50,6 +50,10 @@ export class NativeFileTools {
       this.active.delete(controller)
       exec?.signal?.removeEventListener?.('abort', abort)
     }
+  }
+
+  cancel(reason) {
+    for (const controller of this.active.keys()) controller.abort(new Error(reason))
   }
 
   async stop() {
