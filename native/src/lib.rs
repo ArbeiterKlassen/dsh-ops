@@ -37,6 +37,11 @@ pub fn dispatch(request: Request) -> Result<Value> {
     use cap_fs_ext::MetadataExt;
     let metadata = dir.dir_metadata()?;
     request.root_identity = format!("{}:{}", metadata.dev(), metadata.ino());
+    if request.tool == "result" && ((request.storage.is_some() && request.args.get("action").and_then(Value::as_str) == Some("put"))
+        || request.args.get("action").and_then(Value::as_str) == Some("purge")
+        || request.args.get("id").and_then(Value::as_str).is_some_and(|id| id.starts_with("ref://"))) {
+        return ops_results::references::run(&request);
+    }
     if request.read_only
         && !(request.tool == "result"
             && request.args.get("action").and_then(Value::as_str) == Some("page"))

@@ -4,5 +4,7 @@ use ops_files::paths;
 #[cfg(unix)]
 use ops_files::sync_directory;
 pub mod store;
+pub mod cache;
+pub mod references;
 mod results;
 pub use results::{run, referenced_items};
