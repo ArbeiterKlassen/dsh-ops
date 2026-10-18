@@ -44,7 +44,9 @@ function walk(dir) {
   const out = []
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const child = path.join(dir, entry.name)
-    if (entry.isDirectory()) out.push(...walk(child).map((file) => path.join(entry.name, file)))
+    // POSIX-joined on purpose: the expected lists in this suite are written with `/`, and a
+    // host separator here made the dry-run assertion fail on Windows only.
+    if (entry.isDirectory()) out.push(...walk(child).map((file) => path.posix.join(entry.name, file)))
     else out.push(entry.name)
   }
   return out.sort()
