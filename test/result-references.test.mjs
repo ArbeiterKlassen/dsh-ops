@@ -68,6 +68,22 @@ await test('references recheck session, root, authority, capability and credenti
   })
 })
 
+await test('trusted cache authorization is independent of unchanged business write roots', async () => {
+  await fixture(async (root, cache) => {
+    const business = path.join(root, 'workspace'); fs.mkdirSync(business)
+    const stored = await call(business, cache, { action: 'put', items: [{ private: true }] }, { writeRoots: [business] })
+    assert.equal(stored.status, 'completed', JSON.stringify(stored))
+    assert.deepEqual((await call(business, cache, { action: 'page', id: stored.id }, { writeRoots: [business] })).items, [{ private: true }])
+    const outside = path.join(cache, 'not-a-cache-object')
+    const write = input(business, cache, { path: outside, content: 'forbidden', expectedRevision: 'absent' }, { writeRoots: [business] })
+    write.request.tool = 'write_file'
+    const denied = await send(write)
+    assert.equal(denied.error.code, 'POLICY_DENIED'); assert.equal(denied.error.effectState, 'none')
+    assert.equal(fs.existsSync(outside), false)
+    assert.equal((await call(business, cache, { action: 'purge' }, { writeRoots: [business] })).removed, 1)
+  })
+})
+
 await test('read-only pages do not touch LRU or create storage and cannot put or release', async () => {
   await fixture(async (root, cache) => {
     const stored = await call(root, cache, { action: 'put', items: [{ value: 1 }] })

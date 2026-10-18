@@ -54,7 +54,8 @@ existing absolute cache root, a 64-character lowercase SHA-256 authority identit
 canonical producer-tool allowlist. Its authority identity must bind the live session nonce and
 current policy/credential boundaries; knowing a reference never grants authority. Each access also
 rechecks scope, selected canonical root and directory identity, producer and current credential
-fences. The cache root remains independent of operation-root selections.
+fences. The trusted cache root is a cache-only grant independent of operation-root selections and business
+write_roots. It is never added to the business mutation allowlist.
 
 With this context, result put returns `ref://<encoded-session>/<tool>/<uuid>` and `reference`
 metadata: refId, createdAt (epoch milliseconds), ttlMs, schemaVersion, producerTool, totalItems,
