@@ -7,6 +7,12 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Type optional TUI projections and panel rendering (#261, 16/16)
+
+- Compile bounded activity, attention, diagnostics and injected rendering under strict TypeScript;
+  preserve readonly metadata, separate running/settled facts and packaged viewer paths without UI dependencies.
+- TUI 与面板辅助模块严格类型化，保留只读元数据、运行/完成状态区别与资源路径，不新增 UI 依赖。
+
 ### Type Rust toolchain discovery and source builds (#261, 16/16)
 
 - Compile Cargo discovery and explicit locked build helpers under strict TypeScript with checked

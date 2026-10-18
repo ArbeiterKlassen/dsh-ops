@@ -7,6 +7,7 @@
   "include": [
     "kernel.ts",
     "ptc-sdk.ts",
-    "worker-runtime.ts"
+    "worker-runtime.ts",
+    "tui.ts"
   ]
 }

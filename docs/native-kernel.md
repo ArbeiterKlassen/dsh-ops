@@ -323,3 +323,9 @@ label, version and environment; building requires that resolved toolchain and a 
 streams text diagnostics, and returns a numeric exit code with collected output. The CLI still runs
 an explicit locked release build and stages its existing provenance receipt; no dependency, toolchain
 installation, runtime path or automatic-build behavior changes in this typing slice.
+
+The optional TUI activity, attention and rendering helpers and the packaged HTML template reader are
+strict TypeScript. Readonly snapshots retain only bounded counters and diagnostic metadata; running
+rows have no settlement facts. The injected React/UI seam preserves the host's node type without
+loading a TUI or React dependency. Existing notification, session, pagination and HTML asset behavior
+is preserved. Invalid result-payload shapes remain unconfirmed and never retain their raw bodies.
