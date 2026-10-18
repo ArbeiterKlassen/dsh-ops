@@ -42,6 +42,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import { collectProcessOutput } from './lib/gate-output.mjs'
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
@@ -116,8 +117,7 @@ async function run(title, command, args, { env = {}, optional = false, cwd = PAC
   })
   let output = ''
   try {
-    for await (const chunk of child.stdout) { output += chunk; process.stdout.write(chunk) }
-    for await (const chunk of child.stderr) { output += chunk; process.stderr.write(chunk) }
+    output = await collectProcessOutput(child)
   } catch (error) {
     spawnError ??= error
   }
