@@ -1,6 +1,7 @@
 /** One catalogue for owned tools. This module never registers tools or imports host values. */
 import { PARAMETERS as fileParameters, DESCRIPTIONS as fileDescriptions, fileOutput } from './file.js'
 import { PARAMETERS as ptcParameters, DESCRIPTIONS as ptcDescriptions, OUTPUT as ptcOutput } from './ptc.js'
+import { NATIVE_RESULT_PARAMETERS, NATIVE_RESULT_DESCRIPTION } from './result.js'
 import type { CapabilityMetadata, Component, SchemaCapability } from './types.js'
 
 export type FileToolName = keyof typeof fileParameters
@@ -17,7 +18,8 @@ export const FILE_CAPABILITIES = Object.freeze(fileOrder.map(rawName => Object.f
   parameters: fileParameters[rawName], description: fileDescriptions[rawName], output: fileOutput(rawName),
 } satisfies SchemaCapability)))
 export const PTC_CAPABILITIES = Object.freeze((Object.keys(ptcParameters) as PtcToolName[]).map(rawName => Object.freeze({
-  rawName, component: 'ptc' as const, presentations: Object.freeze(['ptc'] as const),
+  rawName, component: 'ptc' as const, presentations: rawName === 'result' ? allPresentations : Object.freeze(['ptc'] as const),
+  ...(rawName === 'result' ? { nativeProjection: { component: 'file' as const, parameters: NATIVE_RESULT_PARAMETERS, description: NATIVE_RESULT_DESCRIPTION } } : {}),
   availability: 'resident' as const, mutates: true, concurrencySafe: false,
   parameters: ptcParameters[rawName], description: ptcDescriptions[rawName], output: ptcOutput,
 } satisfies SchemaCapability)))
@@ -36,6 +38,7 @@ export function capabilitiesFor(component: Component): readonly Capability[] {
   return CAPABILITIES.filter(capability => capability.component === component)
 }
 export const FILE_TOOLS = Object.freeze(FILE_CAPABILITIES.map(capability => capability.rawName))
+export const NATIVE_FILE_TOOLS = Object.freeze([...FILE_TOOLS, ...PTC_CAPABILITIES.filter(entry => entry.nativeProjection?.component === 'file').map(entry => entry.rawName)])
 export const FILE_MUTATIONS = Object.freeze(FILE_CAPABILITIES.filter(capability => capability.mutates).map(capability => capability.rawName))
 export const PTC_TOOLS = PTC_CAPABILITIES.map(capability => capability.rawName)
 export const IN_PROCESS_TOOLS = Object.freeze(SHELL_CAPABILITIES.map(capability => capability.rawName))

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "dsh-ops-file",
-    "description": "更快、更高性能、输出更精简更省token的rust文件检索"
+    "description": "有界 Native 文件读取、编辑、搜索与会话结果引用分页。"
   }
 }

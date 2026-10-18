@@ -2,7 +2,7 @@
 import { resolveConfig } from './config.js'
 import { mountConfigUpdates, updatedConfig } from './config-updates.js'
 import { SECTION_ORDERS, TOOLING_SECTION, BASH_TOOL, publicToolName, hostShellRefusal, renderToolingPolicy } from './policy.js'
-import { FILE_TOOLS } from './file/contract.js'
+import { NATIVE_FILE_TOOLS as FILE_TOOLS } from './capabilities/registry.js'
 import { resolveShells } from './shells.js'
 import { mountSessionBash } from './session-shells.js'
 import { mountBundledPwsh } from './session-pwsh.js'
