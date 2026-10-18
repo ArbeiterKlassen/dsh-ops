@@ -2,6 +2,9 @@
 #![forbid(unsafe_code)]
 mod archive;
 mod pdf_syntax;
+mod pdf_text;
+mod pdf;
+mod pdf_pages;
 pub mod pdf_container;
 mod xml;
 mod docx;
@@ -41,6 +44,7 @@ fn recovery(error: &mut Failure) {
 }
 struct Source { path: PathBuf, file: File, before: Metadata, started: Instant }
 pub fn dispatch(request: &Request) -> Result<Value> {
+    if request.tool == "pdf_read" { return pdf::read(request); }
     if request.tool == "doc_read" { return docx::read(request); }
     if request.tool != "table_read" { return Err(Failure::new("INVALID_ARGUMENT", "Unknown document capability")); }
     let args: Args = serde_json::from_value(request.args.clone())?;
