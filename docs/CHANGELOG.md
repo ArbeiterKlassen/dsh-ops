@@ -7,6 +7,11 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Type the component host entry (#261, 16/16)
+
+- Migrate the root component entry to strict TypeScript using public Cordis and Agent types; preserve configuration validation, scoped registration, shell denial and teardown behavior.
+- 将根组件入口迁移为严格 TypeScript，使用公开 Cordis 与 Agent 类型；保留配置验证、作用域注册、Shell 拒绝与卸载行为。
+
 ### Type profile delegation and session temporary directories (#261, 16/16)
 
 - Migrate profile commands and private temporary-directory helpers to strict TypeScript, preserving official CLI delegation and per-session path behavior; narrow malformed manifest data before use.
