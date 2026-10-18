@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Fetch baseline Git history in full CI gates so exact 0.3.1 provenance checks work on fresh checkouts.
+- 完整 CI 门禁获取基线 Git 历史，确保全新检出能校验 0.3.1 的精确来源。
+
 - Include each activated document reader in scoped routing guidance; validate real document receipts in the PTC API coverage suite.
 - 在作用域路由中显示已激活的文档读取工具，并用真实文档回执验证 PTC API 覆盖。
 

@@ -29,6 +29,8 @@ The manual `Opt-in OPS acceptance benchmarks` workflow runs the same command on 
 
 BM-01 also always reports offsets 13/31/51 with 8 lines, plus 1-line, 32-line, 600-character-line and escaped Unicode/JSON sensitivities. The frozen fixture definitions, file hashes and fixture-source hash appear in evidence. There is no automatic workload selection to obtain a favorable threshold.
 
+The checkout must contain the pinned 0.3.1 Git history before running the functional provenance test or preparing the benchmark baseline. For a shallow clone, run `git fetch --unshallow` first. The CI full-gate jobs and manual benchmark workflow fetch full history; missing baseline objects are a failure, never a skip.
+
 The 0.3.1 baseline is commit `4b51b6333213c376c8b7c173c12f35b408fdec2d`. The preparation script materializes exact Git blobs without checkout newline conversion; provenance rechecks every `lib/` and `native/` blob and records the worker version and SHA-256. Binary reproducibility is not attested. The official comparator uses the installed, pinned host reader separately. The test-only jobs package `@deepseek-ai/dsh-jobs-local@0.2.0-rc.2` was published on 2026-09-29, more than seven days before addition; it is needed to measure the complete Bash schema.
 
 ## Honest limits and retained results
