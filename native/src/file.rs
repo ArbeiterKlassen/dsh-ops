@@ -396,8 +396,11 @@ fn grep(request: &Request) -> Result<Value> {
     let content_mode = !matches!(args.output_mode.as_str(), "files_with_matches" | "count" | "summary");
     let page = args.offset.saturating_add(args.limit);
     for file in walked.files {
-        let bytes = match read_bytes(&file) { Ok(bytes) => bytes, Err(_) => { failed += 1; continue; } };
-        if bytes.len() as u64 > MAX_FILE_BYTES { skipped_files += 1; continue; }
+        let bytes = match read_bytes(&file) {
+            Ok(bytes) => bytes,
+            Err(error) if error.code == "OUTPUT_LIMIT" => { skipped_files += 1; continue; }
+            Err(_) => { failed += 1; continue; }
+        };
         let text = match String::from_utf8(bytes) { Ok(v) => v, Err(_) => { skipped_files += 1; continue; } }; let lines: Vec<_> = text.lines().collect();
         // Line by line by default. With `multiline` the pattern is matched against
         // the whole file, so a pattern containing `\n` can match across lines
