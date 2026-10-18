@@ -330,7 +330,7 @@ await test('an old background row loads as a no-op: no tools, no section, one wa
 await test('the host half refuses to mount a background component itself', () => {
   assert.throws(() => applyComponent({}, {}, 'background'), /unknown component "background"/)
 })
-await test('real file replacement surface hides duplicates, rolls back for PTC transport, and never publishes unready processes', async () => {
+await test('real file replacement surface hides duplicates, keeps the PTC transport visible, and never publishes unready processes', async () => {
   const { ctx } = await bootHost()
   try {
     await fileMount(ctx)
@@ -347,8 +347,12 @@ await test('real file replacement surface hides duplicates, rolls back for PTC t
     assert.equal(names.some(name => name.startsWith('ops_process_')), false)
     ctx.provide('ptcRuntime', { language: 'typescript' })
     const restore = current.ctx.tools.presentAs('both')
-    await assert.rejects(() => ctx.get('systemPrompt').assemble({ scope: current }), /READINESS_BLOCKED.*run_code/)
-    assert.ok(scopedToolNames(ctx, current).includes('read'))
+    // run_code is inside the PTC face with no reviewed replacement, so strict
+    // keeps it visible and warns instead of failing the session (#238).
+    const withTransport = await ctx.get('systemPrompt').assemble({ scope: current })
+    const transported = withTransport.tools.map(tool => tool.name)
+    assert.ok(transported.includes('run_code'))
+    assert.equal(transported.includes('read'), false)
     restore()
     await ctx.get('systemPrompt').assemble({ scope: current })
     await hiding.dispose()
