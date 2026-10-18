@@ -7,7 +7,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-### The credential fence covers writes (#240, #204 P4)
+### The credential fence covers writes, and a refused request no longer leaves a lock sidecar (#240, #204 P4/P5)
 
 - `lib/credential-policy.js` described the fence as read-only; it is not. A read, a write, a
   `copy`/`move` destination, a `replace` target and a `remove` of a credential location are all
@@ -16,6 +16,15 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   references now say so, the historical `denyCredentialReads` key name is documented as covering
   writes, and troubleshooting records the practical consequence (a `.env` cannot be created through
   the ops tools).
+- A refused request no longer creates the persistent `.dsh-ops-update-*.lock` sidecar. The pure
+  snapshot validations (revision, edit planning, proposed size, destination absence) run once before
+  the lock and again under it, and the locked pass stays authoritative, so the accept/refuse decision
+  is unchanged and only the detection point moved. `write_file`/`edit_file` dry runs skip the lock
+  entirely: a dry run answers a question and must not change the directory.
+- A request that fails *after* the lock is taken (a concurrent writer winning the race, a
+  publication failure) can still leave a sidecar, and a `replace` refused by `maxReplacements` can
+  leave one per file the scan opened. The sidecar is a persistent cooperative lock by design — it must keep
+  its identity across an atomic rename — so it is documented rather than deleted.
 
 ### A repository-only benchmark harness, merged from #103 and #183 (#205, #173)
 
