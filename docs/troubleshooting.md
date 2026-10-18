@@ -93,6 +93,22 @@ Fixed since this change: `ops_inspect_local_file` and `ops_replace` report to th
 
 No. Fixed file operations follow a trusted-operation policy fence matching DSH fs-sandbox and **never execute model code**. Read-only rejects replacement, workspace-write permits writes under the workspace and DSH temporary areas, and full access adds no write fence.
 
+### Credential locations are refused in every direction
+
+**This is by design.** The file tools refuse to touch a credential location (`~/.ssh`, `~/.aws`,
+`~/.config/gcloud`, `.netrc`, `.npmrc`, `.pypirc`, `id_rsa`/`id_ed25519`-style keys,
+`*credentials.{json,yaml,ini}`, `.env` and the DSH credential stores) and answer `CREDENTIAL_DENIED`:
+reads are refused, and so are writes, `copy`/`move` destinations, `replace` targets and `remove`.
+`glob` and `grep` never list those paths either. Under `danger-full-access` the DSH permission mode
+would allow the writes, so this fence is what keeps a credential file from being created, overwritten
+or deleted through the file tools.
+
+The configuration key is still named `denyCredentialReads` for compatibility, but its scope includes
+writes. Practical consequence: a file named `.env` **cannot be created through the ops tools**. Write
+it with the host `write` tool instead (the host is fenced by the DSH permission mode, not by this
+fence). `denyCredentialReads: false` on a row disables this fence for that row only;
+`DSH_OPS_DENY_READ` can only add locations, never remove one.
+
 ### Where did the background tools go?
 
 The `dsh-ops/background` component and its FastCtx-backed tools (`ops_run`, `ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) were removed. A profile row that still names `dsh-ops/background` loads as a no-op and logs `the dsh-ops/background component (FastCtx background jobs) was removed in this version; it publishes no tools`; delete the row to silence it. For a long-running process, use the host `pwsh` tool's `run_in_background`, or detach inside an `ops_bash` command (for example `nohup ... & disown`).

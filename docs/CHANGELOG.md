@@ -7,6 +7,16 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### The credential fence covers writes (#240, #204 P4)
+
+- `lib/credential-policy.js` described the fence as read-only; it is not. A read, a write, a
+  `copy`/`move` destination, a `replace` target and a `remove` of a credential location are all
+  refused with `CREDENTIAL_DENIED`, including under `danger-full-access` — where the DSH permission
+  mode would allow the write. The module documentation, the refusal message and both configuration
+  references now say so, the historical `denyCredentialReads` key name is documented as covering
+  writes, and troubleshooting records the practical consequence (a `.env` cannot be created through
+  the ops tools).
+
 ### A repository-only benchmark harness, merged from #103 and #183 (#205, #173)
 
 - `bench/` is one cross-platform harness with two measurement modes and one JSON data

@@ -42,6 +42,13 @@ A `dsh-ops/background` row left over from an earlier version loads as a no-op st
 | `textLimit` | integer | `2000` | panel |
 | `maxSessionBytes` | integer | `8388608` | panel |
 
+**`denyCredentialReads`.** The name is historical: the fence it controls covers every
+direction, not only reads. A read, a write, a `copy`/`move` destination, a `replace` target and a
+`remove` of a credential location are all refused with `CREDENTIAL_DENIED`, including under
+`danger-full-access`. The refusal names the fence; [troubleshooting](troubleshooting.md) records the
+practical consequence (a `.env` cannot be created through the ops tools). `false` disables the fence
+for that row only.
+
 **Deprecated keys.** `serverName`, `enableShellTools` and `toolCallTimeoutMs` were read only by the removed FastCtx background component. They are still accepted (and still type-checked) so existing rows keep loading — earlier bundles wrote `enableShellTools: false` and `toolCallTimeoutMs: 300000` into every file row — but they have no effect, and configuration update 2 removes them from saved rows on the next start.
 
 ---
