@@ -363,6 +363,25 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    fn canonical_dacl(sd: &SecurityDescriptor) -> String {
+        // Auto-inherited describes how an ACL was computed; P still prevents
+        // inheritance and every ACE must match. create_private verifies the same.
+        wrappers::ConvertSecurityDescriptorToStringSecurityDescriptor(sd, Info::Dacl)
+            .unwrap().to_string_lossy().replace("D:PAI", "D:P")
+    }
+
+    #[test]
+    fn dacl_comparison_normalizes_sid_aliases_without_accepting_other_grants() {
+        let canonical = |text: &str| {
+            let sd: LocalBox<SecurityDescriptor> = text.parse().unwrap();
+            canonical_dacl(&sd)
+        };
+        assert_eq!(canonical("D:P(A;;FA;;;S-1-5-18)"), canonical("D:P(A;;FA;;;SY)"));
+        assert_eq!(canonical("D:PAI(A;;FA;;;SY)"), canonical("D:P(A;;FA;;;SY)"));
+        assert_ne!(canonical("D:P(A;;FA;;;SY)"), canonical("D:P(A;;FA;;;SY)(A;;FR;;;WD)"));
+        assert_ne!(canonical("D:P(A;;FA;;;SY)"), canonical("D:(A;;FA;;;SY)"));
+    }
+
     #[test]
     fn staging_is_private_before_bytes_and_exclusive() {
         let root = std::env::temp_dir().join(format!(
@@ -382,12 +401,10 @@ mod tests {
         let mut file = create_private(&parent, "private").unwrap();
         let sd = descriptor(&file).unwrap();
         let sid = windows_permissions::utilities::current_process_sid().unwrap();
-        assert!(
-            sddl(&sd)
-                .unwrap()
-                .to_string_lossy()
-                .ends_with(&format!("D:P(A;;FA;;;{sid})"))
-        );
+        // Windows may render well-known/account SIDs as SDDL aliases. Compare
+        // the exact canonical DACL, not a numeric SID's spelling in full SDDL.
+        let expected: LocalBox<SecurityDescriptor> = format!("D:P(A;;FA;;;{sid})").parse().unwrap();
+        assert_eq!(canonical_dacl(&sd), canonical_dacl(&expected));
         assert_eq!(file.metadata().unwrap().len(), 0);
         assert_eq!(
             create_private(&parent, "private").unwrap_err().kind(),
