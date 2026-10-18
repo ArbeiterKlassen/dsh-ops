@@ -28,7 +28,7 @@ const foreignHome = process.env.DSH_HOME !== undefined
   && !path.resolve(process.env.DSH_HOME).startsWith(path.resolve(tempRoot))
 const ownedHome = process.env.DSH_HOME === undefined || foreignHome
 if (ownedHome) process.env.DSH_HOME = mkdtempSync(path.join(tempRoot, 'dsh-ops-trial-home-'))
-const { bootHost, callTool, mountPlugin, publicToolNames, shutdown } = await import('../test/lib/host.mjs')
+const { bootHost, callTool, mountPlugin, scopedToolNames, shutdown } = await import('../test/lib/host.mjs')
 
 const REPORT = 'tools-trial-report.md'
 const results = []
@@ -71,9 +71,15 @@ try {
     record('ops_bash', 'skipped', `shell component did not mount: ${error.message.split('\n')[0]}`)
   }
 
-  published = publicToolNames(ctx)
-  process.stdout.write(`  published: ${published.join(', ') || '(none)'}\n`)
   const agent = { id: 'trial', session: { id: 'trial', mode: 'danger-full-access', header: { cwd: workspace } } }
+  const { createScope } = await import('@deepseek-ai/dsh-scope')
+  agent.ctx = createScope(ctx, agent).ctx
+  const discovery = await import('../lib/components/discovery/index.js')
+  const advanced = ['inspect_local_file', 'grep', 'glob', 'replace']
+  await ctx.plugin(discovery, { required: true, enabled: false, allowedTools: advanced, alwaysLoaded: advanced })
+  await ctx.serial('agent/created', { agent, source: 'startup' })
+  published = scopedToolNames(ctx, agent)
+  process.stdout.write('  published: ' + (published.join(', ') || '(none)') + '\n')
 
   /** Call one tool, then judge the whole structured answer — field names differ per tool. */
   const attempt = async (raw, args, expect, note, absent = 'not published by this build') => {
@@ -104,6 +110,7 @@ try {
     }
   }
 
+  await attempt('read_many', { files: [{ path: 'alpha.txt' }, { path: 'beta.txt' }] }, 'alpha line', 'read two real files in one call')
   await attempt('inspect_local_file', { path: 'alpha.txt' }, 'alpha line', 'read a real file')
   await attempt('grep', { pattern: 'gamma', path: '.' }, 'gamma', 'found a match in a nested file')
   await attempt('glob', { pattern: ['*.txt'], path: '.' }, 'alpha.txt', 'listed the top-level glob')

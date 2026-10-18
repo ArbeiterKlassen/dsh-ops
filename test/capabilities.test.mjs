@@ -34,6 +34,7 @@ await test('metadata separates the Native resident core from discoverable capabi
   for (const entry of [...FILE_CAPABILITIES, ...SHELL_CAPABILITIES]) assert.deepEqual(entry.presentations, ['native', 'ptc', 'both'])
   for (const entry of PTC_CAPABILITIES) assert.deepEqual(entry.presentations, entry.rawName === 'result' ? ['native', 'ptc', 'both'] : ['ptc'])
   assert.deepEqual(NATIVE_RESIDENT_FILE_TOOLS, ['read_many'])
+  assert.equal(capability('result').nativeProjection.availability, 'discoverable')
   assert.deepEqual(FILE_CAPABILITIES.filter(entry => entry.availability === 'discoverable').map(entry => entry.rawName).sort(), DISCOVERABLE_TOOLS.filter(name => name !== 'result').sort())
   for (const entry of CAPABILITIES) {
     assert.equal(entry.availability, entry.component === 'file' && entry.rawName !== 'read_many' ? 'discoverable' : 'resident')

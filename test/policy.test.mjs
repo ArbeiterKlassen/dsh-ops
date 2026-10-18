@@ -45,7 +45,7 @@ await test('partial tool availability never advertises missing tools', () => {
   for (const name of files.slice(1)) assert.equal(text.includes(name), false)
 })
 await test('resident-only routing omits unavailable operation hints and includes discovery only when published', () => {
-  const reader = renderToolingPolicy({ published: [publicToolName('inspect_local_file')], shellComponent: false })
+  const reader = renderToolingPolicy({ published: [publicToolName('read_many')], shellComponent: false })
   for (const text of ['glob', 'grep', 'copy/move', 'ops_stat', 'ops_discover']) assert.equal(reader.includes(text), false)
   const discovery = renderToolingPolicy({ published: [publicToolName('discover')], shellComponent: false })
   assert.ok(discovery.includes(publicToolName('discover')))

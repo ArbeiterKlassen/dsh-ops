@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "dsh-ops-file",
-    "description": "有界原生文件读取；高级操作通过工具发现按需加载。"
+    "description": "有界原生多文件读取；单文件/hex 及高级操作通过发现按需加载。"
   }
 }

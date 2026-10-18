@@ -10,6 +10,8 @@ import { bootHost, mountPlugin, shutdown } from './lib/host.mjs'
 import { WORKER, requireWorker } from './lib/boundary.mjs'
 import { invoke } from '../lib/ptc/worker.js'
 import * as ptc from '../lib/ptc/index.js'
+import * as discovery from '../lib/discovery/index.js'
+const hostAgents = new WeakMap()
 import { mountNativeCatalogue } from './lib/native-catalogue.mjs'
 import { resultStorage } from '../lib/kernel/result-storage.js'
 import { resultDefinition } from '../lib/file/result.js'
@@ -29,6 +31,8 @@ async function agent(ctx, cwd, presentation = 'native', parent) {
   const value = { id, session: { id, mode: 'workspace-write', header: { cwd } } }
   value.ctx = createScope(parent?.ctx ?? ctx, value).ctx
   await value.ctx.plugin({ inject: ['tools'], apply(inner) { value.liftPresentation = inner.tools.presentAs(presentation) } })
+  if (!hostAgents.has(ctx)) { hostAgents.set(ctx, []); ctx.provide('agents', { list: () => hostAgents.get(ctx) }) }
+  hostAgents.get(ctx).push(value)
   await ctx.serial('agent/created', { agent: value })
   return value
 }
@@ -132,9 +136,11 @@ await test('Native pager denies hidden producers, other sessions, narrower autho
       const record = JSON.parse(fs.readFileSync(blob, 'utf8')); record.producerTool = 'grep'; fs.writeFileSync(blob, JSON.stringify(record))
       const grepId = stored.id.replace('/result/', '/grep/')
       assert.equal((await page(ctx, owner, { action: 'page', id: grepId })).value.complete, true)
-      let restore
-      await owner.ctx.plugin({ inject: ['tools'], apply(inner) { restore = inner.tools.restrict({ deny: ['ops_grep'] }) } })
-      assert.equal((await page(ctx, owner, { action: 'page', id: grepId })).value.error.code, 'POLICY_DENIED'); restore()
+      const restricted = await owner.ctx.plugin(discovery, { binaryPath: WORKER, required: true, enabled: false, allowedTools: ['result'], alwaysLoaded: ['result'] })
+      await waitFor(() => ctx.get('tools').get('ops_result', owner) && !ctx.get('tools').get('ops_grep', owner))
+      assert.equal((await page(ctx, owner, { action: 'page', id: grepId })).value.error.code, 'POLICY_DENIED')
+      await restricted.dispose()
+      await waitFor(() => ctx.get('tools').get('ops_result', owner) && ctx.get('tools').get('ops_grep', owner))
       const retained = ctx.get('tools').get('ops_result', owner)
       await file.fiber.dispose()
       assert.equal((await retained.execute({ action: 'page', id: grepId }, { agent: owner })).error.code, 'POLICY_DENIED')
@@ -190,7 +196,7 @@ await test('agent-scoped file rows isolate sibling pagers and yield only their e
       const rightStored = await put(ctx, right, root, [{ right: true }])
       assert.deepEqual((await page(ctx, right, { action: 'page', id: rightStored.id })).value.items, [{ right: true }])
       left.liftPresentation()
-      await left.ctx.plugin({ inject: ['tools'], apply(inner) { inner.tools.presentAs('ptc') } })
+      await left.ctx.plugin({ inject: ['tools'], apply(inner) { left.liftPresentation = inner.tools.presentAs('ptc') } })
       await waitFor(() => current(left)?.parameters.properties.action.enum.includes('put'), { timeoutMs: 5000, what: 'exact-layer PTC takeover' })
       const leftStored = await current(left).execute({ action: 'put', items: [{ left: true }] }, { agent: left, signal: new AbortController().signal })
       assert.equal(leftStored.status, 'completed', JSON.stringify(leftStored))
@@ -200,6 +206,7 @@ await test('agent-scoped file rows isolate sibling pagers and yield only their e
       const lateFile = await mount(late)
       await waitFor(() => !ctx.get('tools').get('ops_grep', late) && current(late)?.parameters.properties.action.enum.includes('put'), { timeoutMs: 5000, what: 'file mounted after PTC' })
       await component.dispose()
+      for (const value of [left, late]) { value.liftPresentation(); await value.ctx.plugin({ inject: ['tools'], apply(inner) { value.liftPresentation = inner.tools.presentAs('native') } }) }
       await waitFor(() => current(left)?.parameters.properties.action.enum.length === 2 && current(late)?.parameters.properties.action.enum.length === 2, { timeoutMs: 5000, what: 'Native peer resumes on PTC unload' })
       await leftFile.dispose(); assert.equal(current(left), undefined)
       assert.equal(current(right).parameters.properties.action.enum.length, 2)

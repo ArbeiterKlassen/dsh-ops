@@ -16,8 +16,8 @@ const existingRevision: JsonSchemaNode = { type: 'string', description: '64 lowe
 const edits = bounded({ path: string, expectedRevision: existingRevision, edits: { type: 'array', description: '1-100 nonoverlapping edits against the same original bytes.', items: bounded({ oldText: { ...string, description: 'Nonempty text that occurs exactly once in the original.' }, newText: string }, ['oldText', 'newText']) }, dryRun: { type: 'boolean' } }, ['path', 'expectedRevision', 'edits'])
 
 export const PARAMETERS = Object.freeze({
-  read_many: bounded({ files: { type: 'array', description: '1-32 UTF-8 file ranges.', items: bounded({
-    path: string, offset: { type: 'integer', description: '1-based line; minimum 1, default 1.' }, limit: range(1, 10000, 'Default 200.'),
+  read_many: bounded({ files: { type: 'array', description: '1-32 file ranges.', items: bounded({
+    path: string, offset: { type: 'integer', description: 'Line >=1; default 1.' }, limit: range(1, 10000, 'Default 200.'),
   }, ['path']) } }, ['files']),
   edit_many: edits,
   inspect_local_file: bounded({
@@ -114,7 +114,7 @@ export function fileOutput(rawName: keyof typeof PARAMETERS): JsonSchemaNode {
 const RESULT = ' Failures resolve as {status:"error"|"rejected", error.code}; they are not thrown.'
 const EDIT_DESCRIPTION = 'Precisely patch one UTF-8 file using 1-100 oldText/newText edits against the SAME original bytes. Every nonempty oldText must occur exactly once; overlapping edits reject all. Required expectedRevision from inspect/stat. Atomic CAS; dryRun previews. Darwin nonempty extended ACLs fail closed with METADATA_UNSUPPORTED. Preserve CRLF/BOM explicitly in text. Windows preserves owner/group/ordered DACL and supported basic attributes/timestamps; readonly overwrite is refused and unsupported streams/EA/special storage fail with METADATA_UNSUPPORTED. SACL/audit labels are not preserved.' + RESULT
 export const DESCRIPTIONS = Object.freeze({
-  read_many: 'Read UTF-8 ranges in one call. Paths use the current session cwd. Check each file complete/error; nextOffset continues its lines, nextIndex only resumes pending files. Binary data requires a binary reader.' + RESULT,
+  read_many: 'Read UTF-8 ranges relative to session cwd. Check each file complete/error; nextOffset continues lines, nextIndex resumes pending files. Binary needs a binary reader. Failures return status:error|rejected and error.code; never throw.',
   inspect_local_file: 'Read bounded UTF-8 text lines or a hex view from path relative to the DSH session cwd. Directories are rejected; use ops_glob or ops_grep.' + RESULT,
   glob: 'Find regular files below path relative to the current session cwd. pattern is an ARRAY of globs matched against paths relative to path: ["**/*.md","!vendor/**"]; "*.md" matches the top level only, "!" excludes, at least one positive entry. Symlinks, reparse points, hidden files and dependency/build directories are excluded. limit defaults to 100; paging uses 0-based offset/nextOffset. Check scanComplete and pageComplete; matchedTotal exists only after a complete scan. Prefer continuation with unchanged options; SEARCH_STALE means restart. Incomplete scans require a narrower query.' + RESULT,
   grep: 'Search UTF-8 files below path relative to the current session cwd. pattern is ONE Rust regex string; filter files with glob, an ARRAY of relative globs ("!" excludes). There is no include field. Use summary for aggregate file/match totals, count for per-file counts, files_with_matches for paths, content for text (default); limit defaults to 100 items. Optional line context. Paging uses 0-based offset/nextOffset; prefer continuation with unchanged options. Each page rescans; SEARCH_STALE means restart. Check scanComplete and pageComplete; matchedTotal exists only after a complete scan, matchedObserved is a lower bound otherwise. skipReasons explains gaps. Narrow incomplete scans instead of blindly paging.' + RESULT,
