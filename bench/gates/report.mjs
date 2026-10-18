@@ -5,6 +5,7 @@ export function formatReport(report) {
     `Selected gates passed: ${report.passed}. All five gates accepted: ${report.fullAcceptance}.`, '', '| Gate | Status |', '| --- | --- |', ...report.gates.map(gate => `| ${gate.id} | ${gate.status} |`)]
   const read = report.gates.find(gate => gate.id === 'BM-01')
   if (read?.cases) {
+    if (read.acceptanceBaseline) lines.push('', 'BM-01 acceptance baseline: OPS 0.3.1. Official-reader savings are a separate, non-gating comparison.')
     lines.push('', '| Predeclared case | Candidate bytes | 0.3.1 bytes | Official bytes | Saving vs 0.3.1 | Saving vs official |', '| --- | ---: | ---: | ---: | ---: | ---: |')
     for (const item of read.cases) lines.push(`| ${item.scenario.id}${item.scenario.primary ? ' (primary)' : ''} | ${item.rows.candidate.outputBytes} | ${item.rows.baseline.outputBytes} | ${item.rows.official.outputBytes} | ${pct(item.savings.baseline)} | ${pct(item.savings.official)} |`)
     const primary = read.cases.find(item => item.scenario.primary)
@@ -14,7 +15,8 @@ export function formatReport(report) {
       ...Object.entries(primary.lowerBound.comparisons).map(([name, facts]) => `${name}: 40% target ${facts.targetBytes.toFixed(1)} bytes; source alone exceeds target: ${facts.sourceAloneExceedsTarget}.`))
   }
   for (const gate of report.gates) {
-    if (gate.measurement) lines.push('', `${gate.id}: full default schema ${gate.measurement.tokens} tokens / ${gate.measurement.bytes} bytes; ${gate.names.join(', ')}.`, `Whole startup message JSON: ${gate.wholeStartupMessages.tokens} tokens / ${gate.wholeStartupMessages.bytes} bytes; this is separate from schema accounting.`)
+    if (gate.gatedMeasurement) lines.push('', `${gate.id}: gated file/discovery schema ${gate.gatedMeasurement.tokens} tokens / ${gate.gatedMeasurement.bytes} bytes; ${gate.gatedNames.join(', ')}. Bash remains resident; full-default readiness is required.`)
+    if (gate.measurement) lines.push('', `${gate.id}: full default schema ${gate.measurement.tokens} tokens / ${gate.measurement.bytes} bytes; ${gate.names.join(', ')}.${gate.gatedMeasurement ? ' This total is reported separately from the approved file/discovery budget.' : ''}`, `Whole startup message JSON: ${gate.wholeStartupMessages.tokens} tokens / ${gate.wholeStartupMessages.bytes} bytes; this is separate from schema accounting.`)
     if (gate.reason || gate.error) lines.push('', `${gate.id}: ${gate.reason ?? gate.error}`)
     if (gate.gates) lines.push('', `${gate.id}: ${JSON.stringify(gate.gates)}. ${gate.scopeNote ?? ''}`)
   }

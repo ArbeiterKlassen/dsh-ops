@@ -3,9 +3,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { getEncoding } from 'js-tiktoken'
 import { publicToolName } from '../../lib/policy.js'
-import { schemaMeasurement, verifyReads, verifyEmittedReads, lowerBound } from './metrics.mjs'
+import { verifyReads, verifyEmittedReads, lowerBound } from './metrics.mjs'
 import { boot } from './host.mjs'
-import { startupReadiness, readControlPassed, rejectedWithoutEffects } from './integrity.mjs'
+import { readAcceptance, startupAssessment, readControlPassed, rejectedWithoutEffects } from './integrity.mjs'
 import { READ_CASES, readFixture, fiveEdits, hash } from './fixtures.mjs'
 const calls = run => run.results.map(item => item.result)
 const raw = (name, args) => ({ name, args })
@@ -35,8 +35,9 @@ export async function bm01(options) {
       vs031: savings.baseline >= .4, vsOfficial: savings.official >= .4 } })
   }
   const primary = cases.find(item => item.scenario.primary)
-  return { id: 'BM-01', status: Object.values(primary.passes).every(Boolean) ? 'passed' : 'failed',
-    criterion: 'One tool-bearing provider round; >=40% emitted text-byte reduction on predeclared 3×50 primary task against each separately reported comparator; neither comparator failure is hidden.',
+  return { id: 'BM-01', status: readAcceptance(primary.savings, primary.rows.candidate.toolBearingRounds),
+    criterion: 'One tool-bearing provider round; >=40% emitted text-byte reduction on predeclared 3×50 primary task against OPS 0.3.1. Official-reader comparison is reported separately and does not gate acceptance.',
+    acceptanceBaseline: 'ops-0.3.1', officialComparisonGating: false, scopeDecision: 'User confirmed OPS 0.3.x as the authoritative baseline; official reader remains a separate comparator.',
     universalSavingsClaim: false, providerModel: 'scripted; no paid calls', cases }
 }
 
@@ -70,12 +71,12 @@ export async function bm03(options) {
   const host = await boot({ ...options, root, withShell: process.platform === 'win32' })
   try {
     const run = await host.run(await host.agent(), [[]]), request = run.requests[0]
-    const measurement = schemaMeasurement(request.tools), names = request.tools.map(tool => tool.name)
-    const readiness = startupReadiness(request.tools)
+    const assessment = startupAssessment(request.tools)
     const messages = JSON.stringify(request.messages)
-    return { id: 'BM-03', status: !readiness.ready ? 'blocked' : measurement.tokens <= 400 ? 'passed' : 'failed',
-      criterion: 'Full default Native added schema <=400 tokens; Windows includes actual default Bash registration.',
-      pendingBudgetScopeDecision: true, readiness, reason: readiness.reason, shellReady: readiness.shellReady, shellFixture: host.shellFixture ?? null, platform: process.platform, names, measurement,
+    return { id: 'BM-03', ...assessment,
+      criterion: 'File/discovery resident schema <=400 tokens. Bash remains loaded at startup; exact full-default readiness is required and the full token total is reported separately.',
+      acceptanceScope: 'file-discovery', scopeDecision: 'User confirmed the 400-token budget excludes Bash while keeping Bash resident.',
+      reason: assessment.readiness.reason, shellReady: assessment.readiness.shellReady, shellFixture: host.shellFixture ?? null, platform: process.platform,
       wholeStartupMessages: { tokens: getEncoding('cl100k_base').encode(messages).length, bytes: Buffer.byteLength(messages), json: messages },
       methodology: 'js-tiktoken@1.0.21 cl100k_base over compact host name/description/parameters JSON, actual provider order; not provider billing.' }
   } finally { await host.close() }

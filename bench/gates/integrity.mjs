@@ -1,6 +1,7 @@
 /** Assertions about the workload's availability and controls, independent of its byte/token score. */
 import { NATIVE_RESIDENT_FILE_TOOLS } from '../../lib/capabilities/registry.js'
 import { publicToolName } from '../../lib/policy.js'
+import { schemaMeasurement } from './metrics.mjs'
 export function startupReadiness(tools, platform = process.platform) {
   const expected = [...NATIVE_RESIDENT_FILE_TOOLS, 'discover', ...(platform === 'win32' ? ['bash'] : [])].map(publicToolName).sort()
   const names = tools.map(tool => tool.name), actual = new Set(names)
@@ -15,6 +16,17 @@ export function startupReadiness(tools, platform = process.platform) {
   if (duplicates.length) reasons.push('duplicate startup tools: ' + duplicates.join(', '))
   if (!shellReady) reasons.push('the full host-compatible Bash contract is unavailable')
   return { ready: !reasons.length, expected, missing, unexpected, duplicates, shellReady, reason: reasons.join('; ') || undefined }
+}
+/** User-approved gates: OPS 0.3.x bytes; file/discovery schemas with Bash still resident. */
+export function readAcceptance(savings, toolBearingRounds) {
+  return toolBearingRounds === 1 && savings.baseline >= .4 ? 'passed' : 'failed'
+}
+export function startupAssessment(tools, platform = process.platform) {
+  const readiness = startupReadiness(tools, platform)
+  const gatedTools = tools.filter(tool => tool.name !== publicToolName('bash'))
+  const measurement = schemaMeasurement(tools), gatedMeasurement = schemaMeasurement(gatedTools)
+  return { status: !readiness.ready ? 'blocked' : gatedMeasurement.tokens <= 400 ? 'passed' : 'failed',
+    readiness, names: tools.map(tool => tool.name), measurement, gatedNames: gatedTools.map(tool => tool.name), gatedMeasurement }
 }
 export function readControlPassed(value, file, expectedText) {
   if (value?.status !== 'completed' || value.failed !== 0 || value.pending !== 0 || value.truncated !== false

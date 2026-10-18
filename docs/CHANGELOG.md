@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Apply the confirmed acceptance scopes: BM-01 gates against OPS 0.3.x with official-reader comparisons reported separately; BM-03 gates file/discovery schemas while retaining startup Bash, exact full-inventory readiness and separate full totals. Preserve historical failed evidence.
+- 按已确认的验收范围判定：BM-01 以 OPS 0.3.x 为准，官方读取器比较单列；BM-03 仅约束文件/发现 schema，保留启动 Bash、完整目录就绪校验及单列完整总量。历史失败证据保持不变。
+
 - Compact each fully returned Native range's metadata receipt by removing its repeated notice label; keep exact source text, full revisions, continuation/EOF facts and the aggregate notice.
 - 删除 Native 完整返回范围的逐文件元数据回执中重复的提示标签；保留精确正文、完整版本标识、续读/文件结束事实及汇总提示。
 

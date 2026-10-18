@@ -1,6 +1,6 @@
 /** Negative evidence must not pass a token or permission gate. */
 import path from 'node:path'
-import { startupReadiness, readControlPassed, rejectedWithoutEffects } from '../bench/gates/integrity.mjs'
+import { readAcceptance, startupAssessment, startupReadiness, readControlPassed, rejectedWithoutEffects } from '../bench/gates/integrity.mjs'
 import { verifyEmittedReads } from '../bench/gates/metrics.mjs'
 import { NATIVE_RESIDENT_FILE_TOOLS } from '../lib/capabilities/registry.js'
 import { publicToolName } from '../lib/policy.js'
@@ -23,6 +23,26 @@ await test('startup needs the exact default Native surface before any token scor
   assert.equal(startupReadiness([...core,bash],'win32').ready,true)
   assert.equal(startupReadiness(core,'win32').ready,false)
   assert.equal(startupReadiness([...core,{name:bash.name,parameters:{}}],'win32').ready,false)
+})
+await test('BM-01 gates the approved OPS baseline without hiding the official comparison', () => {
+  assert.equal(readAcceptance({baseline:.4,official:-.2},1),'passed')
+  assert.equal(readAcceptance({baseline:.39999,official:.9},1),'failed')
+  assert.equal(readAcceptance({baseline:.6,official:.6},2),'failed')
+  assert.equal(readAcceptance({official:.9},1),'failed')
+})
+await test('the file/discovery budget still requires Bash and retains full startup cost', () => {
+  const bash={name:publicToolName('bash'),description:'shell contract '.repeat(600),parameters:{required:['description'],properties:{run_in_background:{type:'boolean'}}}}
+  const tools=[bash,...core], result=startupAssessment(tools,'win32')
+  assert.equal(result.status,'passed')
+  assert.ok(result.gatedMeasurement.tokens<=400)
+  assert.ok(result.measurement.tokens>400)
+  assert.deepEqual(result.names,tools.map(tool=>tool.name))
+  assert.deepEqual(result.gatedNames,core.map(tool=>tool.name))
+  assert.equal(startupAssessment(core,'win32').status,'blocked')
+  assert.equal(startupAssessment([...tools,core[0]],'win32').status,'blocked')
+  assert.equal(startupAssessment([...tools,{name:publicToolName('stat')}],'win32').status,'blocked')
+  const oversized=tools.map(tool=>tool===core[0]?{...tool,description:'file contract '.repeat(600)}:tool)
+  assert.equal(startupAssessment(oversized,'win32').status,'failed')
 })
 await test('authority gates require a successful allowed control and the exact effect-free denial codes', () => {
   const file=path.resolve('ordinary.txt'),item={status:'completed',path:file,complete:true,truncated:false,failed:0,items:[{path:file,line:1,text:'outside ordinary data'}]}
