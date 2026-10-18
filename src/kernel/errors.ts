@@ -23,6 +23,8 @@ export const ERROR_POLICIES: Readonly<Record<string, ErrorPolicy>> = Object.free
   CROSS_DEVICE: invalid,
   ERR_INVALID_ENCODING: invalid,
   TABLE_PARSE_ERROR: invalid,
+  DOCUMENT_PARSE_ERROR: invalid,
+  UNSUPPORTED_DOCUMENT: settled,
   FILE_CHANGED: changed,
   REFERENCE_EXPIRED: changed,
   AUTHORITY_CHANGED: changed,

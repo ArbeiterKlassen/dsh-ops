@@ -10,7 +10,7 @@ import type { CapabilityMetadata, Component, SchemaCapability } from './types.js
 export type FileToolName = keyof typeof fileParameters
 export type PtcToolName = keyof typeof ptcParameters
 // Preserve the published registration order independently of schema object key order.
-const fileOrder = ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_many', 'edit_many', 'table_read'] as const satisfies readonly FileToolName[]
+const fileOrder = ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_many', 'edit_many', 'table_read', 'doc_read'] as const satisfies readonly FileToolName[]
 const fileMutations = new Set<FileToolName>(['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove', 'edit_many'])
 const allPresentations = Object.freeze(['native', 'ptc', 'both'] as const)
 

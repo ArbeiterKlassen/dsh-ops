@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Expose scoped DOCX paragraphs (#261, 15b/16)
+
+- Add discoverable Native main-body paragraphs and typed PTC outcomes with explicit excluded content,
+  safe prefixes on unsupported content, stable-scan-only continuation and scoped reference recovery.
+- DOCX 的 Native/PTC 按需启用，明确正文范围与排除内容；缺口保留安全前缀且不伪造续取。
+
 ### Add bounded DOCX main-body worker observations (#261, 15b/16)
 
 - Read strict DOCX main-body paragraphs and table coordinates with explicit excluded-content

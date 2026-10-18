@@ -45,6 +45,7 @@ await test('paragraph paging reports full totals separately and empty documents 
     const file = fileAt(root, docx(Array.from({ length: 205 }, (_, i) => paragraph(String(i + 1))).join('')))
     const first = await run(root, { path: file }); assert.equal(first.items.length, 200); assert.equal(first.nextOffset, 201); assert.equal(first.total, 205); assert.equal(first.scanComplete, true); assert.equal(first.pageComplete, true); assert.equal(first.complete, false)
     const last = await run(root, { path: file, offset: 201, limit: 5 }); assert.deepEqual(last.items.map(i => i.text), ['201', '202', '203', '204', '205']); assert.equal(last.complete, true)
+    const beyond = await run(root, { path: file, offset: 999 }); assert.equal(beyond.skipped, 205); assert.deepEqual(beyond.items, []); assert.equal(beyond.complete, true)
     const empty = await run(root, { path: fileAt(root, docx('')) }); assert.equal(empty.total, 0); assert.deepEqual(empty.items, []); assert.equal(empty.complete, true)
     for (const args of [{ offset: 0 }, { offset: 100001 }, { limit: 0 }, { limit: 1001 }, { unknown: true }]) failure(await run(root, { path: file, ...args }), 'INVALID_ARGUMENT')
   })
