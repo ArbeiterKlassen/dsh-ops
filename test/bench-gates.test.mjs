@@ -23,6 +23,8 @@ await test('partial, blocked, failed and duplicate gate sets never claim full ac
   assert.equal(verdict([]), false)
   assert.equal(fullAcceptance(complete.slice(0, 4)), false)
   assert.equal(fullAcceptance(Array(5).fill(complete[0])), false)
+  assert.equal(fullAcceptance([...complete, complete[0]]), false)
+  assert.equal(fullAcceptance([...complete, { id: 'BM-06', status: 'passed' }]), false)
   for (const status of ['blocked', 'failed', 'skipped', undefined]) assert.equal(fullAcceptance([...complete.slice(0, 4), { id: 'BM-05', status }]), false)
 })
 await test('a rerun cannot overwrite existing evidence, and a missing worker fails before creating it', async () => {

@@ -47,7 +47,7 @@ jobs:
       - name: Build independent 0.3.1 worker
         run: cargo build --release --locked --manifest-path baseline-031/native/Cargo.toml
       - name: Verify benchmark harness integrity
-        run: node test/run.mjs bench-gates
+        run: node test/run.mjs bench-gates bench-integrity
       - name: Run all five real-host acceptance gates
         run: node bench/cli.mjs gates --baseline-source baseline-031 --baseline-worker baseline-031/native/target/release/dsh-ops-worker${{ matrix.suffix }} --output benchmark-gates.json
       - name: Upload exact evidence even when a gate fails
