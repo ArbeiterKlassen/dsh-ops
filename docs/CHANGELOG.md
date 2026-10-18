@@ -42,13 +42,21 @@ each one is pinned by a suite that would fail without it.
   the real reach (path-based: reads, writes, and copy/move destinations; a `.env` cannot be
   created either), and a suite asserts the wording, the refusals and the documented reach
   together.
-- **The update-lock sidecar is declared behaviour (#240, P5).** A write leaves a persistent
-  0-byte `.dsh-ops-update-<sha256(lowercased name)>.lock` beside the target, including on a
-  rejected update; unlinking it would let a waiter hold a lock on an orphaned inode while
-  the next writer locks a fresh one, which is two writers on one path. The sidecar is now
-  documented in `docs/native-ptc.md` (who creates it, which refusals leave one, why
-  `glob`/`grep` never see it, and how an operator removes it) instead of being silently
-  present.
+- **The update-lock sidecar is declared behaviour (#240, P5).** Published writes retain a
+  persistent 0-byte `.dsh-ops-update-<sha256(lowercased name)>.lock` beside the target;
+  unlinking it could let concurrent writers lock different inodes for the same name.
+  The lifecycle and residual refusal cases are documented in `docs/native-ptc.md`.
+
+### Refuse single-file requests before creating the update sidecar (#244, #240, #204 P5)
+
+- The credential fence also refuses removal, including under `danger-full-access`;
+  troubleshooting records that `.env` cannot be created through the ops tools.
+- Single-file requests rejected by pure snapshot checks (revision, edit planning, proposed
+  size, destination absence) now fail before taking the lock. Authoritative checks still run
+  under the lock when needed. `write_file`/`edit_file` dry runs skip the lock entirely.
+- A concurrent change or publication failure after locking can still leave a sidecar, and
+  `replace` can leave one per selected candidate even if its match budget is refused.
+  Persistent sidecars are never unlinked automatically; the cooperative lock identity is preserved.
 
 ### `strict` official-tool hiding no longer blocks session readiness (#238, #207)
 
