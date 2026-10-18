@@ -7,6 +7,13 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Inspect routing matches the native surface (#68)
+
+The paired component routing tables no longer advertise multiple ranges, arbitrary
+encodings or PDF text for `ops_inspect_local_file`. The historical 0.2.x manual
+checklist now labels those file cases explicitly as historical; current inspection
+is single-path, bounded UTF-8 text or hex. A contract regression checks both tables.
+
 ### The 0.3.2 real-machine findings, fixed (#204, #235, #236, #237, #240)
 
 Four findings from the 0.3.2 Linux x64 session run in #204. Three are behaviour changes, and
@@ -84,6 +91,35 @@ the component now takes over only the **shell / file / ptc** faces, and `strict`
 - `hide-official` remains a **disabled opt-in row**; the default surface is unchanged.
   Tests feed the exact 48-tool surface reported in #207 to the real host and assert that
   assembly resolves, all 48 tools stay visible, and the warning names them.
+
+### The `hide-official` takeover scope is explicit, with a `scope` switch (#239)
+
+**New key.** `dsh-ops/hide-official` gains `scope: takeover | extended | off`.
+`takeover` is the default, so every existing row keeps the 0.3.2 behaviour exactly.
+The scope itself is now data: `TAKEOVER_MANIFEST` in `lib/official-tool-hiding.js`
+lists every pinned official tool name (all 63) and both dynamic official prefixes
+as `tool -> face -> OPS equivalent -> reason`, marking the ones this component
+deliberately does **not** take over. `TAKEOVER_SCOPE`, `takeoverFace`,
+`takeoverEquivalent` and `isHideable` are derived from it; tests fail if a row is
+deleted, if an equivalent drifts from the reviewed registry in
+`official-tool-catalog.js`, or if the table in `docs/component-reference.md` /
+`docs/组件参考.md` stops matching the manifest.
+
+- `scope: takeover` (default) — hide only manifest rows inside shell/file/ptc that
+  have a reviewed equivalent; everything else stays visible with the aggregated
+  warning, and an out-of-scope `additionalOfficialTools` entry is warned about and
+  ignored. Unchanged.
+- `scope: extended` — the takeover scope becomes the manifest plus every name in
+  `additionalOfficialTools`. A promoted name is judged by the same in-scope rule,
+  so one with no reviewed equivalent fails closed with the same executable way out
+  instead of being ignored.
+- `scope: off` — the row takes over nothing: no hiding, no warning, no readiness
+  gate. It neutralizes the row without editing `disabled`.
+- The component card text (`locale/en.json`, `locale/zh.json`) no longer claims
+  that incomplete replacements refuse prompt assembly; it now describes the
+  three-face scope and the single fail-closed case.
+- The configuration and component references document the hidden set, the
+  kept-visible set with reasons, and one copy-paste row per `scope` value.
 
 ### A repository-only benchmark harness, merged from #103 and #183 (#205, #173)
 

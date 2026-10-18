@@ -29,7 +29,9 @@
 - `promptPolicy: false`：不发布路由提示词。
 - `deny-host-shell`：有无 ops 命令组都应拒绝配置的宿主 shell；若工具来自继承层，目录也应遮蔽。无可用执行器时不推荐不可调用的 ops 命令。
 
-## 文件工具
+## 文件工具（以下仅为 0.2.x 历史验收，不是当前能力）
+
+当前 `ops_inspect_local_file` 仅支持单路径、有界 UTF-8 文本或 hex；没有 `files[]`、多区间、任意编码或 PDF 文本接口。当前回归入口为 `test/inspect-hex.test.mjs` 与 `test/file-contract.test.mjs`，不要对 0.3.x 执行下列旧版用例。
 
 - 多文件多区间 `files[]`，各自 offset/limit/encoding；重复路径读取不同区间，结果有序。
 - GBK 文本显式 encoding；单文件 grep encoding、目录 fallback_encoding。
