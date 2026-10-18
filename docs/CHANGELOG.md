@@ -12,6 +12,11 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Publish `ops_read_many` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
 - Measure compact file/discovery schemas at 241 tokens and the current full surface with Bash at 610 tokens; the full 400-token BM-03 gate remains unresolved pending the redesigned shell contract.
 - Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；完整工具面含 Bash 仍超过 400-token 门禁，保留真实测量而不宣称通过。
+### Publish progressive tools before the next real provider snapshot (#261, 7–8/16)
+
+- Activate pending Native and PTC selections at the owning session’s committed step end, before the pinned host captures the next provider schema. Drain owned publication during ordinary assembly without replacing host methods; mark internal probes to avoid recursive waits.
+- Verify Native startup, immediately following discovery, same-call SDK isolation and next-request PTC loading through the real AgentLoop with a scripted provider. The exact test-only loop dependency `0.2.0-rc.2` was published 2026-09-29.
+- 修复真实宿主先组装后 pre-step 导致多延迟一轮的问题；会话提交步骤结束后发布，在下一供应商请求前完成本插件队列，保持当前 SDK 快照与作用域隔离。
 
 ### Expose canonical PTC outcomes and generated declarations (#261, 7/16)
 

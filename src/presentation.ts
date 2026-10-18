@@ -1,14 +1,18 @@
-/** Inspect public presentation before publishing a replacement. This result is
- * only a boolean; the inspected assembly never becomes a provider request. */
-import type { AssembleContext, SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
+/** Inspect public presentation before publishing a replacement. Inspection is
+ * marked by exact context identity and never becomes a provider request. */
+import type { AssembleContext, PromptAssembly, SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 
 const probes = new WeakSet<AssembleContext>()
 export function isPresentationProbe(context: AssembleContext): boolean { return probes.has(context) }
-export async function isNativePresentation(prompt: Pick<SystemPrompt, 'assemble'>, scope: NonNullable<AssembleContext['scope']>): Promise<boolean> {
-  const context: AssembleContext = { scope }
+export async function inspectPresentation(prompt: Pick<SystemPrompt, 'assemble'>, scope: NonNullable<AssembleContext['scope']>, signal?: AbortSignal): Promise<PromptAssembly> {
+  const context: AssembleContext = { scope, signal }
   probes.add(context)
   try {
-    const assembly = await prompt.assemble(context)
-    return !assembly.sections.some(section => section.name === 'tools:ptc-only' && Boolean(section.text.trim()))
+    return await prompt.assemble(context)
   } finally { probes.delete(context) }
+}
+
+export async function isNativePresentation(prompt: Pick<SystemPrompt, 'assemble'>, scope: NonNullable<AssembleContext['scope']>): Promise<boolean> {
+  const assembly = await inspectPresentation(prompt, scope)
+  return !assembly.sections.some(section => section.name === 'tools:ptc-only' && Boolean(section.text.trim()))
 }
