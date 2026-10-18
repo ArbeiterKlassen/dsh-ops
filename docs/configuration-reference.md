@@ -154,3 +154,11 @@ Prompts are registered as independent runtime sections, **not written to AGENTS.
 - [Usage](usage.md) — install, update, remove, CLI
 - [Component reference](component-reference.md) — components and tools
 - [Troubleshooting](troubleshooting.md) — errors and diagnosis
+
+## Host settings forms
+
+The enabled shell, discovery and official-replacement rows expose validated fields to the host
+settings service. Saving uses the profile revision the form read; a stale revision or invalid
+selection is rejected before writing. The host persists accepted changes and reloads the affected
+row, so the running configuration follows the saved selection. Ordinary row fields are preserved.
+A disabled row has no editable form; re-enable it with the host's built-in row switch first.

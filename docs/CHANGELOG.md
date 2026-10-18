@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Validate and persist host settings forms (#261)
+
+- Expose shell executor, discovery pool/always-loaded and per-tool replacement fields through detached settings descriptors and existing validators. Accepted changes persist through the host profile writer and reload the row; stale/invalid writes preserve the profile.
+- 为 shell 执行器、发现允许池/常驻项和逐项替换提供宿主设置描述及既有校验；成功保存后重载对应行，版本过期或无效配置不会改写文件。
 
 - Drain release-gate stdout and stderr concurrently so a full diagnostic pipe cannot deadlock verification; retain both streams and failing exit codes.
 - 发布门禁并行读取 stdout 和 stderr，避免诊断管道写满后验证死锁；保留两路完整输出及失败退出码。
