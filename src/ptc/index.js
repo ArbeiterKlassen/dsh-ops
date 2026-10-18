@@ -116,7 +116,6 @@ export function apply(root, rawConfig) {
     ctx.on('tools/change', reconcile)
     ctx.on('session/event', (_session, event) => {
       if (event.type === 'sandbox/mode') {
-        for (const controller of active.keys()) controller.abort(new Error('Sandbox authority changed'))
         reconcile()
       }
     })

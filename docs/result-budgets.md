@@ -23,7 +23,8 @@ references retain their separate contract.
 Session disposal immediately expires references, cancels queued/running work, awaits settlement,
 then purges validated snapshot/staging blobs through the current host authority. The stable lock
 and unknown names remain; audit data is never purged. Read-only mode or unavailable host services
-can defer physical cleanup, with a diagnostic. A fresh in-memory session nonce prevents reopening
+can prevent physical cleanup, with a diagnostic. No automatic retry is scheduled; up to the session
+quota can remain for host temporary-directory cleanup or operator removal. A fresh in-memory session nonce prevents reopening
 disk leftovers as valid references after a restart. Component owners share this lifetime; unloading
 the last Native/PTC owner expires its remaining sessions. Cleanup is an internal operation and
 cannot be requested through model tool arguments.

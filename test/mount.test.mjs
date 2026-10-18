@@ -169,7 +169,8 @@ await test('native file paths resolve from session cwd and enforce workspace-wri
       try {
         const read = await callTool(ctx, publicToolName('inspect_local_file'), { path: outside }, undefined, workspace)
         assert.equal(read.value.status, 'completed')
-        const readonly = await agentForCall(ctx, dir, 'read-only')
+        workspace.session.mode = 'read-only'
+        const readonly = workspace
         const denied = await callTool(ctx, publicToolName('replace'), { path: outside, pattern: 'outside', replacement: 'changed' }, undefined, readonly)
         assert.equal(denied.value.error.code, 'POLICY_DENIED')
         assert.match(denied.value.error.message, /User authorization/)

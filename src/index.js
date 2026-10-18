@@ -70,7 +70,7 @@ async function mountNativeFile(ctx, config, file) {
   // `safeDispose` isolates synchronous teardown callbacks; a *rejecting promise* needs its own
   // catch, or the rejection is dropped and the worker's shutdown failure stays invisible (#30).
   ctx.effect(() => () => {
-    void surface.stop().catch(error => report(ctx, `dsh-ops: native file worker shutdown failed: ${error?.message ?? error}`, 'warn'))
+    return surface.stop().catch(error => report(ctx, `dsh-ops: native file worker shutdown failed: ${error?.message ?? error}`, 'warn'))
   }, 'dsh-ops: native file worker')
   const tools = await surface.start()
   if (tools.length) report(ctx, `dsh-ops: native Rust file worker ready; ${tools.length} tools.`, 'info')
