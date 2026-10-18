@@ -3,9 +3,12 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+export interface WorkerSelection { binaryPath?: string }
+export interface RuntimeOptions { packageRoot?: string; env?: NodeJS.ProcessEnv; platform?: string; arch?: string }
+export type WorkerResolution = { ok: true; file: string } | { ok: false; reason: string }
 export const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 export const PLATFORMS = Object.freeze(['win32-x64', 'linux-x64', 'darwin-arm64'])
-export function workerName(platform = process.platform) { return platform === 'win32' ? 'dsh-ops-worker.exe' : 'dsh-ops-worker' }
+export function workerName(platform: string = process.platform) { return platform === 'win32' ? 'dsh-ops-worker.exe' : 'dsh-ops-worker' }
 /**
  * Read a JSON file, or name it.
  *
@@ -19,13 +22,13 @@ export function workerName(platform = process.platform) { return platform === 'w
  * (#30's point). The package-relative name keeps it actionable — you still know which artifact is
  * wrong.
  */
-function readJson(file, what, shown) {
+function readJson(file: string, what: string, shown: string): Record<string, unknown> {
   let text
   try { text = fs.readFileSync(file, 'utf8') } catch (error) {
-    throw new Error(`Native worker ${what} at ${shown} could not be read (${error?.code ?? error?.name ?? 'unknown'})`)
+    throw new Error(`Native worker ${what} at ${shown} could not be read (${(error as NodeJS.ErrnoException)?.code ?? (error as Error)?.name ?? 'unknown'})`)
   }
-  try { return JSON.parse(text) } catch (error) {
-    throw new Error(`Native worker ${what} at ${shown} is not valid JSON (${error?.name ?? 'unknown'})`)
+  try { return JSON.parse(text) as Record<string, unknown> } catch (error) {
+    throw new Error(`Native worker ${what} at ${shown} is not valid JSON (${(error as Error)?.name ?? 'unknown'})`)
   }
 }
 /**
@@ -43,7 +46,7 @@ function readJson(file, what, shown) {
  * @param {object} [options] - same as {@link resolveWorker}.
  * @returns {{ok: true, file: string}|{ok: false, reason: string}} the attempt.
  */
-export function tryResolveWorker(config = {}, options = {}) {
+export function tryResolveWorker(config: WorkerSelection = {}, options: RuntimeOptions = {}): WorkerResolution {
   const platform = options.platform ?? process.platform
   const arch = options.arch ?? process.arch
   try {
@@ -52,11 +55,11 @@ export function tryResolveWorker(config = {}, options = {}) {
     }
     return { ok: true, file: resolveWorker(config, options) }
   } catch (error) {
-    return { ok: false, reason: String(error?.message ?? error) }
+    return { ok: false, reason: String((error as Error)?.message ?? error) }
   }
 }
 
-export function resolveWorker(config = {}, { packageRoot = PACKAGE_ROOT, env = process.env, platform = process.platform, arch = process.arch } = {}) {
+export function resolveWorker(config: WorkerSelection = {}, { packageRoot = PACKAGE_ROOT, env = process.env, platform = process.platform, arch = process.arch }: RuntimeOptions = {}): string {
   if (!PLATFORMS.includes(`${platform}-${arch}`)) throw new Error(`dsh-ops 0.3.1 supports Windows x64, Linux x64 and macOS Apple Silicon (darwin-arm64) only; unsupported runtime target ${platform}-${arch}.`)
   const explicit = config.binaryPath ?? env.DSH_OPS_WORKER_BIN
   const fromPackage = path.resolve(packageRoot, 'runtime', `${platform}-${arch}`, workerName(platform))
@@ -70,8 +73,8 @@ export function resolveWorker(config = {}, { packageRoot = PACKAGE_ROOT, env = p
   // Compare **resolved, case-folded** paths, never raw strings: Windows is
   // case-insensitive, so `…\RUNTIME\…` names the same file as the candidate we
   // derived — a substring/spelling test would let it skip verification entirely.
-  const same = (a, b) => (platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b)
-  const skipped = []
+  const same = (a: string, b: string) => (platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b)
+  const skipped: string[] = []
   for (const { file, note } of candidates) {
     if (!path.isAbsolute(file)) throw new Error('Native worker selection must be an absolute path.')
     let stat
@@ -79,7 +82,7 @@ export function resolveWorker(config = {}, { packageRoot = PACKAGE_ROOT, env = p
       // Only "no such file" is an ordinary miss for a candidate list. A directory the
       // process may not traverse, or a symlink that dangles, is a real condition that
       // an "unavailable" message would hide behind the same words.
-      if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw new Error(`Native worker candidate ${file} could not be inspected: ${error.message}`)
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'ENOTDIR') throw new Error(`Native worker candidate ${file} could not be inspected: ${(error as Error).message}`)
       skipped.push(`${file} (absent)`); continue
     }
     if (!stat.isFile()) { skipped.push(`${file} (not a regular file)`); continue }

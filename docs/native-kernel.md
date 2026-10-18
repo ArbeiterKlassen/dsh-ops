@@ -12,6 +12,7 @@ and writes one JSON result. Splitting the kernel does not introduce a persistent
 | `ops-files` | No-follow handles, reads, CAS publication, metadata, tree operations, directory sync | protocol |
 | `ops-search` | Glob, grep and replacement orchestration over guarded file primitives | protocol, files |
 | `ops-results` | Bounded generation store, result pages and immutable job-audit access | protocol, files |
+| `ops-documents` | Strict bounded CSV/TSV Unicode decoding and typed positional rows | protocol, files |
 | `ops-batch` | Plans, write-ahead transitions and conservative recovery | protocol, files, results |
 
 The root crate routes requests and opens audit storage only for batch/result capabilities.
@@ -127,3 +128,204 @@ cannot create a reference. Cache refusal retains an incomplete bounded head with
 completed mutations must not be repeated. Reference metadata is budget-checked before publication,
 so an unusably small head budget does not create an unreachable blob. Calls without trusted storage
 retain the legacy transport contract; the host supplies recovery guidance when storage is unavailable.
+
+## CSV/TSV worker observations (15a/16)
+
+The new ops-documents crate handles `table_read` in the same one-shot worker. The capability stays outside
+the default schema: Native uses `ops_discover` and PTC uses `ops_sdk` to activate `table_read`
+for the next agent step. Siblings and descendants require their own selection. It adds no external packages:
+serde/serde_json and sha2 reuse the existing locked workspace dependency graph. PDF/DOC parsing
+requires separate dependency review.
+
+Arguments are `{ path, format?, encoding?, header?, offset?, limit? }`. The host resolves path
+against current cwd before sending an absolute path. Format is csv or tsv, inferred as tsv only
+for a .tsv extension (case-insensitive), otherwise csv. Encoding defaults to utf-8; utf-16le and
+utf-16be are explicit alternatives. Valid matching BOMs are consumed, contradictory BOMs and
+malformed Unicode are rejected without replacement decoding. Without a BOM the explicit encoding
+is authoritative; no unreliable byte-pattern guessing is performed.
+
+Header defaults true. Duplicate/empty column names remain positional; header=false returns an
+empty columns array and infers columnCount from the first record. Data rows are
+`{ row, cells: string[], lineStart, lineEnd }`: row is 1-based excluding the header, while lineStart
+and lineEnd count physical LF lines including the header and quoted multiline fields. Values are
+never guessed as numbers, dates or booleans. Quoted fields support delimiters, escaped double quotes
+and exact embedded LF/CRLF. Record separators are LF/CRLF; bare CR outside quotes, trailing text
+after a closing quote, unquoted quotes and inconsistent widths are errors. Blank records contain
+one empty cell; a final newline adds no phantom record. Empty files have zero rows.
+
+Offset is 1..100000 data rows, default 1; limit is 1..1000, default 200. Each call streams a bounded
+physical scan, retains only its requested rows, and reports rowsObserved, bytesRead (including
+bounded decoder read-ahead), scanComplete and pageComplete separately. rowCount/total and the
+raw-byte SHA-256 revision appear only after a clean EOF with unchanged observed file metadata.
+Complete also requires no remaining rows after the requested page. A malformed suffix preserves
+preceding valid rows with status=partial/error and no invented total, even when the requested page
+was already fully observed. Metadata changes invalidate the complete-scan claim.
+
+Hard limits are 32 MiB input, 100000 data records plus one bounded EOF lookahead, 1 MiB decoded
+record, 1024 columns, 8192 serialized header bytes and 30 seconds between records (the host/worker
+request deadline also applies). A stopped scan returns explicit scan-budget/time recovery; row
+paging does not bypass these physical limits. Use a dedicated streaming table reader for larger
+inputs. Error codes include TABLE_PARSE_ERROR, ERR_INVALID_ENCODING, OUTPUT_LIMIT, FILE_CHANGED
+and DEADLINE_EXCEEDED; preflight authority failures keep the existing policy codes.
+
+Credential and no-follow checks reuse ops-files. Readonly observations create no audit/cache
+objects. Oversized requested rows use the existing bounded spill sink before display clipping:
+references contain exact typed row JSON, source retains table/coverage facts, and captureComplete
+is independent of scanComplete. Page with the original referenceRoot. Cache effects never imply
+business writes; table_read is classified as read-only even in a writable session.
+
+Native renders positional JSON cells with physical LF ranges and explicit non-exhaustive gap notices.
+PTC exposes lexical `string[]` cells through generated declarations. Stable complete scans with
+remaining rows supply read-only forward continuations; callers must compare revisions across calls.
+Malformed/changed input and physical scan limits retain prefix data and recovery advice, with no
+continuation that would repeat the same gap. Native reference pages and PTC result pages preserve
+original table coverage separately from stored-row pagination. Shared admission, current authority,
+credential checks, cancellation and storage bindings apply unchanged.
+
+## Bounded DOCX main-body observations (15b/16)
+
+`doc_read` is discoverable-only: Native selects it through `ops_discover`, PTC through
+`ops_sdk`; activation starts at the owning agent's next step. Arguments are `{path, offset?, limit?}`: path must be absolute after host resolution
+against current session cwd; offset is a 1-based paragraph index (1-100000, default 1), limit is
+1-1000 (default 200). Each item is `{block,type:"paragraph",text}`; table paragraphs additionally
+carry 1-based table/row/cell coordinates. Empty paragraphs are retained. Tabs, line breaks,
+Unicode, entity references and lexical spaces are preserved. Formatting and rendered layout,
+headers/footers, footnotes/endnotes, comments and package metadata are explicitly excluded in
+`scope:"main-body-paragraphs"` and `excludedContent`. A complete result describes that scope,
+not the full rendered document. There is no Office automation or external relationship fetch.
+
+The subset requires a standard internal word/document.xml main part, stored/deflated ZIP,
+strict UTF-8 or BOM-marked UTF-16 and recognized transitional/strict Word namespaces. Binary DOC,
+macros, encrypted/multi-disk/ZIP64 archives, nested tables, body drawings, fields, revisions,
+foreign/unknown body content and malformed structures are explicitly refused. Ambiguous ZIP footer
+signatures anywhere in the raw archive are conservatively refused before constructor recovery. A late content
+failure returns preceding complete paragraphs with `status:partial`, `scanComplete:false`, no
+full total/revision, and recovery guidance. XML never resolves DTD/custom/external entities.
+
+Bounds apply before library allocation/decompression: archive 32 MiB; central directory 1 MiB
+and 4096 entries; each OPC metadata part 1 MiB; main XML 8 MiB actual decoded bytes; one paragraph
+1 MiB UTF-8; 100000 observed paragraphs; XML depth 128, attributes 64 per element, namespace
+bindings 512 in scope; 30 seconds between parse events plus the transport watchdog. Each fixed
+XML part is CRC-checked after bounded decompression. ZIP local/central headers, uniqueness and
+nonoverlap are preflighted; nothing is extracted to disk. Selected pages alone are retained.
+
+`blocksObserved`, `scanComplete`, `pageComplete` and `complete` separate scan coverage, requested
+page coverage and remaining paragraphs. `total`, raw-file SHA-256 `revision` and `omitted` are
+available only after a stable complete scan; `nextOffset` is always 1-based. Paging rescans the
+same file, so callers must compare revisions before combining changing observations. It does
+not bypass physical scan limits. The existing spill sink captures requested full paragraphs
+before inline clipping, including long Unicode text. Reference pages retain scope/coverage and
+captureComplete; their own complete flag describes stored-record pagination. Use referenceRoot
+for paging. Reads repeat authorization/no-follow/credential checks and create no artifacts in
+read-only sessions; transport or cache failures never imply a business mutation.
+
+Exact dependency versions, release dates, rationale and original notices are recorded in
+[document-dependencies.md](document-dependencies.md).
+
+Native displays paragraph indices, table coordinates and explicit scope/excludedContent notices,
+including safe prefixes beside parse errors. PTC returns typed paragraphs inside Outcome; physical
+gaps never get a looping continuation. Stable full scans with remaining paragraphs permit forward
+read-only pages; compare revisions across calls. Skipped paragraphs never exceed observed blocks,
+and FILE_CHANGED always invalidates requested-page completeness. Generated source metadata on
+reference pages retains the declared main-body scope independently of stored-row completeness.
+
+## PDF parser foundation (15c/16)
+
+The internal PDF container parser accepts a restricted PDF 1.0-1.7 subset: one classic
+xref table, an exact final startxref/EOF footer, unique dictionary keys and object
+identities, and directly declared stream lengths. Every active xref offset must point
+exactly at its object header. Objects cannot overlap; gaps must contain only whitespace
+or comments. This deliberately rejects incremental updates, encryption, object/xref
+streams, recovery scans and ambiguous duplicate data, including decoded forbidden names.
+
+Bounds are checked before indexed allocation: 16 MiB per input, 10,000 xref entries,
+100,000 metadata values, depth 64, 4,096 keys per dictionary, 256 bytes per name/token,
+and 1 MiB per string or encoded/decoded stream. Reference chains have cycle detection
+and a depth bound. Streams support no filter or one FlateDecode only; external streams,
+filter chains and DecodeParms are declined. Actual decompression stops at the decoded
+limit plus one byte and requires a valid checksum, zlib terminator and exact consumption
+of the input. No size advertised by a PDF author bypasses these limits.
+
+This slice exposes no tool and makes no text-coverage claim. Page-tree interpretation,
+the supported font/encoding subset, partial results and worker authority checks are
+introduced together in the following PDF extraction slice.
+
+## PDF text worker (15d/16)
+
+The one-shot worker accepts strict pdf_read { path, offset?, limit? }. The host resolves
+path from its current directory. Offset is a 1-based page number (1–32, default 1);
+limit is 1–32 pages (default 10). The capability stays outside the default schema. Native selects it
+through `ops_discover`, PTC through `ops_sdk`; it activates at the owning agent's next step.
+
+Each item is { page, text, runs: string[] }. Runs retain individual PDF text-show
+operations; TJ spacing numbers are not characters. Text joins runs with newlines for
+display. Scope is page-text-layer-content-order, **not rendered reading order**.
+Excluded content is stated in every result: layout, images/OCR, annotations/form fields,
+attachments/metadata, and structure-tree alternate text. A page invoking unsupported
+forms/images, marked content or external graphics state is a gap, even when it also has
+supported text. Blank absent/null/empty/comment-only content yields an empty page;
+nonempty graphics without a supported text layer is explicitly unsupported.
+
+The supported text subset is PDF 1.3–1.7 with the foundation's classic xref container,
+standard Helvetica/Courier/Times Type1 families, built-in StandardEncoding printable
+characters (including its curly quote glyphs), or named WinAnsiEncoding. The WinAnsi
+bullet/space/hyphen aliases are explicit; unknown/control codes are refused without
+replacement. Embedded/custom fonts, ToUnicode/CID maps and encoding differences are
+unsupported. Earlier PDF encodings are declined rather than reinterpreted. The mapping
+and operator semantics follow the [Adobe-hosted ISO 32000-1 reference, sections 9.4/9.6
+and Annex D](https://developer.adobe.com/document-services/docs/assets/35e4369068f86065372c18787171a17e/PDF_ISO_32000-1.pdf).
+
+Physical scanning stops at 32 pages, 30 seconds, 1 MiB decoded content per page, 64
+content streams per page, 1 MiB text/10,000 runs per page, and 16 MiB aggregate decoded
+streams **and** 16 MiB processed stream bytes. Shared streams decode once but every
+reuse counts against processed work. The existing 16 MiB file and per-stream limits
+also apply. Page offsets do not bypass any physical bound.
+
+scanComplete concerns the entire bounded text scope; pageComplete concerns the
+requested page range and becomes false on file changes. pagesObserved and skipped
+count actual observed pages. Only a stable complete scan includes total, omitted
+and a raw-file SHA-256 revision. Unsupported later pages retain only preceding complete
+pages, return an error/nextAction and omit full totals/revision. Rescan pagination must
+compare revisions before combining pages. Inline output is capped; the shared reference
+sink captures whole pages before clipping, and stored pages retain original scope and
+scan/capture completeness. A reference page being complete does not fill a source gap.
+Read-only, credential denial, no-follow opens and no-business-effect failures use the
+same worker authority checks as the other document readers.
+
+Native shows page numbers and escaped text with the explicit text-layer scope and exclusions.
+PTC generated declarations retain page, text and string[] runs; unsupported or malformed observations
+keep canonical prefix data inside failure Outcomes without a looping page continuation. Stable full
+scans alone permit forward rescan pages, with revisions compared before combining results. References
+retain typed original page coverage, decoded/processed work, scope and capture facts. All reads use
+the same live authority, credentials, no-follow, shared budgets and cancellation path as file tools.
+
+## Typed runtime ownership (16/16)
+
+Worker selection and Native runtime lifecycle are strict TypeScript. Resolution is a discriminated
+success/path or failure/reason value; configuration and Native tool names are checked at compile
+time. Missing runtime initialization returns an unavailable value before creating call state.
+The shipped runtime paths remain .js, with the same provenance, scope and cancellation behavior.
+
+The Native worker bridge also compiles under strict TypeScript, using host policy, filesystem and
+execution types with unknown-valued input/output records. Non-object arguments fail before spawning;
+malformed or non-object process results report unknown effects and never record a successful read.
+Receipt observations preserve the provider's version facts. This validation does not change the fixed
+Native subprocess path, permission checks or the separate PTC confinement path.
+
+The PTC bridge uses the same typed input/output narrowing, plus the host's exact confinement and
+runner-failure contracts. Non-object argument failures precede batch admission; invalid JSON receipts
+after a spawn retain unknown effects and the generated audit identity. Only recognized runner-failure
+evidence may claim the wrapped worker never ran. Permission rechecks and per-call confined argv remain
+mandatory; this migration adds no unconfined fallback or cache/business authority expansion.
+
+Source-build helpers are strict TypeScript as well. Cargo discovery returns an executable, provenance
+label, version and environment; building requires that resolved toolchain and a crate directory,
+streams text diagnostics, and returns a numeric exit code with collected output. The CLI still runs
+an explicit locked release build and stages its existing provenance receipt; no dependency, toolchain
+installation, runtime path or automatic-build behavior changes in this typing slice.
+
+The optional TUI activity, attention and rendering helpers and the packaged HTML template reader are
+strict TypeScript. Readonly snapshots retain only bounded counters and diagnostic metadata; running
+rows have no settlement facts. The injected React/UI seam preserves the host's node type without
+loading a TUI or React dependency. Existing notification, session, pagination and HTML asset behavior
+is preserved. Invalid result-payload shapes remain unconfirmed and never retain their raw bodies.

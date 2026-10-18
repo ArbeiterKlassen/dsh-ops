@@ -14,16 +14,27 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+export interface CargoDiscoveryOptions { env?: NodeJS.ProcessEnv; platform?: string }
+export interface CargoToolchain { file: string; source: string; version: string; env: NodeJS.ProcessEnv }
+export interface CargoBuildOptions {
+  cargo: Pick<CargoToolchain, 'file' | 'env'>
+  sourceDir: string
+  extraArgs?: readonly string[]
+  onLine?: (line: string) => void
+}
+export interface CargoBuildResult { code: number; output: string }
+
 /** Environment variable that names the `cargo` executable to use. */
 export const CARGO_ENV = 'DSH_OPS_CARGO'
 
 /** Error raised when no usable Rust toolchain is found. */
 export class CargoNotFoundError extends Error {
+  readonly tried: string[]
   /**
    * @param {string} message - the failure summary.
    * @param {string[]} tried - every candidate considered.
    */
-  constructor(message, tried) {
+  constructor(message: string, tried: string[]) {
     super(message)
     this.name = 'CargoNotFoundError'
     this.tried = tried
@@ -39,7 +50,7 @@ export class CargoNotFoundError extends Error {
  * @param {NodeJS.ProcessEnv} [options.env] - environment.
  * @returns {{status: number|null, stdout: string, stderr: string}} the outcome.
  */
-function run(command, args, { cwd, env }) {
+function run(command: string, args: readonly string[], { cwd, env }: { cwd?: string; env?: NodeJS.ProcessEnv }) {
   const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', windowsHide: true })
   return {
     status: result.status,
@@ -55,10 +66,9 @@ function run(command, args, { cwd, env }) {
  * @param {string} [options.platform] - `process.platform`.
  * @returns {{file: string, source: string}[]} the candidates.
  */
-function cargoCandidates({ env = process.env, platform = process.platform } = {}) {
+function cargoCandidates({ env = process.env, platform = process.platform }: CargoDiscoveryOptions = {}): { file: string; source: string }[] {
   const name = platform === 'win32' ? 'cargo.exe' : 'cargo'
-  /** @type {{file: string, source: string}[]} */
-  const candidates = []
+  const candidates: { file: string; source: string }[] = []
   if (env[CARGO_ENV] !== undefined && env[CARGO_ENV].trim() !== '') {
     candidates.push({ file: path.resolve(env[CARGO_ENV]), source: CARGO_ENV })
   }
@@ -88,9 +98,8 @@ function cargoCandidates({ env = process.env, platform = process.platform } = {}
  * @returns {{file: string, source: string, version: string, env: NodeJS.ProcessEnv}} the toolchain.
  * @throws {CargoNotFoundError} when no usable `cargo` is found.
  */
-export function findCargo({ env = process.env, platform = process.platform } = {}) {
-  /** @type {string[]} */
-  const tried = []
+export function findCargo({ env = process.env, platform = process.platform }: CargoDiscoveryOptions = {}): CargoToolchain {
+  const tried: string[] = []
   for (const candidate of cargoCandidates({ env, platform })) {
     if (candidate.file !== 'cargo' && candidate.file !== 'cargo.exe' && !fs.existsSync(candidate.file)) {
       tried.push(`${candidate.source}: ${candidate.file} (missing)`)
@@ -122,7 +131,8 @@ export function findCargo({ env = process.env, platform = process.platform } = {
  * @param {(line: string) => void} [options.onLine] - receives each output line.
  * @returns {Promise<{code: number, output: string}>} the exit code and everything cargo wrote.
  */
-export function cargoBuild({ cargo, sourceDir, extraArgs = [], onLine } = {}) {
+export function cargoBuild(options: CargoBuildOptions): Promise<CargoBuildResult> {
+  const { cargo, sourceDir, extraArgs = [], onLine } = options ?? {}
   if (typeof sourceDir !== 'string' || sourceDir === '') throw new Error('cargoBuild requires the crate sourceDir')
   const args = ['build', '--release', '--locked', ...extraArgs]
   return new Promise((resolve, reject) => {
@@ -133,7 +143,7 @@ export function cargoBuild({ cargo, sourceDir, extraArgs = [], onLine } = {}) {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let output = ''
-    const forward = (chunk) => {
+    const forward = (chunk: Buffer) => {
       const text = chunk.toString('utf8')
       output += text
       if (onLine !== undefined) for (const line of text.split('\n')) if (line !== '') onLine(line)

@@ -18,7 +18,7 @@ await test('discovery config validates its own keys and copies bounded operator 
   const selected = resolveDiscoveryConfig(input)
   input.allowedTools.push('diff')
   assert.deepEqual(selected.allowedTools, ['stat'])
-  for (const raw of [null, [], false, { enabled: 1 }, { maxResults: 0 }, { maxResults: 6 }, { maxResults: 1.5 }, { maxResults: null }, { allowedTools: ['pdf_read'] }, { alwaysLoaded: ['stat'], allowedTools: [] }]) assert.throws(() => resolveDiscoveryConfig(raw))
+  for (const raw of [null, [], false, { enabled: 1 }, { maxResults: 0 }, { maxResults: 6 }, { maxResults: 1.5 }, { maxResults: null }, { allowedTools: ['unknown_document_reader'] }, { alwaysLoaded: ['stat'], allowedTools: [] }]) assert.throws(() => resolveDiscoveryConfig(raw))
   assert.throws(() => resolveDiscoveryConfig({ allowedTool: [] }), /unknown discovery key: allowedTool/)
 })
 await test('discovery arguments enforce max_results 1-5 and reject hidden action payloads', () => {
@@ -26,7 +26,7 @@ await test('discovery arguments enforce max_results 1-5 and reject hidden action
   for (const raw of [null, {}, { query: '' }, { query: 'a'.repeat(513) }, { query: 'stat', path: 'file' }, ...[0, 6, 1.5, null, '3'].map(max_results => ({ query: 'stat', max_results }))]) assert.equal(typeof parseRequest(raw), 'string')
   assert.deepEqual(search('select:ops_stat', DISCOVERABLE_TOOLS, 5), ['stat'])
   assert.deepEqual(search('metadata revision hash', DISCOVERABLE_TOOLS, 1), ['stat'])
-  assert.deepEqual(search('select:ops_pdf_read', DISCOVERABLE_TOOLS, 5), [])
+  assert.deepEqual(search('select:ops_pdf_read', DISCOVERABLE_TOOLS, 5), ['pdf_read'])
 })
 await test('discovery-entry schema has a reproducible pinned token measurement, separate from the full BM-03 gate', () => {
   const wire = JSON.stringify([{ name: publicToolName('discover'), description: DISCOVERY_DESCRIPTION, parameters: DISCOVERY_PARAMETERS }])

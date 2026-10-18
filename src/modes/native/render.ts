@@ -1,4 +1,6 @@
 import { Buffer } from 'node:buffer'
+import { renderDocument } from './documents.js'
+import { isDocumentTool } from '../../capabilities/documents.js'
 import { renderResult } from './result.js'
 import { errorPolicy } from '../../kernel/errors.js'
 import type { EffectState } from '../../kernel/outcome.js'
@@ -161,7 +163,8 @@ export function renderNative(tool: string, args: unknown, result: unknown): stri
   if (!record(result)) return capNativeText('[Notice: No structured result was returned.]')
   const input = record(args) ? args : {}
   let lines: string[]
-  if (record(result.error) || ['error', 'rejected', 'conflict', 'unknown', 'failed'].includes(String(result.status))) lines = failure(result)
+  if (isDocumentTool(tool)) lines = renderDocument(tool, input, result)
+  else if (record(result.error) || ['error', 'rejected', 'conflict', 'unknown', 'failed'].includes(String(result.status))) lines = failure(result)
   else if (tool === 'result') return capNativeText(renderResult(input, result), NATIVE_OUTPUT_BYTES, 'Repeat the same offset with smaller limit/maxBytes; do not advance past undisplayed rows.')
   else if (tool === 'read_many') lines = readMany(result)
   else if (tool === 'inspect_local_file') lines = inspect(input, result)
@@ -175,7 +178,7 @@ export function renderNative(tool: string, args: unknown, result: unknown): stri
   if (record(result.storageError)) lines.unshift('[Storage: ' + facts(result.storageError, ['code', 'message', 'effectState']) + '. Cache effects are separate from business effects.]')
   return capNativeText(lines.join('\n'), NATIVE_OUTPUT_BYTES, mutations.has(tool)
     ? 'Inspect current state before another mutation; do not repeat the write to recover undisplayed receipts.'
-    : undefined)
+    : isDocumentTool(tool) ? 'Use the stored reference when available; otherwise repeat this range with a smaller limit or use a dedicated reader for a large record. Do not advance past undisplayed content.' : undefined)
 }
 
 function readMany(value: Row): string[] {

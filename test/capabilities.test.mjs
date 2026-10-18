@@ -10,9 +10,9 @@ import { BASH_TOOL_NAME } from '../lib/shells/constants.js'
 import { assert, test, report } from './lib/harness.mjs'
 
 await test('the catalogue covers every owned file, PTC and shell tool exactly once', () => {
-  assert.equal(CAPABILITIES.length, 18)
+  assert.equal(CAPABILITIES.length, 21)
   assert.equal(new Set(CAPABILITIES.map(item => item.rawName)).size, CAPABILITIES.length)
-  assert.deepEqual(FILE_TOOLS, ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_many', 'edit_many'])
+  assert.deepEqual(FILE_TOOLS, ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_many', 'edit_many', 'table_read', 'doc_read', 'pdf_read'])
   assert.deepEqual(FILE_MUTATIONS, ['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove', 'edit_many'])
   assert.deepEqual(PTC_TOOLS, ['batch', 'result'])
   assert.deepEqual(IN_PROCESS_TOOLS, ['bash'])
@@ -55,7 +55,7 @@ const snapshot = (names, definition) => names.map(name => {
 await test('business file and batch definitions retain their original serialized contracts', () => {
   // Captured before this migration, covering every argument/output contract and published description.
   const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-  assert.equal(hash(snapshot(FILE_TOOLS.filter(name => !['glob', 'grep', 'read_many', 'edit_many'].includes(name)), fileDefinition)), 'f32e33306b4052fdb3d19a11e0fe9d65c255a87d2d485de08a9d7b1275e958fc')
+  assert.equal(hash(snapshot(FILE_TOOLS.filter(name => !['glob', 'grep', 'read_many', 'edit_many', 'table_read', 'doc_read', 'pdf_read'].includes(name)), fileDefinition)), 'f32e33306b4052fdb3d19a11e0fe9d65c255a87d2d485de08a9d7b1275e958fc')
   const batch = ptcDefinition('batch', async () => null)
   assert.equal(batch.parameters, ptcParameters.batch); assert.ok(batch.description.startsWith(ptcDescriptions.batch)); assert.match(batch.description, /PTC returns Outcome/)
   assert.ok(batch.output.schema.oneOf.every(branch => branch.properties.status))
@@ -82,5 +82,12 @@ await test('native registration consumes the catalogue while execute values stay
   }
   await runtime.stop()
   assert.deepEqual(disposed.sort(), registered.map(item => item.name).sort())
+})
+await test('unstarted Native runtimes return an unavailable value before creating call state', async () => {
+  const runtime = new NativeFileTools({ ctx: {}, config: { workerPath: 'fixture-worker' } })
+  const value = await runtime.call('stat', { path: '.' }, {})
+  assert.equal(value.error.code, 'EXECUTOR_UNAVAILABLE')
+  assert.match(value.error.message, /worker path is unavailable/)
+  assert.equal(runtime.active.size, 0)
 })
 report('capabilities')

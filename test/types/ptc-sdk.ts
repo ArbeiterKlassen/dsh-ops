@@ -39,3 +39,50 @@ void tools.ops_edit_many({ path: 'a.ts', edits: [{ oldText: 'a', newText: 'b' }]
 void tools.ops_unknown_tool({})
 const completed: Outcome<StorageReference | undefined> = { status: 'completed', data: undefined }
 void [read, metadata, completed]
+
+async function tables() {
+  const result = await tools.ops_table_read({ path: 'rows.csv', header: false, encoding: 'utf-16le' })
+  if (result.status === 'completed' || result.status === 'partial') {
+    const cells: string[] | undefined = result.data.items?.[0]?.cells
+    const rows: number | undefined = result.data.source?.rowsObserved
+    // @ts-expect-error Cells preserve lexical text instead of guessing numbers.
+    const numeric: number[] | undefined = result.data.items?.[0]?.cells
+    return { cells, rows }
+  }
+  return result.data?.items?.[0]?.cells
+}
+// @ts-expect-error Encoding is a finite strict-decoding contract.
+void tools.ops_table_read({ path: 'rows.csv', encoding: 'latin1' })
+void tables
+
+async function paragraphs() {
+  const value = await tools.ops_doc_read({ path: 'body.docx', offset: 1, limit: 10 })
+  if (value.status === 'completed' || value.status === 'partial') {
+    const text: string | undefined = value.data.items?.[0]?.text
+    const kind: 'paragraph' | undefined = value.data.items?.[0]?.type
+    const scope: string | undefined = value.data.scope
+    // @ts-expect-error Document paragraphs are not table cell arrays.
+    void value.data.items?.[0]?.cells
+    return { text, kind, scope }
+  }
+  return value.data?.items?.[0]?.text
+}
+// @ts-expect-error DOCX decoding comes from the package, not a caller-supplied encoding.
+void tools.ops_doc_read({ path: 'body.docx', encoding: 'utf-8' })
+void paragraphs
+
+async function pdfPages() {
+  const value = await tools.ops_pdf_read({ path: 'text.pdf', offset: 1, limit: 10 })
+  if (value.status === 'completed' || value.status === 'partial') {
+    const runs: string[] | undefined = value.data.items?.[0]?.runs
+    const page: number | undefined = value.data.items?.[0]?.page
+    const processed: number | undefined = value.data.source?.processedBytes
+    // @ts-expect-error PDF pages have no DOCX paragraph block index.
+    void value.data.items?.[0]?.block
+    return { runs, page, processed }
+  }
+  return value.data?.items?.[0]?.text
+}
+// @ts-expect-error PDF encoding derives from supported fonts, not caller selection.
+void tools.ops_pdf_read({ path: 'text.pdf', encoding: 'utf-8' })
+void pdfPages

@@ -7,6 +7,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Check collected subprocess readers explicitly; absent output after execution remains unknown and retains PTC audit identity. 显式检查子进程输出读取器；运行后缺失输出时保留未知副作用及 PTC 审计标识。
+
 - Type the confined Bash and workspace-preparation boundaries; reject malformed IPC proxy receipts before staging a runtime. 严格类型化受限 Bash 与工作区准备边界；代理收据格式错误时，在暂存运行时前明确拒绝。
 
 ### Leave PowerShell with its host (#261)
@@ -49,6 +51,84 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Bash execution exposes one live handle for observation and settlement. Cancellation settles
   pending sandbox preparation immediately, and a late provider response cannot start a command.
   The first timeout or caller cancellation remains the reported stop cause.
+
+### Type optional TUI projections and panel rendering (#261, 16/16)
+
+- Compile bounded activity, attention, diagnostics and injected rendering under strict TypeScript;
+  preserve readonly metadata, separate running/settled facts and packaged viewer paths without UI dependencies.
+- TUI 与面板辅助模块严格类型化，保留只读元数据、运行/完成状态区别与资源路径，不新增 UI 依赖。
+
+### Type Rust toolchain discovery and source builds (#261, 16/16)
+
+- Compile Cargo discovery and explicit locked build helpers under strict TypeScript with checked
+  toolchain inputs, output callbacks and numeric completion codes; retain the shipped CLI paths.
+- Rust 工具链解析与显式锁定构建改为严格类型，检查输入、文本回调及退出码，发布 CLI 路径不变。
+
+### Type the confined PTC worker boundary (#261, 16/16)
+
+- Compile PTC policy, confinement, runner diagnostics and receipts under strict TypeScript; retain
+  per-call authorization and unknown effects with audit identity when worker output is invalid.
+- PTC 桥使用严格权限、限制执行与诊断类型；非法 worker 输出保留未知副作用及审计标识。
+
+### Type the trusted Native worker boundary (#261, 16/16)
+
+- Compile host policy, observations and Native worker invocation under strict TypeScript; reject
+  non-object arguments before spawn and retain unknown effects for malformed process results.
+- Native 桥使用严格宿主类型；非对象参数在启动前拒绝，非法进程结果保留未知副作用且不误记成功读取。
+
+### Type worker resolution and Native runtime ownership (#261, 16/16)
+
+- Compile worker discovery and Native lifecycle as strict TypeScript; preserve runtime .js paths,
+  provenance checks and scoped teardown, and reject calls before runtime initialization.
+- worker 解析与 Native 生命周期改为严格 TypeScript，保留发布路径和权限边界，未初始化调用返回明确失败值。
+
+
+### Expose scoped DOCX paragraphs (#261, 15b/16)
+
+- Add discoverable Native main-body paragraphs and typed PTC outcomes with explicit excluded content,
+  safe prefixes on unsupported content, stable-scan-only continuation and scoped reference recovery.
+- DOCX 的 Native/PTC 按需启用，明确正文范围与排除内容；缺口保留安全前缀且不伪造续取。
+
+### Read bounded PDF text pages with honest coverage (#261, 15d/16)
+
+- Read a documented classic-xref/standard-font PDF subset into page text and individual runs,
+  with explicit exclusions, per-stream/page/aggregate limits and no OCR or layout claims.
+- Preserve preceding complete pages on unsupported content, keep totals/revision conditional
+  on stable full scans, and capture full pages before bounded reference spill.
+- Publish discoverable-only Native PDF text and typed PTC page/run outcomes, retaining source scope,
+  safe failed prefixes, forward stable-scan continuations and reference recovery metadata.
+- 新增受限 PDF 文本页及 run 读取，明确排除内容和累计预算；保留此前完整页，
+  仅完整稳定扫描提供总数/修订，复用只读权限与无损引用，不声称 OCR 或阅读布局。Native/PTC 按代理按需启用，保留正文缺口与类型化页数据。
+
+### Add bounded PDF container foundation (#261, 15c/16)
+
+- Validate a restricted classic-xref PDF grammar, exact object boundaries and bounded
+  values/references before extraction; verify actual Flate output, checksum and terminator.
+- Reuse the reviewed exact compression dependency without new packages. Worker text extraction
+  follows separately; this foundation makes no public PDF-tool or complete-text claim.
+- 新增有界传统 xref PDF 容器基础，校验对象边界、引用与实际解压；复用已核验压缩依赖，
+  不新增依赖包，工具提取能力由下一切片接入。
+
+### Add bounded DOCX main-body worker observations (#261, 15b/16)
+
+- Read strict DOCX main-body paragraphs and table coordinates with explicit excluded-content
+  scope, bounded ZIP/XML processing, honest partial results and lossless reference spill.
+- Pin ZIP/XML dependencies with defaults disabled; preserve their original license notices and
+  exact release-date review. Legacy DOC, unsupported content and external resolution are refused.
+- 新增有界 DOCX 正文段落/表格坐标读取，明确排除内容及部分扫描；固定经日期核验的 ZIP/XML
+  依赖并保留许可，拒绝旧版 DOC 与不支持内容，复用权限、nofollow 和无损引用恢复。
+
+### Add bounded CSV/TSV worker observations (#261, 15a/16)
+
+- Add an ops-documents workspace crate with strict UTF-8/UTF-16 CSV/TSV decoding, positional
+  string cells, physical line ranges, bounded row pages and safe preceding rows on parse failures.
+- Separate complete physical scans from requested pages and reference capture; reuse no-follow,
+  credential, readonly and automatic-spill boundaries without new external dependencies.
+- Expose discoverable-only Native rows and typed PTC cells with full-scan-only continuations; retain
+  safe prefix data beside non-resumable parse/scan gaps and preserve authority and reference metadata.
+- 新增有界 CSV/TSV worker 读取，严格解码、保留原字符串与物理行范围；错误保留此前有效行，
+  并分别报告扫描、分页和引用捕获完整性，不新增外部依赖。通过发现/SDK 按代理在下一步骤启用；解析缺口保留前缀且不伪造续取。
+
 
 ### Deduplicate Native reads with current-context evidence (#261, 10/16)
 

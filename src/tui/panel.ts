@@ -1,7 +1,40 @@
 /** Host React/UI only: no runtime TUI/React imports, timers, commands or filesystem access. */
 import { anomalyLevel } from './attention.js'
+import type { AttentionStore, AttentionSnapshot } from './attention.js'
+import type { ActivitySnapshot, ActivityRow, ActivityStore } from './activity.js'
 
-export const ACTIVITY_FILTERS = Object.freeze(['all', 'running', 'anomalies'])
+export type ActivityFilter = typeof ACTIVITY_FILTERS[number]
+export interface ActivityViewOptions { filter?: ActivityFilter; page?: number; alert?: AttentionSnapshot }
+export interface ActivityView {
+  filter: ActivityFilter; page: number; pageCount: number; rowCount: number; lines: string[]
+}
+export interface PanelKeyEvent {
+  input: string
+  key: { ctrl?: boolean; meta?: boolean; shift?: boolean; pageDown?: boolean; pageUp?: boolean }
+  preventDefault(): void
+}
+export interface PanelHost {
+  readonly focused: boolean
+  snapshot(): { sessionId?: string; lang?: string }
+  onKey(listener: (event: PanelKeyEvent) => void): () => void
+}
+/** The optional host supplies React and UI components; importing this module loads neither. */
+export interface PanelReact<Node, Component> {
+  useSyncExternalStore<T>(subscribe: (listener: () => void) => () => void, snapshot: () => T): T
+  useState<T>(initial: T): [T, (value: T) => void]
+  useEffect(effect: () => void | (() => void), dependencies: readonly unknown[]): void
+  createElement(component: Component, props: Record<string, unknown>, ...children: (Node | string)[]): Node
+}
+export interface OpsPanelProps<Node = unknown, Component = unknown> {
+  React: PanelReact<Node, Component>
+  ui: { Box: Component; Text: Component }
+  host: PanelHost
+  width: number; height: number
+}
+interface Selection { sessionId?: string; filter: ActivityFilter; page: number }
+
+
+export const ACTIVITY_FILTERS = Object.freeze(['all', 'running', 'anomalies'] as const)
 const COPY = {
   en: { window: 'This session · since enabled', empty: 'No OPS calls observed yet', noSession: 'No active session',
     calls: 'Calls', running: 'Running', returned: 'Returned', errors: 'Tool errors', limited: 'Tracking limit reached; incomplete',
@@ -22,10 +55,11 @@ const COPY = {
     status: { running: '运行中', returned: '已返回', error: '业务/执行错误', completed: '完成', planned: '预览/计划',
       rejected: '拒绝', partial: '部分失败', unknown: '副作用未知', unconfirmed: '业务状态未确认' } },
 }
-const copyFor = lang => COPY[lang.startsWith('zh') ? 'zh' : 'en']
-const alertLines = (alert, text) => alert?.unread ? [text.alerts + ' ' + alert.unread + (alert.capped ? '+' : '')] : []
+type Copy = typeof COPY.en
+const copyFor = (lang: string): Copy => COPY[lang.startsWith('zh') ? 'zh' : 'en']
+const alertLines = (alert: AttentionSnapshot | undefined, text: Copy): string[] => alert?.unread ? [text.alerts + ' ' + alert.unread + (alert.capped ? '+' : '')] : []
 
-function summaryLines(snapshot, text) {
+function summaryLines(snapshot: ActivitySnapshot, text: Copy): string[] {
   const lines = [text.window], outcomes = snapshot.business
   if (snapshot.limited) lines.push(text.limited)
   if (outcomes.rejected || outcomes.unknown) lines.push(text.rejected + ' ' + outcomes.rejected + ' · ' + text.unknown + ' ' + outcomes.unknown)
@@ -34,7 +68,7 @@ function summaryLines(snapshot, text) {
     text.returned + ' ' + snapshot.returned + ' · ' + text.errors + ' ' + snapshot.errors)
   return lines
 }
-function rowLines(row, text) {
+function rowLines(row: ActivityRow, text: Copy): string[] {
   if (row.status === 'running') return [row.name, '  ' + text.status.running]
   const outcome = row.status === 'error' && row.outcome !== 'unknown' ? 'error' : row.outcome ?? row.status
   const lines = [row.name, '  ' + text.status[outcome] + ' · ' + row.durationMs + ' ms']
@@ -47,10 +81,10 @@ function rowLines(row, text) {
 }
 
 /** Keep a record together when it fits; long diagnostics continue with their tool name. */
-function paginate(rows, capacity, text) {
+function paginate(rows: readonly ActivityRow[], capacity: number, text: Copy): string[][] {
   if (capacity < 1) return [[]]
-  const pages = []
-  let current = []
+  const pages: string[][] = []
+  let current: string[] = []
   const flush = () => { if (current.length) pages.push(current); current = [] }
   for (const row of rows) {
     const lines = rowLines(row, text)
@@ -75,30 +109,30 @@ function paginate(rows, capacity, text) {
 }
 
 /** Local pages of bounded retained metadata, never result pages or session-history reads. */
-export function activityView(snapshot, lang = 'en', height = 24, options = {}) {
+export function activityView(snapshot: ActivitySnapshot, lang = 'en', height = 24, options: ActivityViewOptions = {}): ActivityView {
   const text = copyFor(lang), size = Number.isFinite(height) ? Math.max(0, Math.floor(height)) : 0
-  const filter = ACTIVITY_FILTERS.includes(options.filter) ? options.filter : 'all'
+  const filter = options.filter !== undefined && ACTIVITY_FILTERS.includes(options.filter) ? options.filter : 'all'
   const rows = [...snapshot.active, ...snapshot.recent].filter(row => filter === 'all'
     || (filter === 'running' ? row.status === 'running' : anomalyLevel(row) !== undefined))
   const header = [...alertLines(options.alert, text), ...summaryLines(snapshot, text)]
   const capacity = Math.max(0, size - header.length - 3)
   const pages = paginate(rows, capacity, text), pageCount = pages.length
-  const page = Math.max(0, Math.min(pageCount - 1, Number.isSafeInteger(options.page) ? options.page : 0))
+  const page = Math.max(0, Math.min(pageCount - 1, typeof options.page === 'number' && Number.isSafeInteger(options.page) ? options.page : 0))
   const body = rows.length ? pages[page] : [snapshot.total ? text.noMatch : text.empty].slice(0, capacity)
   const footer = [text.filters[filter] + ' · ' + (page + 1) + '/' + pageCount + ' · ' + text.kept + ' ' + rows.length,
     text.keys + (options.alert?.unread ? text.ackKey : ''), text.neutral]
   const padding = Array(Math.max(0, capacity - body.length)).fill('')
   return { filter, page, pageCount, rowCount: rows.length, lines: [...header, ...body, ...padding, ...footer].slice(0, size) }
 }
-export function activityLines(snapshot, lang = 'en', height = 24) { return activityView(snapshot, lang, height).lines }
+export function activityLines(snapshot: ActivitySnapshot, lang = 'en', height = 24): string[] { return activityView(snapshot, lang, height).lines }
 
-export function createOpsPanel(store, attention) {
-  return function OpsPanel({ React, ui, host, width, height }) {
+export function createOpsPanel(store: ActivityStore, attention: AttentionStore) {
+  return function OpsPanel<Node, Component>({ React, ui, host, width, height }: OpsPanelProps<Node, Component>): Node {
     const context = host.snapshot(), sessionId = context.sessionId, lang = context.lang ?? 'en', text = copyFor(lang)
     const snapshot = React.useSyncExternalStore(store.subscribe, () => store.snapshot(sessionId))
     const alert = React.useSyncExternalStore(attention.subscribe, attention.snapshot)
-    const [selection, setSelection] = React.useState({ sessionId, filter: 'all', page: 0 })
-    const selected = selection.sessionId === sessionId ? selection : { filter: 'all', page: 0 }
+    const [selection, setSelection] = React.useState<Selection>({ sessionId, filter: 'all', page: 0 })
+    const selected: Selection = selection.sessionId === sessionId ? selection : { filter: 'all', page: 0 }
     const view = activityView(snapshot, lang, height, { ...selected, alert })
     React.useEffect(() => {
       if (selection.sessionId !== sessionId) setSelection({ sessionId, filter: 'all', page: 0 })

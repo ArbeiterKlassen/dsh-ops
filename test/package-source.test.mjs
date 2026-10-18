@@ -14,7 +14,16 @@ await test('npm pack includes compiled host code and native sources, never host 
     'lib/components/panel/package.json', 'lib/components/panel/icon.png', 'lib/panel/panel.html',
     'lib/components/tui/dsh-plugin.json', 'native/Cargo.toml', 'native/Cargo.lock', 'native/src/lib.rs',
     'native/windows-metadata/Cargo.toml', 'native/windows-metadata/src/lib.rs',
-    'native/darwin-metadata/Cargo.toml', 'native/darwin-metadata/src/lib.rs']
+    'native/darwin-metadata/Cargo.toml', 'native/darwin-metadata/src/lib.rs',
+    'native/crates/ops-documents/Cargo.toml', 'native/crates/ops-documents/src/lib.rs',
+    'native/crates/ops-documents/src/decode.rs', 'native/crates/ops-documents/src/parse.rs',
+    'native/crates/ops-documents/src/tests.rs', 'native/crates/ops-documents/src/archive.rs',
+    'native/crates/ops-documents/src/xml.rs', 'native/crates/ops-documents/src/docx.rs',
+    'native/crates/ops-documents/src/pdf_syntax.rs',
+    'native/crates/ops-documents/src/pdf.rs', 'native/crates/ops-documents/src/pdf_text.rs',
+    'native/crates/ops-documents/src/pdf_pages.rs',
+    'native/crates/ops-documents/src/pdf_container.rs', 'native/crates/ops-documents/src/pdf_container_tests.rs',
+    'licenses/documents/THIRD-PARTY-NOTICES.txt']
   for (const name of required) assert.ok(files.includes(name), `missing source-build dependency: ${name}`)
   assert.equal(files.some(name => name.startsWith('src/')), false, 'host source must not ship beside compiled lib/')
   assert.equal(files.some(name => /^native\/(?:target[^/]*|(?:windows|darwin)-metadata\/target)\//u.test(name)), false)

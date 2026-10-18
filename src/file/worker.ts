@@ -1,4 +1,13 @@
 /** Native file worker bridge. The host owns path resolution and DSH authority. */
+import type { Context } from '@deepseek-ai/cordis'
+import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
+import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { FileSystem, FsTarget, FsInfo, FsObservation } from '@deepseek-ai/dsh-fs'
+import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { EffectState } from '../kernel/outcome.js'
+import type { WorkerInvokeConfig } from '../worker-boundary.js'
+import { record, errorText } from '../worker-boundary.js'
 import { workerEnvelope } from '../worker-protocol.js'
 import path from 'node:path'
 import { credentialPath, credentialRefusal, credentialRoots } from '../credential-policy.js'
@@ -15,19 +24,21 @@ import { resultStorage } from '../kernel/result-storage.js'
 
 export { resolveWorker }
 
-export function failure(code, message, phase = 'preflight', effectState = 'none') {
+export function failure(code: string, message: string, phase = 'preflight', effectState: EffectState = 'none') {
   return { status: code === 'POLICY_DENIED' ? 'rejected' : 'error', phase,
     changed: 0, matched: 0, skipped: 0, failed: 0, complete: false, omitted: 0,
     error: { code, phase, retryable: false, effectState,
       nextAction: effectState === 'none' ? 'Correct the request or restore host authority.' : 'Inspect the result; do not blindly retry after an unknown effect.', message } }
 }
 
-function absoluteTarget(raw, cwd) {
+function absoluteTarget(raw: unknown, cwd: string): string | undefined {
   if (typeof raw !== 'string' || raw.length === 0 || raw.includes('\0')) return undefined
   return path.isAbsolute(raw) ? path.normalize(raw) : path.resolve(cwd, raw)
 }
+type Observation = { target: FsTarget; info: FsInfo | undefined }
+
 /** Host `fs` service, when the deployment has one; observation is skipped without it. */
-function hostFs(ctx) {
+function hostFs(ctx: Context): FileSystem | undefined {
   try {
     const service = ctx.get('fs')
     return typeof service?.resolve === 'function' && typeof service?.stat === 'function' ? service : undefined
@@ -35,7 +46,7 @@ function hostFs(ctx) {
 }
 
 /** Resolve and stat one path through the host provider, as host read does before reading. */
-async function hostObservation(fsService, file, cwd, signal) {
+async function hostObservation(fsService: FileSystem | undefined, file: string, cwd: string, signal: AbortSignal): Promise<Observation | undefined> {
   if (!fsService) return undefined
   try {
     const target = await fsService.resolve(file, { cwd, signal })
@@ -44,27 +55,27 @@ async function hostObservation(fsService, file, cwd, signal) {
 }
 
 /** Record an observation in the host's read-before-edit table; best effort, never fails the call. */
-function emitObserved(ctx, observed, exec) {
+function emitObserved(ctx: Context, observed: Observation | undefined, exec: ToolRunContext): void {
   if (!observed) return
   const { target, info } = observed
-  const observation = info === undefined ? { kind: 'absent' }
+  const observation: FsObservation | undefined = info === undefined ? { kind: 'absent' }
     : info.type === 'file' && info.version ? { kind: 'present', version: info.version } : undefined
   if (!observation) return
   try { ctx.emit('fs/observed', target, observation, exec) } catch { /* the completed effect stands */ }
 }
 
 /** Refresh host observations for files a completed replace wrote (#17). */
-async function observeReplaced(ctx, fsService, value, cwd, exec, signal) {
-  if (!fsService || value?.status !== 'completed' || value.dryRun || !(value.changed > 0) || !Array.isArray(value.items)) return
+async function observeReplaced(ctx: Context, fsService: FileSystem | undefined, value: Record<string, unknown>, cwd: string, exec: ToolRunContext, signal: AbortSignal): Promise<void> {
+  if (!fsService || value?.status !== 'completed' || value.dryRun || !(Number(value.changed) > 0) || !Array.isArray(value.items)) return
   for (const item of value.items) {
-    if (typeof item?.path !== 'string') continue
+    if (!record(item) || typeof item.path !== 'string') continue
     const observed = await hostObservation(fsService, item.path, cwd, signal)
     // A size mismatch means another writer landed after our publish; leave the host to report stale.
     if ((item.removed && observed && observed.info === undefined) || (observed?.info?.type === 'file' && observed.info.size === item.bytesAfter)) emitObserved(ctx, observed, exec)
   }
 }
 
-export async function invoke(ctx, file, tool, args, exec, signal, config) {
+export async function invoke(ctx: Context, file: string, tool: string, args: unknown, exec: ToolRunContext, signal?: AbortSignal, config?: WorkerInvokeConfig): Promise<unknown> {
   try {
     const session = exec?.agent?.session
     if (!session?.id) return failure('EXECUTOR_UNAVAILABLE', 'An authoritative session identity is required.')
@@ -81,22 +92,23 @@ export async function invoke(ctx, file, tool, args, exec, signal, config) {
     return failure('EXECUTOR_UNAVAILABLE', 'DSH file authority or preparation is unavailable; no unrestricted fallback was attempted.')
   }
 }
-async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
+async function invokeTrusted(ctx: Context, file: string, tool: string, args: unknown, exec: ToolRunContext, signal: AbortSignal, config?: WorkerInvokeConfig): Promise<unknown> {
   const session = exec?.agent?.session
   const cwd = session?.header?.cwd
   if (!session?.id || typeof cwd !== 'string' || !path.isAbsolute(cwd)) return failure('EXECUTOR_UNAVAILABLE', 'An authoritative session identity and cwd are required.')
-  const policyService = ctx.get('sandboxPolicy')
-  const subprocess = ctx.get('subprocess')
+  const policyService: SandboxPolicyService | undefined = ctx.get('sandboxPolicy')
+  const subprocess: SubprocessRuntime | undefined = ctx.get('subprocess')
   if (!policyService?.resolve || !subprocess?.spawn) return failure('EXECUTOR_UNAVAILABLE', 'DSH policy and subprocess services are required.')
-  let policy
+  let policy: SandboxExecutionPolicy
   try { policy = policyService.resolve({ session }) } catch { return failure('EXECUTOR_UNAVAILABLE', 'DSH policy resolution failed.') }
   if (!['read-only', 'workspace-write', 'danger-full-access'].includes(policy?.mode)
     || typeof policy.workspaceRoot !== 'string' || !path.isAbsolute(policy.workspaceRoot)) return failure('EXECUTOR_UNAVAILABLE', 'Invalid authoritative DSH policy.')
 
   args = normalizeArguments(tool, args)
-  const mutates = FILE_MUTATIONS.includes(tool)
+  if (!record(args)) return failure('INVALID_ARGUMENT', 'Arguments must be an object.')
+  const mutates = (FILE_MUTATIONS as readonly string[]).includes(tool)
   const reads = tool === 'read_many' ? resolveReadMany(args, cwd) : undefined
-  if (reads?.error) return failure('INVALID_ARGUMENT', reads.error)
+  if (reads && 'error' in reads) return failure('INVALID_ARGUMENT', reads.error)
   const operationPath = absoluteTarget(args?.path ?? '.', cwd)
   if (!operationPath) return failure('INVALID_ARGUMENT', 'path must be a non-empty path.')
   // Credential locations are refused before the worker is spawned, so no read of one ever reaches a
@@ -125,10 +137,10 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
   // does; the fence is deliberately the narrower of the two.
   const privateTemp = sessionTempDir(session.id)
   const anchors = sessionAnchors(policy, cwd)
-  const trustedPath = value => anchoredPath(value, anchors)
+  const trustedPath = (value: string): string => anchoredPath(value, anchors)
   const writeRoots = [canonicalAnchor(policy.workspaceRoot), trustedPath(privateTemp)]
-  const writeTargets = tool === 'copy' ? [destination] : [operationPath, ...(destination ? [destination] : [])]
-  const requiredMode = current => {
+  const writeTargets = tool === 'copy' && destination ? [destination] : [operationPath, ...(destination ? [destination] : [])]
+  const requiredMode = (current: SandboxExecutionPolicy): 'workspace-write' | 'danger-full-access' => {
     const roots = [canonicalAnchor(current.workspaceRoot), anchoredPath(privateTemp, sessionAnchors(current, cwd))]
     return writeTargets.every(target => roots.some(root => inside(root, anchoredPath(target, sessionAnchors(current, cwd)))))
       ? 'workspace-write' : 'danger-full-access'
@@ -182,24 +194,26 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
     const handle = subprocess.spawn({ argv, cwd, stdio: { stdin: { data: input }, stdout: { maxBytes: envelope.budget.maxBytes }, stderr: { maxBytes: 16 * 1024 } }, graceMs: 1000, signal })
     spawned = true
     const outcome = await handle.done
+    if (!handle.collected.stdout || !handle.collected.stderr) return failure('RESULT_UNKNOWN', 'Worker output readers are unavailable; inspect postconditions.', 'verify', 'unknown')
     const stdout = handle.collected.stdout.readFrom(0)
     const stderr = handle.collected.stderr.readFrom(0)
     if (signal?.aborted || outcome.signal) return failure('RESULT_UNKNOWN', 'Worker interrupted; inspect postconditions.', 'execute', 'unknown')
     if (stdout.lossy) return failure('OUTPUT_LIMIT', 'Worker output exceeded the byte budget; operation facts may have changed.', 'verify', 'unknown')
     if (outcome.exitCode !== 0) return failure('RESULT_UNKNOWN', `Worker did not return a settled result: ${stderr.text.slice(0, 500)}`, 'execute', 'unknown')
-    let value
+    let value: unknown
     try { value = JSON.parse(stdout.text) } catch { return failure('RESULT_UNKNOWN', 'Worker returned invalid JSON; inspect postconditions.', 'verify', 'unknown') }
+    if (!record(value)) return failure('RESULT_UNKNOWN', 'Worker returned a non-object result; inspect postconditions.', 'verify', 'unknown')
     // Report reads/writes to the host's read-before-edit table, exactly like host read/edit. (#17)
     if (['inspect_local_file', 'stat'].includes(tool) && value?.status === 'completed') emitObserved(ctx, readObservation, exec)
     if (reads && Array.isArray(value?.items)) {
       for (const [index, item] of value.items.entries()) {
-        if (item?.status === 'completed') emitObserved(ctx, readObservations[index], exec)
+        if (record(item) && item.status === 'completed') emitObserved(ctx, readObservations[index], exec)
       }
     }
     if (mutates) await observeReplaced(ctx, fsService, value, cwd, exec, signal)
-    value = normalizeNativeDenial(value, policy, tool, mutates ? requiredMode(policy) : 'workspace-write')
-    return { ...value, sandbox: { mode: policy.mode, enforcement: 'policy', boundary: 'trusted-native-file-operations' } }
+    const normalized = normalizeNativeDenial(value, policy, tool, mutates ? requiredMode(policy) : 'workspace-write')
+    return { ...normalized, sandbox: { mode: policy.mode, enforcement: 'policy', boundary: 'trusted-native-file-operations' } }
   } catch (error) {
-    return failure(spawned ? 'RESULT_UNKNOWN' : 'EXECUTOR_UNAVAILABLE', `DSH trusted file executor failed; this is not a user authorization denial. ${String(error?.message ?? error)}`, 'execute', spawned ? 'unknown' : 'none')
+    return failure(spawned ? 'RESULT_UNKNOWN' : 'EXECUTOR_UNAVAILABLE', `DSH trusted file executor failed; this is not a user authorization denial. ${errorText(error)}`, 'execute', spawned ? 'unknown' : 'none')
   }
 }

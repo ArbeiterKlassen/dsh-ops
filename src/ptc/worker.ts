@@ -1,4 +1,12 @@
 /** Native worker bridge. Every execution uses DSH policy, confinement and process governance. */
+import type { Context } from '@deepseek-ai/cordis'
+import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
+import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { SandboxExecutionPolicy, ConfinedArgv, RunnerFailureRule } from '@deepseek-ai/dsh-sandbox'
+import type { EffectState } from '../kernel/outcome.js'
+import type { WorkerInvokeConfig } from '../worker-boundary.js'
+import { record, errorText } from '../worker-boundary.js'
 import { workerEnvelope } from '../worker-protocol.js'
 import { withCallBudget, CallBudgetError } from '../kernel/call-budget.js'
 import { withResultSession } from '../kernel/result-lifecycle.js'
@@ -12,11 +20,11 @@ import { denied, authorityChanged, executionRestriction, normalizeNativeDenial, 
 import { inside, canonicalAnchor } from '../authority-paths.js'
 import { prepareWorkspace } from '../workspace-preparation.js'
 export { resolveWorker } from './runtime.js'
-export function failure(code, message, effectState = 'none') {
+export function failure(code: string, message: string, effectState: EffectState = 'none') {
   return { status: 'error', error: { code, phase: effectState === 'none' ? 'preflight' : 'execute', retryable: false, effectState,
     nextAction: effectState === 'none' ? 'Correct the request or restore host authority.' : 'Inspect the persistent job manifest; never blindly rerun an interrupted batch.', message } }
 }
-export async function invoke(ctx, file, tool, args, exec, signal, config) {
+export async function invoke(ctx: Context, file: string, tool: string, args: unknown, exec: ToolRunContext, signal?: AbortSignal, config?: WorkerInvokeConfig): Promise<unknown> {
   try {
     const session = exec?.agent?.session
     if (!session?.id) return failure('EXECUTOR_UNAVAILABLE', 'An authoritative session identity is required.')
@@ -33,16 +41,18 @@ export async function invoke(ctx, file, tool, args, exec, signal, config) {
     return failure('EXECUTOR_UNAVAILABLE', 'DSH authority or execution services are unavailable; no unrestricted fallback was attempted.')
   }
 }
-async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
+async function invokeTrusted(ctx: Context, file: string, tool: string, args: unknown, exec: ToolRunContext, signal: AbortSignal, config?: WorkerInvokeConfig): Promise<unknown> {
   const session = exec?.agent?.session
   if (!session?.id) return failure('EXECUTOR_UNAVAILABLE', 'An authoritative session identity is required.')
-  const policyService = ctx.get('sandboxPolicy'), subprocess = ctx.get('subprocess')
+  const policyService: SandboxPolicyService | undefined = ctx.get('sandboxPolicy')
+  const subprocess: SubprocessRuntime | undefined = ctx.get('subprocess')
   if (!policyService?.resolve || !subprocess?.spawn) return failure('EXECUTOR_UNAVAILABLE', 'DSH policy and subprocess services are required.')
+  if (!record(args)) return failure('INVALID_ARGUMENT', 'Arguments must be an object.')
   const jobId = tool === 'batch' ? (args?.action === 'run' || args?.action === 'plan' ? `j-${randomUUID()}` : args?.id) : undefined
-  const errorResult = (code, message, effect = 'none') => ({ ...failure(code, message, effect), ...(jobId ? { detailsRef: jobId } : {}) })
-  let policy, confined, spawned = false
+  const errorResult = (code: string, message: string, effect: EffectState = 'none') => ({ ...failure(code, message, effect), ...(jobId ? { detailsRef: jobId } : {}) })
+  let confined: ConfinedArgv | undefined, spawned = false
   try {
-    policy = policyService.resolve({ session })
+    const policy: SandboxExecutionPolicy = policyService.resolve({ session })
     if (!['read-only', 'workspace-write', 'danger-full-access'].includes(policy?.mode)
       || !path.isAbsolute(policy?.workspaceRoot ?? '')) return failure('EXECUTOR_UNAVAILABLE', 'Invalid authoritative DSH policy; no worker was started.')
     // Model root is a selection, never an authority override. The DSH sandbox
@@ -60,7 +70,7 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
       if (verdict.denied) return credentialDenied(credentialRefusal(operationRoot, verdict.matched).message)
     }
     // Comparison only: never rewrite the selected root passed to the native worker.
-    const requiredMode = current => [current.workspaceRoot, sessionTempDir(session.id)]
+    const requiredMode = (current: SandboxExecutionPolicy): 'workspace-write' | 'danger-full-access' => [current.workspaceRoot, sessionTempDir(session.id)]
       .some(root => inside(canonicalAnchor(root), fs.realpathSync.native(operationRoot))) ? 'workspace-write' : 'danger-full-access'
     if (policy.mode === 'workspace-write' && requiredMode(policy) === 'danger-full-access') {
       return denied(policy, `${tool} outside the workspace and session temporary directory`, 'danger-full-access', 'The selected root is outside the user-authorized workspace.')
@@ -72,7 +82,7 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
       const sandbox = ctx.get('sandbox')
       if (!sandbox?.confine) return failure('EXECUTOR_UNAVAILABLE', 'No DSH process confinement provider; refusing unconfined execution.')
       await prepareWorkspace(policy)
-      confined = await sandbox.confine(argv, policy, signal)
+      confined = await sandbox.confine(argv, { ...policy, mode: policy.mode }, signal)
       if (!['full', 'partial'].includes(confined?.enforcement) || !Array.isArray(confined.argv) || !confined.argv.length) {
         return failure('EXECUTOR_UNAVAILABLE', 'Invalid DSH confinement result; refusing unconfined execution.')
       }
@@ -101,6 +111,7 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
       graceMs: 1000, signal })
     spawned = true
     const outcome = await handle.done
+    if (!handle.collected.stdout || !handle.collected.stderr) return errorResult('RESULT_UNKNOWN', 'Worker output readers are unavailable; inspect audit records.', 'unknown')
     const stdout = handle.collected.stdout.readFrom(0), stderr = handle.collected.stderr.readFrom(0)
     if (signal?.aborted || outcome.signal) return errorResult('RESULT_UNKNOWN', 'Worker interrupted; durable write-ahead records preserve possible effects.', 'unknown')
     if (confined && runnerFailure(outcome.exitCode, stderr.text, confined.runnerFailureRules ?? [])) {
@@ -115,16 +126,17 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
       }
       return errorResult('RESULT_UNKNOWN', 'Worker did not return a settled result; inspect audit records.', 'unknown')
     }
-    let value
+    let value: unknown
     try { value = JSON.parse(stdout.text) } catch { return errorResult('RESULT_UNKNOWN', 'Worker returned invalid JSON; inspect audit records.', 'unknown') }
-    value = normalizeNativeDenial(value, policy, `${tool} ${args?.action ?? ''}`.trim(), 'workspace-write')
-    return { ...value, ...(tool === 'batch' ? { root: operationRoot } : {}), ...(value.status === 'error' && jobId ? { detailsRef: jobId } : {}), sandbox: { mode: policy.mode, ...(confined ? { enforcement: confined.enforcement } : {}) } }
+    if (!record(value)) return errorResult('RESULT_UNKNOWN', 'Worker returned a non-object result; inspect audit records.', 'unknown')
+    const normalized = normalizeNativeDenial(value, policy, `${tool} ${args?.action ?? ''}`.trim(), 'workspace-write')
+    return { ...normalized, ...(tool === 'batch' ? { root: operationRoot } : {}), ...(normalized.status === 'error' && jobId ? { detailsRef: jobId } : {}), sandbox: { mode: policy.mode, ...(confined ? { enforcement: confined.enforcement } : {}) } }
   } catch (error) {
     return errorResult(spawned ? 'RESULT_UNKNOWN' : 'EXECUTOR_UNAVAILABLE',
-      `DSH execution infrastructure failed, not a user authorization denial: ${String(error?.message ?? error)}`, spawned ? 'unknown' : 'none')
+      `DSH execution infrastructure failed, not a user authorization denial: ${errorText(error)}`, spawned ? 'unknown' : 'none')
   }
 }
-function runnerFailure(exitCode, stderr, rules) {
+function runnerFailure(exitCode: number | null, stderr: string, rules: readonly RunnerFailureRule[]): boolean {
   if (exitCode === 0 || exitCode == null) return false
   return rules.some(rule => (!rule.allowedExitCodes || rule.allowedExitCodes.includes(exitCode))
     && stderr.split(/\r?\n/).some(line => !(rule.informationalLines ?? []).some(s => s.toLowerCase() === line.toLowerCase())

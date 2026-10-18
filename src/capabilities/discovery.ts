@@ -3,6 +3,9 @@ import type { ParameterSchema } from './types.js'
 
 /** Reviewed, currently implemented advanced operations. Future formats are absent. */
 export const DISCOVERY_TERMS = Object.freeze({
+  pdf_read: 'pdf portable document pages text extraction font',
+  doc_read: 'docx word document paragraphs body text tables zip xml unicode',
+  table_read: 'table csv tsv delimiter quoted records columns rows encoding utf16',
   inspect_local_file: 'read inspect single file text hex binary bounded line windows',
   edit_many: 'edit patch multiple files atomic per file revision cas',
   result: 'result reference page release stored output continuation',
