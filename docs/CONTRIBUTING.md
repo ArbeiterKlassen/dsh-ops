@@ -194,3 +194,5 @@ Native build and acceptance details: [native-ptc.md](native-ptc.md) and
 [manual-validation.md](manual-validation.md).
 
 The credential fence, trusted path anchors and permission helpers are strict TypeScript modules (`src/credential-policy.ts`, `src/authority-paths.ts`, `src/permissions.ts`). Their emitted `.js` imports and wire failures stay stable. Authority policies use type-only host definitions; unknown worker failures must be narrowed before use. `node test/run.mjs kernel-types authority credential-fence credential-denial safety-atomicity permissions` covers the typed boundary and existing authority behavior.
+
+`src/profile-install.ts` and `src/session-temp.ts` are strict TypeScript helpers with unchanged emitted paths. Profile mutations still delegate to the official CLI; manifest data is narrowed before reading it. Private temporary directories retain their session-derived names and refusal of link/file targets. `node test/run.mjs profile-temp kernel-types` checks delegation, dry-run, failures and typed outcomes.

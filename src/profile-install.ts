@@ -15,7 +15,7 @@ import { PLATFORMS } from './ptc/runtime.js'
  * the native payloads are a separate question with their own gate in
  * `lib/ptc/runtime.js`.
  */
-const SUPPORTED_TARGETS = Object.freeze({ win32: ['x64'], linux: ['x64'], darwin: ['arm64'] })
+const SUPPORTED_TARGETS: Readonly<Partial<Record<NodeJS.Platform, readonly string[]>>> = Object.freeze({ win32: ['x64'], linux: ['x64'], darwin: ['arm64'] })
 
 /**
  * Where each platform's desktop application keeps its own CLI.
@@ -37,36 +37,53 @@ function desktopCliCandidates(platform = process.platform, env = process.env, ho
   return []
 }
 
-export function profileCommand(operation, { profile, dshCli, dryRun = false }) {
+export type ProfileOperation = 'install' | 'uninstall' | 'status'
+export interface ProfileCommandOptions { profile?: string; dshCli?: string; dryRun?: boolean }
+
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+function readManifest(file: string): Record<string, unknown> {
+  const value: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
+  if (!record(value)) throw new Error(`Invalid package manifest: ${file}`)
+  return value
+}
+
+export function profileCommand(operation: ProfileOperation, { profile, dshCli, dryRun = false }: ProfileCommandOptions): number {
   if (!(SUPPORTED_TARGETS[process.platform] ?? []).includes(process.arch)) throw new Error(`Supported targets: ${PLATFORMS.join(', ')}; unsupported host ${process.platform}-${process.arch}.`)
   const aliases = { desktop: 'desktop', web: 'web', tui: 'dsh-tui', 'dsh-tui': 'dsh-tui' }
-  if (!Object.hasOwn(aliases, profile ?? '')) throw new Error('Explicit --profile desktop|web|tui is required (tui maps to dsh-tui).')
+  if (profile !== 'desktop' && profile !== 'web' && profile !== 'tui' && profile !== 'dsh-tui') throw new Error('Explicit --profile desktop|web|tui is required (tui maps to dsh-tui).')
   const target = aliases[profile]
   const directory = path.join(dshHome(), 'profiles', target)
   if (!fs.existsSync(path.join(directory, 'package.json'))) throw new Error(`Initialize the target DSH application/profile first: ${directory}`)
-  const version = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')).version
+  const version = readManifest(path.join(PACKAGE_ROOT, 'package.json')).version
   if (operation === 'status') {
-    const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8'))
-    console.log(JSON.stringify({ profile: target, directory, dependency: manifest.dependencies?.['dsh-ops'] ?? null, enabled: (manifest.dsh?.profile?.bundles ?? []).includes('dsh-ops') }, null, 2))
+    const manifest = readManifest(path.join(directory, 'package.json'))
+    const dependencies = record(manifest.dependencies) ? manifest.dependencies : undefined
+    const dsh = record(manifest.dsh) ? manifest.dsh : undefined
+    const profileManifest = record(dsh?.profile) ? dsh.profile : undefined
+    const bundles = profileManifest?.bundles ?? []
+    if (!Array.isArray(bundles) && typeof bundles !== 'string') throw new Error('Invalid profile bundles: expected an array.')
+    console.log(JSON.stringify({ profile: target, directory, dependency: dependencies?.['dsh-ops'] ?? null, enabled: bundles.includes('dsh-ops') }, null, 2))
     return 0
   }
   const args = ['plugin', '--profile', target, operation === 'install' ? 'add' : 'remove',
     operation === 'install' ? (process.env.DSH_OPS_INSTALL_SPEC ?? `dsh-ops@${version}`) : 'dsh-ops']
   let command = dshCli ?? process.env.DSH_OPS_DSH_CLI
-  let prefix = []
+  let prefix: string[] = []
   if (!command && target === 'desktop') {
     command = desktopCliCandidates().find(file => fs.existsSync(file))
     if (!command) throw new Error('Desktop requires its own CLI. Pass --dsh-cli <installation>/resources/runtime/cli/bin/dsh; ordinary dsh cannot manage desktop.')
   }
   if (!command) {
     const globalNpm = process.env.APPDATA ? path.join(process.env.APPDATA, 'npm/node_modules/_anchor.json') : undefined
-    for (const anchor of [path.join(directory, 'package.json'), path.join(dshHome(), 'package.json'), globalNpm].filter(Boolean)) {
+    for (const anchor of [path.join(directory, 'package.json'), path.join(dshHome(), 'package.json'), globalNpm].filter((anchor): anchor is string => typeof anchor === 'string')) {
       try {
         const require = createRequire(anchor)
         const file = require.resolve('@deepseek-ai/dsh/package.json')
-        const manifest = JSON.parse(fs.readFileSync(file, 'utf8'))
-        const bin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.dsh
-        if (bin) { command = process.execPath; prefix = [path.resolve(path.dirname(file), bin)]; break }
+        const manifest = readManifest(file)
+        const bin = typeof manifest.bin === 'string' ? manifest.bin : record(manifest.bin) ? manifest.bin.dsh : undefined
+        if (typeof bin === 'string' && bin) { command = process.execPath; prefix = [path.resolve(path.dirname(file), bin)]; break }
       } catch {}
     }
     if (!command) {

@@ -30,7 +30,7 @@ export const SESSION_TEMP_PREFIX = 'dsh-ops-session-'
  * @param {string} [tempRoot] - the system temporary root; defaults to `os.tmpdir()`.
  * @returns {string} the absolute path.
  */
-export function sessionTempDir(sessionId, tempRoot = tmpdir()) {
+export function sessionTempDir(sessionId: string, tempRoot = tmpdir()): string {
   return path.join(tempRoot, `${SESSION_TEMP_PREFIX}${createHash('sha256').update(String(sessionId)).digest('hex').slice(0, 16)}`)
 }
 
@@ -44,13 +44,15 @@ export function sessionTempDir(sessionId, tempRoot = tmpdir()) {
  * @param {string} directory - the absolute directory.
  * @returns {{ok: true}|{ok: false, message: string}} the outcome.
  */
-export function ensureSessionTemp(directory) {
+export type SessionTempOutcome = { ok: true } | { ok: false; message: string }
+
+export function ensureSessionTemp(directory: string): SessionTempOutcome {
   try {
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
     const info = fs.lstatSync(directory)
     if (!info.isDirectory() || info.isSymbolicLink()) return { ok: false, message: 'The session temporary directory must be a regular directory, not a link.' }
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: `could not create the session temporary directory ${directory}: ${String(error?.message ?? error)}` }
+    return { ok: false, message: `could not create the session temporary directory ${directory}: ${String(error !== null && typeof error === 'object' && 'message' in error ? error.message ?? error : error)}` }
   }
 }

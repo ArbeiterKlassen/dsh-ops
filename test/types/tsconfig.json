@@ -9,6 +9,7 @@
     "ptc-sdk.ts",
     "worker-runtime.ts",
     "tui.ts",
-    "authority.ts"
+    "authority.ts",
+    "profile-temp.ts"
   ]
 }

@@ -7,6 +7,12 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Type profile delegation and session temporary directories (#261, 16/16)
+
+- Migrate profile commands and private temporary-directory helpers to strict TypeScript, preserving official CLI delegation and per-session path behavior; narrow malformed manifest data before use.
+- 将配置档委托命令与会话临时目录辅助函数迁移为严格 TypeScript，保留官方 CLI 委托及会话路径行为，并在使用前验证 manifest 数据。
+
+
 ### Strict authority types ([16/16])
 
 - Migrate credential fences, trusted path anchors and permission failures to strict TypeScript without changing emitted entrypoints or authority decisions. Preserve worker effect facts during denial normalization and assert typed host modes/unknown-input narrowing.
