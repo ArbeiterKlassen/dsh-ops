@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Include each activated document reader in scoped routing guidance; validate real document receipts in the PTC API coverage suite.
+- 在作用域路由中显示已激活的文档读取工具，并用真实文档回执验证 PTC API 覆盖。
+
 - Keep table coverage honest beyond EOF and after metadata changes. Fresh PTC bundle pools follow
   the implemented catalogue; saved explicit operator pools remain unchanged.
 - 表格超出 EOF 时只统计实际跳过的行，文件变化后不声明页面完整；新 PTC 允许池遵循实现目录，保留已保存的显式选择。

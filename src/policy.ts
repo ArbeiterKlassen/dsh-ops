@@ -48,6 +48,7 @@ export function renderToolingPolicy({ published, mounted, levels, shellComponent
   }
   row('discover', 'Find advanced capabilities for the next model step')
   row('read_many', 'Read UTF-8 ranges from multiple files')
+  row('table_read', 'Read bounded CSV / TSV lexical rows')
   row('edit_many', 'Atomic original-text edits in one file (CAS)')
   row('inspect_local_file', 'Bounded UTF-8 lines / hex')
   if (hasFiles && names.has('read_image')) lines.push('| Images | read_image (host) |')
