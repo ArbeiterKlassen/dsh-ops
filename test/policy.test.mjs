@@ -24,6 +24,13 @@ await test('file guidance names exactly the available file tools', () => {
   assert.match(text, /do not switch to a shell workaround/)
   assert.match(text, /pass only declared fields/)
 })
+await test('each discovered file capability has routing only while it is visible', () => {
+  for (const visible of files) {
+    const text = renderToolingPolicy({ published: [visible] })
+    assert.ok(text.includes(visible), visible)
+    for (const hidden of files.filter(name => name !== visible)) assert.equal(text.includes(hidden), false, hidden)
+  }
+})
 await test('the prompt states the real file-tool syntax and result contract (#44)', () => {
   const text = renderToolingPolicy({ published: files, shellComponent: false })
   assert.match(text, /ops_glob `pattern` and the `glob` filters are ARRAYS of globs relative to `path`, e\.g\. `\["\*\*\/\*\.md","!vendor\/\*\*"\]`/)
