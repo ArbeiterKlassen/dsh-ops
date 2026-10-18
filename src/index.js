@@ -5,7 +5,6 @@ import { SECTION_ORDERS, TOOLING_SECTION, BASH_TOOL, publicToolName, hostShellRe
 import { NATIVE_FILE_TOOLS as FILE_TOOLS, NATIVE_RESIDENT_FILE_TOOLS } from './capabilities/registry.js'
 import { resolveShells } from './shells.js'
 import { mountSessionBash } from './session-shells.js'
-import { mountBundledPwsh } from './session-pwsh.js'
 import { NativeFileTools } from './file/runtime.js'
 import { resolveWorker } from './ptc/runtime.js'
 import { mountWorkspacePreparation } from './workspace-preparation.js'
@@ -102,20 +101,14 @@ export function applyComponent(root, rawConfig, component) {
       interpolate: false,
       text: context => renderToolingPolicy({
         published: visibleTools(ctx, context.agent).filter(name => owned.includes(name)),
-        shellComponent: component === 'shell', pwsh7: shells?.pwsh.available ?? false,
+        shellComponent: component === 'shell',
         extraGuidance: config.extraGuidance,
       }),
     }), `dsh-ops: ${component} tooling`)
   })
   if (component === 'shell') {
-    // Two of the three halves describe a Windows host and say so themselves: the ACL workspace
-    // preparation, and the bundled PowerShell 7 overlay that `pwsh-sandbox` is pointed at. The bash
-    // surface is the half with a POSIX answer — on Linux it publishes `ops_bash` over the host
-    // distribution's own bash — so the split is written here rather than left implicit in guards.
-    if (process.platform === 'win32') {
-      mountWorkspacePreparation(root)
-      mountBundledPwsh(root, shells)
-    }
+    // Workspace preparation is Windows-specific; the host owns its PowerShell executor.
+    if (process.platform === 'win32') mountWorkspacePreparation(root)
     root.inject(['tools'], ctx => {
       mountSessionBash(ctx, config, shells)
       if (config.shellPolicy === 'deny-host-shell') installHostShellDenial(ctx, config)

@@ -19,6 +19,52 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Legacy `strict`, `scope`, and `additionalOfficialTools` remain validated but inert. Document argument/coverage differences and exclude write/edit because their CAS contracts differ. Cordis validation is implemented; a browser multi-select is separate UI work.
 - 官方工具改为通过 `replaceTools: []` 逐项选择 `read`、`glob`、`grep` 替代流程；未选工具保持可见且无警告列表，只校验所选替代工具的作用域就绪状态。
 - 旧 `strict`、`scope`、`additionalOfficialTools` 仅校验不生效；文档说明参数与覆盖差异，写入/编辑因 CAS 契约不同而不提供替换。已实现 Cordis 校验，浏览器多选界面另行实现。
+### Leave PowerShell with its host (#261)
+
+- Remove the PowerShell npm payload dependency, shell payload release assembly and automatic
+  host executor overlay. Existing host settings, Windows PowerShell 5.1 and legacy copies stay intact.
+- Add a strict TypeScript manager and `upgrade-host-pwsh` CLI with preview by default,
+  explicit WinGet execution, honest exit/cancellation effects and restart/custom-path guidance.
+- 移除 PowerShell 载荷依赖和宿主执行器覆盖；新增默认预览、显式执行的宿主升级命令，
+  保留已有设置及旧副本，并说明取消后的未知副作用、重启与自定义路径要求。
+
+- Return host-compatible Bash argument failures as values with stable retry/effect metadata; interrupted or failed running commands require read-only inspection before replay. Bash 参数失败返回结构化值；运行后的未知副作用禁止自动重试。
+
+- Cancel queued job starters when host admission fails after accepting the run hook; never retry that call in the foreground. 宿主接受任务启动回调后若准入失败，取消排队启动且不转为前台重试。
+
+### Type the shell execution and host boundary (#261)
+
+- Migrate the new shell executor, host contract, approvals, jobs and session integration to strict
+  TypeScript. Validate the published definition against the pinned SDK with type-only imports;
+  retain existing emitted paths and explicit types for the remaining JavaScript adapters.
+
+### Make Windows Bash an explicit optional runtime (#261)
+
+- Add Bash status/install/remove and Git/managed selection commands. Removal previews by default,
+  removes only receipt-marked managed versions, and refuses linked managed directories.
+- Remove the automatic Bash npm payload dependency and release payload assembly. Build, CI and
+  release gates explicitly acquire a pinned fixture, or validate an operator-provided offline one.
+
+### Reuse host Bash approvals and background jobs (#261)
+
+- Require command descriptions and return host foreground/background/promoted result kinds, with
+  120-second defaults and 600-second caps. Reuse host jobs for background work and foreground
+  timeout promotion, host per-call approvals for wider access, and host subprocess governance.
+- Recheck session authority after approval and confinement; retain absolute executable selection,
+  verified Windows IPC compatibility, honest partial enforcement and fail-closed runtime errors.
+- Keep script_path, graceMs and includeDiagnostics as documented OPS compatibility extensions.
+
+### Preserve Bash cancellation through pending confinement preparation (#261)
+
+- Bash execution exposes one live handle for observation and settlement. Cancellation settles
+  pending sandbox preparation immediately, and a late provider response cannot start a command.
+  The first timeout or caller cancellation remains the reported stop cause.
+
+### Deduplicate Native reads with current-context evidence (#261, 10/16)
+
+- Replace repeated line bodies only when the exact successful prior read is present in the latest completed ordinary model request and every file is freshly revalidated. Keep revisions, coverage, paging notices and canonical values. Compaction, redaction, authority changes and uncertain evidence restore full output.
+- Native 单文件和多文件重读仅在当前模型请求包含此前准确正文且每个文件重新验证后省略重复行；保留版本、覆盖范围、续页提示和规范数据，压缩、脱敏、权限变化或证据不足时恢复全文。
+
 ### Keep Native startup to the bounded multi-file reader (#261, 9/16)
 
 - Publish `ops_read_many` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.

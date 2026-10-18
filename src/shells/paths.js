@@ -7,13 +7,9 @@
  * conventional install locations, and it NEVER mutates ambient state (no PATH
  * writes, no profile writes, no `process.chdir`).
  *
- * The layout orders here are part of the contract, not an implementation
- * detail: the L3 `!!js` override in `cordis.patch.yml` probes the same places
- * in the same order (it cannot import this module — a bundle patch is plain
- * YAML), so the ladder's `available`/`file` and the host row's executable must
- * agree for every layout a deployment can present.
- * `test/shells-resolution.test.mjs` asserts that agreement against both
- * layouts.
+ * Legacy PowerShell probes remain available for compatibility and explicit
+ * provisioning reports. Runtime mounting never activates those copies or
+ * rewrites the host PowerShell configuration.
  *
  * The probes below are exported for their sibling modules under `lib/shells/`;
  * the barrel `lib/shells.js` re-exports only the public names.
@@ -32,9 +28,7 @@ import {
 } from './pins.js'
 
 /**
- * Every place this plugin's own PowerShell 7 can come from, most preferred
- * first — the order `cordis.patch.yml`'s L3 expression implements, in the same
- * order and with the same existence rule.
+ * Historical PowerShell layout order, retained for compatibility probes only.
  * @type {readonly ['provisioned', 'package', 'vendor']}
  */
 export const PWSH_LAYOUT_ORDER = Object.freeze(['provisioned', 'package', 'vendor'])
@@ -46,7 +40,7 @@ export const PWSH_LAYOUT_ORDER = Object.freeze(['provisioned', 'package', 'vendo
  * @property {string|undefined} file - the resolved executable, when available.
  * @property {string} source - where the answer came from, for reports and tests.
  *   One of `disabled`, `config`, `provisioned`, `bundled`, `path`, `well-known`,
- *   `missing`.
+ *   `missing`, `host`.
  * @property {string} detail - a one-line English explanation, for reports.
  */
 
@@ -317,9 +311,8 @@ export function isWslBashLauncher(file, env, platform) {
  */
 export function wellKnownCandidates({ kind, env, platform }) {
   if (platform !== 'win32') {
-    // Only bash has a POSIX rung here: the bundled PowerShell 7 overlay and the
-    // `pwsh-sandbox` row it configures are Windows facts, and a Linux host's own
-    // pwsh (when it has one) is the host's business, not this plugin's row.
+    // Only bash has a POSIX rung here. PowerShell resolution belongs to
+    // the host on every platform.
     // `path.posix` is deliberate — see POSIX_BASH_WELL_KNOWN.
     return kind === 'bash' ? POSIX_BASH_WELL_KNOWN.map(entry => path.posix.normalize(entry)) : []
   }

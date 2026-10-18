@@ -7,6 +7,7 @@ import { FILE_TOOLS, publicToolName } from '../lib/policy.js'
 import { NativeFileTools } from '../lib/file/runtime.js'
 import { NATIVE_FILE_TOOLS } from '../lib/capabilities/registry.js'
 import { bashToolDefinition } from '../lib/shells/tool.js'
+import { hostBashDefinition } from '../lib/shells/host-tool.js'
 import { assert, test, report, withTempDir, waitFor } from './lib/harness.mjs'
 import { bootDiscoveryHost, mintDiscoveryAgent, discoveryNextStep } from './lib/discovery.mjs'
 import { shutdown, scopedToolNames, registryNames, callTool } from './lib/host.mjs'
@@ -46,12 +47,16 @@ await test('measure the full default Native surface including Bash and retain th
     const core = measure(assembly.tools)
     const discovery = assembly.tools.find(tool => tool.name === DISCOVER)
     const full = measure([...NATIVE_FILE_TOOLS.map(raw => new NativeFileTools({ctx:{},config:{}}).definition(raw)), discovery])
-    const shell = bashToolDefinition({ file: 'fixture', source: 'test', subprocess: {} })
+    const base = bashToolDefinition({ file: 'fixture', source: 'test', subprocess: {} })
+    const shell = hostBashDefinition({ get: name => name === 'jobs' ? {} : undefined }, base,
+      () => { throw new Error('Schema measurement must not execute a command') }, () => dir)
+    assert.deepEqual(shell.parameters.required, ['description'])
+    assert.ok(shell.parameters.properties.run_in_background)
     const withShell = measure([...assembly.tools, shell])
-    console.log('  cl100k_base/js-tiktoken1.0.21 compact host-schema JSON:', JSON.stringify({ core, fullFileCatalogue: full, corePlusBash: withShell }))
+    console.log('  cl100k_base/js-tiktoken1.0.21 compact host-schema JSON:', JSON.stringify({ core, fullFileCatalogue: full, hostBash: measure([shell]), corePlusBash: withShell }))
     assert.equal(core.tokens, 241, JSON.stringify(core))
     assert.ok(full.tokens > 400 && full.tokens > core.tokens, 'retain honest full-surface measurement')
-    assert.equal(withShell.tokens, 610, 'BM-03 remains unresolved until the full default, including Bash, fits400')
+    assert.ok(withShell.tokens > 400, 'BM-03 remains unresolved until the full default, including host-compatible Bash, fits400')
     const text = assembly.sections.map(section => section.text).join('\n')
     for (const raw of FILE_TOOLS.filter(raw => raw !== 'read_many')) assert.equal(text.includes(publicToolName(raw)), false)
     assert.ok(text.includes(DISCOVER))

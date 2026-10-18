@@ -654,8 +654,8 @@ await test('provision-shells installs a pinned zip, prunes the old version, and 
   })
 })
 
-await test('ladder reports the provisioned pwsh rung the store feeds', async () => {
-  if (skipUnpinnedHost('ladder reports the provisioned pwsh rung the store feeds')) return
+await test('ladder leaves PowerShell resolution to the host and preserves legacy copies', async () => {
+  if (skipUnpinnedHost('ladder leaves PowerShell resolution to the host and preserves legacy copies')) return
   await withTempDir('provision-ladder', (dir) => {
     const home = path.join(dir, 'home')
     const user = path.join(dir, 'user')
@@ -670,14 +670,12 @@ await test('ladder reports the provisioned pwsh rung the store feeds', async () 
     })
     assert.equal(run.status, 0, run.stderr)
     const parsed = JSON.parse(run.stdout)
-    assert.deepEqual(parsed.shells.pwsh, {
-      available: true,
-      executable,
-      source: 'provisioned',
-      detail: 'the PowerShell 7 this deployment provisioned from upstream (version 7.6.6), '
-        + 'which the pwsh-sandbox override points at',
-    })
-    assert.equal(parsed.levels.pwsh, true)
+    assert.equal(parsed.shells.pwsh.available, false)
+    assert.equal(parsed.shells.pwsh.source, 'host')
+    assert.equal(parsed.shells.pwsh.executable, null)
+    assert.match(parsed.shells.pwsh.detail, /managed by the host/)
+    assert.equal(fs.existsSync(executable), true)
+    assert.equal(parsed.levels.pwsh, false)
   })
 })
 

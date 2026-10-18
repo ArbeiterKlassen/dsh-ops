@@ -10,8 +10,8 @@ name: Release
 # not be read as evidence that a tag produces a release. Enabling it is an admin step,
 # and the first run must be a dispatch on `main` — see docs/release-process.md.
 #
-# WHAT IT PUBLISHES: the GitHub Release for the tag — title, generated notes, the three
-# installable tarballs and `SHA256SUMS`. npm is a separate channel and is deliberately
+# WHAT IT PUBLISHES: the GitHub Release for the tag — title, generated notes, the installable
+# tarballs and `SHA256SUMS`. npm is a separate channel and is deliberately
 # NOT published here: `npm publish` needs an `NPM_TOKEN` secret that this repository
 # does not grant to Actions, and docs/PROVENANCE.md records that GitHub publication
 # does not automatically publish npm. Adding npm publication later needs an admin to
@@ -99,6 +99,10 @@ jobs:
         shell: bash
         run: node bin/native-runtime.mjs stage --platform ${{ matrix.target }} --input native/target/${{ matrix.triple }}/release
 
+      - name: Acquire optional pinned Bash fixture
+        if: matrix.target == 'win32-x64'
+        run: node bin/dsh-ops.mjs bash-runtime install
+
       - name: Build the Windows Bash IPC proxies
         # Only the Windows target carries the IPC proxies; their receipt is verified
         # against the committed native/bash-ipc sources by the gate below. Fails when
@@ -117,9 +121,7 @@ jobs:
   gate:
     name: Verify the release closure and assemble the publish directory
     needs: native
-    # Assembly is Windows-only by design: the two platform payload packages this
-    # release publishes are Windows payloads. The gate reads every target's bytes and
-    # does not need to execute them.
+    # Windows validates the IPC payload while checking every target artifact.
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -170,6 +172,11 @@ jobs:
           rustup default 1.97.1
           cargo build --release --locked --manifest-path native/Cargo.toml
 
+      - name: Build plugin and acquire optional pinned Bash fixture
+        run: |
+          npm run build
+          node bin/dsh-ops.mjs bash-runtime install
+
       - name: Release gate (manifest, suites, runtime closure)
         # Publishing must not start before this step is green — it is the only reason
         # the `publish` job sits behind `needs`. `verify:release` is
@@ -181,8 +188,8 @@ jobs:
         run: npm run verify:release
 
       - name: Assemble and pack the publish directory
-        # Materializes the two Windows platform packages from their pinned upstream
-        # assets, packs everything, and writes provenance.json + SHA256SUMS under
+        # Packs the main plugin without shell payload dependencies and writes
+        # provenance.json + SHA256SUMS under
         # $env:DIST. A non-zero exit fails the run; nothing is published from here.
         run: node scripts/build-platform-packages.mjs --dist "$env:DIST"
 

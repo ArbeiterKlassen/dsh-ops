@@ -25,19 +25,16 @@ because it contains two bodies of work under two licenses:
    `vendor/fastctx/UPSTREAM.md` and `vendor/fastctx/FORK.md` in the
    repository history and in the published tarballs of earlier versions.
 
-The published package also declares this distribution's own platform
-packages as OPTIONAL dependencies, and the same packages — this
-distribution's own tarballs, and nothing upstream's — are the assets
-attached to the GitHub Release for a tag. They are optional in the
-dependency sense, and neither of them is a payload at all: no upstream
-binary travels in this distribution.
+The published package and GitHub release no longer carry shell payload
+packages or declare them as npm dependencies. Shell binaries are obtained
+separately from their upstream distributors, only on operator request.
 
-  * `@dsh-ops/bash-<platform>-<arch>` — a PIN, not a redistribution.
+  * Bash is an explicit optional download, not an npm dependency or a release payload.
     This distribution does not contain, forward, repackage, or
     redistribute Git for Windows. The pin records the upstream release
     the shell is taken from (`PortableGit-2.56.0.2-64-bit.7z.exe`, Git
     for Windows `v2.56.0.windows.2`), the official URL that publishes it,
-    and its SHA-256; `dsh-ops provision-shells` reads the pin, downloads
+    and its SHA-256; `dsh-ops bash-runtime install` reads the pin, downloads
     that asset on the user's own machine, verifies the digest there, and
     unpacks it there. Git for Windows is distributed under the GNU
     General Public License version 2, so the bytes a user obtains that
@@ -47,13 +44,17 @@ binary travels in this distribution.
     Git project (https://github.com/git/git). No GPL-2.0-covered
     component is part of this distribution.
 
-  * `@dsh-ops/pwsh-<platform>-<arch>` — a PIN, not a redistribution.
+  * PowerShell remains managed by the host. `dsh-ops upgrade-host-pwsh`
+    previews a standard Windows installation and `--yes` executes WinGet.
+    It does not override the host executor or remove existing copies.
+    The legacy provisioner retains a PIN, not a redistribution.
     This distribution does not contain, forward, repackage, or
     redistribute PowerShell. The pin records the upstream release
     (`PowerShell-7.6.6-win-x64.zip`, PowerShell `v7.6.6`), the official
     URL that publishes it, and its SHA-256; `dsh-ops provision-shells
     --pwsh` reads the pin, downloads that asset on the user's own
-    machine, and verifies the digest there. PowerShell is distributed by
+    machine, and verifies the digest there; OPS does not automatically
+    activate that legacy copy. PowerShell is distributed by
     Microsoft under the MIT licence; that licence text, its copyright,
     and the corresponding source belong to Microsoft and to the
     PowerShell project (https://github.com/PowerShell/PowerShell).
@@ -94,3 +95,9 @@ tarballs of earlier versions.
 
 FastCtx is developed and maintained at
 https://github.com/yc-duan/fastctx
+
+
+DeepSeek Harness shell contract, approval and job adapters are adapted from
+@deepseek-ai/dsh-tool-bash 0.2.0-rc.2 (MIT), Copyright (c) 2026 DeepSeek.
+Upstream: https://github.com/deepseek-ai/deepseek-harness
+License: licenses/deepseek-harness/LICENSE

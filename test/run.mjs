@@ -51,6 +51,9 @@ function suites() {
   return selected.map((name) => path.join(testDir, name))
 }
 
+// Test homes stay isolated; only the explicitly acquired executable is shared read-only.
+const bashFixture = process.platform === 'win32'
+  ? (await import('../lib/shells/pinned.js')).pinnedBashExecutable({ file: process.env.DSH_OPS_TEST_BASH, required: false }) : undefined
 const selected = suites()
 if (selected.length === 0) {
   console.error('dsh-ops test: no suites matched')
@@ -102,7 +105,7 @@ async function runSuite(suite) {
   console.log(`\n=== ${label}`)
   const child = spawn(process.execPath, [suite], {
     cwd: root,
-    env: { ...process.env, DSH_HOME: home },
+    env: { ...process.env, DSH_HOME: home, ...(bashFixture ? { DSH_OPS_TEST_BASH: bashFixture } : {}) },
     stdio: 'inherit',
   })
   let timedOut = false

@@ -1,11 +1,11 @@
 /** Plugin-owned bash layers; permission changes never mutate the shared registry. */
 import path from 'node:path'
 import { BASH_TOOL } from './policy.js'
-import { bashToolDefinition, withBashStatus, DEFAULT_BASH_TIMEOUT_MS } from './shells.js'
-import { BashArgumentError, isBashArgumentError } from './shells/argument-error.js'
-import { MODES, authorityChanged, executionRestriction } from './permissions.js'
-import { prepareWorkspace } from './workspace-preparation.js'
-import { confinedBash } from './bash-ipc.js'
+import { bashToolDefinition, DEFAULT_BASH_TIMEOUT_MS } from './shells.js'
+import { BashArgumentError } from './shells/argument-error.js'
+import { MODES } from './permissions.js'
+import { hostBashDefinition } from './shells/host-tool.js'
+import { startSessionBash } from './shells/session-execution.js'
 
 /**
  * Whether a session workspace is written in a Windows form.
@@ -146,75 +146,10 @@ export function mountSessionBash(ctx, config, shells) {
     // Publish authorized ancestors before masking inheritance in restricted children.
     for (const [agent, entry] of entries) {
       if (!entry.ctx || !allowed(agent)) continue
-      const definition = bashToolDefinition({ file: bash.file, source: bash.source, subprocess: ctx.get('subprocess') })
-      const run = async (args, exec) => {
-        const session = exec?.agent?.session
-        // Declared before the helper so every refusal below can state the authoritative mode it was
-        // made under: a caller that only sees `failed` cannot tell a read-only refusal from a
-        // missing runtime, and the mode is what makes the difference actionable.
-        let policy
-        const unavailable = message => withBashStatus({ error: `EXECUTOR_UNAVAILABLE: ${message}`,
-          ...(policy ? { sandbox: { mode: policy.mode } } : {}),
-          timedOut: false, timeoutMs: DEFAULT_BASH_TIMEOUT_MS,
-          stdout: { text: '', truncated: false }, stderr: { text: '', truncated: false } })
-        if (!session?.id || !ready || stopped) return unavailable('Bash requires an authoritative DSH session and executor.')
-        try { policy = ctx.get('sandboxPolicy')?.resolve({ session }) }
-        catch { return unavailable('DSH policy resolution is unavailable.') }
-        if (!MODES.includes(policy?.mode)) return unavailable('Invalid authoritative DSH permission mode.')
-        let confinement
-        let runtime
-        try { runtime = policy.mode === 'danger-full-access' ? { file: bash.file } : confinedBash(bash.file, { source: bash.source }) }
-        catch { return unavailable('The restricted Bash runtime is unavailable or incompatible. Restore the verified pinned Bash payload and IPC runtime; changing the DSH selector is not a repair. Do not retry or bypass confinement.') }
-        const definitionForCall = bashToolDefinition({ file: runtime.file, source: bash.source, env: runtime.env,
-          prepareArgv: async (argv, signal) => {
-            await prepareWorkspace(policy)
-            if (policy.mode !== 'danger-full-access') {
-              const sandbox = ctx.get('sandbox')
-              if (!sandbox?.confine) throw new Error('SANDBOX_UNAVAILABLE: DSH confinement provider is unavailable; no command executed.')
-              confinement = await sandbox.confine(argv, policy, signal)
-              if (!['full', 'partial'].includes(confinement?.enforcement) || !confinement.argv?.length) throw new Error('SANDBOX_UNAVAILABLE: invalid DSH confinement result.')
-            }
-            const current = ctx.get('sandboxPolicy').resolve({ session })
-            if (current.mode !== policy.mode || current.workspaceRoot !== policy.workspaceRoot) {
-              const changed = authorityChanged(current, 'bash')
-              throw new Error(`${changed.error.code}: ${changed.error.message} ${changed.error.nextAction}`)
-            }
-            return confinement?.argv ?? argv
-          }, subprocess: ctx.get('subprocess'),
-        })
-        let value
-        try {
-          value = await definitionForCall.execute({ ...args, workdir: sessionWorkdir(args, session) }, exec)
-        } catch (error) {
-          // The bash contract states RUNTIME failures as values, never as thrown errors (#168): a
-          // refusing runtime that throws must still come back with the mode it refused under, or the
-          // caller cannot tell a read-only refusal from a runtime that is simply absent. A CALLER's
-          // bad argument is the one thing that must not be folded away: a bare `{ error }` fails
-          // BASH_OUTPUT_SCHEMA, so the host reported "returned invalid output" and the wrong field
-          // never reached the caller (#235). Refusals are rethrown; everything else settles on a
-          // value complete enough for the registered schema.
-          if (isBashArgumentError(error)) throw error
-          value = bashRefusalValue(error)
-        }
-        const text = `${value.stderr?.text ?? ''}\n${value.error ?? ''}`.toLowerCase()
-        const runnerFailed = value.exitCode !== 0 && confinement?.runnerFailureRules?.some(rule =>
-          (!rule.allowedExitCodes || rule.allowedExitCodes.includes(value.exitCode)) &&
-          rule.fatalSignatures?.some(s => text.includes(s.toLowerCase())))
-        if (runnerFailed || /couldn't create signal pipe|fatal error.*win32 error|sandbox_unavailable/.test(text)) {
-          return { ...value, error: 'EXECUTOR_UNAVAILABLE: The bash runtime could not initialize under the DSH sandbox; the command did not run. This is not a user authorization denial. Restore the host runtime or confinement provider. Do not retry or bypass confinement; changing the DSH selector is not a repair.',
-            sandbox: { mode: policy.mode, ...(confinement ? { enforcement: confinement.enforcement } : {}) } }
-        }
-        const refused = value.exitCode !== 0 && confinement?.denialSignatures?.some(s => text.includes(s.toLowerCase()))
-        if (refused) {
-          // A settled bash result states the authoritative mode it ran under, and a refusal is
-          // exactly when the caller needs that fact — the status field alone cannot carry it.
-          return { ...value, restriction: executionRestriction('command file effects'),
-            sandbox: { mode: policy.mode, ...(confinement ? { enforcement: confinement.enforcement } : {}) } }
-        }
-        return { ...value, sandbox: { mode: policy.mode, ...(confinement ? { enforcement: confinement.enforcement } : {}) } }
-      }
-      // Stamp status after every wrapper above, so an added error/permission always reads as failed (#44).
-      definition.execute = async (args, exec) => withBashStatus(await run(args, exec))
+      const base = bashToolDefinition({ file: bash.file, source: bash.source, subprocess: ctx.get('subprocess') })
+      const definition = hostBashDefinition(ctx, base,
+        (args, exec, standing, policy, dshEnv, options) => startSessionBash({ ctx, bash, active: () => ready && !stopped && entries.has(exec.agent) },
+          args, exec, standing, policy, dshEnv, options), sessionWorkdir)
       publish(entry, definition)
     }
     for (const [agent, entry] of entries) {
@@ -253,6 +188,7 @@ export function mountSessionBash(ctx, config, shells) {
   ctx.on('agent/disposed', ({ agent }) => detach(agent))
   ctx.on('session/event', (_session, event) => { if (event.type === 'sandbox/mode') reconcile() })
   ctx.inject(['sandbox'], () => { reconcile() })
+  ctx.inject(['jobs'], jobsCtx => { reconcile(); jobsCtx.effect(() => () => { reconcile() }) })
   ctx.inject(['sandboxPolicy', 'subprocess'], authorityCtx => {
     ready = true
     reconcile()

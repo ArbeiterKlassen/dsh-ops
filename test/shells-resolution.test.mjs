@@ -86,8 +86,9 @@ await test('the bundled copy outranks PATH and the well-known install locations'
     })
     assert.equal(resolved.bash.source, 'bundled')
     assert.equal(resolved.bash.file, bundledBash)
-    assert.equal(resolved.pwsh.source, 'bundled')
-    assert.equal(resolved.pwsh.file, bundledPwsh)
+    assert.equal(resolved.pwsh.source, 'host')
+    assert.equal(resolved.pwsh.file, undefined)
+    assert.equal(fs.existsSync(bundledPwsh), true, 'legacy files are not removed')
   })
 })
 
@@ -108,7 +109,7 @@ await test('with no bundled copy, PATH is searched before the well-known locatio
     assert.equal(resolved.bash.source, 'path')
     assert.equal(resolved.bash.file, onPathBash)
     assert.equal(resolved.pwsh.available, false)
-    assert.equal(resolved.pwsh.source, 'missing')
+    assert.equal(resolved.pwsh.source, 'host')
   })
 })
 
@@ -129,7 +130,7 @@ await test('a Windows deployment finds the well-known Git for Windows install fo
     assert.equal(resolved.bash.source, 'well-known')
     assert.equal(resolved.bash.file, gitBash)
     assert.equal(resolved.pwsh.available, false)
-    assert.equal(resolved.pwsh.source, 'missing')
+    assert.equal(resolved.pwsh.source, 'host')
   })
 })
 
@@ -198,8 +199,8 @@ await test('publishBashTool:false disables only the bash rung', async () => {
     assert.equal(resolved.bash.available, false)
     assert.equal(resolved.bash.source, 'disabled')
     // The pwsh rung is a separate fact and stays live.
-    assert.equal(resolved.pwsh.available, true)
-    assert.equal(resolved.pwsh.source, 'bundled')
+    assert.equal(resolved.pwsh.available, false)
+    assert.equal(resolved.pwsh.source, 'host')
   })
 })
 
@@ -413,7 +414,7 @@ await test('a platform the pins do not cover has no pin, and the store still res
 
 // --- the provisioned copies (`dsh-ops provision-shells`)
 
-await test('a provisioned copy outranks the bundled layouts and PATH, for both shells', async () => {
+await test('provisioned Bash outranks other copies while legacy PowerShell remains host-owned', async () => {
   await withTempDir('shells-provisioned', async (dir) => {
     const home = path.join(dir, 'home')
     const provisionedBash = stageProvisioned(home, 'bash', '2.56.0.2')
@@ -443,9 +444,10 @@ await test('a provisioned copy outranks the bundled layouts and PATH, for both s
     assert.notEqual(resolved.bash.file, packaged, 'the provisioned copy beats the platform package')
     assert.notEqual(resolved.bash.file, onPath, 'the provisioned copy beats PATH')
     assert.match(resolved.bash.detail, /version 2\.56\.0\.2/u)
-    assert.equal(resolved.pwsh.available, true, resolved.pwsh.detail)
-    assert.equal(resolved.pwsh.source, 'provisioned', resolved.pwsh.detail)
-    assert.equal(resolved.pwsh.file, provisionedPwsh)
+    assert.equal(resolved.pwsh.available, false, resolved.pwsh.detail)
+    assert.equal(resolved.pwsh.source, 'host', resolved.pwsh.detail)
+    assert.equal(resolved.pwsh.file, undefined)
+    assert.equal(fs.existsSync(provisionedPwsh), true)
     assert.notEqual(resolved.pwsh.file, bundledPwsh, 'the provisioned copy beats the vendored layout')
 
     // The package it beat is a live candidate, not an absent one: with the
@@ -470,7 +472,7 @@ await test('a provisioned copy outranks the bundled layouts and PATH, for both s
     })
     assert.equal(confined.bash.source, 'provisioned', confined.bash.detail)
     assert.equal(confined.bash.file, provisionedBash)
-    assert.equal(confined.pwsh.file, provisionedPwsh)
+    assert.equal(confined.pwsh.file, undefined)
   })
 })
 

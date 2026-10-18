@@ -1,9 +1,9 @@
 /**
  * Step: assemble — what one release builds and the packages it stages.
  *
- * The two package directories are built from the committed skeletons in
- * `packages/<kind>-<platform>-<arch>/` plus the verified upstream tree and a
- * per-package `provenance.json`.
+ * Current releases produce only the main plugin. The historical shell
+ * assembly helpers remain for provenance and fixture checks; describePackages
+ * no longer schedules shell payloads.
  *
  * @module dsh-ops/build/lib/assemble
  */
@@ -11,9 +11,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import * as shellsModule from '../../../lib/shells.js'
-import { resolveShellPin } from './pins.js'
 import {
-  REPO_ROOT, SCRIPT_SHA256, copyEntry, gitRevision, log, mainManifest, readJsonIfExists, run,
+  REPO_ROOT, SCRIPT_SHA256, copyEntry, gitRevision, log, readJsonIfExists, run,
   sha256File, skeletonDigest, treeFiles, writeJson,
 } from './util.js'
 
@@ -38,30 +37,9 @@ export function shellPackageName(kind, platform, arch) {
  * @param {string} dist - the artifact directory.
  * @returns {object[]} one description per package, in publish order.
  */
-export function describePackages(platform, arch, dist) {
-  const version = mainManifest().version
-  return [
-    {
-      kind: 'bash',
-      name: shellPackageName('bash', platform, arch),
-      version,
-      platform,
-      arch,
-      dist,
-      executable: `bin/${PLATFORM_PACKAGES.bash.executable}`,
-      payload: { type: 'archive', pin: resolveShellPin('bash', platform, arch) },
-    },
-    {
-      kind: 'pwsh',
-      name: shellPackageName('pwsh', platform, arch),
-      version,
-      platform,
-      arch,
-      dist,
-      executable: `bin/${PLATFORM_PACKAGES.pwsh.executable}`,
-      payload: { type: 'archive', pin: resolveShellPin('pwsh', platform, arch) },
-    },
-  ]
+export function describePackages(_platform, _arch, _dist) {
+  // Shells are operator-managed, never released as npm payload packages.
+  return []
 }
 
 /**

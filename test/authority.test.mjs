@@ -206,10 +206,10 @@ await test('Bash stops on a middle-preparation authority change using the real s
       const tool = ctx.get('tools').get('ops_bash', agent)
       assert.ok(tool)
       race = true
-      const value = await tool.execute({ command: 'unused', workdir: root }, { agent, signal: signal() })
+      const value = await tool.execute({ description: 'Check current session authority', command: 'unused', workdir: root }, { agent, signal: signal() })
       assert.equal(value.status, 'failed'); assert.match(value.error, /AUTHORITY_CHANGED/)
       assert.equal(value.permission, undefined); assert.equal(spawned, 0)
-      const missing = await tool.execute({ command: 'unused' }, { signal: signal() })
+      const missing = await tool.execute({ description: 'Check missing session authority', command: 'unused' }, { signal: signal() })
       assert.match(missing.error, /EXECUTOR_UNAVAILABLE/); assert.equal(missing.status, 'failed')
     } finally { await scope.dispose(); await shutdown(ctx) }
   })

@@ -2,8 +2,8 @@
  * Publishing the tools that run on the plugin's own shells, and the remedies a
  * spawn failure deserves.
  *
- * Contract: {@link publishShellTools} is called inside one `ctx.effect` during
- * mount and returns the disposer for whatever tool registrations it made
+ * Legacy helper for direct callers; component mounts use mountSessionBash and
+ * its scoped host-compatible definition instead. It returns the disposer for registrations
  * (today: the `ops_bash` tool backed by the plugin's own bash). Returning a
  * no-op disposer is valid.
  *
@@ -12,15 +12,8 @@
  * is `cwd`/`timeoutMs`/`maxTimeoutMs`/`maxOutputBytes`/`maxSpillBytes`/
  * `graceMs` only), so the only zero-internal-dependency way to run the plugin's
  * own bash is to publish `ops_bash` ourselves and execute through
- * `ctx.subprocess`. L3 needs no tool: `pwsh-sandbox` inherits `pwshPath`
- * verbatim (`packages/shell/pwsh-sandbox/src/index.ts:40`,
- * `type Config = LocalConfig`), so `cordis.patch.yml` points that row at the
- * executable `lib/shells/paths.js` resolves — provisioned copy first, bundled
- * layouts after it, in the order `lib/shells/paths.js`'s `PWSH_LAYOUT_ORDER`
- * names. That is also why L3 has no `available` beyond "the executable is
- * there": the rung and the host row are the same fact, and a config key could
- * not reach the row anyway (a bundle patch is evaluated before this plugin's own
- * row is mounted).
+ * `ctx.subprocess`. PowerShell stays owned by the host; OPS neither supplies an
+ * executable nor rewrites the host executor configuration.
  *
  * A rung that is unavailable publishes nothing and reports why through the
  * context logger; it never throws, because a deployment without bash must still
@@ -55,8 +48,7 @@ function reportShellProblem(ctx, message) {
  * Publish the tools that run on the plugin's own shells.
  *
  * Today that is exactly one tool — `ops_bash`, bound to the resolved bash — and
- * nothing else: pwsh needs no tool, because the host's `pwsh-sandbox` row runs
- * the plugin's own executable whenever the bundle override resolved one. A rung
+ * nothing else: the host owns PowerShell and its executable selection. A rung
  * that is unavailable publishes nothing and reports why through the context
  * logger; it never throws, because a deployment without bash must still load
  * this plugin.

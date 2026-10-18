@@ -25,13 +25,12 @@ interface ToolingPolicyOptions {
   published?: Iterable<string>
   mounted?: boolean
   levels?: { files?: boolean, bash?: boolean, pwsh?: boolean }
-  pwsh7?: boolean
   shellComponent?: boolean
   extraGuidance?: string
 }
 
 /** A single compact table; absent tools never get advertised. */
-export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false, shellComponent = true, extraGuidance = '' }: ToolingPolicyOptions) {
+export function renderToolingPolicy({ published, mounted, levels, shellComponent = true, extraGuidance = '' }: ToolingPolicyOptions) {
   const names = new Set(published ?? (mounted || levels?.files
     ? [...NATIVE_FILE_TOOLS, ...(levels?.bash ? IN_PROCESS_TOOLS : [])].map(publicToolName) : []))
   if (levels?.pwsh) names.add('pwsh')
@@ -41,7 +40,7 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
   const hasBash = names.has(BASH_TOOL)
   const hasPwsh = shellComponent && names.has('pwsh')
   if (!hasFiles && !hasBash && !hasPwsh && !hasDiscovery) return ''
-  const heading = hasBash ? '# Shell routing: bash → PowerShell 7'
+  const heading = hasBash ? '# Shell routing: bash → host PowerShell'
     : hasFiles || hasDiscovery ? '# Repository file tools' : '# Windows-native shell'
   const lines = [heading, '', '| Task | Tool |', '| --- | --- |']
   const row = (raw: string, task: string) => {
@@ -64,7 +63,7 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
   row('remove', 'Remove one regular file (CAS)')
   row('result', 'Page / release owned result references')
   row('bash', 'General commands / builds / git / pipelines / scripts — preferred command executor')
-  if (names.has('pwsh')) lines.push(`| Windows-native cmdlets / registry / services only | pwsh (${pwsh7 || levels?.pwsh ? 'bundled PowerShell 7 via host' : 'host PowerShell'}) |`)
+  if (names.has('pwsh')) lines.push(`| Windows-native cmdlets / registry / services only | pwsh (host PowerShell) |`)
   lines.push('', '- ops_* arguments are strict: pass only declared fields.')
   if (hasFiles) lines.push('- Use published file tools for file operations.')
   if (hasDiscovery) lines.push('- Discover a capability when needed; selection makes it available on the next model step and performs no file action.')
@@ -88,7 +87,7 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
   if (hasFiles) lines.push('- Follow error.nextAction; authorization denials require the user to change mode, not retries. After applied/unknown effects inspect postconditions; do not switch to a shell workaround.')
   if (names.has(BASH_TOOL)) lines.push('- Prefer bash for command execution. Use PowerShell only when Windows-native functionality is necessary; fix bash errors in bash, do not switch shells or mix their syntax.',
     '- Use command only for short commands and pipelines. For scripts longer than about 1 KB or containing heredocs, quotes, backslashes or non-ASCII text, write the script to a file first and pass script_path.',
-    '- ops_bash resolves with `status` (completed/failed), `exitCode`, stdout/stderr, `error` and `permission`; it throws only for invalid arguments or an unavailable executor.')
+    '- ops_bash requires description and returns kind foreground, background or promoted. Foreground has status (completed/failed), exitCode, stdout/stderr and error; background/promoted has jobId for host job_output/job_kill. Failures, including invalid arguments, return values with failure.code, failure.effectState and failure.retry; inspect unknown effects before repeating.')
   if (extraGuidance.trim()) lines.push('', extraGuidance.trim())
   return lines.join('\n')
 }

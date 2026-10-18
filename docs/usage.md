@@ -46,7 +46,22 @@ capability matrix and the known limitations.
 
 ### Official plugin marketplace
 
-In the target DSH application's plugin marketplace, enter the npm package name **`dsh-ops`**, install, then enable. Installation belongs to the currently running profile, which is `desktop` for the desktop app. The published package depends on complete bash and PowerShell 7 payloads; it does not download them through install scripts or change the system PATH.
+In the target DSH application's plugin marketplace, enter the npm package name **`dsh-ops`**, install, then enable. Installation belongs to the currently running profile, which is `desktop` for the desktop app. Neither Bash nor PowerShell binaries are npm dependencies. Bash is acquired separately through the runtime manager; PowerShell stays under host control. Installation runs no shell downloader and does not change system PATH.
+
+### Optional Bash runtime
+
+Bash is no longer an npm dependency. On Windows, install the verified managed copy explicitly, or select an existing Git Bash:
+
+```console
+dsh-ops bash-runtime status
+dsh-ops bash-runtime install
+dsh-ops bash-runtime git
+dsh-ops bash-runtime managed
+dsh-ops bash-runtime remove            # preview only
+dsh-ops bash-runtime remove --yes      # remove receipt-marked managed versions
+```
+
+`git` and `managed` print an absolute `bashPath` configuration for the host config editor; they do not edit a profile or PATH. Reload the shell component after applying the selection or installing/removing its runtime. Stop running Bash jobs before removal. Removal refuses links in the managed path and preserves unmarked versions, system Git and PowerShell. `install` reuses the pinned download and checksum checks from `provision-shells --bash`; `--dry-run` makes no download or change. Windows restricted modes still require the pinned MSYS IPC compatibility match. A different Git Bash remains a full-access choice; approval never repairs an incompatible restricted runtime. Linux/macOS continue using host Bash.
 
 ### One-command npm installation
 
@@ -91,6 +106,20 @@ Legacy explicitly provisioned `<DSH_HOME>/dsh-ops/` files (provisioned shells, a
 
 ---
 
+## Host PowerShell on Windows
+
+OPS no longer bundles PowerShell or changes the host's `pwshPath`. Windows PowerShell 5.1, existing custom executors and old OPS provisioned copies remain untouched. To install or upgrade the standard PowerShell 7 installation, first inspect the plan:
+
+```console
+dsh-ops upgrade-host-pwsh
+dsh-ops upgrade-host-pwsh --yes --dry-run
+dsh-ops upgrade-host-pwsh --yes
+```
+
+Only `--yes` executes WinGet; `--dry-run` always previews. The action uses the exact stable `Microsoft.PowerShell` package from the `winget` source and retains WinGet's installer and agreement prompts. It may require Windows elevation. Missing WinGet produces guidance without attempting installation; see [Microsoft's Windows installation guide](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows).
+
+Restart DSH after successful installation so the host probes its executor again. An explicit host `pwshPath` remains authoritative: review it in host settings if it points elsewhere. A `no-update` result means WinGet found no applicable update for this package, not that every custom PowerShell copy is current. Cancellation after the installer starts has unknown effects; check the standard installation before retrying. The older `provision-shells --pwsh` command remains an explicit compatibility download, but OPS does not activate its copy automatically.
+
 ## Command-line interface
 
 ```console
@@ -102,6 +131,7 @@ dsh-ops build-ptc              Build the independent native Rust worker (all pla
 dsh-ops uninstall [--yes] [--purge-fastctx]
 dsh-ops ladder [--json] [--config <file>]
                                 prompt ladder actually renders; nothing is spawned
+dsh-ops upgrade-host-pwsh [--yes] [--dry-run]
 dsh-ops provision-shells [--bash] [--pwsh] [--force] [--dry-run] [--pin <file>]
                                 their digests, and install them under <DSH_HOME>/dsh-ops/shells
 ```
@@ -127,7 +157,11 @@ Use `ops_bash`'s `command` for short commands and pipelines. For scripts longer 
 
 `script_path` accepts only the script path, so the script body is not repeated in the `ops_bash` arguments. `command` and `script_path` are mutually exclusive and exactly one is required. This interface cannot repair JSON that the model or host failed to parse; an unparseable tool call still requires a host/model retry.
 
-`ops_bash` arguments are **strict**: a key the schema does not declare is refused before execution, and the error names both the unknown keys and the accepted ones instead of ignoring them. **This tool has no `run_in_background` and returns no job id**; every command runs in the foreground. The host `bash` and `pwsh` tools do accept `run_in_background`, so a model may reasonably try it here; such a call is rejected rather than silently run in the foreground. For a server, listener or watcher, use the host `pwsh` tool's `run_in_background`, or detach the process from inside the command (for example `nohup ... & disown`). Otherwise the call occupies the whole `timeoutMs` (up to `MAX_BASH_TIMEOUT_MS`, about 24.9 days).
+`ops_bash` requires a non-empty `description` and keeps the host Bash fields and result kinds: `foreground`, `background`, or `promoted`. Its default timeout is 120 seconds and the cap is 600 seconds. When the host jobs service is available, `run_in_background: true` returns a job ID immediately; a foreground timeout promotes the same running job. Use the host `job_output` and `job_kill` tools to collect or stop it. Without host jobs, the background parameter is absent and a foreground timeout stops the command. Unknown arguments are rejected before execution.
+
+`sandbox_permissions` plus `justification` can request a strictly wider mode through the host approval service. An allowed-once grant applies to that command only; rejection never executes it or changes the session mode. Authority is checked again after approval and sandbox preparation. Windows confinement reports the host provider’s actual enforcement (including `partial`); incompatible Bash runtimes fail closed.
+
+`script_path` (instead of `command`), `graceMs`, and `includeDiagnostics` remain explicit OPS compatibility extensions. They do not change the host command contract or its timeout limits.
 
 ---
 

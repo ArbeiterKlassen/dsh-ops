@@ -14,19 +14,15 @@
  */
 
 import fs from 'node:fs'
-import { Buffer } from 'node:buffer'
 import {
   BASH_ARGUMENTS,
   BASH_TOOL_NAME,
   DEFAULT_BASH_TIMEOUT_MS,
   DEFAULT_GRACE_MS,
-  DEFAULT_MAX_OUTPUT_BYTES,
-  DEFAULT_MAX_SPILL_BYTES,
   MAX_BASH_TIMEOUT_MS,
-  shellEnvOverrides,
 } from './constants.js'
 import { BashArgumentError } from './argument-error.js'
-import { formatBashSpawnError } from './spawn-error.js'
+import { startBashExecution } from './execution.js'
 
 /**
  * Reject a value this tool cannot run with, naming the field.
@@ -113,33 +109,6 @@ export function renderBashResult(value) {
 }
 
 /**
- * Read one settled collect-mode stream as its complete retained output.
- * @param {{readFrom: (from: number) => {text: string, lossy: boolean, spillPath?: string}}|undefined} reader - the reader.
- * @returns {{text: string, truncated: boolean, spillPath?: string}} the canonical stream value.
- */
-function settledStream(reader, includeMetadata = false) {
-  if (reader === undefined || typeof reader.readFrom !== 'function') return { text: '', truncated: false }
-  const read = reader.readFrom(0)
-  const text = typeof read.text === 'string' ? read.text : ''
-  if (!includeMetadata) {
-    return {
-      text,
-      truncated: read.lossy === true,
-      ...read.spillPath !== undefined ? { spillPath: read.spillPath } : {},
-    }
-  }
-  const lines = text === '' ? 0 : text.split(/\n/).length - (text.endsWith('\n') ? 1 : 0)
-  return {
-    text,
-    truncated: read.lossy === true,
-    bytes: Buffer.byteLength(text),
-    bytesTotal: Number.isFinite(read.nextOffset) ? read.nextOffset : Buffer.byteLength(text),
-    lines,
-    ...read.spillPath !== undefined ? { spillPath: read.spillPath } : {},
-  }
-}
-
-/**
  * The canonical output contract of `ops_bash`, as plain JSON Schema.
  *
  * EVERY `type` here is a single type string: the harness's
@@ -154,6 +123,7 @@ function settledStream(reader, includeMetadata = false) {
  * value that does not satisfy it is what the host reports as "returned invalid
  * output".
  */
+/** @type {import('@deepseek-ai/dsh-tools').JsonSchemaNode} */
 export const BASH_OUTPUT_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
@@ -203,12 +173,12 @@ export const BASH_OUTPUT_SCHEMA = Object.freeze({
  * Stamp one settled result with its one-word outcome, so ops_bash shares the
  * `status` field the file tools use (#44). Only a clean zero exit is
  * `completed`; any error, restriction, signal, cancellation or timeout is `failed`.
- * @param {object} value - the canonical result value, without `status`.
- * @returns {object} the same value with `status` (re)computed.
+ * @param {import('./types.js').ShellResult} value - the canonical result value, without `status`.
+ * @returns {import('./types.js').SettledShellResult} the same value with `status` (re)computed.
  */
 export function withBashStatus(value) {
   const completed = value.exitCode === 0 && value.error === undefined && value.permission === undefined && value.restriction === undefined
-    && value.signal === undefined && value.timedOut !== true && value.cancelled !== true
+    && value.signal == null && value.timedOut !== true && value.cancelled !== true
   return { ...value, status: completed ? 'completed' : 'failed' }
 }
 
@@ -241,14 +211,11 @@ export function bashToolDescription() {
  * reaching a host service through `ctx.get` needs no import, and it buys the
  * harness's real credential scrub and process governance instead of a
  * hand-rolled spawn.
- * @param {object} options - the tool inputs.
- * @param {string} options.file - the resolved bash executable.
- * @param {string} options.source - where that executable came from, for diagnostics.
- * @param {{spawn: (spec: object) => object}} options.subprocess - the harness subprocess service.
- * @returns {object} the definition `ctx.tools.register()` accepts.
+ * @param {import('./types.js').ShellExecutorOptions} options - the typed host executor inputs.
+ * @returns {import('./types.js').LegacyShellDefinition} the legacy executor definition wrapped by the host projection.
  */
-export function bashToolDefinition({ file, source, subprocess, prepareArgv, env = {} }) {
-  return {
+export function bashToolDefinition({ file, source, subprocess, prepareArgv, env = {}, projectResult = withBashStatus }) {
+  const definition = {
     name: BASH_TOOL_NAME,
     description: bashToolDescription(),
     parameters: {
@@ -301,11 +268,10 @@ export function bashToolDefinition({ file, source, subprocess, prepareArgv, env 
      * @param {{signal?: AbortSignal}} [exec] - the host execution context.
      * @returns {Promise<object>} the canonical result value.
      */
-    async execute(args, exec) {
+    resolve(args) {
       assertKnownArguments(args, BASH_ARGUMENTS)
-      // Every refusal in this body is a BashArgumentError, never a plain Error: the session layer
-      // folds RUNTIME failures into a value (#168) and rethrows a caller's bad argument, so a wrong
-      // field reaches the caller as itself instead of as "returned invalid output" (#235).
+      // This internal validator throws typed argument errors. The session host projection returns
+      // them as schema-valid failures, preserving the caller's diagnosis and no-effect facts.
       if (args?.description !== undefined && typeof args.description !== 'string') throw new BashArgumentError('invalid description: expected a string', 'description')
       const rawCommand = args?.command
       const rawScriptPath = args?.script_path
@@ -362,89 +328,13 @@ export function bashToolDefinition({ file, source, subprocess, prepareArgv, env 
         }
       }
 
-      // No subprocess re-check here: `publishShellTools` publishes this tool
-      // only while `ctx.subprocess` is mounted, so a definition that exists at
-      // all always has the one service it needs.
-
-      // One deadline plus the caller's cancellation, fused into the signal the
-      // subprocess service terminates its process range on.
-      const controller = new AbortController()
-      let timedOut = false
-      let cancelled = false
-      const startedAt = performance.now()
-      const timer = setTimeout(() => {
-        timedOut = true
-        controller.abort(new Error(`command timed out after ${timeoutMs}ms`))
-      }, timeoutMs)
-      timer.unref?.()
-      const callerSignal = exec?.signal
-      const onCallerAbort = () => {
-        cancelled = true
-        controller.abort(callerSignal?.reason)
-      }
-      if (callerSignal !== undefined) {
-        if (callerSignal.aborted) onCallerAbort()
-        else callerSignal.addEventListener('abort', onCallerAbort, { once: true })
-      }
-
-      try {
-        let handle
-        try {
-          const argv = hasCommand ? [file, '-c', command] : [file, scriptPath]
-          if (controller.signal.aborted) throw controller.signal.reason ?? new Error('bash execution cancelled')
-          const preparedArgv = prepareArgv ? await prepareArgv(argv, controller.signal) : argv
-          if (controller.signal.aborted) throw controller.signal.reason ?? new Error('bash execution cancelled')
-          handle = subprocess.spawn({
-            argv: preparedArgv,
-            cwd: workdir,
-            stdio: {
-              stdin: 'ignore',
-              stdout: { maxBytes: DEFAULT_MAX_OUTPUT_BYTES, spill: { maxBytes: DEFAULT_MAX_SPILL_BYTES } },
-              stderr: { maxBytes: DEFAULT_MAX_OUTPUT_BYTES, spill: { maxBytes: DEFAULT_MAX_SPILL_BYTES } },
-            },
-            graceMs,
-            signal: controller.signal,
-            // The terminal overrides and nothing else: the subprocess service's
-            // own scrub decides what else a child may inherit, and this plugin
-            // never adds a credential-shaped name or a `DSH_*` fact to that set.
-            env: shellEnvOverrides(process.env, env),
-          })
-          const outcome = await handle.done
-          // "Nothing to report" is an ABSENT key, not a null: the output schema
-          // declares single types only (see BASH_OUTPUT_SCHEMA).
-          return withBashStatus({
-            ...outcome?.exitCode !== undefined && outcome?.exitCode !== null ? { exitCode: outcome.exitCode } : {},
-            ...outcome?.signal !== undefined && outcome?.signal !== null ? { signal: outcome.signal } : {},
-            timedOut,
-            timeoutMs,
-            ...(cancelled ? { cancelled: true } : {}),
-            stdout: settledStream(handle.collected?.stdout, includeDiagnostics),
-            stderr: settledStream(handle.collected?.stderr, includeDiagnostics),
-            ...(includeDiagnostics ? { diagnostics: {
-              durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
-              executor: { kind: 'subprocess', source },
-            } } : {}),
-          })
-        } catch (error) {
-          return withBashStatus({
-            // The workdir is part of the diagnosis: a vanished cwd and a vanished executable
-            // both surface as one ENOENT, and only one of them is the bash payload (#180).
-            error: formatBashSpawnError(error, file, source, workdir),
-            timedOut,
-            timeoutMs,
-            ...(cancelled ? { cancelled: true } : {}),
-            stdout: { text: '', truncated: false },
-            stderr: { text: '', truncated: false },
-            ...(includeDiagnostics ? { diagnostics: {
-              durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
-              executor: { kind: 'subprocess', source },
-            } } : {}),
-          })
-        }
-      } finally {
-        clearTimeout(timer)
-        callerSignal?.removeEventListener('abort', onCallerAbort)
-      }
+      return { command, scriptPath, workdir, timeoutMs, graceMs, includeDiagnostics }
     },
+    start(args, exec = {}, { onExpiry } = {}) {
+      const spec = definition.resolve(args)
+      return startBashExecution({ file, source, subprocess, prepareArgv, env, projectResult }, { ...spec, onExpiry }, exec)
+    },
+    async execute(args, exec) { return definition.start(args, exec).result() },
   }
+  return definition
 }

@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "dsh-ops-bash & powershell 7",
-    "description": "Prefer bash for general commands and provide PowerShell 7 when Windows-native functionality is needed."
+    "title": "dsh-ops-bash & host PowerShell",
+    "description": "Prefer bash for general commands and use host PowerShell for Windows-native functionality."
   }
 }

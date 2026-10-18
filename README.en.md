@@ -28,7 +28,7 @@ Main features of this plugin:
 - A set of more advanced always-on tools written in Rust. Compared with the built-ins, these tools use fewer input and output tokens, run faster, cover more ground, and impose less mental load on the AI; they also carry brief hash checks, line/position info, and similar messages to reduce token overhead.
 - Planned on the [roadmap](docs/roadmap.md): everyday tools such as DOC/PDF operations, web search, and crawl4ai-style HTML-to-Markdown tools, added through progressive disclosure so the AI avoids writing one-off code or scripts to reach its goal. **The current release does not ship them yet.**
 - Provides an option to disable the built-in tools, to maximize savings on the AI's mental load and the fixed system prompt.
-- On Windows it additionally provides the `ops_bash` tool — the AI is far more fluent with bash than with pwsh. You can use the independent **bash 5.3.15** bundled with ops, or point the `ops_bash` tool at Git Bash.
+- On Windows it additionally provides the `ops_bash` tool — the AI is far more fluent with bash than with pwsh. Run `dsh-ops bash-runtime install` to acquire the verified optional Bash, or select an existing Git Bash through `bashPath`. Neither Bash nor PowerShell is an npm payload dependency. `dsh-ops upgrade-host-pwsh` previews a standard Windows PowerShell 7 installation; add `--yes` to execute it, then restart DSH. Custom host `pwshPath` settings remain unchanged.
 
 Plugin traits:
 
@@ -84,7 +84,7 @@ npx --yes dsh-ops@latest status --profile desktop
 npx --yes dsh-ops@latest uninstall --profile desktop
 ```
 
-Replace `desktop` with `web` or `tui` as needed. You can also uninstall from the marketplace, or run the official `dsh plugin --profile ... remove dsh-ops`. Binaries are managed as part of the profile's plugin dependencies; uninstalling removes the dependency reference without deleting the system shell, copies in other profiles, or the package manager's shared cache.
+Replace `desktop` with `web` or `tui` as needed. You can also uninstall from the marketplace, or run the official `dsh plugin --profile ... remove dsh-ops`. Profile uninstall removes plugin dependency references. Remove separately downloaded Bash with `dsh-ops bash-runtime remove --yes`; this does not delete the system shell, copies in other profiles, or the package manager's shared cache.
 
 Old files explicitly provisioned by earlier versions under `<DSH_HOME>/dsh-ops/` (provisioned shells, and the FastCtx runtime earlier versions could provision) need separate cleanup: `npx --yes dsh-ops@latest uninstall --yes`. The `~/.fastctx/` state left by the removed background component is not deleted by default; add `--purge-fastctx` when needed.
 
@@ -104,7 +104,7 @@ Enable the `dsh-ops/tui` row in dsh-TUI and restart to add the OPS sidebar witho
 
 Plugin source is distributed under **`MIT AND Apache-2.0`**: everything outside `licenses/fastctx/` is MIT; FastCtx is Apache-2.0. See [NOTICE](NOTICE), `licenses/fastctx/LICENSE-APACHE`, and `licenses/fastctx/NOTICE`.
 
-The separate Windows payload packages are distributed under their upstream components' licenses: Git for Windows includes GPL and other licensed components, and PowerShell includes MIT and third-party components. Their original licenses, notices, and provenance records are kept with the payloads; the plugin's MIT license does not replace those. See [PROVENANCE.md](docs/PROVENANCE.md).
+Shell binaries are obtained separately from their upstream distributors, under their upstream licenses. Git for Windows includes GPL and other licensed components, and PowerShell includes MIT and third-party components. The plugin's MIT license does not replace those licenses. See [PROVENANCE.md](docs/PROVENANCE.md).
 
 ## Acknowledgements
 

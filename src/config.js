@@ -176,9 +176,8 @@ export function resolveConfig(rawConfig) {
     extraGuidance: optionalString(raw, 'extraGuidance') ?? '',
     bashPath: optionalString(raw, 'bashPath'),
     publishBashTool: optionalBoolean(raw, 'publishBashTool', true),
-    // There is deliberately no `pwshPath`: shell mounts a reversible runtime
-    // overlay from the plugin-owned pwsh resolution, never a stored profile
-    // edit. Ambient bash discovery requires explicit operator opt-in.
+    // There is deliberately no `pwshPath`: the host owns its PowerShell
+    // selection. Ambient bash discovery requires explicit operator opt-in.
     allowSystemShellFallback: optionalBoolean(raw, 'allowSystemShellFallback', false),
     // The file tools refuse credential locations by default. An operator who
     // needs one of them can turn the fence off for this row; the environment

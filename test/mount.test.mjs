@@ -240,12 +240,12 @@ await test('bash is scoped to authorized sessions, responds to mode changes, and
     await ctx.serial('session/event', full.session, { type: 'sandbox/mode' })
     await visible(ctx, full, [BASH_TOOL])
     if (process.platform === 'win32') {
-      const restrictedResult = await definition.execute({ command: 'echo no' }, { agent: full, signal: new AbortController().signal })
+      const restrictedResult = await definition.execute({ command: 'echo no', description: 'Verify the current scoped shell authority' }, { agent: full, signal: new AbortController().signal })
       assert.equal(restrictedResult.status, 'failed')
       assert.match(restrictedResult.error, /EXECUTOR_UNAVAILABLE/)
       assert.equal(restrictedResult.permission, undefined)
     } else {
-      const value = await definition.execute({ command: 'echo no' }, { agent: full, signal: new AbortController().signal })
+      const value = await definition.execute({ command: 'echo no', description: 'Verify the current scoped shell authority' }, { agent: full, signal: new AbortController().signal })
       assert.equal(value.sandbox.mode, 'read-only')
       assert.match(value.error, /fixture does not execute/)
     }

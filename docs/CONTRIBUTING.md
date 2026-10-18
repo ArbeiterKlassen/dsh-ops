@@ -65,7 +65,9 @@ be edited by hand. Package exports, component entries and tests continue to load
 Run `npm run build` after changing source or assets and before invoking a suite directly with
 `node test/run.mjs <filter>`. `npm test`, `npm run test:ptc` and `npm run verify` build first;
 `npm run typecheck` checks the compiler configuration and migrated TypeScript without emitting
-files. JavaScript type checking remains disabled during the migration.
+files. JavaScript type checking remains disabled during the migration. The shell execution handle,
+host contract, approvals, jobs, session executor and runtime manager use strict TypeScript; older
+resolver, IPC and mount modules remain JavaScript with typed boundaries while their migration is staged.
 
 For a local or Git-source installation, build and pack a checkout before installing it into DSH:
 
@@ -76,7 +78,7 @@ npm run build:ptc
 npm pack
 ```
 
-On Windows, also run `npm run build:bash-ipc` before packing. Install the resulting
+On Windows, first run `node bin/dsh-ops.mjs bash-runtime install`, then `npm run build:bash-ipc` before packing. Bash is not installed by npm. For an offline build, set `DSH_OPS_TEST_BASH` to the absolute pinned `bin/bash.exe`; the build/test helper verifies its digest. The gate acquires its own temporary fixture unless this variable is provided. Install the resulting
 `dsh-ops-<version>.tgz` with the DSH CLI for your target profile (see the README). `npm pack` runs
 the build through `prepack`, unless lifecycle scripts are disabled. An unbuilt Git checkout has
 no `lib/` and is not ready to load; there is no `prepare` hook. Keep development dependencies

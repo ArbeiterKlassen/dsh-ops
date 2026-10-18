@@ -6,10 +6,12 @@ import os from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { pinnedBashExecutable } from '../lib/shells/pinned.js'
 import { patchMsys, proxyDefinition } from '../lib/bash-pe.js'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 if(process.platform!=='win32'||process.arch!=='x64')throw Error('Build the Bash IPC proxies on Windows x64')
-const source=path.join(root,'node_modules/@dsh-ops/bash-win32-x64/usr/bin/msys-2.0.dll')
+const bash=pinnedBashExecutable({file:process.env.DSH_OPS_TEST_BASH})
+const source=path.resolve(path.dirname(bash),'../usr/bin/msys-2.0.dll')
 const {exports}=patchMsys(fs.readFileSync(source))
 const scratch=fs.mkdtempSync(path.join(os.tmpdir(),'ops-ipc-build-'))
 const destination=path.join(root,'runtime/win32-x64/bash-ipc')

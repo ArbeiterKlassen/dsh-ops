@@ -24,7 +24,7 @@ for (const id of ['dsh-ops-file', 'dsh-ops-shell']) {
 }
 for (const kind of ['bash', 'pwsh']) {
   const name = `@dsh-ops/${kind}-win32-x64`
-  if (pkg.optionalDependencies?.[name] !== '0.2.1') throw Error(`${name} must remain the pinned Windows-only optional dependency`)
+  if (pkg.optionalDependencies?.[name] || pkg.dependencies?.[name]) throw Error(`${name} must not be a package dependency; shell acquisition is an explicit operator action`)
 }
 if (pkg.scripts?.postinstall) throw Error('Release must not download shell payloads from postinstall')
 const runtimeDir = path.join(root, 'runtime')

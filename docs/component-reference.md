@@ -6,7 +6,7 @@ What each of the six components publishes, with parameters and permission requir
 
 | Row `name` | Description | Default | Published tools |
 | --- | --- | --- | --- |
-| `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
+| `dsh-ops/shell` | Prefer bash as the terminal, with host PowerShell for operations bash cannot cover | On | `ops_bash`; host `pwsh` keeps its own executor |
 | `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | `ops_read_many`; advanced tools load through discovery |
 | `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
 | `dsh-ops/panel` | Data capture, off at the switch: new conversations write `<cwd>/.dsh-ops/panel/<sessionId>.json` plus the viewer `panel.html` | Row on, `capture: false` | None; see the [configuration reference](configuration-reference.md) |
@@ -29,7 +29,7 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 | `ops_bash` | Preferred general bash command executor; `command` for short commands, `script_path` for long scripts | Confined in restricted modes; matched Windows x64 private IPC runtime |
 | `ops_batch` | Preflight and execute copy / move / remove with audit and recovery | See the PTC notes |
 | `ops_result` | Bounded result references: put, page, release | See the PTC notes |
-| Host `pwsh` | Windows-native operations using bundled PowerShell 7 | Host policy |
+| Host `pwsh` | Windows-native operations using the host-selected PowerShell | Host policy |
 
 ¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes; read-only rejects replacement, including its dry run; workspace-write permits writes under the workspace and this session's private temporary directory, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes. That preparation runs the package's own script as the current user before sandbox confinement applies, only in workspace-write, with `-ExecutionPolicy Bypass` (Group Policy still wins).
 
@@ -152,19 +152,26 @@ Bounded session-owned result references: PTC can put object rows; Native file to
 
 ## `dsh-ops/shell` — terminal and shells
 
-Routing: **toolkit → bash → PowerShell 7**.
+Routing: **toolkit → bash → host PowerShell**.
 
 - `ops_bash`: the preferred general command executor. Use `command` for short commands and `script_path` for long scripts.
+  Cancellation also stops pending sandbox preparation; a late preparation result cannot start the command. When cancellation races a timeout, the first cause is reported.
   Relative `workdir` paths (including `.`) resolve against the calling session's workspace, not the host process directory. Omitting `workdir` or passing a blank string uses that workspace; absolute paths remain absolute. Missing or non-directory targets are rejected before execution, with the resolved path in the error.
   On Windows, `\child` uses the session's drive; a drive-relative path such as `C:child` on a different drive must be written as an absolute path.
-- Host `pwsh`: Windows-native operations, using bundled PowerShell 7.
+- Host `pwsh`: Windows-native operations, using the host-selected PowerShell.
 
-"Prefer bash as the terminal" means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. When the shell component is on, the official configuration lifecycle temporarily sets the PowerShell 7 path for `pwsh-sandbox`; when off, it restores the executor's latest original configuration without writing profile configuration. Switching executor configuration does not cancel already-running host commands.
+`ops_bash` requires a non-empty `description` and keeps the host Bash fields and result kinds: `foreground`, `background`, or `promoted`. Its default timeout is 120 seconds and the cap is 600 seconds. When the host jobs service is available, `run_in_background: true` returns a job ID immediately; a foreground timeout promotes the same running job. Use the host `job_output` and `job_kill` tools to collect or stop it. Without host jobs, the background parameter is absent and a foreground timeout stops the command. Unknown arguments return a failed foreground value before execution. The compatible string `error` remains; `failure` adds stable code, effect state and retry guidance. Invalid arguments have no command effects and require input changes. After execution begins, timeouts, cancellation and nonzero exits report unknown effects and prohibit automatic replay until read-only inspection. If job admission fails after accepting its run hook, the queued starter is cancelled and no foreground retry occurs.
+
+`sandbox_permissions` plus `justification` can request a strictly wider mode through the host approval service. An allowed-once grant applies to that command only; rejection never executes it or changes the session mode. Authority is checked again after approval and sandbox preparation. Windows confinement reports the host provider’s actual enforcement (including `partial`); incompatible Bash runtimes fail closed.
+
+`script_path` (instead of `command`), `graceMs`, and `includeDiagnostics` remain explicit OPS compatibility extensions. They do not change the host command contract or its timeout limits.
+
+"Prefer bash as the terminal" means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. OPS never overlays the host PowerShell executor configuration. Use `dsh-ops upgrade-host-pwsh` to preview an explicit standard PowerShell 7 installation; `--yes` executes it. Restart DSH afterwards, and review any custom host `pwshPath` in host settings. Existing running commands and old provisioned copies are not removed.
 
 The routing table the model sees is rendered by the plugin from what it actually published:
 
 ```
-# Shell routing: bash → PowerShell 7
+# Shell routing: bash → host PowerShell
 
 | Task | Tool |
 | --- | --- |
@@ -174,7 +181,7 @@ The routing table the model sees is rendered by the plugin from what it actually
 | Find paths | ops_glob |
 | Batch replacement; use host edit for precise edits | ops_replace |
 | General commands / builds / git / pipelines / scripts — preferred command executor | ops_bash |
-| Windows-native cmdlets / registry / services only | pwsh (bundled PowerShell 7 via host) |
+| Windows-native cmdlets / registry / services only | pwsh (host PowerShell) |
 ```
 
 ---
