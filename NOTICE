@@ -94,3 +94,9 @@ tarballs of earlier versions.
 
 FastCtx is developed and maintained at
 https://github.com/yc-duan/fastctx
+
+The native worker's DOCX reader uses pinned third-party Rust ZIP/XML libraries.
+Their exact versions and dependency rationale are recorded in docs/document-dependencies.md;
+original license notices (MIT choices for dual-licensed packages, plus zlib-rs's Zlib license)
+are reproduced in licenses/documents/THIRD-PARTY-NOTICES.txt. Existing upstream notices above
+remain unchanged. No third-party code is relicensed by the plugin's own MIT grant.

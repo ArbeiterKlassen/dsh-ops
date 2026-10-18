@@ -181,3 +181,43 @@ Malformed/changed input and physical scan limits retain prefix data and recovery
 continuation that would repeat the same gap. Native reference pages and PTC result pages preserve
 original table coverage separately from stored-row pagination. Shared admission, current authority,
 credential checks, cancellation and storage bindings apply unchanged.
+
+## Bounded DOCX main-body observations (15b/16)
+
+`doc_read` is a worker-only capability in this slice; later host/discovery integration remains
+separate. Arguments are `{path, offset?, limit?}`: path must be absolute after host resolution
+against current session cwd; offset is a 1-based paragraph index (1-100000, default 1), limit is
+1-1000 (default 200). Each item is `{block,type:"paragraph",text}`; table paragraphs additionally
+carry 1-based table/row/cell coordinates. Empty paragraphs are retained. Tabs, line breaks,
+Unicode, entity references and lexical spaces are preserved. Formatting and rendered layout,
+headers/footers, footnotes/endnotes, comments and package metadata are explicitly excluded in
+`scope:"main-body-paragraphs"` and `excludedContent`. A complete result describes that scope,
+not the full rendered document. There is no Office automation or external relationship fetch.
+
+The subset requires a standard internal word/document.xml main part, stored/deflated ZIP,
+strict UTF-8 or BOM-marked UTF-16 and recognized transitional/strict Word namespaces. Binary DOC,
+macros, encrypted/multi-disk/ZIP64 archives, nested tables, body drawings, fields, revisions,
+foreign/unknown body content and malformed structures are explicitly refused. Ambiguous ZIP footer
+signatures anywhere in the raw archive are conservatively refused before constructor recovery. A late content
+failure returns preceding complete paragraphs with `status:partial`, `scanComplete:false`, no
+full total/revision, and recovery guidance. XML never resolves DTD/custom/external entities.
+
+Bounds apply before library allocation/decompression: archive 32 MiB; central directory 1 MiB
+and 4096 entries; each OPC metadata part 1 MiB; main XML 8 MiB actual decoded bytes; one paragraph
+1 MiB UTF-8; 100000 observed paragraphs; XML depth 128, attributes 64 per element, namespace
+bindings 512 in scope; 30 seconds between parse events plus the transport watchdog. Each fixed
+XML part is CRC-checked after bounded decompression. ZIP local/central headers, uniqueness and
+nonoverlap are preflighted; nothing is extracted to disk. Selected pages alone are retained.
+
+`blocksObserved`, `scanComplete`, `pageComplete` and `complete` separate scan coverage, requested
+page coverage and remaining paragraphs. `total`, raw-file SHA-256 `revision` and `omitted` are
+available only after a stable complete scan; `nextOffset` is always 1-based. Paging rescans the
+same file, so callers must compare revisions before combining changing observations. It does
+not bypass physical scan limits. The existing spill sink captures requested full paragraphs
+before inline clipping, including long Unicode text. Reference pages retain scope/coverage and
+captureComplete; their own complete flag describes stored-record pagination. Use referenceRoot
+for paging. Reads repeat authorization/no-follow/credential checks and create no artifacts in
+read-only sessions; transport or cache failures never imply a business mutation.
+
+Exact dependency versions, release dates, rationale and original notices are recorded in
+[document-dependencies.md](document-dependencies.md).
