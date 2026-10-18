@@ -1,12 +1,16 @@
 name: Cross-platform validation
 on:
-  # A merge to `main` must validate itself. Without this, `main` was only ever checked when someone
+  # A merge must validate itself. Without this, a branch was only ever checked when someone
   # remembered to dispatch the workflow by hand — which is how a stale number shipped in #134.
+  # `0.3.2` is this cycle's release branch: what lands there is what ships, so it validates on
+  # push exactly like `main`.
   push:
-    branches: [main]
-  # And a pull request has to show its result before it is merged, not after.
+    branches: [main, 0.3.2]
+  # And a pull request has to show its result before it is merged, not after. GitHub reads this
+  # file from the pull request's own head, so listing the release branch here is what makes a
+  # pull request against `0.3.2` run the gate at all.
   pull_request:
-    branches: [main]
+    branches: [main, 0.3.2]
   # A merge queue builds the queued commits before they reach `main`, and it only accepts a group
   # whose required checks passed there. Without this trigger the workflow simply never runs for a
   # queued group, so enabling a merge queue would silently un-gate every merge.
