@@ -431,6 +431,7 @@ await test('main: a sealed A/A sweep exits 0 with the measured floor; a broken o
       tasksDir: tasks,
       runsDir,
       runSession: scripted.runSession,
+      resolveEntry: () => ENTRY,
       installSignals: false,
       now: NOW,
       seal: (context) => ({ path: path.join(context.dirs.base, '..', 'run.json') }),
@@ -447,6 +448,8 @@ await test('main: a sealed A/A sweep exits 0 with the measured floor; a broken o
       tasksDir: tasks,
       runsDir,
       runSession: broken.runSession,
+      resolveEntry: () => ENTRY,
+
       installSignals: false,
       now: NOW,
       seal: () => ({ path: 'run.json' }),
@@ -467,6 +470,7 @@ await test('main: Ctrl-C during a session stops the sweep, reports it, and exits
       tasksDir: tasks,
       runsDir: path.join(root, 'runs'),
       runSession: scripted.runSession,
+      resolveEntry: () => ENTRY,
       interrupt,
       installSignals: false,
       now: NOW,
@@ -487,6 +491,7 @@ await test('main --no-seal runs anyway and says out loud that no run.json was wr
       tasksDir: tasksDir(root, 1),
       runsDir: path.join(root, 'runs'),
       runSession: scripted.runSession,
+      resolveEntry: () => ENTRY,
       installSignals: false,
       now: NOW,
     })
