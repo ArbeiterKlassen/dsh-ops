@@ -26,6 +26,14 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Add typed Outcome, search coverage and result-reference contracts plus explicit error/retry
   policies for subsequent adapter slices. Incomplete searches cannot claim a known total.
 - Pin Node 22 declarations and check valid/invalid contracts in the regular test runner.
+
+### Report search coverage and validate continuation state (#261)
+
+- Search reports distinguish scan coverage from page delivery, count skip reasons, and omit full
+  totals after unreadable, encoding, size or execution-budget gaps. Bounded rescan continuations
+  reject changed queries, authority and observed filesystem state; incomplete traversals require
+  a narrower fresh query. Search retains physical LF accounting and bounded output prefixes.
+
 ### Version the one-shot worker request protocol (#261)
 
 - Send strict v1 requests with per-call IDs, component provenance, and enforced deadline/output
