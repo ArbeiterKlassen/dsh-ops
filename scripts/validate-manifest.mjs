@@ -20,13 +20,13 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 import {
-  FILE_TOOLS,
   IN_PROCESS_TOOLS,
   TOOLING_SECTION,
   TOOL_PREFIX,
   publicToolName,
   renderToolingPolicy,
 } from '../lib/policy.js'
+import { NATIVE_FILE_TOOLS } from '../lib/capabilities/registry.js'
 import { resolvePtcConfig } from '../lib/ptc/index.js'
 import { resolveTuiConfig } from '../lib/components/tui/index.js'
 import { resolvePanelConfig } from '../lib/components/panel/index.js'
@@ -256,10 +256,10 @@ if (hostedNamespace === undefined) {
   check(false, 'contributes.x-tool-namespaces declares the hosted tool namespace')
 } else {
   const declared = [...hostedNamespace.tools]
-  const expected = [...FILE_TOOLS]
+  const expected = [...NATIVE_FILE_TOOLS]
   check(
     declared.length === expected.length && expected.every((toolName) => declared.includes(toolName)),
-    'the native file namespace matches lib/file/contract.js',
+    'the native file namespace matches catalogue Native file projections',
     `manifest ${declared.join(',')} vs contract ${expected.join(',')}`,
   )
   check(

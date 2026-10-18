@@ -1,6 +1,9 @@
 import { WORKER_TIMEOUT_MS } from '../worker-protocol.js'
 import { publicToolName } from '../policy.js'
-import { definition, FILE_TOOLS } from './contract.js'
+import { definition } from './contract.js'
+import { NATIVE_FILE_TOOLS } from '../capabilities/registry.js'
+import { resultDefinition, invokeResult } from './result.js'
+import { registerResultProvider } from './result-provider.js'
 import { safeDisposeAll } from '../teardown.js'
 import { invoke, failure } from './worker.js'
 
@@ -21,10 +24,17 @@ export class NativeFileTools {
       if (this.config.required) throw new Error('Native file worker path is unavailable.')
       return []
     }
-    for (const rawName of FILE_TOOLS) {
-      this.disposers.push(this.ctx.tools.register(definition(rawName, (args, exec) => this.call(rawName, args, exec))))
+    const probes = []
+    let pager
+    for (const rawName of NATIVE_FILE_TOOLS) {
+      const execute = (args, exec) => this.call(rawName, args, exec)
+      const tool = rawName === 'result' ? resultDefinition(execute) : definition(rawName, execute)
+      if (rawName === 'result') pager = tool
+      else probes.push(tool)
+      if (rawName !== 'result') this.disposers.push(this.ctx.tools.register(tool))
     }
-    return FILE_TOOLS.map(publicToolName)
+    if (pager) this.unregisterProvider = await registerResultProvider(this.ctx, pager, probes, () => this.ctx.tools.register(pager))
+    return NATIVE_FILE_TOOLS.map(publicToolName)
   }
 
   async call(tool, args, exec) {
@@ -35,7 +45,9 @@ export class NativeFileTools {
     else exec?.signal?.addEventListener?.('abort', abort, { once: true })
     const timer = setTimeout(() => controller.abort(new Error('Native file call timed out')), Math.min(this.config.toolCallTimeoutMs ?? WORKER_TIMEOUT_MS, WORKER_TIMEOUT_MS))
     timer.unref?.()
-    const work = invoke(this.ctx, this.file, tool, args, exec, controller.signal, this.config)
+    const work = tool === 'result'
+      ? invokeResult(this.ctx, this.file, args, exec, controller.signal, this.config)
+      : invoke(this.ctx, this.file, tool, args, exec, controller.signal, this.config)
     this.active.set(controller, work)
     try { return await work }
     finally {
@@ -47,6 +59,7 @@ export class NativeFileTools {
 
   async stop() {
     this.stopped = true
+    safeDisposeAll([this.unregisterProvider].filter(Boolean), error => this.report('dsh-ops: Native pager teardown failed: ' + error, 'warn'), 'result provider')
     for (const controller of this.active.keys()) controller.abort(new Error('Native file component unloaded'))
     await Promise.allSettled(this.active.values())
     // Isolate each teardown: one throwing worker registration must not strand the rest.

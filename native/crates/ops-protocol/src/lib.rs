@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+pub mod capture;
 pub mod envelope;
 pub mod search;
 pub mod storage;
@@ -152,6 +153,10 @@ pub type Result<T> = std::result::Result<T, Failure>;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
+    #[serde(skip)]
+    pub output_sink: Option<std::rc::Rc<capture::OutputSink>>,
+    #[serde(skip)]
+    pub output_budget: usize,
     /// Trusted envelope metadata; never accepted from the tool argument/request data plane.
     #[serde(skip)]
     pub storage: Option<storage::StorageContext>,

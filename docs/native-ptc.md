@@ -63,7 +63,7 @@ The session must already use DSH's **PTC-only** presentation. The component does
 not force presentation, replace the registry, or create a REPL. It recognizes the
 host's public prompt assembly (`tools:ptc-only` section plus the reserved-only wire
 schema), not private `modeFor`, run_code existence alone or a guessed session key.
-Standard/native and hybrid/both scopes expose neither tool nor extra prompt.
+This PTC row adds no batch/put capability or extra prompt in Native/both scopes. The file row independently supplies Native ops_result page/release; see [result budgets](result-budgets.md#native-and-ptc-reference-pages). 文件组件独立提供 Native 引用分页/释放，详见[结果预算](结果预算.md#native-与-ptc-引用分页)。
 The host generates SDK declarations from the same tool schemas; no duplicate guide
 or dynamic plan IDs are added to the system prefix.
 

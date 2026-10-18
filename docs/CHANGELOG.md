@@ -7,6 +7,15 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Page stored references from Native file tools (#261, 6d/16)
+
+- Add a Native page/release projection of the shared ops_result capability, independently owned by
+  the file row. PTC retains put and typed data; Native descendants of PTC agents keep page-only schemas.
+- Bind paging to current session cwd (or explicit original root), authority and visible producer.
+  Preserve source/capture facts and tagged JSON chunks; bounded display never advances past omitted rows.
+- 新增文件组件独立提供的 Native 引用分页/释放能力；PTC 保留 put。分别报告页面、原始操作与捕获完整性，
+  保持会话、权限与生产工具可见性检查，显示截断时要求原偏移重试。
+
 ### Bound shared calls and expire session references (#261)
 
 - Share two active/eight waiting worker slots across Native/PTC, recheck authority after admission,
@@ -21,6 +30,17 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Add edit_many as a single-file atomic CAS edit operation with short receipts. Bound escaped
   read output using actual metadata bytes; an incomplete line retains its offset and hex guidance.
 - 新增多文件范围读取与单文件原子多段编辑；逐文件报告版本、错误及未读范围，保持权限边界与短回执。
+### Spill oversized canonical output into bounded session snapshots (#261, 6b/16)
+
+- Preserve a useful head and original operation root, execution facts and mutation effects while
+  storing requested file/search rows as bounded, losslessly reconstructable tagged JSON records.
+- Keep original scan coverage separate from stored-page and capture completeness; quota rollback
+  never leaves partial logical JSON. Cache errors remain separate from business effects.
+- Authorize trusted cache roots independently of business write roots, preserving no-follow,
+  credential and readonly boundaries; reference pages never create nested references.
+- 大结果保留有界开头与原始根目录，并以可无损重建的分块引用缓存请求范围；区分扫描、捕获和
+  分页完整性，缓存失败不覆盖业务副作用，缓存专用授权不扩大业务写入范围。
+
 ### Add private session snapshot references (#261, 6a/16)
 
 - Add trusted-envelope `ref://session/tool/uuid` storage with 10 MiB snapshot and 100 MiB session
