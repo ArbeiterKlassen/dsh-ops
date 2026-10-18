@@ -12,6 +12,12 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Replace repeated line bodies only when the exact successful prior read is present in the latest completed ordinary model request and every file is freshly revalidated. Keep revisions, coverage, paging notices and canonical values. Compaction, redaction, authority changes and uncertain evidence restore full output.
 - Native 单文件和多文件重读仅在当前模型请求包含此前准确正文且每个文件重新验证后省略重复行；保留版本、覆盖范围、续页提示和规范数据，压缩、脱敏、权限变化或证据不足时恢复全文。
 
+### Keep Native startup to the bounded multi-file reader (#261, 9/16)
+
+- Publish `ops_read_many` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
+- Measure compact file/discovery schemas at 241 tokens and the current full surface with Bash at 610 tokens; the full 400-token BM-03 gate remains unresolved pending the redesigned shell contract.
+- Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；完整工具面含 Bash 仍超过 400-token 门禁，保留真实测量而不宣称通过。
+
 ### Expose canonical PTC outcomes and generated declarations (#261, 7/16)
 
 - Wrap PTC canonical data in discriminated completed/partial/failure outcomes with stable effects

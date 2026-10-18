@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "dsh-ops-file",
-    "description": "Bounded Native file reads, edits, search and owned result-reference paging."
+    "description": "Bounded Native multi-file reading; single-file/hex and advanced operations load through discovery."
   }
 }

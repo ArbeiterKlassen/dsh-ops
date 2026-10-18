@@ -72,6 +72,7 @@ export async function fixture(run) {
           await ctx.serial('agent/created', { agent: owner })
           admitted.add(owner)
         }
+        await ctx.waterfall('agent/pre-step', { agent: owner, signal: new AbortController().signal }, async () => {})
         const assistant = createAssistantMessage({ source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'tool-call', id: callId, name, arguments: JSON.stringify(args) }] })
         if (commit && owner.session.append) owner.session.append('assistant/message', { turn: 1, step: sequence, message: assistant, stream: [] }, { surfaceOp: 'append' })
         const result = await ctx.get('tools').execute({ agent: owner, callId, name, arguments: args, signal: new AbortController().signal, ...(parent ? { parent } : {}) })

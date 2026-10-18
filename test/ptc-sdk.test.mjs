@@ -10,7 +10,7 @@ import { assert, test, report, withTempDir, waitFor } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
 import { WORKER, requireWorker } from './lib/boundary.mjs'
 import * as ptc from '../lib/ptc/index.js'
-import { applyComponent } from '../lib/index.js'
+import { mountNativeCatalogue } from './lib/native-catalogue.mjs'
 import { resolvePtcConfig } from '../lib/config.js'
 import { sdkDefinition, requestedApis } from '../lib/ptc/sdk.js'
 requireWorker('ptc-sdk')
@@ -18,13 +18,14 @@ let serial = 0
 const visible = (ctx, agent) => ctx.get('tools').schemas(agent).map(tool => tool.name).filter(name => name.startsWith('ops_')).sort()
 async function setup(root, { native = false, config = {}, real = false } = {}) {
   const { ctx } = await bootHost()
+  const agents = []; ctx.provide('agents', { list: () => agents })
   await ctx.plugin(Subprocess); await ctx.plugin(Sandbox); await ctx.plugin(FileSystem)
   await ctx.plugin(inner => {
     inner.provide('sandboxPolicy', { resolve: ({ session } = {}) => ({ mode: session?.mode ?? 'workspace-write', workspaceRoot: root, sessionId: session?.id }) })
     if (!real) inner.provide('ptcRuntime', { language: 'typescript' })
   })
   if (real) await ctx.plugin(NodePtc, {})
-  const mountFile = target => target.plugin({ apply(inner) { applyComponent(inner, { binaryPath: WORKER, required: true }, 'file') } })
+  const mountFile = target => mountNativeCatalogue(target, { binaryPath: WORKER, required: true })
   if (native) await mountFile(ctx)
   const component = await ctx.plugin(ptc, { binaryPath: WORKER, required: true, ...config })
   async function agent(mode = 'ptc', parent) {
@@ -32,6 +33,7 @@ async function setup(root, { native = false, config = {}, real = false } = {}) {
     const value = { id, session: { id, mode: 'workspace-write', header: { cwd: root }, append() {}, read() { return [] } } }
     value.ctx = createScope(parent?.ctx ?? ctx, value, parent ? { parent } : undefined).ctx
     await value.ctx.plugin({ inject: ['tools'], apply(inner) { value.lift = inner.tools.presentAs(mode) } })
+    agents.push(value)
     await ctx.serial('agent/created', { agent: value })
     return value
   }
@@ -96,11 +98,12 @@ await test('Native/PTC child scopes preserve projections and same-layer file row
     try {
       const parent = await agent(), child = await agent('native', parent), both = await agent('both'), independent = await agent()
       assert.deepEqual(visible(ctx, parent), ['ops_inspect_local_file', 'ops_result', 'ops_sdk'])
-      for (const scope of [child, both]) { assert.ok(visible(ctx, scope).includes('ops_grep')); assert.equal(visible(ctx, scope).includes('ops_sdk'), false) }
+      for (const scope of [child, both]) { await waitFor(() => visible(ctx, scope).includes('ops_grep'), { timeoutMs: 5000, what: 'configured Native advanced tools' }); assert.equal(visible(ctx, scope).includes('ops_sdk'), false) }
       assert.equal(ctx.get('tools').get('ops_result', child).parameters.properties.action.enum.includes('put'), false)
       const previousNative = ctx.get('tools').get('ops_stat', child)
       const scopedFile = await mountFile(parent.ctx)
       await waitFor(() => visible(ctx, parent).length === 3 && ctx.get('tools').get('ops_stat', child) !== previousNative, { timeoutMs: 5000, what: 'own-layer handoff' })
+      await step(ctx, parent) // A real provider call begins after this public reconciliation boundary.
       const loaded = await direct(ctx, parent, 'ops_sdk', { tools: ['grep'] }); assert.equal(loaded.status, 'completed', JSON.stringify(loaded))
       await step(ctx, parent); assert.ok(visible(ctx, parent).includes('ops_grep'))
       assert.equal(visible(ctx, independent).includes('ops_grep'), false)
@@ -110,7 +113,7 @@ await test('Native/PTC child scopes preserve projections and same-layer file row
       const assembled = await ctx.get('systemPrompt').assemble({ scope: parent })
       assert.equal(assembled.tools.some(tool => tool.name === 'ops_sdk'), false)
       assert.equal((await retained.execute({ path: root, pattern: 'x' }, { agent: parent, signal: new AbortController().signal })).error.code, 'POLICY_DENIED')
-      await component.dispose(); assert.ok(visible(ctx, parent).includes('ops_grep')); assert.equal(visible(ctx, child).includes('ops_sdk'), false)
+      await component.dispose(); await waitFor(() => visible(ctx, parent).includes('ops_grep'), { timeoutMs: 5000, what: 'Native discovery restoration after PTC unload' }); assert.equal(visible(ctx, child).includes('ops_sdk'), false)
       await scopedFile.dispose(); assert.equal(Object.hasOwn(ctx.get('tools'), 'register'), false)
     } finally { await shutdown(ctx) }
   })
@@ -149,11 +152,11 @@ await test('Native child restoration honors external ancestor masks and late par
       await waitFor(() => visible(ctx, child).length === 0, { timeoutMs: 5000, what: 'late provider disposal' })
       await mountFile(ctx)
       await waitFor(() => visible(ctx, child).includes('ops_grep'), { timeoutMs: 5000, what: 'global Native provider' })
-      const mask = await parent.ctx.plugin({ inject: ['tools'], apply(scoped) { scoped.tools.restrict({ deny: ['ops_grep'] }) } })
-      await waitFor(() => !visible(ctx, child).includes('ops_grep'), { timeoutMs: 5000, what: 'external ancestor restriction' })
+      const mask = await parent.ctx.plugin({ inject: ['tools'], apply(scoped) { scoped.tools.restrict({ deny: ['ops_read_many'] }) } })
+      await waitFor(() => !visible(ctx, child).includes('ops_read_many'), { timeoutMs: 5000, what: 'external ancestor restriction' })
       assert.ok(visible(ctx, child).includes('ops_stat'))
       await mask.dispose()
-      await waitFor(() => visible(ctx, child).includes('ops_grep'), { timeoutMs: 5000, what: 'external restriction release' })
+      await waitFor(() => visible(ctx, child).includes('ops_read_many'), { timeoutMs: 5000, what: 'external restriction release' })
     } finally { await shutdown(ctx) }
   })
 })
