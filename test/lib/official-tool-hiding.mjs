@@ -6,6 +6,26 @@ import { FILE_TOOLS, publicToolName } from '../../lib/policy.js'
 import { assert, test, waitFor } from './harness.mjs'
 import { bootHost, registryHasOwnRegister, registryNames, scopedToolNames, shutdown } from './host.mjs'
 
+/**
+ * The exact 48 tools a stock desktop session reported in #207 as "no registered
+ * equivalent OPS capability". It is the deterministic input for the regression:
+ * `write` and `edit` are inside the file face, the other 46 are host
+ * capabilities the component never takes over. Frozen so a future edit cannot
+ * quietly change the fixture the issue was filed against.
+ */
+export const STOCK_UNSUPPORTED_48 = Object.freeze([
+  'terminal_open', 'terminal_send', 'terminal_read', 'terminal_signal', 'terminal_close', 'terminal_list',
+  'session_search', 'session_event_search', 'session_trace', 'session_event_trace', 'session_event_read',
+  'list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource',
+  'ralph', 'load_workspace_dependencies', 'write', 'edit',
+  'job_output', 'job_list', 'job_kill', 'skill', 'web_search', 'web_fetch', 'present', 'read_image',
+  'send_message', 'interrupt_agent', 'list_agents', 'workflow', 'todo_write',
+  'get_goal', 'create_goal', 'update_goal', 'ask_user_question', 'exit_plan_mode',
+  'subagent_fork', 'schedule_create', 'schedule_list', 'schedule_delete', 'schedule_update',
+  'subagent', 'spawn_teammate', 'wait_agent',
+  'team_task_create', 'team_task_list', 'team_task_get', 'team_task_update',
+])
+
 const tool = name => ({ name, description: `fixture ${name}`, parameters: { type: 'object', properties: {} },
   output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] }, execute: async () => `ran:${name}` })
 async function mint(ctx, id, parent) {
@@ -21,6 +41,15 @@ async function mount(ctx, config = {}) {
   // Injected fibers activate after the owning component's mount resolves.
   await new Promise(resolve => setImmediate(resolve))
   return fiber
+}
+/** Capture host warnings without touching the registry or the real logger sink. */
+function warningsFrom(ctx) {
+  const warnings = []
+  ctx.logger.exporter({
+    levels: { default: 4 },
+    export(message) { if (message.type === 'warn') warnings.push(message.args.join(' ')) },
+  })
+  return warnings
 }
 function replacements(ctx) { return FILE_TOOLS.map(name => ctx.tools.register(tool(publicToolName(name)))) }
 const assemble = (ctx, agent) => ctx.get('systemPrompt').assemble({ scope: agent })
@@ -61,21 +90,76 @@ export async function officialToolHidingMountChecks() {
       assert.ok((await assemble(ctx, current)).tools.some(t => t.name === 'read'))
     } finally { await shutdown(ctx) }
   })
-  await test('missing equivalence fails prompt assembly and monotonic execution without partial hiding', async () => {
+  await test('the reported 48-tool stock surface boots: out-of-scope tools stay visible with one readable warning', async () => {
     const { ctx } = await bootHost()
     try {
       replacements(ctx)
-      for (const name of ['read', 'write', 'web_search', 'subagent', 'ask_user_question', 'plan', 'foreign', 'ops_write']) ctx.tools.register(tool(name))
+      for (const name of ['read', 'glob', 'grep', ...STOCK_UNSUPPORTED_48]) ctx.tools.register(tool(name))
+      const warnings = warningsFrom(ctx)
       await mount(ctx)
-      const agent = await mint(ctx, 'incomplete-takeover')
-      await assert.rejects(() => assemble(ctx, agent), /no registered equivalent OPS capability:.*write.*web_search.*subagent.*ask_user_question.*plan/)
-      for (const name of ['read', 'write', 'web_search']) assert.ok(scopedToolNames(ctx, agent).includes(name))
-      // An extensible listener cannot turn the final guard back into allow.
-      ctx.on('tools/pre-execute', () => ({ kind: 'allow' }), { prepend: true })
-      const result = await execute(ctx, agent, 'foreign')
-      assert.equal(result.isError, true)
-      assert.match(result.content[0].text, /EXECUTOR_UNAVAILABLE/)
-      assert.doesNotMatch(result.content[0].text, /POLICY_DENIED/)
+      const agent = await mint(ctx, 'stock-desktop-48')
+      // The #207 failure was readiness: this assembly must resolve, not reject.
+      const assembly = await assemble(ctx, agent)
+      const names = assembly.tools.map(schema => schema.name)
+      for (const name of STOCK_UNSUPPORTED_48) assert.ok(names.includes(name), `${name} must stay visible`)
+      for (const name of ['read', 'glob', 'grep']) assert.equal(names.includes(name), false, `${name} is replaced and hidden`)
+      assert.deepEqual([...scopedToolNames(ctx, agent)].sort(), [...names].sort())
+      assert.equal((await execute(ctx, agent, 'subagent')).isError, false)
+      assert.equal((await execute(ctx, agent, 'team_task_create')).isError, false)
+      assert.equal((await execute(ctx, agent, 'write')).isError, false)
+      assert.equal((await execute(ctx, agent, 'read')).isError, true)
+
+      const hidingWarnings = warnings.filter(message => message.includes('dsh-ops hide-official'))
+      assert.equal(hidingWarnings.length, 1, `one aggregated warning: ${JSON.stringify(hidingWarnings)}`)
+      const [warning] = hidingWarnings
+      assert.doesNotMatch(warning, /READINESS_BLOCKED/)
+      assert.match(warning, /46 official tools stay visible because they are outside the dsh-ops takeover scope \(shell\/file\/ptc\)/)
+      for (const name of ['subagent', 'team_task_create', 'terminal_send', 'session_search', 'mcp', 'schedule_create', 'web_search', 'workflow']) {
+        assert.ok(warning.includes(name), `the warning names ${name}`)
+      }
+      assert.match(warning, /2 in-scope official tools stay visible because no registered OPS equivalent exists: edit, write/)
+    } finally { await shutdown(ctx) }
+  })
+  await test('in-scope tools without an equivalence claim stay visible and warn instead of blocking assembly', async () => {
+    const { ctx } = await bootHost()
+    try {
+      replacements(ctx)
+      for (const name of ['read', 'write', 'str_replace_editor', 'web_search', 'subagent', 'ask_user_question', 'plan', 'foreign']) ctx.tools.register(tool(name))
+      const warnings = warningsFrom(ctx)
+      await mount(ctx)
+      const agent = await mint(ctx, 'mixed-surface')
+      const assembly = await assemble(ctx, agent)
+      const names = assembly.tools.map(schema => schema.name)
+      assert.equal(names.includes('read'), false)
+      for (const name of ['write', 'str_replace_editor', 'web_search', 'subagent', 'ask_user_question', 'plan']) {
+        assert.ok(names.includes(name), `${name} stays visible`)
+        assert.equal((await execute(ctx, agent, name)).isError, false, `${name} stays dispatchable`)
+      }
+      const warning = warnings.find(message => message.includes('dsh-ops hide-official'))
+      assert.match(warning, /2 in-scope official tools stay visible.*str_replace_editor, write/)
+      assert.match(warning, /outside the dsh-ops takeover scope \(shell\/file\/ptc\).*ask_user_question, plan, subagent, web_search/)
+    } finally { await shutdown(ctx) }
+  })
+  await test('an explicit hide request for an in-scope tool without equivalence fails closed with an executable way out', async () => {
+    const { ctx } = await bootHost()
+    try {
+      replacements(ctx)
+      for (const name of ['read', 'write', 'web_search', 'foreign']) ctx.tools.register(tool(name))
+      const warnings = warningsFrom(ctx)
+      await mount(ctx, { additionalOfficialTools: ['write', 'web_search'] })
+      const agent = await mint(ctx, 'explicit-request')
+      let message
+      await assert.rejects(() => assemble(ctx, agent), error => { message = error.message; return true })
+      assert.match(message, /HIDING_REQUEST_UNSATISFIABLE/)
+      assert.match(message, /no registered OPS equivalent exists for write/)
+      assert.match(message, /remove "write" from additionalOfficialTools/)
+      assert.match(message, /disable the dsh-ops-hide-official row/)
+      // Fail-closed means no partial mask: the replaced tool is visible again.
+      assert.ok(scopedToolNames(ctx, agent).includes('read'))
+      assert.equal((await execute(ctx, agent, 'foreign')).isError, true)
+      const warning = warnings.find(text => text.includes('dsh-ops hide-official'))
+      assert.match(warning, /explicit additionalOfficialTools request for web_search is ignored/)
+      assert.doesNotMatch(warning, /write/)
     } finally { await shutdown(ctx) }
   })
   await test('replacement withdrawal restores official tools but blocks the turn until readiness returns', async () => {
@@ -92,9 +176,11 @@ export async function officialToolHidingMountChecks() {
       ctx.tools.register(tool(publicToolName(FILE_TOOLS[0])))
       await waitFor(() => !scopedToolNames(ctx, agent).includes('read'))
       await assemble(ctx, agent)
+      // In-scope write has no reviewed replacement: it stays visible, not fatal.
       const disposeWrite = ctx.tools.register(tool('write'))
-      await assert.rejects(() => assemble(ctx, agent), /no registered equivalent OPS capability: write/)
-      assert.ok(scopedToolNames(ctx, agent).includes('read'))
+      const assembly = await assemble(ctx, agent)
+      assert.ok(assembly.tools.some(schema => schema.name === 'write'))
+      assert.equal(scopedToolNames(ctx, agent).includes('read'), false)
       disposeWrite()
       await assemble(ctx, agent)
     } finally { await shutdown(ctx) }
@@ -111,46 +197,54 @@ export async function officialToolHidingMountChecks() {
       assert.ok(scopedToolNames(ctx, agent).includes('read'))
     } finally { await shutdown(ctx) }
   })
-  await test('run_code is a blocked unhideable official transport, not a platform exception', async () => {
+  await test('the PTC transport run_code is in scope without a replacement: kept visible and warned, session starts', async () => {
     const { ctx } = await bootHost()
     try {
       replacements(ctx)
       ctx.provide('ptcRuntime', { language: 'typescript' })
+      const warnings = warningsFrom(ctx)
       await mount(ctx)
       const agent = await mint(ctx, 'transport-not-exempt')
       const lift = agent.ctx.tools.presentAs('both')
-      await assert.rejects(() => assemble(ctx, agent), /unhideable official transport run_code/)
-      assert.equal((await execute(ctx, agent, publicToolName('glob'))).isError, true)
+      const assembly = await assemble(ctx, agent)
+      assert.ok(assembly.tools.some(schema => schema.name === 'run_code'))
+      assert.match(warnings.find(message => message.includes('dsh-ops hide-official')), /in-scope official tool stays visible.*run_code/)
+      assert.equal((await execute(ctx, agent, publicToolName('glob'))).isError, false)
       lift()
       await assemble(ctx, agent)
     } finally { await shutdown(ctx) }
   })
-  await test('official dynamic prefixes and configured aliases fail readiness without hiding third-party tools', async () => {
+  await test('configured aliases and dynamic prefixes stay visible outside the takeover scope', async () => {
     const { ctx } = await bootHost()
     try {
       replacements(ctx)
       for (const name of ['custom_delegate', 'stagehand_tabs', 'cua_driver_native__click', 'foreign']) ctx.tools.register(tool(name))
+      const warnings = warningsFrom(ctx)
       await mount(ctx, { additionalOfficialTools: ['custom_delegate'] })
       const agent = await mint(ctx, 'official-alias')
-      await assert.rejects(() => assemble(ctx, agent), /custom_delegate.*stagehand_tabs.*cua_driver_native__click/)
-      assert.ok(scopedToolNames(ctx, agent).includes('foreign'))
+      const assembly = await assemble(ctx, agent)
+      const names = assembly.tools.map(schema => schema.name)
+      for (const name of ['custom_delegate', 'stagehand_tabs', 'cua_driver_native__click', 'foreign']) assert.ok(names.includes(name))
+      const warning = warnings.find(message => message.includes('dsh-ops hide-official'))
+      assert.match(warning, /outside the dsh-ops takeover scope/)
+      assert.match(warning, /explicit additionalOfficialTools request for custom_delegate is ignored/)
     } finally { await shutdown(ctx) }
   })
-  await test('an unrelated root with local write does not stop a healthy root', async () => {
+  await test('a root that loses its OPS surface does not stop a healthy root', async () => {
     const { ctx } = await bootHost()
     try {
       replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
       await mount(ctx)
       const a = await mint(ctx, 'independent-a'), b = await mint(ctx, 'independent-b')
       await assemble(ctx, a); await assemble(ctx, b)
-      const liftWrite = b.ctx.tools.register(tool('write'))
-      await assert.rejects(() => assemble(ctx, b), /no registered equivalent OPS capability: write/)
+      const lift = b.ctx.tools.restrict({ deny: [publicToolName('inspect_local_file')] })
+      await assert.rejects(() => assemble(ctx, b), /missing OPS surface:.*ops_inspect_local_file/)
       assert.equal((await execute(ctx, b, 'foreign')).isError, true)
       assert.ok(scopedToolNames(ctx, b).includes('read'), 'failed root has no partial mask')
       assert.equal(scopedToolNames(ctx, a).includes('read'), false)
       await assemble(ctx, a)
       assert.equal((await execute(ctx, a, 'foreign')).isError, false)
-      liftWrite()
+      lift()
       await assemble(ctx, b)
       assert.equal(scopedToolNames(ctx, b).includes('read'), false)
     } finally { await shutdown(ctx) }
@@ -208,7 +302,7 @@ export async function officialToolHidingMountChecks() {
       assert.equal(decision.info.code, 'READINESS_BLOCKED')
     } finally { await shutdown(ctx) }
   })
-  await test('assembled official schema injection is rejected even when registry masking succeeded', async () => {
+  await test('assembled injection of a hidden tool is rejected even when registry masking succeeded', async () => {
     const { ctx } = await bootHost()
     try {
       replacements(ctx); ctx.tools.register(tool('read'))
@@ -216,12 +310,12 @@ export async function officialToolHidingMountChecks() {
       const agent = await mint(ctx, 'assembly-verification')
       ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
         const result = await next()
-        result.tools.push({ name: 'web_search', description: 'injected', parameters: {} })
+        result.tools.push({ name: 'read', description: 'injected', parameters: {} })
         return result
       })
-      await assert.rejects(() => assemble(ctx, agent), /assembled surface still contains official tools: web_search/)
+      await assert.rejects(() => assemble(ctx, agent), /assembled surface still contains hidden official tools: read/)
       assert.equal(scopedToolNames(ctx, agent).includes('read'), false, 'assembly failure preserves the verified registry mask')
-      await assert.rejects(() => assemble(ctx, agent), /assembled surface still contains official tools: web_search/)
+      await assert.rejects(() => assemble(ctx, agent), /assembled surface still contains hidden official tools: read/)
     } finally { await shutdown(ctx) }
   })
   await test('a fail-once prompt provider blocks only that assembly and recovers on the next request', async () => {

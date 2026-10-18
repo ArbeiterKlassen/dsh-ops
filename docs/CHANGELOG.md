@@ -7,6 +7,33 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### `strict` official-tool hiding no longer blocks session readiness (#238, #207)
+
+**Behaviour change.** `dsh-ops/hide-official` used to treat *any* presented official
+tool without a registered OPS equivalent as fatal, so enabling the row with
+`strict: true` on a stock desktop profile killed the session at assembly
+(`READINESS_BLOCKED (EXECUTOR_UNAVAILABLE)` naming 48 tools). That condition is gone:
+the component now takes over only the **shell / file / ptc** faces, and `strict` means
+"hide inside those faces only what has a reviewed replacement".
+
+- Official tools outside the three faces (delegation, teams, jobs, sessions, MCP, media,
+  scheduling, goals, terminal, `workflow`, `skill`, `web_search`, `web_fetch`,
+  `ask_user_question`, `read_image`, `present`, …) are **left visible** with one aggregated
+  warning that names every tool and says it is out of scope. An `additionalOfficialTools`
+  entry for an out-of-scope tool is warned about and ignored; it never fails readiness.
+- An **in-scope** official tool without a registered equivalent (today `write`, `edit`,
+  `str_replace_editor`, `run_code`, and the non-retained shell commands) is **left visible**
+  and named in the same warning. `read`/`glob`/`grep` remain hidden because they map to
+  `ops_inspect_local_file`/`ops_glob`/`ops_grep`.
+- The only remaining fail-closed case is an **explicit** `additionalOfficialTools` request
+  for an in-scope tool that has no equivalent: `READINESS_BLOCKED
+  (HIDING_REQUEST_UNSATISFIABLE)` names the tool and both ways out (remove the name, or
+  disable the row). Infrastructure failures (missing host tool API, incomplete OPS file
+  surface, a mask that cannot hide an own-scope registration) still block that scope.
+- `hide-official` remains a **disabled opt-in row**; the default surface is unchanged.
+  Tests feed the exact 48-tool surface reported in #207 to the real host and assert that
+  assembly resolves, all 48 tools stay visible, and the warning names them.
+
 ### A repository-only benchmark harness, merged from #103 and #183 (#205, #173)
 
 - `bench/` is one cross-platform harness with two measurement modes and one JSON data
