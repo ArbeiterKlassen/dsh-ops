@@ -1,15 +1,16 @@
 # Component reference
-What each of the six components publishes, with parameters and permission requirements.
+What each of the seven components publishes, with parameters and permission requirements.
 ---
 
 ## Components at a glance
 
 | Row `name` | Description | Default | Published tools |
 | --- | --- | --- | --- |
-| `dsh-ops/shell` | Prefer bash as the terminal, with host PowerShell for operations bash cannot cover | On | `ops_bash`; host `pwsh` keeps its own executor |
+| `dsh-ops/shell` | Prefer bash as the terminal, with host PowerShell for operations bash cannot cover | Windows on; Linux/macOS off | `ops_bash`; host `pwsh` keeps its own executor |
 | `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | `ops_read_many`; advanced tools load through discovery |
-| `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
-| `dsh-ops/panel` | Data capture, off at the switch: new conversations write `<cwd>/.dsh-ops/panel/<sessionId>.json` plus the viewer `panel.html` | Row on, `capture: false` | None; see the [configuration reference](configuration-reference.md) |
+| `dsh-ops/ptc` | Typed file APIs and progressive SDK in PTC sessions | On | `ops_inspect_local_file`, `ops_result`, `ops_sdk`; advanced APIs load through the SDK |
+| `dsh-ops/discovery` | Advanced Native tools on demand | On | `ops_discover` |
+| `dsh-ops/panel` | Data capture, off at the switch: new conversations write `<cwd>/.dsh-ops/panel/<sessionId>.json` plus the viewer `panel.html` | Row off; capture defaults true | None; see the [configuration reference](configuration-reference.md) |
 | `dsh-ops/tui` | Read-only current-session OPS sidebar | Off | None; see [sidebar guide](tui-panel.md) |
 | `dsh-ops/hide-official` | Select read/glob/grep alternatives; unselected official tools remain visible | Off | None |
 

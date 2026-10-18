@@ -5,7 +5,7 @@ import { resolveConfig } from '../../config.js'
 import { editable, settingsConfig, configObject } from '../../settings/schema.js'
 export const name = 'dsh-ops-bash & host PowerShell'
 export const Config = settingsConfig(value => {
-  const raw = configObject(value), validated = resolveConfig(raw)
+  const raw = configObject(value ?? {}), validated = resolveConfig(raw)
   // Keep raw ordinary keys: applyComponent owns normalization and migration.
   return { ...raw, publishBashTool: validated.publishBashTool }
 }, {

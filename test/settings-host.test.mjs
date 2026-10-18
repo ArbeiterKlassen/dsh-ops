@@ -10,7 +10,7 @@ import * as Shell from '../lib/components/shell/index.js'
 const ShellConfig = Shell.Config
 import { publicToolName } from '../lib/policy.js'
 import { registerNativeProvider } from '../lib/file/result-provider.js'
-import { shutdown, scopedToolNames } from './lib/host.mjs'
+import { bootHost, shutdown, scopedToolNames } from './lib/host.mjs'
 import { assert, test, report, TEST_HOME } from './lib/harness.mjs'
 
 
@@ -120,6 +120,42 @@ await test('host descriptor projections cannot remove metadata from later descri
       assert.equal(Config.dict[key].meta.volatile, true)
       assert.equal(Config.toJSON().dict[key].meta.volatile, true)
     }
+  }
+})
+for (const [label, modulePath, config, change, invalid] of [
+  ['file', '../lib/components/file/index.js', { extraGuidance: 'preserve ordinary config', promptPolicy: true }, ['promptPolicy', false], ['required', 'yes']],
+  ['ptc', '../lib/components/ptc/index.js', { required: false, allowedTools: ['glob', 'grep'], alwaysLoaded: [] }, ['alwaysLoaded', ['glob']], ['allowedTools', ['pdf']]],
+  ['tui', '../lib/components/tui/index.js', { maxSessions: 32, recentLimit: 8 }, ['recentLimit', 4], ['recentLimit', 100]],
+]) await test(`builtin ${label} descriptor persists validated changes and reloads the owning configuration`, async () => {
+  const module = await import(modulePath)
+  let observed, mounts = 0
+  const { ctx, snapshot, mutate, patchPath } = await profileFixture(`builtin-${label}`, {
+    Config: module.Config, apply(_ctx, config) { observed = config; mounts++ },
+  }, config)
+  try {
+    const before = snapshot(), count = mounts
+    assert.ok(before && Object.hasOwn(before.value, change[0]))
+    await mutate([set(...change)], before.revision)
+    assert.equal(mounts, count + 1)
+    assert.deepEqual(observed[change[0]], change[1])
+    if (label === 'file') assert.equal(observed.extraGuidance, 'preserve ordinary config')
+    const saved = fs.readFileSync(patchPath, 'utf8')
+    await assert.rejects(mutate([set(...invalid)], snapshot().revision))
+    assert.equal(fs.readFileSync(patchPath, 'utf8'), saved)
+    assert.equal(mounts, count + 1)
+  } finally { await shutdown(ctx) }
+})
+
+await test('real Cordis adapters preserve legacy null file/root/shell configuration defaults', async () => {
+  for (const modulePath of ['../lib/index.js', '../lib/components/file/index.js', '../lib/components/shell/index.js']) {
+    const { Config } = await import(modulePath)
+    const { ctx } = await bootHost()
+    let observed
+    try {
+      await ctx.plugin({ Config, apply(_ctx, config) { observed = config } }, null)
+      assert.ok(observed && typeof observed === 'object', modulePath)
+      assert.equal(Config['~standard'].validate([]).issues.length, 1)
+    } finally { await shutdown(ctx) }
   }
 })
 report('settings-host')

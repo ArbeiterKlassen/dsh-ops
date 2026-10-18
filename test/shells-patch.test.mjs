@@ -31,15 +31,12 @@ await test('the manifest declares the plugin\'s own shell tools as their own nam
 await test('the bundle patch declares independent components, with no persistent pwsh override', () => {
   const entries = patchEntries()
   assert.equal(entries.length, 1)
-  assert.deepEqual(entries[0].insert.map(row => row.id), ['dsh-ops-shell', 'dsh-ops-file', 'dsh-ops-ptc', 'dsh-ops-panel', 'dsh-ops-tui', 'dsh-ops-hide-official'])
-  assert.equal(entries[0].insert[0].disabled, undefined)
-  assert.equal(entries[0].insert[1].disabled, undefined)
-  assert.equal(entries[0].insert[2].disabled, undefined)
-  // The panel row mounts so its switch is addressable; the switch itself is off.
-  assert.equal(entries[0].insert[3].disabled, undefined)
-  assert.equal(entries[0].insert[3].config.capture, false)
-  assert.equal(entries[0].insert[4].disabled, true)
-  assert.equal(entries[0].insert[5].disabled, true)
+  assert.deepEqual(entries[0].insert.map(row => row.id), ['dsh-ops-shell', 'dsh-ops-file', 'dsh-ops-ptc', 'dsh-ops-discovery', 'dsh-ops-panel', 'dsh-ops-tui', 'dsh-ops-hide-official'])
+  const row = id => entries[0].insert.find(item => item.id === `dsh-ops-${id}`)
+  assert.deepEqual(row('shell').disabled, { __jsExpr: "process.platform !== 'win32'" })
+  for (const name of ['file', 'ptc', 'discovery']) assert.equal(row(name).disabled, undefined)
+  for (const name of ['panel', 'tui', 'hide-official']) assert.equal(row(name).disabled, true)
+  assert.equal(row('panel').config.capture, true, 'a fresh enabled row starts capture')
 })
 
 await test('the shipped dsh-ops row states the documented shell defaults', () => {

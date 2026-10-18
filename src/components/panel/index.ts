@@ -8,7 +8,7 @@ import { configObject, editable, settingsConfig } from '../../settings/schema.js
 export const name = 'dsh-ops-panel'
 export { resolvePanelConfig }
 export const Config = settingsConfig(value => resolvePanelConfig(configObject(value)), {
-  capture: editable('boolean', 'Capture new session events into the session workspace. Off stops collection and queued writes.'),
+  capture: editable('boolean', 'Capture when this row is enabled. Legacy false remains off until explicitly changed to true.'),
   textLimit: editable('number', 'Maximum characters retained per text field (64–100000).'),
   maxSessionBytes: editable('number', 'Maximum bytes per session document (65536–268435456).'),
 })
@@ -20,7 +20,10 @@ function pluginVersion(): string | undefined {
 }
 export function apply(ctx: Context, rawConfig: unknown): void {
   const config = resolvePanelConfig(configObject(rawConfig))
-  if (!config.capture) return
+  if (!config.capture) {
+    ctx.logger.info('dsh-ops: legacy panel capture:false remains off. Set capture:true only when collection is wanted; the row switch stops collection.')
+    return
+  }
   const collector = createPanelCollector({
     config,
     report: (message: string) => ctx.logger.warn(message),

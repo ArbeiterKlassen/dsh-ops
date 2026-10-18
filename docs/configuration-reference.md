@@ -2,18 +2,25 @@
 
 Every configuration key, and **which component row owns it**.
 
+## Built-in row configuration
+
+Active rows expose validated settings through the host Settings/ConfigEditor. Accepted changes persist through the profile writer and reload the owning row; stale or invalid changes preserve saved values. Disabled rows must first be re-enabled with the host row switch, and pending services must become available before editing.
+
+The default bundle retains `dsh-ops/file` and stable ID `dsh-ops-file`, so saved name-qualified overrides continue to match. It does not activate custom browser pages on the pinned host.
+
 ---
 
 ## Where configuration lives
 
-In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/file`, `dsh-ops/ptc` or `dsh-ops/panel` row, adjust `config`, then save; unknown configuration keys cause errors naming the key.
-The bundle declares six independently toggled components. On first installation shell, file and the panel row are enabled, and the panel row's own switch (`capture`) is **off**:
+In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/file` (`dsh-ops-file`), `dsh-ops/ptc` or `dsh-ops/panel` row, adjust `config`, then save; unknown configuration keys cause errors naming the key.
+The bundle declares seven independently toggled components. Fresh defaults follow the table. Saved profile switches and raw configuration override bundle defaults; adding discovery does not rewrite them. Profiles without explicit switch overrides inherit updated defaults.
 | Row `name` | Component | Default |
 | --- | --- | --- |
-| `dsh-ops/shell` | Terminal and shell | On |
-| `dsh-ops/file` | Rust file tools | On |
-| `dsh-ops/ptc` | Native PTC batches | Off |
-| `dsh-ops/panel` | Data capture, off at the switch | Row on, `capture: false` |
+| `dsh-ops/shell` | Terminal and shell | Windows on; Linux/macOS off |
+| `dsh-ops/file` (`dsh-ops-file`) | Rust file tools | On |
+| `dsh-ops/ptc` | Native PTC batches | On |
+| `dsh-ops/discovery` | Advanced Native tool discovery | On |
+| `dsh-ops/panel` | Capture subsequent events | Row off; enabling starts capture |
 | `dsh-ops/tui` | Read-only sidebar, separate config | Off |
 | `dsh-ops/hide-official` | Per-tool official replacements, separate config | Off |
 
@@ -38,7 +45,7 @@ A `dsh-ops/background` row left over from an earlier version loads as a no-op st
 | `deniedHostTools` | string array | `[pwsh, bash, pwsh_persistent]` | shell |
 | `allowSystemShellFallback` | boolean | `false` | shell |
 | `denyCredentialReads` | boolean | `true` | file / ptc |
-| `capture` | boolean | `false` | panel |
+| `capture` | boolean | `true` | panel (row defaults off) |
 | `textLimit` | integer | `2000` | panel |
 | `maxSessionBytes` | integer | `8388608` | panel |
 
@@ -81,11 +88,11 @@ config:
   # configUpdateVersion: 2
 ```
 
-The `dsh-ops/panel` row — the settings item 「启动数据检测」 (`capture`) is **off by default**:
+The `dsh-ops/panel` row is **disabled by default**. Enabling a fresh row starts capture; explicit legacy `capture: false` remains off until the operator changes it:
 
 ```yaml
 config:
-  capture: false        # 「启动数据检测」: on captures NEW conversations only
+  capture: true         # The row switch controls capture; legacy false stays inert
   textLimit: 2000       # characters kept per text field, marked when clamped
   maxSessionBytes: 8388608
 ```
@@ -108,7 +115,7 @@ config:
 - `configUpdateVersion`: completion marker for the configuration migrations (currently `2`: update 1 retires the old implicit system-bash opt-in, update 2 removes the deprecated FastCtx keys). Do not remove it, or the self-check runs again.
 Disabling the row or saving `capture: false` stops event collection immediately, cancels queued filesystem work, and waits for already-started I/O before the host finishes the change. It does not start a final fold: existing NDJSON remains recoverable, and a temporary file from an interrupted fold may remain. Re-enabling captures only subsequent events; disabled events are not replayed.
 
-- `capture` (「启动数据检测」): defaults to `false`, and **off means nothing happens** — the row registers no listener and creates no directory. When on, every *new* conversation writes into its own working directory:
+- The panel row defaults disabled and registers no listener or file. Once enabled, `capture` defaults to `true`; an explicit legacy `false` still registers nothing and is never silently changed. The host cannot atomically clear that old field while disabling its row, so the compatibility setting remains visible for deliberate edits. Captured events write into the session working directory:
   - `<cwd>/.dsh-ops/panel/<sessionId>.json` — the only data source: conversation text, the tool-call/result/milestone trace, usage buckets, and trimmings/limits;
   - `<cwd>/.dsh-ops/panel/panel.html` — a static viewer that reads that JSON in the browser and inlines no data (drag the JSON onto it, or pass `?data=<sessionId>.json` under a static server).
 
@@ -140,7 +147,7 @@ With the slim Native defaults, configure discovery `alwaysLoaded: [inspect_local
 
 **Migration from 0.3:** `strict`, `scope`, and `additionalOfficialTools` are accepted only for compatibility and validated with their old types/values. They grant no hiding authority, including `scope: extended` and aliases. An existing row containing only those keys becomes inert. Explicit `replaceTools` is the sole source of selections even if legacy keys remain. No saved profile is rewritten by this component.
 
-Configuration is validated by Cordis through `StandardSchemaV1`. In the pinned DSH 0.2.0-rc.2 host, this does not automatically create a settings selector: a browser component registered in `plugins.row.config` is required. This slice supplies configuration-array selection; the browser multi-select remains separate UI work.
+Cordis validates configuration through `StandardSchemaV1`; detached public settings descriptors expose editable arrays in the built-in Settings/ConfigEditor. Accepted changes persist and reload the row. The custom browser multi-select remains separate UI work.
 
 
 ---

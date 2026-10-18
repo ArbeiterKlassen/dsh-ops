@@ -38,7 +38,7 @@ export const PANEL_DIR = path.join('.dsh-ops', 'panel')
 /** The viewer file name inside {@link PANEL_DIR}. */
 export const PANEL_HTML = 'panel.html'
 /** Recognised row keys and their defaults; `capture` is the user-facing switch. */
-export const PANEL_DEFAULTS = Object.freeze({ capture: false, textLimit: 2_000, maxSessionBytes: 8 * 1024 * 1024 })
+export const PANEL_DEFAULTS = Object.freeze({ capture: true, textLimit: 2_000, maxSessionBytes: 8 * 1024 * 1024 })
 
 // View guards: a pathological session must not turn the trace into the document.
 const TRACE_LIMIT = 20_000

@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Add discovery as the seventh bundle row; preserve existing named row overrides. Fresh defaults enable shell only on Windows and leave panel/TUI/replacements off. Enabling a fresh panel row starts capture; explicit legacy capture:false stays inert. Provide builtin validated file/PTC/TUI configuration.
+- bundle 新增第七行 discovery，保留已有带名称行覆盖。首次安装仅 Windows 默认启用 shell，panel/TUI/替换默认关闭；启用新 panel 行即采集，旧配置 capture:false 保持不采集。补充文件/PTC/TUI 内置校验配置。
+
 - Stop panel collection and queued filesystem work when its row or capture switch is disabled; wait for issued I/O without scheduling a final fold. Expose validated capture settings through the host editor.
 - 关闭 panel 行或采集开关时停止采集及排队文件操作，等待已开始的 I/O，但不触发最终归并；宿主编辑器提供严格校验的采集设置。
 
