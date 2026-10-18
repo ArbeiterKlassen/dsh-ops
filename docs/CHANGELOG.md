@@ -7,6 +7,13 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Inspect routing matches the native surface (#68)
+
+The paired component routing tables no longer advertise multiple ranges, arbitrary
+encodings or PDF text for `ops_inspect_local_file`. The historical 0.2.x manual
+checklist now labels those file cases explicitly as historical; current inspection
+is single-path, bounded UTF-8 text or hex. A contract regression checks both tables.
+
 ### The 0.3.2 real-machine findings, fixed (#204, #235, #236, #237, #240)
 
 Four findings from the 0.3.2 Linux x64 session run in #204. Three are behaviour changes, and

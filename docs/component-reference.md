@@ -158,7 +158,7 @@ The routing table the model sees is rendered by the plugin from what it actually
 
 | Task | Tool |
 | --- | --- |
-| Text / multiple ranges / encoding / PDF text / hex | ops_inspect_local_file |
+| Bounded UTF-8 text / hex | ops_inspect_local_file |
 | Images | read_image (host) |
 | Search contents | ops_grep |
 | Find paths | ops_glob |
