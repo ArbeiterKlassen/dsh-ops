@@ -68,7 +68,7 @@ pub(super) fn run(request: &Request) -> Result<Value> {
                 &args.path,
                 &args.expected_revision,
                 args.dry_run,
-                |_| Ok(args.content.into_bytes()),
+                |_| Ok(args.content.clone().into_bytes()),
             )
         }
         "edit_file" => {
@@ -314,20 +314,38 @@ fn write_single(
     raw: &str,
     expected: &str,
     dry_run: bool,
-    prepare: impl FnOnce(Option<&[u8]>) -> Result<Vec<u8>>,
+    prepare: impl Fn(Option<&[u8]>) -> Result<Vec<u8>>,
 ) -> Result<Value> {
     valid_revision(expected, true)?;
     let path = authorize_write(request, raw)?;
+    // Every validation below is a pure function of the bytes and the arguments, so it also runs
+    // once *before* the update sidecar exists: a request that is going to be refused must not
+    // leave a `.dsh-ops-update-*.lock` beside a file it never touched. The pass under the lock is
+    // still the authoritative one — a concurrent writer may replace the file in between.
+    let validate = |bytes: Option<&[u8]>| -> Result<Vec<u8>> {
+        check_revision(bytes, expected)?;
+        let next = prepare(bytes)?;
+        if next.len() as u64 > MAX_FILE_BYTES {
+            return Err(Failure::new("OUTPUT_LIMIT", "Proposed file exceeds 32 MiB"));
+        }
+        Ok(next)
+    };
+    let snapshot = optional_bytes(raw)?;
+    let preview = validate(snapshot.as_deref())?;
+    if dry_run {
+        // A dry run answers a question; it must not create the persistent lock sidecar.
+        let changed = snapshot.as_deref() != Some(preview.as_slice());
+        return Ok(receipt(&path, snapshot.as_deref(), &preview, true, changed));
+    }
     let _lock = lock_single(raw)?;
     let original = optional_bytes(raw)?;
-    check_revision(original.as_deref(), expected)?;
-    let next = prepare(original.as_deref())?;
-    if next.len() as u64 > MAX_FILE_BYTES {
-        return Err(Failure::new("OUTPUT_LIMIT", "Proposed file exceeds 32 MiB"));
-    }
+    // `prepare` is pure, so the snapshot's result is still exact when the locked read returned the
+    // same bytes, and the locked comparison is what makes that claim authoritative. Re-planning the
+    // same input would only duplicate the copy of the proposed content on every write.
+    let next = if original.as_deref() == snapshot.as_deref() { preview } else { validate(original.as_deref())? };
     let changed = original.as_deref() != Some(next.as_slice());
-    let mut output = receipt(&path, original.as_deref(), &next, dry_run, changed);
-    if dry_run || !changed {
+    let mut output = receipt(&path, original.as_deref(), &next, false, changed);
+    if !changed {
         return Ok(output);
     }
     authorize_write(request, raw)?;
@@ -471,6 +489,22 @@ fn transfer_file(request: &Request) -> Result<Value> {
             "Source and destination are the same path",
         ));
     }
+    // Same reason as write_single: a request that cannot succeed must not create the update
+    // sidecar. These are pure snapshots of the source and the destination; the checks below the
+    // locks stay the authoritative ones and still decide when a concurrent writer won the race.
+    let snapshot_source = read_bytes(&source.display)?;
+    check_revision(Some(&snapshot_source), &args.expected_revision)?;
+    let snapshot_target = crate::file_path::checked_leaf(&args.to, true)?;
+    match snapshot_target.parent.symlink_metadata(&snapshot_target.name) {
+        Ok(_) => {
+            return Err(Failure::new(
+                "REVISION_CONFLICT",
+                "Destination exists; no clobber is permitted",
+            ))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => return Err(error.into()),
+    }
     // Total path order avoids deadlock; try-lock still reports concurrency as a CAS conflict.
     let mut names = [args.path.as_str(), args.to.as_str()];
     names.sort();
@@ -480,8 +514,16 @@ fn transfer_file(request: &Request) -> Result<Value> {
     } else {
         vec![lock_single(names[0])?, lock_single(names[1])?]
     };
-    let bytes = read_bytes(&source.display)?;
-    check_revision(Some(&bytes), &args.expected_revision)?;
+    let bytes = if request.tool == "copy" {
+        // The pre-lock snapshot already carries the bytes copy publishes and passed the revision
+        // check, and `publish_new` re-reads the source and discards the staging sibling when its
+        // revision no longer matches, so the CAS is still enforced after the lock; re-reading (and
+        // re-hashing) here would only duplicate I/O on every copy.
+        snapshot_source
+    } else {
+        read_bytes(&source.display)?
+    };
+    if request.tool != "copy" { check_revision(Some(&bytes), &args.expected_revision)?; }
     let target = crate::file_path::checked_leaf(&args.to, true)?;
     match target.parent.symlink_metadata(&target.name) {
         Ok(_) => {
@@ -556,9 +598,15 @@ fn remove_file(request: &Request) -> Result<Value> {
     let args: RemoveArgs = serde_json::from_value(request.args.clone())?;
     valid_revision(&args.expected_revision, false)?;
     let path = authorize_write(request, &args.path)?;
+    // Same reason as write_single: a refused removal must not leave the update sidecar. The check
+    // before the lock is a pure snapshot; the one below it stays authoritative.
+    let snapshot = read_bytes(&path)?;
+    check_revision(Some(&snapshot), &args.expected_revision)?;
     let _lock = lock_single(&args.path)?;
     let bytes = read_bytes(&path)?;
-    check_revision(Some(&bytes), &args.expected_revision)?;
+    // The locked read is authoritative; when it stayed identical the validated snapshot still
+    // decides, so no second hash of the same bytes is needed.
+    if bytes != snapshot { check_revision(Some(&bytes), &args.expected_revision)?; }
     let checked = crate::file_path::checked(&args.path)?;
     checked.parent.remove_file(&checked.name)?;
     sync_applied(&checked.parent)?;

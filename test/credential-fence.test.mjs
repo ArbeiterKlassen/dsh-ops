@@ -271,4 +271,43 @@ await test('the fence refuses writes and copy destinations, and the wording name
   })
 })
 
+await test('the fence refuses every direction on a credential path, including writes', async () => {
+  await withTempDir('credential-directions', async workspace => {
+    const home = path.join(workspace, 'home')
+    fs.mkdirSync(path.join(home, '.ssh'), { recursive: true })
+    const key = path.join(home, '.ssh', 'id_rsa')
+    fs.writeFileSync(key, 'PRIVATE')
+    const source = path.join(workspace, 'source.txt')
+    fs.writeFileSync(source, 'payload')
+
+    let spawned = 0
+    // danger-full-access is the decisive case: the DSH permission mode allows the write, so a
+    // refusal here can only come from this fence.
+    const ctx = { get: name => ({
+      sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access', workspaceRoot: workspace }) },
+      subprocess: { spawn: () => { spawned += 1; throw new Error('the fence must refuse before spawning') } },
+    })[name] }
+    const exec = { agent: { session: { id: 's-directions', header: { cwd: workspace } } } }
+    const worker = path.join(workspace, 'worker')
+
+    await withFakeHome(home, async () => {
+      const cases = [
+        ['inspect_local_file', { path: key }],
+        ['write_file', { path: key, content: 'PWN', expectedRevision: 'absent' }],
+        ['replace', { path: key, pattern: 'PRIVATE', replacement: 'PWN' }],
+        ['copy', { path: source, to: key }],
+        ['remove', { path: key, expectedRevision: 'whatever' }],
+      ]
+      for (const [tool, toolArgs] of cases) {
+        const refused = await invoke(ctx, worker, tool, toolArgs, exec, undefined, { denyCredentialReads: true })
+        assert.equal(refused.status, 'rejected', `${tool}: ${JSON.stringify(refused)}`)
+        assert.equal(refused.error.code, 'CREDENTIAL_DENIED', `${tool} must be refused by the fence: ${JSON.stringify(refused)}`)
+        assert.match(refused.error.message, /read|write|copy|replace|remov/i, `${tool} refusal must name the directions: ${refused.error.message}`)
+      }
+      assert.equal(spawned, 0, 'every direction must be refused before the worker is spawned')
+      assert.equal(fs.readFileSync(key, 'utf8'), 'PRIVATE', 'the credential file is untouched')
+    })
+  })
+})
+
 report('credential-fence')

@@ -90,20 +90,19 @@ the active workspace root in the message. Results are bounded and UTF-8-first.
 
 Every mutating file operation serialises cooperating writers on a persistent,
 hidden sidecar next to the target: `.dsh-ops-update-<sha256 of the lowercased
-basename>.lock`, created mode 0600 on the first attempt and reused by every
-later operation on that name. The lock is taken **before** the target is read, so
-the artifact exists whenever an update begins — including one that is refused
-moments later.
+basename>.lock`, created mode 0600 when the lock is first needed and reused by every
+later operation on that name. Single-file operations validate a snapshot before locking:
+stale revisions, edit conflicts and existing destinations are refused without a sidecar.
+`write_file` and `edit_file` dry runs never acquire this lock. A concurrent change or a
+publication failure after locking can still leave the artifact behind.
 
 Keeping it after a refusal is deliberate (#240 P5). Unlinking it on release
 would let a waiter that already opened the old inode hold a lock on an inode the
 path no longer names, while the next writer creates and locks a fresh file under
 the same name: two writers, one target. A zero-byte artifact that can be named,
-counted and tested is strictly better than that hole. Which refusals have
-already taken the lock — and so leave the sidecar — is listed on
-`lock_and_read_for_update` in `native/src/file.rs`, and `test/linux-args.test.mjs`
-pins the declaration end to end: one empty sidecar per target name, reused rather
-than accumulated, with nothing else about the directory changed. `ops_replace` is
+counted and tested is strictly better than that hole. `test/lock-sidecar.test.mjs`
+checks pre-lock refusals and dry runs; `test/linux-args.test.mjs` checks persistence
+and reuse. `ops_replace` is
 the broad case — it locks every file its `glob` selects before it counts a match,
 so a refused directory-wide replace leaves a sidecar beside each candidate,
 matching or not, and only a narrower `glob` bounds that.
