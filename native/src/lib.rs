@@ -25,7 +25,7 @@ pub fn dispatch(request: Request) -> Result<Value> {
     // File reads/searches do not create or consult the durable audit store.
     // This is important for read-only sessions and keeps observation separate
     // from mutation audit records.
-    if matches!(request.tool.as_str(), "inspect_local_file" | "glob" | "grep" | "replace" | "write_file" | "edit_file" | "diff" | "stat" | "copy" | "move" | "remove") {
+    if matches!(request.tool.as_str(), "inspect_local_file" | "read_many" | "glob" | "grep" | "replace" | "write_file" | "edit_file" | "edit_many" | "diff" | "stat" | "copy" | "move" | "remove") {
         request.root_identity = String::new();
         return if matches!(request.tool.as_str(), "glob" | "grep" | "replace") {
             ops_search::dispatch(&request)

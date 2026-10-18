@@ -71,7 +71,7 @@ pub(super) fn run(request: &Request) -> Result<Value> {
                 |_| Ok(args.content.clone().into_bytes()),
             )
         }
-        "edit_file" => {
+        "edit_file" | "edit_many" => {
             let args: EditArgs = serde_json::from_value(request.args.clone())?;
             valid_revision(&args.expected_revision, false)?;
             write_single(
