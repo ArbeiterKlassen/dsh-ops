@@ -86,6 +86,47 @@ turning skipped children into a whole-operation failure. Root access failures
 return `ACCESS_DENIED`; outside-workspace failures return `POLICY_DENIED` with
 the active workspace root in the message. Results are bounded and UTF-8-first.
 
+### Update-lock sidecars
+
+Every mutating file operation serialises cooperating writers on a persistent,
+hidden sidecar next to the target: `.dsh-ops-update-<sha256 of the lowercased
+basename>.lock`, created mode 0600 when the lock is first needed and reused by every
+later operation on that name. Single-file operations validate a snapshot before locking:
+stale revisions, edit conflicts and existing destinations are refused without a sidecar.
+`write_file` and `edit_file` dry runs never acquire this lock. A concurrent change or a
+publication failure after locking can still leave the artifact behind.
+
+Keeping it after a refusal is deliberate (#240 P5). Unlinking it on release
+would let a waiter that already opened the old inode hold a lock on an inode the
+path no longer names, while the next writer creates and locks a fresh file under
+the same name: two writers, one target. A zero-byte artifact that can be named,
+counted and tested is strictly better than that hole. `test/lock-sidecar.test.mjs`
+checks pre-lock refusals and dry runs; `test/linux-args.test.mjs` checks persistence
+and reuse. `ops_replace` is
+the broad case — it locks every file its `glob` selects before it counts a match,
+so a refused directory-wide replace leaves a sidecar beside each candidate,
+matching or not, and only a narrower `glob` bounds that.
+
+Nothing removes a sidecar automatically, and nothing should while a `dsh-ops`
+writer may be active: deleting one is what re-opens the race above. An operator
+may delete sidecars in a directory no writer is using; the next write recreates
+what it needs. The name starts with `.`, so the walker's hidden-component rule
+keeps it out of `ops_glob`, `ops_grep` and a directory-wide `ops_replace`, and
+`ops_batch` resolves its operations from the request rather than from a walk —
+the artifact is never a result, never a replacement target and never a batch item.
+
+### `ops_glob` details and ordering
+
+`outputMode: "details"` reports `bytes` (the on-disk size) and `modified`, a real
+modification time in **milliseconds since the Unix epoch** — the same quantity
+and unit `ops_stat` reports as `modifiedMs`, and `null` when the filesystem
+cannot report one. `sort: "modified"` orders newest first and is stable, so equal
+timestamps (a coarse clock, a preserved copy, two writes inside one second) keep
+the walk's path order; `sort: "path"` and an omitted `sort` keep that order. The
+timestamp is read without following links, and a link, junction or reparse entry
+is refused before it can become a candidate, so no `ops_glob` item is a link;
+`ops_stat` reports the opened file's time for a path reached through one.
+
 The native schemas deliberately do not expose `root`, `workspace`, `cwd`, or
 `file_path` aliases. `ops_bash` accepts the host-compatible optional
 `description` field but remains foreground-only; it does not accept
@@ -93,7 +134,9 @@ The native schemas deliberately do not expose `root`, `workspace`, `cwd`, or
 
 Their important fields are:
 
-- `ops_glob`: `pattern: string[]`, optional absolute `path`;
+- `ops_glob`: `pattern: string[]`, optional absolute `path`, optional `sort`
+  (`path` | `modified`) and `outputMode: "details"` (on-disk `bytes`,
+  epoch-millisecond `modified`);
 - `ops_grep`: required regex `pattern`, optional absolute `path`, optional `glob`;
 - `ops_inspect_local_file`: exactly one of `file_path` or `files`, with optional
   `offset`, `limit`, `pages`, `encoding`, `view`;

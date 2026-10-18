@@ -7,6 +7,57 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### The 0.3.2 real-machine findings, fixed (#204, #235, #236, #237, #240)
+
+Four findings from the 0.3.2 Linux x64 session run in #204. Three are behaviour changes, and
+each one is pinned by a suite that would fail without it.
+
+- **`ops_bash` argument errors are refusals again (#235, F1).** A regression in the 0.3.2
+  delivery stack folded *every* thrown error from the session wrapper into a value, so an
+  invalid argument came back as a value that did not satisfy the output schema and the host
+  reported `returned invalid output` — the caller never saw `invalid workdir: …`. Argument
+  validation now raises a typed refusal (`BashArgumentError`, `code:
+  INVALID_BASH_ARGUMENT`) that the wrapper re-throws with the field named, while a runtime
+  failure is still folded into a value — and a folded value now carries the full
+  `BASH_OUTPUT_SCHEMA` shape (`status`/`timedOut`/`timeoutMs`/`stdout`/`stderr`). A
+  suite asserts both halves.
+- **A relative `workdir` is resolved against the session workspace (#237, F3).** It used to
+  be passed through verbatim, so `.` or `sub` was resolved by the helper process's own
+  working directory: commands ran in the wrong directory *without an error*. Relative paths
+  now anchor to `session.header.cwd` (absolute paths unchanged, empty or whitespace still
+  falls back to the session directory, and on Windows a drive-relative path resolves against
+  the session's drive or is refused). A workspace that disappeared is reported as
+  `invalid workdir: must be an existing directory, got <session directory>`; a spawn ENOENT
+  whose `workdir` is gone no longer wears the "missing bash payload" remedy.
+- **`ops_glob` reports a real modification time (#236, F2).** `details.modified` returned the
+  file's *byte count* (`symlink_metadata().len()`), which also made `sort: "modified"` a
+  size sort. It is now milliseconds since the Unix epoch — the same quantity and unit
+  `ops_stat` reports as `modifiedMs`, and `null` when the filesystem cannot report one —
+  and `sort: "modified"` orders newest first, stably, so equal timestamps keep the walk's
+  path order. `bytes`, `sort: "path"` and the pagination envelope are unchanged.
+- **The credential fence is documented by what it does (#240, F6).** The module comment
+  claimed the fence was on *reads only* while the write path, the `copy`/`move` destination
+  and `replace` were refused as well, and the refusal text told a writer not to *read*
+  credentials. The comment, the refusal message and the configuration reference now state
+  the real reach (path-based: reads, writes, and copy/move destinations; a `.env` cannot be
+  created either), and a suite asserts the wording, the refusals and the documented reach
+  together.
+- **The update-lock sidecar is declared behaviour (#240, P5).** Published writes retain a
+  persistent 0-byte `.dsh-ops-update-<sha256(lowercased name)>.lock` beside the target;
+  unlinking it could let concurrent writers lock different inodes for the same name.
+  The lifecycle and residual refusal cases are documented in `docs/native-ptc.md`.
+
+### Refuse single-file requests before creating the update sidecar (#244, #240, #204 P5)
+
+- The credential fence also refuses removal, including under `danger-full-access`;
+  troubleshooting records that `.env` cannot be created through the ops tools.
+- Single-file requests rejected by pure snapshot checks (revision, edit planning, proposed
+  size, destination absence) now fail before taking the lock. Authoritative checks still run
+  under the lock when needed. `write_file`/`edit_file` dry runs skip the lock entirely.
+- A concurrent change or publication failure after locking can still leave a sidecar, and
+  `replace` can leave one per selected candidate even if its match budget is refused.
+  Persistent sidecars are never unlinked automatically; the cooperative lock identity is preserved.
+
 ### `strict` official-tool hiding no longer blocks session readiness (#238, #207)
 
 **Behaviour change.** `dsh-ops/hide-official` used to treat *any* presented official
@@ -74,6 +125,14 @@ deleted, if an equivalent drifts from the reviewed registry in
   strictly created (never overwritten) reports, and the fixed size-boundary fixture corpus.
 - The model-driven token A/B skeleton is adopted from #183 (@Richeir): pass-drop before
   cost, per-task pairing, the geomean summary and the archive of the raw evidence.
+- #183 is merged into this history: its branch is an ancestor of the merge that landed the
+  consolidated harness, so its commits are part of `main` even though its superseded
+  artifacts (`bench/lib/fixtures.mjs`, `test/bench.test.mjs`, `bench/platform/win-ab.bat`)
+  were replaced by the split fixtures, the per-slice suites and the cross-platform CLI.
+- #103 is merged into this history the same way: its branch is an ancestor of the merge that
+  landed the consolidated harness, so its commits are part of `main` while its superseded
+  artifacts (`bench/measure.mjs`, `bench/files.mjs`, `bench/fixtures.mjs`, `bench/results/*`,
+  `test/file-bench.test.mjs`) were replaced by `bench/tools/**` and the opt-in smoke job.
 - Git-level credit for both: the harness entered `main` as a **rewrite** (each slice
   re-implemented the source pull requests), so this entry's commit carries
   `Co-authored-by:` trailers for @OldLigant and @Richeir.

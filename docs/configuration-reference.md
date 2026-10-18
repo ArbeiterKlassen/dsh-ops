@@ -42,6 +42,17 @@ A `dsh-ops/background` row left over from an earlier version loads as a no-op st
 | `textLimit` | integer | `2000` | panel |
 | `maxSessionBytes` | integer | `8388608` | panel |
 
+### The credential fence (`denyCredentialReads`)
+
+The key name is historical; the fence itself is on the **path**, not on one direction of access. A
+credential location is refused as a read (`inspect_local_file`, and `grep`/`glob` never report or
+list one), as a write (`write`, `edit`, `replace`, `remove`), and as the destination of `copy`/`move` —
+for a single path, a batch operation root, and every child of a recursion, including under
+`danger-full-access`. A refused operation reports `CREDENTIAL_DENIED` with `phase: preflight` and
+`effectState: none`, before the native worker is spawned. `denyCredentialReads: false` turns the fence
+off for that row only, and `DSH_OPS_DENY_READ` can only widen the list. A `.env` or `~/.ssh/config`
+cannot be **created** through these tools either; see [troubleshooting](troubleshooting.md).
+
 **Deprecated keys.** `serverName`, `enableShellTools` and `toolCallTimeoutMs` were read only by the removed FastCtx background component. They are still accepted (and still type-checked) so existing rows keep loading — earlier bundles wrote `enableShellTools: false` and `toolCallTimeoutMs: 300000` into every file row — but they have no effect, and configuration update 2 removes them from saved rows on the next start.
 
 ---
