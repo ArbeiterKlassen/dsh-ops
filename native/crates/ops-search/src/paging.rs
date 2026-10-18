@@ -40,21 +40,24 @@ fn stale() -> Failure {
 }
 pub struct Page {
     pub items: Vec<Value>, pub offset: usize, limit: usize, bytes: usize,
-    pub output_cut: bool, partial_item: bool,
+    pub output_cut: bool, partial_item: bool, capture: Option<std::rc::Rc<ops_protocol::capture::OutputSink>>,
 }
 impl Page {
-    pub fn new(offset: usize, limit: usize) -> Self {
-        Self { items: Vec::new(), offset, limit, bytes: 0, output_cut: false, partial_item: false }
+    pub fn new(offset: usize, limit: usize, capture: Option<std::rc::Rc<ops_protocol::capture::OutputSink>>) -> Self {
+        Self { items: Vec::new(), offset, limit, bytes: 0, output_cut: false, partial_item: false, capture }
     }
     pub fn wants(&self, ordinal: usize) -> bool {
-        !self.output_cut && ordinal >= self.offset && ordinal < self.offset.saturating_add(self.limit)
+        (!self.output_cut || self.capture.as_ref().is_some_and(|sink| !sink.exhausted())) && ordinal >= self.offset && ordinal < self.offset.saturating_add(self.limit)
     }
     pub fn push(&mut self, mut item: Value, ordinal: usize) -> Result<()> {
         if !self.wants(ordinal) { return Ok(()); }
+        if let Some(sink) = &self.capture { sink.push(&item); }
+        if self.output_cut { return Ok(()); }
         let remaining = MAX_OUTPUT_BYTES.saturating_sub(8192 + self.bytes);
-        let size = serde_json::to_vec(&item)?.len() + 1;
+        let size = ops_protocol::capture::json_size(&item) + 1;
         if size <= remaining { self.items.push(item); self.bytes += size; return Ok(()); }
         self.output_cut = true;
+        if let Some(sink) = &self.capture { sink.clipped(); }
         // Preserve a useful first prefix without pretending the remaining line was delivered.
         if let Some(text) = item.get("text").and_then(Value::as_str).map(str::to_owned) {
             let length = text.len(); let mut end = length.min(remaining);
@@ -62,7 +65,7 @@ impl Page {
                 while !text.is_char_boundary(end) { end -= 1; }
                 item["text"] = json!(&text[..end]); item["truncatedInLine"] = json!(true);
                 item["bytesTotal"] = json!(length); item["bytesOmitted"] = json!(length - end);
-                if serde_json::to_vec(&item)?.len() + 1 <= remaining {
+                if ops_protocol::capture::json_size(&item) + 1 <= remaining {
                     self.items.push(item); self.partial_item = true; break;
                 }
                 end /= 2;
@@ -92,5 +95,20 @@ pub fn finish(mut scan: Scan, cursor: Cursor, page: Page, observed: usize, item_
     else if page.partial_item { output["nextAction"] = json!("A matching line is only partially displayed. Inspect that file with bounded text/hex ranges; nextOffset does not skip the undisplayed suffix."); }
     output.as_object_mut().unwrap().extend(serde_json::to_value(report)?.as_object().unwrap().clone());
     if let Some(extra) = extra.as_object() { output.as_object_mut().unwrap().extend(extra.clone()); }
+    if let Some(sink) = page.capture {
+        let mut source = output.clone(); source.as_object_mut().unwrap().remove("items");
+        let source_next = page.offset.saturating_add(page.limit).min(item_total).max(page.offset);
+        let more = source_next < item_total;
+        source["nextOffset"] = json!(source_next); source["pageComplete"] = json!(true);
+        source["complete"] = json!(complete && !more); source["truncated"] = json!(!complete || more);
+        source["truncatedBy"] = serde_json::to_value(scan.stopped.unwrap_or(if more { TruncatedBy::RowLimit } else { TruncatedBy::None }))?;
+        source.as_object_mut().unwrap().remove("continuation");
+        if complete {
+            source["omitted"] = json!(item_total.saturating_sub(source_next));
+            source.as_object_mut().unwrap().remove("nextAction");
+            if more && source_next > page.offset { source["continuation"] = json!(cursor.token(&snapshot, source_next)); }
+        }
+        sink.source(source);
+    }
     Ok(output)
 }

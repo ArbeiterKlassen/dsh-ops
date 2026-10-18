@@ -207,7 +207,7 @@ fn replace(request: &Request) -> Result<Value> {
         }
         changed += item["replacements"].as_u64().unwrap_or(0) as usize; }
     let count = items.len();
-    let mut output = result(items, count, 0, 0, total, walked.truncated);
+    let mut output = result(request, items, count, 0, 0, total, walked.truncated);
     output["changed"] = json!(changed); output["skipped"] = json!(skipped);
     // Do not let optional skipped path names defeat the serialized receipt budget.
     output["skippedPaths"] = if serde_json::to_vec(&output)?.len() < MAX_OUTPUT_BYTES / 2 { json!(skipped_paths) } else { json!([]) };

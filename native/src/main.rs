@@ -18,8 +18,9 @@ fn main() {
         let mut bytes = Vec::new();
         std::io::stdin().take((envelope::MAX_REQUEST_BYTES + 1) as u64)
             .read_to_end(&mut bytes).map_err(Failure::from)?;
-        let decoded = envelope::decode(&bytes)?;
+        let mut decoded = envelope::decode(&bytes)?;
         budget = decoded.budget;
+        decoded.request.output_budget = budget.max_bytes;
         mutating = may_mutate(&decoded.request);
         // The host also owns cancellation. This process-local deadline covers direct callers;
         // interruption exits nonzero so the bridge reports unknown effects, never completion.

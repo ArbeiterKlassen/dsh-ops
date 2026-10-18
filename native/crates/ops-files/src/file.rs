@@ -73,15 +73,15 @@ mod output;
 mod many;
 
 /// Reserve space for metadata added by search callers after this shared builder.
-pub fn result(items: Vec<Value>, total: usize, offset: usize, next_base: usize, matched: usize, truncated: bool) -> Value {
-    output::bounded(items, total, offset, next_base, matched, truncated, json!({}), MAX_OUTPUT_BYTES - ENVELOPE_OVERHEAD)
+pub fn result(request: &Request, items: Vec<Value>, total: usize, offset: usize, next_base: usize, matched: usize, truncated: bool) -> Value {
+    output::bounded(items, total, offset, next_base, matched, truncated, json!({}), MAX_OUTPUT_BYTES - ENVELOPE_OVERHEAD, request.output_sink.as_deref().map(|sink| (sink, false)))
 }
 
 fn inspect(request: &Request) -> Result<Value> {
     let args: InspectArgs = serde_json::from_value(request.args.clone())?;
-    inspect_args(args, MAX_OUTPUT_BYTES, false)
+    inspect_args(args, MAX_OUTPUT_BYTES, false, request.output_sink.as_deref().map(|sink| (sink, false)))
 }
-fn inspect_args(args: InspectArgs, budget: usize, include_path: bool) -> Result<Value> {
+fn inspect_args(args: InspectArgs, budget: usize, include_path: bool, capture: Option<(&ops_protocol::capture::OutputSink, bool)>) -> Result<Value> {
     if args.limit == 0 || args.limit > 10_000 { return Err(Failure::new("INVALID_ARGUMENT", "inspect limit is 1-10000")); }
     if !args.encoding.eq_ignore_ascii_case("utf-8") { return Err(Failure::new("ERR_INVALID_ENCODING", "Text inspection supports UTF-8 only")); }
     let path = target(&args.path, false)?;
@@ -107,8 +107,8 @@ fn inspect_args(args: InspectArgs, budget: usize, include_path: bool) -> Result<
     // str::lines splits physical LF/CRLF, never bare CR or Unicode separators.
     // Empty files have zero lines; a final LF does not create a phantom line.
     let lines: Vec<_> = text.lines().enumerate().skip(args.offset.saturating_sub(1)).take(args.limit).map(|(i, line)| json!({"path":path,"line":i+1,"text":line})).collect();
-    let value = output::bounded(lines, text.lines().count(), args.offset.saturating_sub(1), args.offset, text.lines().count(), false, facts, budget);
-    if output::size(&value) + 1 > budget {
+    let value = output::bounded(lines, text.lines().count(), args.offset.saturating_sub(1), args.offset, text.lines().count(), false, facts, budget, capture);
+    if output::size(&value) + 1 > budget && capture.is_none() {
         return Err(Failure::new("OUTPUT_LIMIT", "File metadata exceeds the remaining output budget"));
     }
     Ok(value)

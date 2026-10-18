@@ -284,7 +284,7 @@ fn diff_file(request: &Request) -> Result<Value> {
         .skip(args.offset)
         .take(args.limit)
         .collect();
-    let mut output = result(items, total, args.offset, args.offset, total, false);
+    let mut output = result(request, items, total, args.offset, args.offset, total, false);
     output["before"] = content_facts(&bytes);
     output["after"] = content_facts(args.content.as_bytes());
     output["hunk"] = json!({"startLine":prefix+1,"removed":removed.len(),"added":added.len()});
