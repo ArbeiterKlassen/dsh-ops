@@ -7,6 +7,26 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### File-tool discoverability, honest grep pages and compact inspect rendering
+
+- All eleven file argument schemas render concrete types in the pinned host SDK.
+  Bounds unsupported by that SDK are explicit descriptions backed by native validation;
+  required fields, enums and edit shapes remain. Native glob now enforces its advertised
+  limit and grep rejects unknown output modes. Legacy inspect offset 0 remains supported.
+- Grep counts through the candidate set even after its page fills, while materializing
+  only the requested window. `total`, `matched`, `omitted` and `complete` no longer claim
+  that a prefix is a complete multi-file search. Read failures prevent completion;
+  non-UTF-8/oversized candidates are reported as `skippedFiles`. Each page rescans, so this
+  is a correctness repair, not a scan-speed claim. Existing traversal bounds still apply.
+- Inspect's model view shares a homogeneous page's path once, without mutating the raw
+  execution/PTC result or removing revision, pagination or truncation metadata. Worker
+  byte-budget pagination and long-single-line continuation are unchanged.
+- Routing distinguishes `summary` aggregate totals, `count` per-file counts and `content`
+  matching text; defaults are unchanged. The native guide no longer advertises removed
+  inspect aliases or exception-only handling for file-tool failures.
+
+These changes do not establish net model token savings; no billing/cache A/B is claimed.
+
 ### Inspect routing matches the native surface (#68)
 
 The paired component routing tables no longer advertise multiple ranges, arbitrary

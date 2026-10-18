@@ -44,10 +44,12 @@ When the host provides its `fs` service, `ops_inspect_local_file` reads and real
 
 Read bounded UTF-8 text lines, or a hex view of one path. Directories are rejected — use `ops_glob` or `ops_grep` instead.
 
+The model rendering shares a homogeneous page's `path` once at the top level; raw execution/PTC results retain per-item paths. All other fields, including revision, paging and in-line truncation markers, are preserved. Worker byte limits and long-single-line continuation are unchanged; rendered bytes are not measured tokens.
+
 | Parameter | Type | Notes |
 | --- | --- | --- |
 | `path` | string | Resolved against the DSH session cwd |
-| `offset` | integer ≥ 1 | First line |
+| `offset` | integer ≥ 0 | 1-based line/hex row, default 1; legacy 0 also reads the first unit |
 | `limit` | integer 1–10000 | Maximum lines returned |
 | `encoding` | `utf-8` | Encoding |
 | `view` | `text` \| `hex` | View mode |
@@ -71,6 +73,8 @@ Find regular files below `path`. `pattern` is an **array** of globs matched segm
 
 Search UTF-8 files below `path` with Rust regex, bounded output, paging and optional line context. `pattern` is **one** regex string; filter files with `glob`, an array in the same syntax as `ops_glob`. **There is no `include` field.** `glob` may contain only exclusions ("everything except"); when `path` is a single file, `glob` is ignored.
 
+Use `summary` for aggregate file/match totals, `count` for per-file counts, `content` for matching text (default). Each item page defaults to 100 entries. Every call scans candidates to count global totals while materializing only the requested window, so later matches are not silently lost at the first page boundary. Follow `nextOffset` for remaining pages; `truncated`/`failed` scans are not exhaustive and must not be blindly retried. Non-UTF-8 and oversized files are excluded and counted in `skippedFiles`; read failures increment `failed` and prevent completion. Traversal/file-size bounds still apply, and repeated pages rescan rather than use a persistent cursor.
+
 | Parameter | Type | Notes |
 | --- | --- | --- |
 | `pattern` | string (required) | Rust regex |
@@ -81,7 +85,7 @@ Search UTF-8 files below `path` with Rust regex, bounded output, paging and opti
 | `lineNumbers` | boolean | Show line numbers |
 | `beforeContext` / `afterContext` | integer ≤ 32 | Context lines |
 | `multiline` | boolean | Multi-line matching |
-| `offset` / `limit` | integer 1–10000 | Paging |
+| `offset` / `limit` | integer ≥ 0 / integer 1–10000 | 0-based offset (default 0); limit default 100 |
 
 ### `ops_replace`
 

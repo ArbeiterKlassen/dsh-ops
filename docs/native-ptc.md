@@ -132,31 +132,48 @@ The native schemas deliberately do not expose `root`, `workspace`, `cwd`, or
 `description` field but remains foreground-only; it does not accept
 `run_in_background` or create job IDs.
 
-Their important fields are:
+Their important fields are (paths resolve relative to the DSH session cwd):
 
-- `ops_glob`: `pattern: string[]`, optional absolute `path`, optional `sort`
+- `ops_glob`: required `pattern: string[]`, optional `path`, `sort`
   (`path` | `modified`) and `outputMode: "details"` (on-disk `bytes`,
-  epoch-millisecond `modified`);
-- `ops_grep`: required regex `pattern`, optional absolute `path`, optional `glob`;
-- `ops_inspect_local_file`: exactly one of `file_path` or `files`, with optional
-  `offset`, `limit`, `pages`, `encoding`, `view`;
-- `ops_replace`: required `path`, `pattern` and `replacement`, plus its optional
-  replacement controls.
+  epoch-millisecond `modified`); at least one positive glob is required.
+- `ops_grep`: required regex `pattern`, optional `path` and array `glob` filter.
+  Use `summary` for aggregate file/match totals, `count` for per-file counts,
+  `content` for matching text (default). Item pages default to 100, with 0-based
+  `offset` and `nextOffset`. Every page scans candidates to count totals, but only
+  materializes the requested window. `complete:false` means more results or an
+  incomplete scan; `truncated`/`failed` scans are not exhaustive. Totals exclude
+  non-UTF-8 and oversized files (`skippedFiles`); read errors increment `failed`.
+  Bounds and traversal filters still apply; this is not a persistent scan cursor.
+- `ops_inspect_local_file`: one optional `path` (session cwd by default; a directory
+  is rejected), `offset` (1-based line or 16-byte hex row, default 1; legacy 0
+  also reads the first unit), `limit`
+  (1-10000, default 200), `encoding: "utf-8"`, `view: "text" | "hex"`.
+  No multiple-file, PDF, arbitrary-encoding or `pages` interface is exposed.
+- `ops_replace`: required literal `pattern` and `replacement`, optional `path`,
+  `glob`, `maxReplacements` (1-100000, default 100) and `dryRun`.
 
-Malformed arguments from these legacy MCP tools can be raised as `ToolCallError`
-instead of becoming a value. In PTC code, wrap every legacy call independently:
+File tools, `ops_batch` and `ops_result` return failures as values, not thrown
+exceptions: check `status` and `error.code`/`error.nextAction`. A `try/catch`
+alone misses these failures. For example:
 
 ```ts
-const safeLegacy = async (name, args) => {
-  try { return { ok: true, value: await tools[name](args) } }
-  catch (error) { return { ok: false, name, error: String(error) } }
-};
+const result = await tools.ops_grep({ path: "src", pattern: "TODO", outputMode: "summary" });
+if (result.status === "error" || result.status === "rejected") {
+  console.log({ status: result.status, error: result.error });
+} else {
+  console.log({ files: result.files, matches: result.matches, complete: result.complete });
+}
 ```
 
-`ops_batch` and `ops_result` use the new canonical structured error value instead;
-they do not make legacy schemas uniform. For filesystem modifications in the
-new PTC workflow, prefer `ops_batch` or host native edit/write, not legacy
-`ops_replace`.
+File parameter bounds are described in the host-compatible SDK schema and enforced
+by the native worker, even for direct PTC calls. Required fields, enums, nested
+edit shapes and strict unknown-field rejection remain discoverable.
+Inspect's model rendering shares a homogeneous page's path once at the top level;
+raw execution/PTC values retain each item's path and all pagination/truncation
+metadata. This reduces rendered bytes, not worker pagination or measured token
+billing. Long single-line text continuation is unchanged; use the hex view to
+read beyond an in-line cut.
 
 ## Plan and execution semantics
 

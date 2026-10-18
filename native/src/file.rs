@@ -369,6 +369,7 @@ fn inspect(request: &Request) -> Result<Value> {
 }
 fn glob(request: &Request) -> Result<Value> {
     let args: GlobArgs = serde_json::from_value(request.args.clone())?;
+    if args.limit == 0 || args.limit > 10_000 { return Err(Failure::new("INVALID_ARGUMENT", "glob limit is 1-10000")); }
     if args.pattern.is_empty() || args.pattern.iter().all(|p| p.starts_with('!')) { return Err(Failure::new("INVALID_ARGUMENT", "pattern requires a positive glob")); }
     let root = target(&args.path, false)?; if !root.is_dir() { return Err(Failure::new("INVALID_ARGUMENT", "glob path must be a directory")); }
     let walked = walk(&root, request)?;
@@ -387,12 +388,20 @@ fn grep(request: &Request) -> Result<Value> {
     if args.pattern.is_empty() || args.limit == 0 || args.limit > 10_000 { return Err(Failure::new("INVALID_ARGUMENT", "pattern and bounded limit are required")); }
     if args.before_context > 32 || args.after_context > 32 { return Err(Failure::new("INVALID_ARGUMENT", "context is limited to 32 lines")); }
     let regex = RegexBuilder::new(&args.pattern).case_insensitive(args.case_insensitive).multi_line(args.multiline).build().map_err(|e| Failure::new("INVALID_ARGUMENT", e))?;
+    if !matches!(args.output_mode.as_str(), "" | "content" | "files_with_matches" | "count" | "summary") { return Err(Failure::new("INVALID_ARGUMENT", "invalid grep outputMode")); }
     let walked = files_for(&args.path, &args.glob, request)?; let mut matches = Vec::new(); let mut file_count = 0; let mut match_count = 0;
+    let mut failed = 0usize; let mut skipped_files = 0usize;
     // Which modes answer with an item per match (`content`) and which with an item per file. Declared
     // once here because both the per-file loop and the envelope's `total` have to agree on it.
     let content_mode = !matches!(args.output_mode.as_str(), "files_with_matches" | "count" | "summary");
-    let page = args.offset + args.limit;
-    for file in walked.files { let bytes = match read_bytes(&file) { Ok(bytes) => bytes, Err(_) => continue }; if bytes.len() as u64 > MAX_FILE_BYTES { continue; } let text = match String::from_utf8(bytes) { Ok(v) => v, Err(_) => continue }; let lines: Vec<_> = text.lines().collect();
+    let page = args.offset.saturating_add(args.limit);
+    for file in walked.files {
+        let bytes = match read_bytes(&file) {
+            Ok(bytes) => bytes,
+            Err(error) if error.code == "OUTPUT_LIMIT" => { skipped_files += 1; continue; }
+            Err(_) => { failed += 1; continue; }
+        };
+        let text = match String::from_utf8(bytes) { Ok(v) => v, Err(_) => { skipped_files += 1; continue; } }; let lines: Vec<_> = text.lines().collect();
         // Line by line by default. With `multiline` the pattern is matched against
         // the whole file, so a pattern containing `\n` can match across lines
         // instead of never matching at all — which is what the flag's name promises
@@ -427,25 +436,33 @@ fn grep(request: &Request) -> Result<Value> {
                 hits += 1;
                 // Only what the page can still hold is materialized, so the peak is the page and not
                 // the file's match count. `hits` above stays exact: `matched` reports every match.
-                if content_mode && spans.len() < page.saturating_sub(matches.len()) { spans.push((line_of(found.start()), line_of(found.end().saturating_sub(1).max(found.start())))); }
+                let ordinal = match_count + hits - 1;
+                if content_mode && ordinal >= args.offset && ordinal < page { spans.push((line_of(found.start()), line_of(found.end().saturating_sub(1).max(found.start())))); }
             }
         } else {
             for (index, line) in lines.iter().enumerate() {
                 if !regex.is_match(line) { continue; }
                 hits += 1;
-                if content_mode && spans.len() < page.saturating_sub(matches.len()) { spans.push((index, index)); }
+                let ordinal = match_count + hits - 1;
+                if content_mode && ordinal >= args.offset && ordinal < page { spans.push((index, index)); }
             }
         }
         if hits == 0 { continue; } file_count += 1; match_count += hits;
-        match args.output_mode.as_str() { "files_with_matches" => matches.push(json!({"path":file})), "count" => matches.push(json!({"path":file,"count":hits})), "summary" => {} , _ => { for (first, last) in spans { let start=first.saturating_sub(args.before_context); let end=(last+args.after_context+1).min(lines.len()); matches.push(json!({"path":file,"line":if args.line_numbers {first+1} else {0},"text":lines[start..end].join("\n")})); } } }
-        if args.output_mode != "summary" && matches.len() >= args.offset + args.limit { break; }
+        let in_page = file_count > args.offset && file_count <= page;
+        match args.output_mode.as_str() { "files_with_matches" if in_page => matches.push(json!({"path":file})), "count" if in_page => matches.push(json!({"path":file,"count":hits})), "files_with_matches" | "count" | "summary" => {} , _ => { for (first, last) in spans { let start=first.saturating_sub(args.before_context); let end=(last+args.after_context+1).min(lines.len()); matches.push(json!({"path":file,"line":if args.line_numbers {first+1} else {0},"text":lines[start..end].join("\n")})); } } }
+        // Keep counting through every candidate; only materialize the requested
+        // window. A page-full prefix must never masquerade as the global total.
     }
-    if args.output_mode == "summary" { return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":match_count,"skipped":0,"failed":0,"complete":!walked.truncated,"truncated":walked.truncated,"omitted":0,"files":file_count,"matches":match_count})); }
+    let incomplete = walked.truncated || failed > 0;
+    if args.output_mode == "summary" { return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":match_count,"skipped":0,"failed":failed,"skippedFiles":skipped_files,"complete":!incomplete,"truncated":incomplete,"omitted":0,"files":file_count,"matches":match_count})); }
     // `total` is the number of items a full materialization would have produced: one per match in the
     // content modes, one per file otherwise. It is the match count in the first case because the page
     // bound above only limits what was *built*, never what was counted.
-    let total = if content_mode { match_count } else { matches.len() };
-    Ok(result(matches.into_iter().skip(args.offset).take(args.limit).collect(), total, args.offset, args.offset, match_count, walked.truncated))
+    let total = if content_mode { match_count } else { file_count };
+    let mut output = result(matches, total, args.offset, args.offset, match_count, incomplete);
+    output["failed"] = json!(failed);
+    output["skippedFiles"] = json!(skipped_files);
+    Ok(output)
 }
 fn replace(request: &Request) -> Result<Value> {
     if request.read_only { return Err(Failure::policy("read-only", "replace is unavailable in read-only mode")); }
