@@ -35,7 +35,7 @@ await test('real Native loop exposes discovery at startup and activates exactly 
     }, []])
     assert.equal(diagnostic, true); assert.equal(run.requests.length, 3)
     const stat = run.results.find(value => value.exec.name === 'ops_stat').result
-    assert.equal(stat.isError, false); assert.equal(stat.value.exists, true)
+    assert.equal(stat.isError, false); assert.equal(stat.value.exists, true, JSON.stringify(stat.value))
   } finally { await host.close() }
 }))
 
@@ -57,12 +57,12 @@ await test('real PTC loop keeps the current run_code snapshot fixed and publishe
     assert.equal(calls[0].result.isError, false, JSON.stringify(calls[0].result))
     assert.equal(calls[0].result.value.result.selected.status, 'completed')
     assert.equal(calls[0].result.value.result.unavailable, true)
-    assert.equal(calls[1].result.value.result.data.exists, true)
+    assert.equal(calls[1].result.value.result.data.exists, true, JSON.stringify(calls[1].result.value))
   } finally { await host.close() }
 }))
-await test('real committed authority changes cancel pending activation while always-loaded readers are ready at startup', () => withTempDir('loop-mode-change', async root => {
+await test('real committed authority changes cancel pending activation while always-loaded capabilities are ready at startup', () => withTempDir('loop-mode-change', async root => {
   fs.writeFileSync(path.join(root, 'note'), 'unchanged')
-  const host = await bootLoop(root, { discoveryConfig: { alwaysLoaded: ['inspect_local_file'] } })
+  const host = await bootLoop(root, { discoveryConfig: { alwaysLoaded: ['stat'] } })
   try {
     const owner = await host.agent()
     host.ctx.on('tools/execute', async (exec, next) => {
@@ -71,12 +71,12 @@ await test('real committed authority changes cancel pending activation while alw
       return result
     })
     const run = await host.run(owner, [request => {
-      assert.ok(names(request).includes('ops_inspect_local_file'))
+      assert.ok(names(request).includes('ops_stat'))
       assert.equal(names(request).includes('ops_edit_many'), false)
       return [{ name: 'ops_discover', args: { query: 'select:ops_edit_many' } }]
     }, request => {
       assert.equal(names(request).includes('ops_edit_many'), false, 'permission change must discard the pending choice before step/end')
-      assert.ok(names(request).includes('ops_inspect_local_file'))
+      assert.ok(names(request).includes('ops_stat'))
       return []
     }])
     assert.equal(run.requests.length, 2)
