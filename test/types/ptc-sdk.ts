@@ -54,3 +54,19 @@ async function tables() {
 // @ts-expect-error Encoding is a finite strict-decoding contract.
 void tools.ops_table_read({ path: 'rows.csv', encoding: 'latin1' })
 void tables
+
+async function paragraphs() {
+  const value = await tools.ops_doc_read({ path: 'body.docx', offset: 1, limit: 10 })
+  if (value.status === 'completed' || value.status === 'partial') {
+    const text: string | undefined = value.data.items?.[0]?.text
+    const kind: 'paragraph' | undefined = value.data.items?.[0]?.type
+    const scope: string | undefined = value.data.scope
+    // @ts-expect-error Document paragraphs are not table cell arrays.
+    void value.data.items?.[0]?.cells
+    return { text, kind, scope }
+  }
+  return value.data?.items?.[0]?.text
+}
+// @ts-expect-error DOCX decoding comes from the package, not a caller-supplied encoding.
+void tools.ops_doc_read({ path: 'body.docx', encoding: 'utf-8' })
+void paragraphs

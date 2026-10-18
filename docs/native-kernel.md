@@ -184,8 +184,8 @@ credential checks, cancellation and storage bindings apply unchanged.
 
 ## Bounded DOCX main-body observations (15b/16)
 
-`doc_read` is a worker-only capability in this slice; later host/discovery integration remains
-separate. Arguments are `{path, offset?, limit?}`: path must be absolute after host resolution
+`doc_read` is discoverable-only: Native selects it through `ops_discover`, PTC through
+`ops_sdk`; activation starts at the owning agent's next step. Arguments are `{path, offset?, limit?}`: path must be absolute after host resolution
 against current session cwd; offset is a 1-based paragraph index (1-100000, default 1), limit is
 1-1000 (default 200). Each item is `{block,type:"paragraph",text}`; table paragraphs additionally
 carry 1-based table/row/cell coordinates. Empty paragraphs are retained. Tabs, line breaks,
@@ -221,3 +221,10 @@ read-only sessions; transport or cache failures never imply a business mutation.
 
 Exact dependency versions, release dates, rationale and original notices are recorded in
 [document-dependencies.md](document-dependencies.md).
+
+Native displays paragraph indices, table coordinates and explicit scope/excludedContent notices,
+including safe prefixes beside parse errors. PTC returns typed paragraphs inside Outcome; physical
+gaps never get a looping continuation. Stable full scans with remaining paragraphs permit forward
+read-only pages; compare revisions across calls. Skipped paragraphs never exceed observed blocks,
+and FILE_CHANGED always invalidates requested-page completeness. Generated source metadata on
+reference pages retains the declared main-body scope independently of stored-row completeness.

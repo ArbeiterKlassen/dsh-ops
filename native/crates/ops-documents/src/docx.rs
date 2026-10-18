@@ -21,6 +21,10 @@ struct Args {
     #[serde(default = "super::two_hundred")]
     limit: usize,
 }
+fn page_complete(failure: Option<&Failure>, observed: usize, offset: usize, limit: usize) -> bool {
+    !failure.is_some_and(|error| error.code == "FILE_CHANGED")
+        && (failure.is_none() || observed >= offset + limit - 1)
+}
 fn unsupported(name: &str) -> Failure {
     Failure::new(
         "UNSUPPORTED_DOCUMENT",
@@ -351,7 +355,7 @@ pub fn read(request: &Request) -> Result<Value> {
     };
     let mut output = json!({"status":if scan {"completed"} else {"partial"},"phase":"verify","changed":0,"effectState":"none","path":target.display,"format":"docx","scope":"main-body-paragraphs",
         "excludedContent":["formatting and rendered layout","headers and footers","footnotes and endnotes","comments","package metadata"],
-        "bytes":before.len(),"blocksObserved":page.observed,"skipped":args.offset-1,"scanComplete":scan,"pageComplete":scan || page.observed>=args.offset+args.limit-1,
+        "bytes":before.len(),"blocksObserved":page.observed,"skipped":(args.offset-1).min(page.observed),"scanComplete":scan,"pageComplete":page_complete(failure.as_ref(), page.observed, args.offset, args.limit),
         "complete":scan&&!more,"truncated":more,"truncatedBy":cause,"nextOffset":next,"items":[]});
     if scan {
         output["total"] = json!(page.observed);
@@ -383,4 +387,16 @@ pub fn read(request: &Request) -> Result<Value> {
     }
     output["items"] = json!(page.items);
     Ok(output)
+}
+
+#[cfg(test)]
+mod completeness_tests {
+    #[test]
+    fn changed_files_never_claim_the_requested_page_is_complete() {
+        let changed = ops_protocol::Failure::new("FILE_CHANGED", "fixture");
+        assert!(!super::page_complete(Some(&changed), 10, 1, 2));
+        let gap = ops_protocol::Failure::new("UNSUPPORTED_DOCUMENT", "fixture");
+        assert!(super::page_complete(Some(&gap), 10, 1, 2));
+        assert!(!super::page_complete(Some(&gap), 1, 1, 2));
+    }
 }
