@@ -56,6 +56,9 @@ jobs:
       DSH_OPS_RETRY_TIMEOUTS: '1'
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The provenance regression verifies exact blobs from the pinned 0.3.1 commit.
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -265,6 +268,9 @@ jobs:
       DSH_OPS_RETRY_TIMEOUTS: '1'
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The provenance regression verifies exact blobs from the pinned 0.3.1 commit.
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: '22.19'
