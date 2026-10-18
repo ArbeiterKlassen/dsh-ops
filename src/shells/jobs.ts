@@ -4,21 +4,31 @@ import type { ShellJobs, ShellCall, StartShell, ShellExecution, ShellJobView, Ho
 import { errorMessage } from './types.js'
 import { hostForeground } from './host-contract.js'
 
+/** A run hook may have been accepted even when admission itself throws. */
+export class BashJobAdmissionError extends Error {
+  constructor(cause: unknown, readonly runInvoked: boolean) { super(errorMessage(cause), { cause }); this.name = 'BashJobAdmissionError' }
+}
+
 const running = (view: ShellJobView): boolean => ['running', 'stopping'].includes(view.status)
 
 export function startBashJob(jobs: ShellJobs, args: { command?: string; script_path?: string }, exec: ShellCall, start: StartShell) {
   let process: ShellExecution | undefined
   let stopped: string | undefined
+  let runInvoked = false
+  let attempted = false
+  const cancellation = new AbortController()
   const output = (['stdout', 'stderr'] as const).map(stream => ({
     channel: stream,
     read: (offset: number) => process?.observed[stream].readFrom(offset) ?? { text: '', nextOffset: offset, lossy: false },
   }))
-  const id = jobs.start({ kind: 'bash', label: args.command ?? args.script_path ?? 'Bash',
+  let id: string
+  try { id = jobs.start({ kind: 'bash', label: args.command ?? args.script_path ?? 'Bash',
     ...(exec.agent ? { owner: exec.agent.id } : {}), output,
     run: () => {
-      const cancellation = new AbortController()
+      runInvoked = true
       const done = Promise.resolve().then(async () => {
         cancellation.signal.throwIfAborted()
+        attempted = true
         process = await start({ ...exec, signal: cancellation.signal }, { onExpiry: 'none' })
         if (cancellation.signal.aborted) process.kill(stopped)
         const value = await process.result()
@@ -30,8 +40,14 @@ export function startBashJob(jobs: ShellJobs, args: { command?: string; script_p
       }).catch((error: unknown): { status: 'killed' | 'failed'; detail: string } => ({ status: cancellation.signal.aborted ? 'killed' : 'failed', detail: errorMessage(error) }))
       return { done, cancel: reason => { stopped = reason; cancellation.abort(new Error(reason)); process?.kill(reason) } }
     },
-  })
-  return { id, process: () => process, stopped: () => stopped }
+  }) } catch (error) {
+    // Cancel the queued microtask before a refused admission can orphan a command.
+    cancellation.abort(error)
+    process?.kill('job admission failed')
+    throw new BashJobAdmissionError(error, runInvoked)
+  }
+  return { id, process: () => process, stopped: () => stopped,
+    effects: (): 'none' | 'unknown' => process ? (process.started ? 'unknown' : 'none') : attempted ? 'unknown' : 'none' }
 }
 
 export async function waitOnBashJob(jobs: ShellJobs, attached: ReturnType<typeof startBashJob>, exec: ShellCall, timeoutMs: number): Promise<HostBashResult> {
@@ -48,7 +64,7 @@ export async function waitOnBashJob(jobs: ShellJobs, attached: ReturnType<typeof
     if (!attached.process()?.started) {
       await stop('timed out during preparation')
       return hostForeground({ timedOut: true, timeoutMs,
-        stdout: { text: '', truncated: false }, stderr: { text: '', truncated: false } })
+        stdout: { text: '', truncated: false }, stderr: { text: '', truncated: false } }, attached.effects())
     }
     const read = jobs.read(attached.id, owner)
     const stdout = read.chunks.filter(chunk => chunk.channel !== 'stderr').map(chunk => chunk.text).join('')
@@ -61,5 +77,5 @@ export async function waitOnBashJob(jobs: ShellJobs, attached: ReturnType<typeof
   jobs.remove(attached.id, owner)
   const process = attached.process()
   if (!process) throw new Error(view.detail ?? 'Bash job preparation failed')
-  return hostForeground({ ...await process.result(), ...(attached.stopped() ? { stopped: attached.stopped() } : {}) })
+  return hostForeground({ ...await process.result(), ...(attached.stopped() ? { stopped: attached.stopped() } : {}) }, process.started ? 'unknown' : 'none')
 }

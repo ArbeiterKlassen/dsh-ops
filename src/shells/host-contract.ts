@@ -2,6 +2,7 @@
 /** DSH 0.2.0-rc.2 shell DTO and rendering, with explicit OPS compatibility fields. */
 import type { JsonSchemaNode, JsonSchemaType } from '@deepseek-ai/dsh-tools'
 import type { ShellResult, HostForeground, HostBashResult } from './types.js'
+import { bashFailure } from './failure.js'
 import { BASH_OUTPUT_SCHEMA, renderBashResult, withBashStatus } from './tool.js'
 
 const nullable = (type: JsonSchemaType): JsonSchemaNode => ({ oneOf: [{ type }, { type: 'null' }] })
@@ -15,20 +16,25 @@ export const HOST_BASH_OUTPUT_SCHEMA: JsonSchemaNode = {
     } },
     { ...BASH_OUTPUT_SCHEMA, required: [...(BASH_OUTPUT_SCHEMA.required ?? []), 'kind', 'exitCode', 'signal', 'aborted'], properties: {
       ...BASH_OUTPUT_SCHEMA.properties,
+      failure: { type: 'object', additionalProperties: false, required: ['code', 'message', 'effectState', 'retry'], properties: {
+        code: { type: 'string' }, message: { type: 'string' }, effectState: { type: 'string', enum: ['none', 'unknown'] },
+        retry: { type: 'string', enum: ['never', 'after-input-change'] }, nextAction: { type: 'string' },
+      } },
       kind: { type: 'string', const: 'foreground' }, exitCode: nullable('integer'), signal: nullable('string'),
       aborted: { type: 'boolean' }, stopped: { type: 'string' },
     } },
   ],
 }
 
-export function hostForeground(value: ShellResult): HostForeground {
-  return { ...withBashStatus(value), kind: 'foreground', exitCode: value.exitCode ?? null,
+export function hostForeground(value: ShellResult, effects: 'none' | 'unknown' = 'unknown'): HostForeground {
+  const settled = withBashStatus(value)
+  return { ...settled, ...(settled.status === 'failed' ? { failure: bashFailure(value, effects) } : {}), kind: 'foreground', exitCode: value.exitCode ?? null,
     signal: value.signal ?? null, aborted: value.cancelled === true }
 }
 
-export function hostFailure(message: string, timeoutMs = 120_000) {
-  return hostForeground({ error: message, timedOut: false, timeoutMs,
-    stdout: { text: '', truncated: false }, stderr: { text: '', truncated: false } })
+export function hostFailure(message: string, timeoutMs = 120_000, effects: 'none' | 'unknown' = 'none', cancelled = false) {
+  return hostForeground({ error: message, timedOut: false, timeoutMs, ...(cancelled ? { cancelled: true } : {}),
+    stdout: { text: '', truncated: false }, stderr: { text: '', truncated: false } }, effects)
 }
 
 export function renderHostBash(value: HostBashResult): string {
@@ -37,6 +43,7 @@ export function renderHostBash(value: HostBashResult): string {
   const { exitCode, signal, ...rest } = value
   const body = renderBashResult(rest)
   const markers = []
+  if (value.failure) markers.push(`[${value.failure.code}; effects: ${value.failure.effectState}; retry: ${value.failure.retry}] ${value.failure.nextAction ?? ''}`)
   if (value.sandbox?.denied) markers.push(`[sandbox: file access denied under ${value.sandbox.mode} mode]`)
   if (value.stopped) markers.push(`[stopped: ${value.stopped}]`)
   if (signal !== null) markers.push(`[killed by signal: ${signal}]`)

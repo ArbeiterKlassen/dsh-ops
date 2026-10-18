@@ -270,9 +270,8 @@ export function bashToolDefinition({ file, source, subprocess, prepareArgv, env 
      */
     resolve(args) {
       assertKnownArguments(args, BASH_ARGUMENTS)
-      // Every refusal in this body is a BashArgumentError, never a plain Error: the session layer
-      // folds RUNTIME failures into a value (#168) and rethrows a caller's bad argument, so a wrong
-      // field reaches the caller as itself instead of as "returned invalid output" (#235).
+      // This internal validator throws typed argument errors. The session host projection returns
+      // them as schema-valid failures, preserving the caller's diagnosis and no-effect facts.
       if (args?.description !== undefined && typeof args.description !== 'string') throw new BashArgumentError('invalid description: expected a string', 'description')
       const rawCommand = args?.command
       const rawScriptPath = args?.script_path

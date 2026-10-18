@@ -2,12 +2,12 @@
 /** Host-compatible consumer over an OPS-owned executor; host services stay scoped and borrowed. */
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
-import type { ShellContext, ShellBase, ShellCall, ShellPolicy, CreateShellExecution, StartShell, HostBashResult, HostShellDefinition } from './types.js'
+import type { ShellContext, ShellBase, ShellCall, ShellPolicy, CreateShellExecution, StartShell, ShellExecution, HostBashResult, HostShellDefinition } from './types.js'
 import { errorMessage } from './types.js'
 import { BashArgumentError, isBashArgumentError } from './argument-error.js'
 import { approveBashPolicy } from './approval.js'
 import { HOST_BASH_OUTPUT_SCHEMA, hostFailure, hostForeground, renderHostBash } from './host-contract.js'
-import { startBashJob, waitOnBashJob } from './jobs.js'
+import { BashJobAdmissionError, startBashJob, waitOnBashJob } from './jobs.js'
 
 export const HOST_MAX_BASH_TIMEOUT_MS = 600_000
 
@@ -31,6 +31,8 @@ export function hostBashDefinition(ctx: ShellContext, base: ShellBase, createExe
     async execute(input: unknown, exec: ShellCall = {}): Promise<HostBashResult> {
       let timeoutMs = 120_000
       let policy: ShellPolicy | undefined
+      let attempted = false
+      let process: ShellExecution | undefined
       try {
         if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BashArgumentError('invalid arguments: expected an object', 'arguments')
         const args = input as Record<string, unknown>
@@ -52,20 +54,26 @@ export function hostBashDefinition(ctx: ShellContext, base: ShellBase, createExe
         exec.signal?.throwIfAborted()
         const dshEnv = ctx.get('shellEnv')?.collect(exec) ?? {}
         const approvedPolicy = policy
-        const start: StartShell = (execution, options) => createExecution(local, execution, standing, approvedPolicy, dshEnv, options)
+        const start: StartShell = async (execution, options) => {
+          attempted = true
+          process = await createExecution(local, execution, standing, approvedPolicy, dshEnv, options)
+          return process
+        }
         if (jobs && ctx.get('jobs') === jobs) {
           let attached
           try { attached = startBashJob(jobs, args as { command?: string; script_path?: string }, exec, start) }
           catch (error) {
-            if (run_in_background) throw error
+            if (run_in_background || attempted || error instanceof BashJobAdmissionError && error.runInvoked) throw error
             ctx.logger?.warn?.(`Bash job admission refused; using the foreground deadline: ${errorMessage(error)}`)
           }
           if (attached) return run_in_background ? { kind: 'background', jobId: attached.id } : await waitOnBashJob(jobs, attached, exec, timeoutMs)
         } else if (run_in_background) return hostFailure('EXECUTOR_UNAVAILABLE: the host job registry is unavailable.', timeoutMs)
-        return hostForeground(await (await start(exec, {})).result())
+        const execution = await start(exec, {})
+        const result = await execution.result()
+        return hostForeground(result, execution.started ? 'unknown' : 'none')
       } catch (error) {
-        if (isBashArgumentError(error)) throw error
-        return { ...hostFailure(errorMessage(error), timeoutMs), ...(exec.signal?.aborted ? { aborted: true, cancelled: true } : {}), ...(policy ? { sandbox: { mode: policy.mode, denied: false } } : {}) }
+        const message = isBashArgumentError(error) ? `INVALID_BASH_ARGUMENT: ${errorMessage(error)}` : errorMessage(error)
+        return { ...hostFailure(message, timeoutMs, process ? (process.started ? 'unknown' : 'none') : attempted ? 'unknown' : 'none', exec.signal?.aborted === true), ...(policy ? { sandbox: { mode: policy.mode, denied: false } } : {}) }
       }
     },
   } satisfies ToolDefinition

@@ -74,8 +74,13 @@ await test('host foreground calls validate and render the host result contract',
 
 await test('host descriptions are required and timeout overrides cap at ten minutes', async () => {
   const f = fixture()
-  await assert.rejects(() => f.definition.execute({ command: 'true' }, f.exec), /invalid description/)
-  await assert.rejects(() => f.definition.execute({ command: 'true', description: 'x', timeoutMs: NaN }, f.exec), /invalid timeoutMs/)
+  for (const args of [{ command: 'true' }, { command: 'true', description: 'x', timeoutMs: NaN }]) {
+    const invalid = await f.definition.execute(args, f.exec)
+    assert.equal(invalid.status, 'failed'); assert.equal(invalid.failure.code, 'INVALID_BASH_ARGUMENT')
+    assert.equal(invalid.failure.effectState, 'none'); assert.equal(invalid.failure.retry, 'after-input-change')
+    assert.deepEqual(validateJsonSchemaValue(f.definition.output.schema, invalid, 'value'), [])
+    assert.match(f.definition.output.render({}, invalid)[0].text, /invalid (description|timeoutMs)/)
+  }
   assert.equal(f.calls.length, 0)
   const value = await f.definition.execute({ command: 'true', description: 'Cap the command timeout', timeoutMs: 900000 }, f.exec)
   assert.equal(value.timeoutMs, 600000)
@@ -88,6 +93,7 @@ await test('approval rejection and missing approval never execute or create jobs
     } } })
     const value = await f.definition.execute({ command: 'true', description: 'Check explicit wider access', sandbox_permissions: 'danger-full-access', justification: 'Need the requested command access.' }, f.exec)
     assert.match(value.error, /APPROVAL_/); assert.equal(f.calls.length, 0)
+    assert.equal(value.failure.effectState, 'none'); assert.equal(value.failure.retry, 'never')
   }
   const f = fixture({ mode: 'read-only' })
   const value = await f.definition.execute({ command: 'true', description: 'Check missing approval service', sandbox_permissions: 'danger-full-access', justification: 'Need wider access.' }, f.exec)
@@ -116,7 +122,9 @@ await test('escalation argument failures precede approval and execution', async 
   let asks = 0
   const f = fixture({ approval: { async request() { asks++; return 'allowed-once' } } })
   for (const args of [{ justification: 'orphan' }, { sandbox_permissions: 'workspace-write', justification: 'narrow' }, { sandbox_permissions: 'unknown' }]) {
-    await assert.rejects(() => f.definition.execute({ command: 'true', description: 'Validate escalation fields', ...args }, f.exec), /invalid/)
+    const value = await f.definition.execute({ command: 'true', description: 'Validate escalation fields', ...args }, f.exec)
+    assert.equal(value.failure.code, 'INVALID_BASH_ARGUMENT'); assert.match(value.error, /invalid/)
+    assert.equal(value.failure.effectState, 'none')
   }
   assert.equal(asks, 0); assert.equal(f.calls.length, 0)
 })
@@ -168,11 +176,13 @@ await test('same-mode requests do not prompt and cancellation while approving pr
   const value = await call
   assert.equal(value.status, 'failed'); assert.equal(value.aborted, true); assert.match(value.error, /approval was cancelled/)
   assert.equal(pending.calls.length, 0)
+  assert.equal(value.failure.code, 'CANCELLED'); assert.equal(value.failure.effectState, 'none')
 })
 
 await test('without jobs the foreground deadline stops execution and background arguments fail', async () => {
   const f = fixture({ settle: false })
-  await assert.rejects(() => f.definition.execute({ command: 'true', description: 'Reject unavailable background work', run_in_background: true }, f.exec), /unknown key/)
+  const invalid = await f.definition.execute({ command: 'true', description: 'Reject unavailable background work', run_in_background: true }, f.exec)
+  assert.equal(invalid.failure.code, 'INVALID_BASH_ARGUMENT'); assert.match(invalid.error, /unknown key/)
   assert.equal(f.calls.length, 0)
   // Keep this test alive while the executor's deliberately unref'ed deadline runs.
   const hold = setTimeout(() => {}, 2000)
@@ -180,6 +190,8 @@ await test('without jobs the foreground deadline stops execution and background 
     const value = await f.definition.execute({ command: 'true', description: 'Stop the command at expiry', timeoutMs: 5 }, f.exec)
     assert.equal(value.kind, 'foreground'); assert.equal(value.timedOut, true)
     assert.equal(value.status, 'failed'); assert.equal(f.calls[0].signal.aborted, true)
+    assert.equal(value.failure.effectState, 'unknown'); assert.equal(value.failure.retry, 'never')
+    assert.match(f.definition.output.render({}, value)[0].text, /Inspect its effects with a read-only operation first/)
   } finally { clearTimeout(hold) }
 })
 
@@ -188,6 +200,8 @@ await test('nonzero exit completes the host job but preserves the failed command
   const value = await f.definition.execute({ command: 'exit 7', description: 'Report a nonzero command exit' }, f.exec)
   assert.equal(jobs.outcome.status, 'completed'); assert.equal(jobs.outcome.detail, 'exit code: 7')
   assert.equal(value.exitCode, 7); assert.equal(value.status, 'failed')
+  assert.equal(value.failure.effectState, 'unknown'); assert.equal(value.failure.retry, 'never')
+  assert.deepEqual(validateJsonSchemaValue(f.definition.output.schema, value, 'value'), [])
 })
 
 await test('job cancellation before asynchronous preparation prevents the starter from running', async () => {
@@ -210,6 +224,7 @@ await test('an expiring pending preparation is stopped and never promoted', asyn
   const value = await waitOnBashJob(jobs, attached, f.exec, 1)
   assert.equal(value.kind, 'foreground'); assert.equal(value.timedOut, true)
   assert.equal(killed, true); assert.equal(jobs.removed, true)
+  assert.equal(value.failure.effectState, 'none'); assert.equal(value.failure.code, 'TIMEOUT')
 })
 
 await test('an unresolved executable is refused before the host can search PATH', async () => {
@@ -223,6 +238,55 @@ await test('a session executor without an authoritative agent refuses before con
   const policy = { mode: 'danger-full-access', workspaceRoot: TEST_HOME }
   assert.throws(() => startSessionBash({ ctx, bash: { file: process.execPath, source: 'config' }, active: () => true },
     { command: 'true' }, {}, policy, policy, {}, {}), /EXECUTOR_UNAVAILABLE: an authoritative session is required/)
+})
+
+await test('post-run admission failure cancels queued work and never retries foreground', async () => {
+  let hooks
+  const jobs = { start(spec) { hooks = spec.run(); throw new Error('admission failed after run hook') } }
+  const f = fixture({ jobs })
+  const value = await f.definition.execute({ command: 'true', description: 'Refuse partially accepted job admission' }, f.exec)
+  await hooks.done
+  assert.equal(value.status, 'failed'); assert.match(value.error, /admission failed after run hook/)
+  assert.equal(value.failure.effectState, 'none'); assert.equal(value.failure.retry, 'never')
+  assert.equal(f.calls.length, 0, 'neither queued job nor foreground retry can start')
+})
+
+await test('starter/result errors distinguish pre-execution evidence from uncertain command effects', async () => {
+  const f = fixture(), base = bashToolDefinition({ file: process.execPath, source: 'config', subprocess: f.services.subprocess })
+  const args = { command: 'true', description: 'Classify execution uncertainty without repeating' }
+  for (const started of [false, true, undefined]) {
+    let starts = 0
+    const custom = hostBashDefinition({ get: name => f.services[name] }, base, () => {
+      starts++
+      if (started === undefined) throw new Error('starter failed without a handle')
+      return { started, result() { throw new Error('result read failed') } }
+    }, sessionWorkdir)
+    const value = await custom.execute(args, f.exec)
+    assert.equal(starts, 1); assert.equal(value.status, 'failed')
+    assert.equal(value.failure.effectState, started === false ? 'none' : 'unknown')
+    assert.equal(value.failure.retry, 'never')
+    assert.deepEqual(validateJsonSchemaValue(custom.output.schema, value, 'value'), [])
+  }
+  f.services.shellEnv.collect = () => { throw new Error('environment collection failed') }
+  const value = await f.definition.execute(args, f.exec)
+  assert.equal(value.failure.effectState, 'none'); assert.equal(f.calls.length, 0)
+})
+
+await test('timeout cannot claim no effects while an invoked asynchronous starter has no handle', async () => {
+  const jobs = jobRegistry({ promote: true }), f = fixture()
+  const pending = Promise.withResolvers(); let stopped = false
+  const wait = jobs.wait.bind(jobs); let waits = 0
+  // The real registry's second bounded wait may still report cancellation in progress.
+  jobs.wait = (...args) => ++waits === 2 ? Promise.resolve({ status: 'stopping' }) : wait(...args)
+  const attached = startBashJob(jobs, { command: 'true' }, f.exec, () => pending.promise)
+  const value = await waitOnBashJob(jobs, attached, f.exec, 1)
+  assert.equal(value.timedOut, true); assert.equal(value.failure.effectState, 'unknown')
+  assert.equal(value.failure.retry, 'never'); assert.equal(jobs.removed, false)
+  pending.resolve({ started: false, kill() { stopped = true },
+    result: async () => ({ cancelled: true, timedOut: false, timeoutMs: 1,
+      stdout: { text: '', truncated: false }, stderr: { text: '', truncated: false } }) })
+  await jobs.hooks.done
+  assert.equal(stopped, true); assert.equal(jobs.outcome.status, 'killed')
 })
 
 report('shells-host')

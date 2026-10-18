@@ -1,4 +1,5 @@
 /** Typed OPS shell boundary; host classes are borrowed through services, never imported as values. */
+import type { OpsErrorPayload } from '../kernel/outcome.js'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
 import type { SandboxExecutionPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
@@ -12,6 +13,7 @@ export interface ShellResult {
   exitCode?: number | null
   signal?: string | null
   error?: string
+  failure?: OpsErrorPayload
   timedOut: boolean
   timeoutMs: number
   stdout: ShellStream
