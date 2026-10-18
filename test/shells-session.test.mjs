@@ -22,7 +22,7 @@ import { hostForeground } from '../lib/shells/host-contract.js'
 import { BASH_ARGUMENT_ERROR_CODE } from '../lib/shells/argument-error.js'
 import { bashRefusalValue, mountSessionBash } from '../lib/session-shells.js'
 
-const bash = resolveShells({}).bash
+const bash = resolveShells(process.env.DSH_OPS_TEST_BASH ? { bashPath: process.env.DSH_OPS_TEST_BASH } : {}).bash
 if (!bash.available) {
   skipSuite('shells-session', 'this suite needs a real bash to run a command through the session layer: ' + bash.detail)
 }

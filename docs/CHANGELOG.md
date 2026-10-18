@@ -7,6 +7,13 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Make Windows Bash an explicit optional runtime (#261)
+
+- Add Bash status/install/remove and Git/managed selection commands. Removal previews by default,
+  removes only receipt-marked managed versions, and refuses linked managed directories.
+- Remove the automatic Bash npm payload dependency and release payload assembly. Build, CI and
+  release gates explicitly acquire a pinned fixture, or validate an operator-provided offline one.
+
 ### Reuse host Bash approvals and background jobs (#261)
 
 - Require command descriptions and return host foreground/background/promoted result kinds, with

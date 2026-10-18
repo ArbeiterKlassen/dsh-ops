@@ -46,7 +46,22 @@ capability matrix and the known limitations.
 
 ### Official plugin marketplace
 
-In the target DSH application's plugin marketplace, enter the npm package name **`dsh-ops`**, install, then enable. Installation belongs to the currently running profile, which is `desktop` for the desktop app. The published package depends on complete bash and PowerShell 7 payloads; it does not download them through install scripts or change the system PATH.
+In the target DSH application's plugin marketplace, enter the npm package name **`dsh-ops`**, install, then enable. Installation belongs to the currently running profile, which is `desktop` for the desktop app. Bash is acquired separately through the runtime manager; PowerShell 7 remains an optional payload dependency in this slice. Installation runs no shell downloader and does not change system PATH.
+
+### Optional Bash runtime
+
+Bash is no longer an npm dependency. On Windows, install the verified managed copy explicitly, or select an existing Git Bash:
+
+```console
+dsh-ops bash-runtime status
+dsh-ops bash-runtime install
+dsh-ops bash-runtime git
+dsh-ops bash-runtime managed
+dsh-ops bash-runtime remove            # preview only
+dsh-ops bash-runtime remove --yes      # remove receipt-marked managed versions
+```
+
+`git` and `managed` print an absolute `bashPath` configuration for the host config editor; they do not edit a profile or PATH. Reload the shell component after applying the selection or installing/removing its runtime. Stop running Bash jobs before removal. Removal refuses links in the managed path and preserves unmarked versions, system Git and PowerShell. `install` reuses the pinned download and checksum checks from `provision-shells --bash`; `--dry-run` makes no download or change. Windows restricted modes still require the pinned MSYS IPC compatibility match. A different Git Bash remains a full-access choice; approval never repairs an incompatible restricted runtime. Linux/macOS continue using host Bash.
 
 ### One-command npm installation
 

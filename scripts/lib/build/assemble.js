@@ -1,7 +1,7 @@
 /**
  * Step: assemble — what one release builds and the packages it stages.
  *
- * The two package directories are built from the committed skeletons in
+ * The remaining package directory is built from the committed skeletons in
  * `packages/<kind>-<platform>-<arch>/` plus the verified upstream tree and a
  * per-package `provenance.json`.
  *
@@ -41,16 +41,6 @@ export function shellPackageName(kind, platform, arch) {
 export function describePackages(platform, arch, dist) {
   const version = mainManifest().version
   return [
-    {
-      kind: 'bash',
-      name: shellPackageName('bash', platform, arch),
-      version,
-      platform,
-      arch,
-      dist,
-      executable: `bin/${PLATFORM_PACKAGES.bash.executable}`,
-      payload: { type: 'archive', pin: resolveShellPin('bash', platform, arch) },
-    },
     {
       kind: 'pwsh',
       name: shellPackageName('pwsh', platform, arch),

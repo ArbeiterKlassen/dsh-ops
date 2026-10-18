@@ -184,7 +184,18 @@ async function main() {
   await run('native worker unit tests', 'cargo', ['test', '--workspace', '--locked', '--manifest-path', 'native/Cargo.toml'])
   await run('build and stage the native worker', 'npm', ['run', 'build:ptc'])
 
-  if (TARGET === 'win32-x64') await run('Windows IPC payloads', 'npm', ['run', 'build:bash-ipc'])
+  const runtimeEnv = {}
+  if (TARGET === 'win32-x64') {
+    const { pinnedBashExecutable } = await import('../lib/shells/pinned.js')
+    let fixture = process.env.DSH_OPS_TEST_BASH
+    if (!fixture) {
+      const fixtureEnv = { DSH_HOME: mkdtempSync(path.join(tmpdir(), 'dsh-ops-bash-fixture-')) }
+      await run('Acquire optional pinned Bash fixture', 'node', ['bin/dsh-ops.mjs', 'bash-runtime', 'install'], { env: fixtureEnv })
+      fixture = pinnedBashExecutable({ env: fixtureEnv })
+    }
+    runtimeEnv.DSH_OPS_TEST_BASH = pinnedBashExecutable({ file: fixture })
+    await run('Windows IPC payloads', 'npm', ['run', 'build:bash-ipc'], { env: runtimeEnv })
+  }
 
   const manifest = await run('manifest contract', 'npm', ['run', 'validate:manifest'])
   const manifestChecks = parseManifest(manifest.output)
@@ -196,7 +207,7 @@ async function main() {
   // script would never be green there. Windows keeps its protection through the skip set below
   // instead — a skip outside `ALLOWED_SKIPS` fails, and the suites that would betray a worker
   // that was never built (`permissions`, `ptc`) are not in it.
-  const env = { DSH_HOME: mkdtempSync(path.join(tmpdir(), 'dsh-ops-gate-')) }
+  const env = { ...runtimeEnv, DSH_HOME: mkdtempSync(path.join(tmpdir(), 'dsh-ops-gate-')) }
   if (TARGET !== 'win32-x64') env.DSH_OPS_REQUIRE_RUNTIME = '1'
   // Keep the external-checkout suites as skips: `DSH_OPS_REQUIRE_RUNTIME=1` would otherwise
   // count them as failures and make this gate permanently red on a machine without that checkout.

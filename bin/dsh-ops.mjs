@@ -20,6 +20,7 @@ import { profileCommand } from '../lib/profile-install.js'
 import { cargoBuild, findCargo } from '../lib/rust.js'
 import { commandLadder } from '../lib/cli/report.js'
 import { commandProvisionShells } from '../lib/cli/provision-shells.js'
+import { commandBashRuntime } from '../lib/cli/bash-runtime.js'
 import { commandUninstall } from '../lib/cli/uninstall.js'
 
 /**
@@ -47,6 +48,9 @@ Usage:
   dsh-ops provision-shells [--bash] [--pwsh] [--force] [--dry-run] [--pin <file>]
                                   Download the pinned upstream bash and/or PowerShell 7, verify
                                   their digests, and install them under <DSH_HOME>/dsh-ops/shells
+  dsh-ops bash-runtime [status|install|remove|git|managed] [--yes] [--dry-run]
+                                  Manage optional Bash; git/managed prints a bashPath selection
+                                  for the host config editor. remove previews unless --yes.
   dsh-ops help                    This text
 
 Environment:
@@ -98,7 +102,7 @@ async function main() {
     },
   })
   const command = positionals[0] ?? 'help'
-  if (positionals.length > 1) throw new Error('Unexpected positional arguments.')
+  if (positionals.length > (command === 'bash-runtime' ? 2 : 1)) throw new Error('Unexpected positional arguments.')
   if (command === 'install' || (['uninstall', 'status'].includes(command) && values.profile !== undefined)) {
     return profileCommand(command, { profile: values.profile, dshCli: values['dsh-cli'], dryRun: values['dry-run'] === true })
   }
@@ -107,6 +111,8 @@ async function main() {
     return 2
   }
   switch (command) {
+    case 'bash-runtime':
+      return commandBashRuntime(positionals[1], { yes: values.yes, dryRun: values['dry-run'], force: values.force, configFile: values.config })
     case 'ladder':
       return commandLadder({ json: values.json === true, configFile: values.config })
     case 'build-ptc': {

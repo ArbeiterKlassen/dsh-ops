@@ -28,7 +28,7 @@ Main features of this plugin:
 - A set of more advanced always-on tools written in Rust. Compared with the built-ins, these tools use fewer input and output tokens, run faster, cover more ground, and impose less mental load on the AI; they also carry brief hash checks, line/position info, and similar messages to reduce token overhead.
 - Planned on the [roadmap](docs/roadmap.md): everyday tools such as DOC/PDF operations, web search, and crawl4ai-style HTML-to-Markdown tools, added through progressive disclosure so the AI avoids writing one-off code or scripts to reach its goal. **The current release does not ship them yet.**
 - Provides an option to disable the built-in tools, to maximize savings on the AI's mental load and the fixed system prompt.
-- On Windows it additionally provides the `ops_bash` tool — the AI is far more fluent with bash than with pwsh. You can use the independent **bash 5.3.15** bundled with ops, or point the `ops_bash` tool at Git Bash.
+- On Windows it additionally provides the `ops_bash` tool — the AI is far more fluent with bash than with pwsh. Run `dsh-ops bash-runtime install` to acquire the verified optional Bash, or select an existing Git Bash through `bashPath`. Bash is no longer an npm dependency.
 
 Plugin traits:
 
@@ -84,7 +84,7 @@ npx --yes dsh-ops@latest status --profile desktop
 npx --yes dsh-ops@latest uninstall --profile desktop
 ```
 
-Replace `desktop` with `web` or `tui` as needed. You can also uninstall from the marketplace, or run the official `dsh plugin --profile ... remove dsh-ops`. Binaries are managed as part of the profile's plugin dependencies; uninstalling removes the dependency reference without deleting the system shell, copies in other profiles, or the package manager's shared cache.
+Replace `desktop` with `web` or `tui` as needed. You can also uninstall from the marketplace, or run the official `dsh plugin --profile ... remove dsh-ops`. Profile uninstall removes plugin dependency references. Remove separately downloaded Bash with `dsh-ops bash-runtime remove --yes`; this does not delete the system shell, copies in other profiles, or the package manager's shared cache.
 
 Old files explicitly provisioned by earlier versions under `<DSH_HOME>/dsh-ops/` (provisioned shells, and the FastCtx runtime earlier versions could provision) need separate cleanup: `npx --yes dsh-ops@latest uninstall --yes`. The `~/.fastctx/` state left by the removed background component is not deleted by default; add `--purge-fastctx` when needed.
 

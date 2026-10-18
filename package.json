@@ -149,7 +149,6 @@
     }
   },
   "optionalDependencies": {
-    "@dsh-ops/bash-win32-x64": "0.2.1",
     "@dsh-ops/pwsh-win32-x64": "0.2.1"
   },
   "devDependencies": {

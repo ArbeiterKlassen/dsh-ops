@@ -349,7 +349,7 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       assert.equal(noAudit.error.code,'POLICY_DENIED')
       const page=await ptcCall(ctx,worker,'result',{root,action:'page',id:batch.detailsRef},exec,exec.signal)
       assert.equal(page.items.length,1)
-      const shells=resolveShells({allowSystemShellFallback:true})
+      const shells=resolveShells({allowSystemShellFallback:true,...(process.env.DSH_OPS_TEST_BASH?{bashPath:process.env.DSH_OPS_TEST_BASH}:{})})
       assert.ok(shells.bash.available,'Real bash required for permission matrix')
       await ctx.plugin({inject:['tools'],apply(inner){mountSessionBash(inner,{publishBashTool:true},shells)}})
       await ctx.serial('agent/created',{agent})
