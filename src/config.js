@@ -208,3 +208,4 @@ export function resolveHidingConfig(raw = {}) {
 
 /** Independent PTC row configuration uses the same central validation entry point. */
 export { parsePtcConfig as resolvePtcConfig } from './ptc/config.js'
+export { resolveDiscoveryConfig } from './discovery/config.js'

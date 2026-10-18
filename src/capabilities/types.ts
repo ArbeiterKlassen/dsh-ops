@@ -1,6 +1,6 @@
 import type { JsonSchemaNode, ObjectJsonSchema, ToolPresentationMode } from '@deepseek-ai/dsh-tools'
 
-export type Component = 'file' | 'ptc' | 'shell'
+export type Component = 'file' | 'ptc' | 'shell' | 'discovery'
 export type ParameterSchema = ObjectJsonSchema & Record<string, unknown> & {
   properties: Record<string, JsonSchemaNode>
   required: string[]
