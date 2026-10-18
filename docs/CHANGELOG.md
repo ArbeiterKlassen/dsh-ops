@@ -16,6 +16,12 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - PTC 返回可收窄的规范结果信封；安全续取只描述只读操作，绝不重放修改。构建并发布同源类型声明，
   保留参数、覆盖范围、副作用和重试约束。
 
+### Load scoped PTC SDKs progressively (#261, 7/16)
+
+- PTC owns typed file, batch and result APIs independently of the Native file row. Start with the reader, result storage/pager and SDK loader; requested advanced APIs publish only at the next agent step.
+- Keep per-agent allowed pools and always-loaded selections, Native/both isolation, owned registration handoff and structured Outcome failures.
+- PTC 独立提供类型化文件、批处理与引用 API；高级 SDK 按代理在下一步骤加载，支持允许池和始终加载配置，并保持 Native 隔离及结构化失败。
+
 ### Page stored references from Native file tools (#261, 6d/16)
 
 - Add a Native page/release projection of the shared ops_result capability, independently owned by

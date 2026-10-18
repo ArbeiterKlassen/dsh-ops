@@ -205,3 +205,6 @@ export function resolveHidingConfig(raw = {}) {
   }
   return { strict: true, additionalOfficialTools: [...new Set(aliases)] }
 }
+
+/** Independent PTC row configuration uses the same central validation entry point. */
+export { parsePtcConfig as resolvePtcConfig } from './ptc/config.js'

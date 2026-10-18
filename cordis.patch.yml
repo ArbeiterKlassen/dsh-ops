@@ -24,6 +24,8 @@
       name: dsh-ops/ptc
       config:
         required: false
+        allowedTools: [grep, glob, replace, write_file, edit_file, diff, stat, copy, move, remove, read_many, edit_many, batch]
+        alwaysLoaded: []
     - id: dsh-ops-panel
       name: dsh-ops/panel
       config:

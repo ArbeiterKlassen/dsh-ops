@@ -224,7 +224,7 @@ try {
         return { argv, enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
       } })
     })
-    const component = await ctx.plugin(ptc, { binaryPath: file, required: true })
+    const component = await ctx.plugin(ptc, { binaryPath: file, required: true, alwaysLoaded: ['batch'] })
     const makeAgent = async (id, presentation, parent) => {
       const agent = { id, session: { id, mode: 'workspace-write', header: { cwd: dir } } }
       const scope = createScope(parent?.ctx ?? ctx, agent); agent.ctx = scope.ctx
@@ -248,14 +248,14 @@ try {
     const assembled = await ctx.get('systemPrompt').assemble({scope:pure})
     assert.deepEqual(assembled.tools.map(t => t.name), ['run_code'])
     assert.ok(assembled.sections.some(s => s.text.includes('ops_batch')))
-    assert.ok(assembled.sections.some(s => s.name === 'dsh-ops:repository-tooling:ptc' && s.text.includes('Do not replace read')))
+    assert.ok(assembled.sections.some(s => s.name === 'dsh-ops:repository-tooling:ptc' && s.text.includes('typed Outcome')))
     assert.equal((await ctx.get('systemPrompt').assemble({scope:native})).sections.some(s => s.text.includes('ops_batch')), false)
     const def = ctx.get('tools').get('ops_batch', pure)
     const wrongOwner = await def.execute({ action: 'plan', operations: [] }, { agent: ptcChild, signal: new AbortController().signal })
     assert.equal(wrongOwner.error.code, 'POLICY_DENIED')
     write('host-copy', 'host data')
     const result = await ctx.get('tools').get('ops_batch', pure).execute({ action:'run',operations:[{op:'copy',path:'host-copy',to:'host-dest'}] }, {agent:pure,signal:new AbortController().signal})
-    assert.equal(result.status,'completed',JSON.stringify(result)); assert.equal(result.sandbox.enforcement,'full')
+    assert.equal(result.status,'completed',JSON.stringify(result)); assert.equal(result.data.sandbox.enforcement,'full')
     const hostJobs = new Map(); let jobNumber = 0
     await ctx.plugin(inner => inner.provide('jobs', {
       start(spec) {
@@ -269,7 +269,7 @@ try {
     pure.session.mode = 'read-only'
     const readonly = await def.execute({action:'run',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure,signal:new AbortController().signal})
     assert.equal(readonly.error.code,'POLICY_DENIED')
-    assert.equal(readonly.error.permission.current, 'read-only'); assert.match(readonly.error.nextAction, /Do not retry/)
+    assert.equal(readonly.data.error.permission.current, 'read-only'); assert.match(readonly.error.nextAction, /Do not retry/)
     pure.session.mode = 'workspace-write'; sandboxAvailable = false
     assert.equal((await def.execute({action:'run',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure,signal:new AbortController().signal})).error.code,'EXECUTOR_UNAVAILABLE')
     assert.equal(calls.length,before); assert.equal(hostJobs.size,0)
@@ -316,7 +316,7 @@ try {
     const partial = await invoke(partialSandboxCtx,file,'batch',{action:'plan',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure},new AbortController().signal)
     assert.equal(partial.status,'planned'); assert.equal(partial.sandbox.enforcement,'partial')
     const monitored = await def.execute({action:'plan',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure,signal:new AbortController().signal})
-    assert.equal(monitored.status,'planned'); assert.equal(hostJobs.size,0); assert.ok(jobNumber >= 1)
+    assert.equal(monitored.status,'completed'); assert.equal(monitored.data.status,'planned'); assert.equal(hostJobs.size,0); assert.ok(jobNumber >= 1)
     const aborted = new AbortController(); aborted.abort()
     const cancelled = await invoke(ctx,file,'batch',{action:'run',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure},aborted.signal)
     assert.equal(cancelled.error.effectState,'none'); assert.equal(cancelled.error.code,'CANCELLED')
@@ -349,7 +349,7 @@ try {
         await new Promise(resolve => { releaseAssembly = resolve })
         return ''
       } })
-    const race = removedDefinition.execute({ action: 'page', id: result.detailsRef }, { agent: ptcChild, signal: new AbortController().signal })
+    const race = removedDefinition.execute({ action: 'page', id: result.data.detailsRef }, { agent: ptcChild, signal: new AbortController().signal })
     await blocked
     const callsBeforeRace = calls.length
     ptcChild.liftPresentation()
@@ -357,11 +357,12 @@ try {
     assert.equal((await race).error.code, 'POLICY_DENIED')
     assert.equal(calls.length, callsBeforeRace, 'presentation changes during assembly must not spawn a worker')
     removeSection()
-    assert.equal(visible(ptcChild).includes('ops_result'), false, 'presentation withdrawal is synchronous')
-    assert.equal((await removedDefinition.execute({ action: 'page', id: result.detailsRef }, { agent: ptcChild, signal: new AbortController().signal })).error.code, 'POLICY_DENIED')
+    await ctx.get('systemPrompt').assemble({ scope: ptcChild });
+    assert.equal(visible(ptcChild).includes('ops_result'), false, 'presentation withdrawal precedes returned Native assembly')
+    assert.equal((await removedDefinition.execute({ action: 'page', id: result.data.detailsRef }, { agent: ptcChild, signal: new AbortController().signal })).error.code, 'POLICY_DENIED')
     await ctx.serial('agent/disposed', { agent: ptcChild })
     assert.equal(visible(ptcChild).includes('ops_result'), false)
-    assert.equal((await removedDefinition.execute({ action: 'page', id: result.detailsRef }, { agent: ptcChild, signal: new AbortController().signal })).error.code, 'POLICY_DENIED')
+    assert.equal((await removedDefinition.execute({ action: 'page', id: result.data.detailsRef }, { agent: ptcChild, signal: new AbortController().signal })).error.code, 'POLICY_DENIED')
     // Unload rejects retained callbacks and cleans owned registrations, not foreign tools.
     await until(() => visible(pure).includes('ops_batch'))
     const schemaBefore = JSON.stringify(ctx.get('tools').schemas(pure))
@@ -412,7 +413,7 @@ try {
     write('real-source','native')
     await real.plugin(NodePtc, {})
     await agent.ctx.plugin({ inject: ['tools'], apply(inner) { inner.tools.presentAs('ptc') } })
-    const sdkComponent = await real.plugin(ptc, { binaryPath: file, required: true })
+    const sdkComponent = await real.plugin(ptc, { binaryPath: file, required: true, alwaysLoaded: ['batch'] })
     await real.serial('agent/created', { agent })
     for (let n = 0; n < 100 && !real.get('tools').get('ops_result', agent); n++) await new Promise(resolve => setTimeout(resolve, 10))
     assert.ok(real.get('tools').get('ops_result', agent), JSON.stringify(await real.get('systemPrompt').assemble({ scope: agent })))
@@ -424,11 +425,12 @@ try {
       return completion.value.result
     }
     const sdkResult = await sdk(`
-      const stored = await tools.ops_result({action:'put',items:Array.from({length:120},(_,n)=>({n,kind:n%2?'odd':'even',payload:'x'.repeat(80)}))});
+      const storedOutcome = await tools.ops_result({action:'put',items:Array.from({length:120},(_,n)=>({n,kind:n%2?'odd':'even',payload:'x'.repeat(80)}))});
+      if (storedOutcome.status !== 'completed') return storedOutcome; const stored = storedOutcome.data;
       const selected = []; let offset = 0; let stable = true; let bounded = true; let contentHash;
       while (true) {
-        const page = await tools.ops_result({action:'page',id:stored.id,equals:{kind:'even'},fields:['n'],offset,limit:7,maxBytes:2048});
-        if (page.error) return page;
+        const pageOutcome = await tools.ops_result({action:'page',id:stored.id,equals:{kind:'even'},fields:['n'],offset,limit:7,maxBytes:2048});
+        if (pageOutcome.error) return pageOutcome; const page = pageOutcome.data;
         contentHash ??= page.contentHash;
         stable = stable && page.contentHash === contentHash && page.sourceTotal === 120 && page.total === 60 && stored.reference.totalItems === 120;
         bounded = bounded && JSON.stringify(page).length <= 2048;
@@ -439,13 +441,14 @@ try {
       }
       const invalid = await tools.ops_batch({action:'resume',id:'not-an-id'});
       const denied = await tools.ops_batch({action:'plan',root:${JSON.stringify(nonTemp)},operations:[{op:'remove',path:'protected.txt'}]});
-      const plan = await tools.ops_batch({action:'plan',operations:[{op:'copy',path:'real-source',to:'sdk-copy'}]});
+      const planOutcome = await tools.ops_batch({action:'plan',operations:[{op:'copy',path:'real-source',to:'sdk-copy'}]});
+      if (planOutcome.status !== 'completed') return planOutcome; const plan = planOutcome.data;
       const audit = await tools.ops_result({action:'page',id:plan.detailsRef,fields:['state','revision','entries']});
       const resumed = await tools.ops_batch({action:'resume',id:plan.id});
       const replay = await tools.ops_batch({action:'resume',id:plan.id});
       await tools.ops_result({action:'release',id:stored.id});
-      return {stable,bounded,count:selected.length,last:selected[selected.length-1],invalid:invalid.error.code,denied:denied.error,
-        audit:audit.items[0],resumed:resumed.status,replay:replay.done,detailsRef:plan.detailsRef};
+      return {stable,bounded,count:selected.length,last:selected[selected.length-1],invalid:invalid.error.code,denied:denied.data.error,
+        audit:audit.data.items[0],resumed:resumed.status,replay:replay.data.done,detailsRef:plan.detailsRef};
     `)
     assert.equal(sdkResult.stable, true, JSON.stringify(sdkResult)); assert.equal(sdkResult.bounded, true)
     assert.equal(sdkResult.count, 60); assert.equal(sdkResult.last, 118)
@@ -461,8 +464,8 @@ try {
       return {denied,page};
     `)
     assert.equal(sdkReadonly.denied.error.code, 'POLICY_DENIED')
-    assert.equal(sdkReadonly.denied.error.permission.current, 'read-only')
-    assert.equal(sdkReadonly.page.items[0].state, 'completed')
+    assert.equal(sdkReadonly.denied.data.error.permission.current, 'read-only')
+    assert.equal(sdkReadonly.page.data.items[0].state, 'completed')
     agent.session.mode = 'workspace-write'
     await sdkComponent.dispose()
     assert.equal(real.get('tools').schemas(agent).some(schema => schema.name.startsWith('ops_')), false)

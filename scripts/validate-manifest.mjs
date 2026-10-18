@@ -30,7 +30,7 @@ import { NATIVE_FILE_TOOLS } from '../lib/capabilities/registry.js'
 import { resolvePtcConfig } from '../lib/ptc/index.js'
 import { resolveTuiConfig } from '../lib/components/tui/index.js'
 import { resolvePanelConfig } from '../lib/components/panel/index.js'
-import { PTC_TOOLS, definition } from '../lib/ptc/contract.js'
+import { PTC_API_TOOLS, definition } from '../lib/ptc/contract.js'
 import { resolveConfig } from '../lib/config.js'
 import { resolveHidingConfig } from '../lib/official-tool-hiding.js'
 
@@ -485,8 +485,8 @@ if (display !== undefined) {
 /** Payload the published package must carry, as `files` entries or paths they cover. */
 const ptc = manifestRaw.contributes?.['x-components']?.find(c => c.id === 'dsh-ops-ptc')
 check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === true, 'native PTC enhancement is enabled by default; presentation stays scoped')
-check(JSON.stringify(ptc?.tools) === JSON.stringify(PTC_TOOLS.map(publicToolName)), 'PTC declaration matches the generated tool contract')
-check(PTC_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
+check(JSON.stringify(ptc?.tools) === JSON.stringify([...PTC_API_TOOLS, 'sdk'].map(publicToolName)), 'PTC declaration matches the generated tool contract')
+check(PTC_API_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
 check(JSON.stringify(pkg.os) === '["win32","linux","darwin"]' && JSON.stringify(pkg.cpu) === '["x64","arm64"]' &&
   JSON.stringify(ptc?.platforms) === '["win32","linux","darwin"]' && JSON.stringify(ptc?.architectures) === '["x64","arm64"]' &&
   JSON.stringify(ptc?.targets) === '["win32-x64","linux-x64","darwin-arm64"]',

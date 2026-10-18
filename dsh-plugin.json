@@ -62,7 +62,7 @@
       {
         "name": "dsh-ops:repository-tooling:ptc",
         "order": 3252,
-        "summary": "Scoped PTC batch/result guidance; absent when PTC tools are unavailable."
+        "summary": "Scoped progressive PTC SDK guidance; absent in Native/both presentation."
       }
     ],
     "x-tool-namespaces": [
@@ -108,9 +108,9 @@
         "platforms": ["win32", "linux", "darwin"],
         "architectures": ["x64", "arm64"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
-        "presentation": "PTC-only",
+        "presentation": "PTC-only; reader/result/SDK loader resident, other APIs become visible on the next agent step",
         "runtime": "independent native Rust file worker",
-        "tools": ["ops_batch", "ops_result"],
+        "tools": ["ops_inspect_local_file","ops_grep","ops_glob","ops_replace","ops_write_file","ops_edit_file","ops_diff","ops_stat","ops_copy","ops_move","ops_remove","ops_read_many","ops_edit_many","ops_batch","ops_result","ops_sdk"],
         "permissions": "Per-call original DSH sandboxPolicy and sandbox.confine (host full/partial enforcement reported); full access bypasses confinement and permits explicit operation roots; subprocess owns cancellation and credential scrub"
       },
       {
