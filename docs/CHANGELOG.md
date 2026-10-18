@@ -13,8 +13,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   string cells, physical line ranges, bounded row pages and safe preceding rows on parse failures.
 - Separate complete physical scans from requested pages and reference capture; reuse no-follow,
   credential, readonly and automatic-spill boundaries without new external dependencies.
+- Expose discoverable-only Native rows and typed PTC cells with full-scan-only continuations; retain
+  safe prefix data beside non-resumable parse/scan gaps and preserve authority and reference metadata.
 - 新增有界 CSV/TSV worker 读取，严格解码、保留原字符串与物理行范围；错误保留此前有效行，
-  并分别报告扫描、分页和引用捕获完整性，不新增外部依赖。发现/宿主注册由后续切片接入。
+  并分别报告扫描、分页和引用捕获完整性，不新增外部依赖。通过发现/SDK 按代理在下一步骤启用；解析缺口保留前缀且不伪造续取。
 
 
 ### Deduplicate Native reads with current-context evidence (#261, 10/16)

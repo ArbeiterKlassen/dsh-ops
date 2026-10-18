@@ -39,3 +39,18 @@ void tools.ops_edit_many({ path: 'a.ts', edits: [{ oldText: 'a', newText: 'b' }]
 void tools.ops_unknown_tool({})
 const completed: Outcome<StorageReference | undefined> = { status: 'completed', data: undefined }
 void [read, metadata, completed]
+
+async function tables() {
+  const result = await tools.ops_table_read({ path: 'rows.csv', header: false, encoding: 'utf-16le' })
+  if (result.status === 'completed' || result.status === 'partial') {
+    const cells: string[] | undefined = result.data.items?.[0]?.cells
+    const rows: number | undefined = result.data.source?.rowsObserved
+    // @ts-expect-error Cells preserve lexical text instead of guessing numbers.
+    const numeric: number[] | undefined = result.data.items?.[0]?.cells
+    return { cells, rows }
+  }
+  return result.data?.items?.[0]?.cells
+}
+// @ts-expect-error Encoding is a finite strict-decoding contract.
+void tools.ops_table_read({ path: 'rows.csv', encoding: 'latin1' })
+void tables
