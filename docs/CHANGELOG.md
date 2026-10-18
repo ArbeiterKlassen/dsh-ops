@@ -7,6 +7,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Keep table coverage honest beyond EOF and after metadata changes. Fresh PTC bundle pools follow
+  the implemented catalogue; saved explicit operator pools remain unchanged.
+- 表格超出 EOF 时只统计实际跳过的行，文件变化后不声明页面完整；新 PTC 允许池遵循实现目录，保留已保存的显式选择。
+
 - Complete the strict TypeScript source migration and disable JavaScript compilation. Reject unimported JavaScript source during packaging while preserving published `.js` paths.
 - 完成严格 TypeScript 源码迁移并关闭 JavaScript 编译；打包时拒绝未导入的 JavaScript 源码，保持发布的 `.js` 路径不变。
 

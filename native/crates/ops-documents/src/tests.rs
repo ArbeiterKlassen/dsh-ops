@@ -22,13 +22,15 @@ fn expired_scan_deadline_has_no_total_revision_or_complete_claim() {
 }
 #[test]
 fn changed_file_metadata_invalidates_totals_without_discarding_safe_rows() {
-    fixture(|path, request, args| {
+    fixture(|path, request, mut args| {
+        args.limit = 1;
         let file = File::open(&path).unwrap(); let before = file.metadata().unwrap();
         std::fs::write(&path, "v\nchanged-long\n").unwrap();
         let source = Source { path, file, before, started: Instant::now() };
         let output = observe(&request, &args, "csv", Encoding::Utf8, ',', source).unwrap();
         assert_eq!(output["error"]["code"], "FILE_CHANGED"); assert_eq!(output["scanComplete"], false);
-        assert_eq!(output["complete"], false); assert_eq!(output["items"][0]["cells"][0], "changed-long");
+        assert_eq!(output["complete"], false); assert_eq!(output["pageComplete"], false);
+        assert_eq!(output["items"][0]["cells"][0], "changed-long");
         assert!(output.get("total").is_none()); assert!(output.get("revision").is_none());
     });
 }
