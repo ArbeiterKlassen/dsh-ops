@@ -11,10 +11,13 @@
  */
 
 import fs from 'node:fs'
+import { errorMessage } from '../shells/types.js'
 import os from 'node:os'
 import path from 'node:path'
 import { PACKAGE_ROOT, dshHome } from '../paths.js'
 import { resolveConfig } from '../config.js'
+import type { ResolvedConfig } from '../config.js'
+import type { ShellResolution } from '../shells.js'
 import {
   BASH_TOOL,
   FILE_TOOLS,
@@ -25,6 +28,11 @@ import {
 import { resolveWorker } from '../ptc/runtime.js'
 import { restrictedCompatibility } from '../bash-ipc.js'
 import { resolveShells } from '../shells.js'
+
+type WorkerReport = { resolved: true; executable: string; source: string; error: null }
+  | { resolved: false; executable: null; source: null; error: string }
+interface ShellReport { available: boolean; executable: string | null; source: string; detail: string; restricted?: { compatible: boolean; reason: string } | null }
+interface LadderReport { worker: WorkerReport; shells: Record<'bash' | 'pwsh', ShellReport>; policy: string }
 
 /**
  * The unit `uninstall` removes: `<DSH_HOME>/dsh-ops`, holding what older
@@ -61,25 +69,25 @@ export function fastctxDataDir() {
  * @returns {unknown} the raw row config.
  * @throws {Error} when the file cannot be read, does not parse, or is not an object.
  */
-export function readRowConfig(file) {
+export function readRowConfig(file: string | undefined): Record<string, unknown> {
   if (file === undefined) return {}
   const resolved = path.resolve(file)
   let text
   try {
     text = fs.readFileSync(resolved, 'utf8')
   } catch (error) {
-    throw new Error(`--config does not name a readable file: ${resolved} (${error.message})`)
+    throw new Error(`--config does not name a readable file: ${resolved} (${errorMessage(error)})`)
   }
-  let value
+  let value: unknown
   try {
     value = JSON.parse(text)
   } catch (error) {
-    throw new Error(`--config must hold one JSON object (the \`dsh-ops\` row's config): ${error.message}`)
+    throw new Error(`--config must hold one JSON object (the \`dsh-ops\` row's config): ${errorMessage(error)}`)
   }
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`--config must hold one JSON object (the \`dsh-ops\` row's config), got ${typeof value}`)
   }
-  return value
+  return value as Record<string, unknown>
 }
 
 /**
@@ -89,7 +97,7 @@ export function readRowConfig(file) {
  * @param {import('../config.js').ResolvedConfig} config - the plugin configuration.
  * @returns {{resolved: boolean, executable: string|null, source: string|null, error: string|null}} the report value.
  */
-export function workerReport(config) {
+export function workerReport(config: ResolvedConfig): WorkerReport {
   try {
     const file = resolveWorker(config)
     const source = config.binaryPath !== undefined ? 'config.binaryPath'
@@ -97,7 +105,7 @@ export function workerReport(config) {
         : path.relative(PACKAGE_ROOT, file).split(path.sep)[0] === 'runtime' ? 'packaged runtime' : 'source-tree build'
     return { resolved: true, executable: file, source, error: null }
   } catch (error) {
-    return { resolved: false, executable: null, source: null, error: String(error?.message ?? error) }
+    return { resolved: false, executable: null, source: null, error: errorMessage(error) }
   }
 }
 
@@ -107,7 +115,7 @@ export function workerReport(config) {
  * @param {import('../shells.js').ShellResolution} resolution - the rung's resolution.
  * @returns {{available: boolean, executable: string|null, source: string, detail: string}} the report value.
  */
-export function shellReport(resolution) {
+export function shellReport(resolution: ShellResolution): ShellReport {
   return {
     available: resolution.available === true,
     executable: resolution.file ?? null,
@@ -122,13 +130,13 @@ export function shellReport(resolution) {
  * @param {import('../shells.js').ShellResolution} resolution - the bash rung.
  * @returns {{compatible: boolean, reason: string}|null} null when there is no bash to check.
  */
-export function restrictedReport(resolution) {
+export function restrictedReport(resolution: ShellResolution) {
   if (resolution.available !== true || typeof resolution.file !== 'string') return null
   try {
     const { compatible, reason } = restrictedCompatibility(resolution.file)
     return { compatible, reason }
   } catch (error) {
-    return { compatible: false, reason: String(error?.message ?? error) }
+    return { compatible: false, reason: errorMessage(error) }
   }
 }
 
@@ -148,7 +156,7 @@ export function restrictedReport(resolution) {
  * @param {import('../config.js').ResolvedConfig} options.config - the plugin configuration.
  * @returns {import('../policy.js').LadderLevels} the rungs.
  */
-export function ladderFor({ worker, shells, config }) {
+export function ladderFor({ worker, shells, config }: { worker: { resolved: boolean }; shells: { bash: { available: boolean }; pwsh: { available: boolean } }; config: ResolvedConfig }) {
   const published = worker.resolved ? FILE_TOOLS.map(publicToolName) : []
   if (config.publishBashTool && shells.bash.available) published.push(BASH_TOOL)
   if (shells.pwsh.available) published.push('pwsh')
@@ -160,7 +168,7 @@ export function ladderFor({ worker, shells, config }) {
  * @param {string} text - the rendered tooling section.
  * @returns {{number: number, title: string}[]} one entry per rendered rung, in render order.
  */
-export function renderedRungs(text) {
+export function renderedRungs(text: string) {
   const rungs = []
   for (const line of text.split('\n')) {
     const match = /^## Rung (\d+) — (.*)$/u.exec(line)
@@ -174,7 +182,7 @@ export function renderedRungs(text) {
  * @param {object} report - the report value `commandLadder` assembled.
  * @returns {void}
  */
-export function printLadder(report) {
+export function printLadder(report: LadderReport) {
   console.log('Native worker (file tools)')
   if (report.worker.resolved) {
     console.log(`  executable: ${report.worker.executable}`)
@@ -185,7 +193,7 @@ export function printLadder(report) {
   }
 
   console.log('\nShell rungs (lib/shells.js resolveShells)')
-  for (const kind of ['bash', 'pwsh']) {
+  for (const kind of ['bash', 'pwsh'] as const) {
     const rung = report.shells[kind]
     console.log(`  ${kind}`)
     console.log(`    available:  ${rung.available ? 'yes' : 'no'}`)
@@ -217,12 +225,12 @@ export function printLadder(report) {
  * @param {string|undefined} options.configFile - the `--config` path, when one was given.
  * @returns {number} the exit code.
  */
-export function commandLadder({ json, configFile }) {
+export function commandLadder({ json, configFile }: { json: boolean; configFile?: string }) {
   let config
   try {
     config = resolveConfig(readRowConfig(configFile))
   } catch (error) {
-    console.error(error.message)
+    console.error(errorMessage(error))
     return 1
   }
 

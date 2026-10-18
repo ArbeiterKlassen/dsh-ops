@@ -10,6 +10,7 @@
  */
 
 import fs from 'node:fs'
+import { errorMessage } from '../shells/types.js'
 import path from 'node:path'
 import { fastctxDataDir, managedDir } from './report.js'
 
@@ -18,7 +19,7 @@ import { fastctxDataDir, managedDir } from './report.js'
  * @param {number} bytes - the size.
  * @returns {string} the size in the largest unit that keeps it readable.
  */
-export function formatBytes(bytes) {
+export function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   const units = ['kB', 'MB', 'GB', 'TB']
   let value = bytes / 1024
@@ -36,7 +37,7 @@ export function formatBytes(bytes) {
  * @param {string} entry - the path to measure.
  * @returns {number} the byte count.
  */
-export function measure(entry) {
+export function measure(entry: string): number {
   let stat
   try {
     stat = fs.lstatSync(entry)
@@ -57,7 +58,7 @@ export function measure(entry) {
  * @param {string} dir - the directory.
  * @returns {{name: string, bytes: number}[]} one row per entry, directories first.
  */
-export function contentsOf(dir) {
+export function contentsOf(dir: string) {
   const rows = fs.readdirSync(dir, { withFileTypes: true }).map((entry) => ({
     name: entry.isDirectory() ? `${entry.name}${path.sep}` : entry.name,
     bytes: measure(path.join(dir, entry.name)),
@@ -75,7 +76,7 @@ export function contentsOf(dir) {
  * @param {string} dir - the directory to describe.
  * @returns {{missing: boolean, rows: {name: string, bytes: number}[], bytes: number}} the report.
  */
-export function reportDirectory(label, dir) {
+export function reportDirectory(label: string, dir: string) {
   console.log(`\n${label}`)
   console.log(`  directory: ${dir}`)
   if (!fs.existsSync(dir)) {
@@ -109,7 +110,7 @@ export function reportDirectory(label, dir) {
  * @param {boolean} options.dryRun - report only, whatever `yes` says.
  * @returns {number} the exit code: 0 when the requested state is gone or absent, 1 when a removal failed.
  */
-export function commandUninstall({ yes, purgeFastctx, dryRun }) {
+export function commandUninstall({ yes, purgeFastctx, dryRun }: { yes: boolean; purgeFastctx: boolean; dryRun: boolean }) {
   const removing = yes && !dryRun
   console.log(`dsh-ops uninstall — ${removing ? 'removing' : 'report only (dry run; pass --yes to delete)'}`)
 
@@ -124,7 +125,7 @@ export function commandUninstall({ yes, purgeFastctx, dryRun }) {
       fs.rmSync(managed, { recursive: true, force: true })
       console.log('  action:    removed')
     } catch (error) {
-      console.error(`  action:    FAILED to remove ${managed}: ${error.message}`)
+      console.error(`  action:    FAILED to remove ${managed}: ${errorMessage(error)}`)
       return 1
     }
   }
@@ -142,7 +143,7 @@ export function commandUninstall({ yes, purgeFastctx, dryRun }) {
       fs.rmSync(fastctx, { recursive: true, force: true })
       console.log('  action:    removed')
     } catch (error) {
-      console.error(`  action:    FAILED to remove ${fastctx}: ${error.message}`)
+      console.error(`  action:    FAILED to remove ${fastctx}: ${errorMessage(error)}`)
       return 1
     }
   }

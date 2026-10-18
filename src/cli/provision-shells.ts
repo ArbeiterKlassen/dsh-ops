@@ -12,6 +12,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
+import { errorMessage } from '../shells/types.js'
 import os from 'node:os'
 import path from 'node:path'
 import { dshHome } from '../paths.js'
@@ -23,6 +24,13 @@ import {
   shellExecutable,
 } from '../shells.js'
 import { formatBytes } from './uninstall.js'
+
+type ShellKind = 'bash' | 'pwsh'
+export interface ShellPin extends Record<string, unknown> {
+  name: ShellKind; platform: string; arch: string; version: string; assetFile: string; url: string
+  sha256: string; bytes: number; extractor: string; extractTo: string; executableRelativePath: string
+}
+type HelperResult = { ok: true } | { error: string; stderr: string[] }
 
 // ---------------------------------------------------------------------------
 // provision-shells: the pinned upstream shells become local copies
@@ -58,7 +66,7 @@ export const PIN_REQUIRED_FIELDS = Object.freeze([
  * @param {string} file - the file to hash.
  * @returns {string} the lowercase hex digest.
  */
-export function sha256File(file) {
+export function sha256File(file: string) {
   const hash = createHash('sha256')
   const chunk = Buffer.allocUnsafe(1024 * 1024)
   const handle = fs.openSync(file, 'r')
@@ -80,7 +88,7 @@ export function sha256File(file) {
  * @param {number} [count] - how many lines to keep.
  * @returns {string[]} the lines.
  */
-export function tailLines(text, count = 8) {
+export function tailLines(text: string | undefined | null, count = 8) {
   return String(text ?? '')
     .split('\n')
     .map((line) => line.trimEnd())
@@ -96,7 +104,7 @@ export function tailLines(text, count = 8) {
  * @param {string} [options.cwd] - working directory for the child.
  * @returns {{ok: true}|{error: string, stderr: string[]}} the outcome.
  */
-export function runTool(file, args, { cwd } = {}) {
+export function runTool(file: string, args: string[], { cwd }: { cwd?: string } = {}): HelperResult {
   const result = spawnSync(file, args, { cwd, encoding: 'utf8', windowsHide: true })
   if (result.error !== undefined && result.error !== null) {
     return { error: `could not run ${file}: ${String(result.error.message ?? result.error)}`, stderr: [] }
@@ -112,7 +120,7 @@ export function runTool(file, args, { cwd } = {}) {
  * @param {NodeJS.ProcessEnv} env - the environment to read.
  * @returns {string|undefined} the proxy URL, when one is named.
  */
-export function proxyFor(env) {
+export function proxyFor(env: NodeJS.ProcessEnv) {
   const value = env.HTTPS_PROXY ?? env.https_proxy ?? env.HTTP_PROXY ?? env.http_proxy
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
 }
@@ -130,7 +138,7 @@ export function proxyFor(env) {
  * @param {NodeJS.ProcessEnv} options.env - the environment to read.
  * @returns {{file: string}|{error: string, detail: string, stderr: string[]}} the asset, or why not.
  */
-export function curlAsset({ pin, into, env }) {
+export function curlAsset({ pin, into, env }: { pin: Pick<ShellPin, 'url' | 'assetFile'>; into: string; env: NodeJS.ProcessEnv }): { file: string } | { error: string; detail: string; stderr: string[] } {
   const file = path.join(into, pin.assetFile)
   const proxy = proxyFor(env)
   const args = ['--location', '--fail', '--silent', '--show-error', '--output', file]
@@ -171,7 +179,7 @@ export function curlAsset({ pin, into, env }) {
  * @param {NodeJS.ProcessEnv} env - the environment to locate it with.
  * @returns {string|undefined} the program, or undefined when there is none.
  */
-export function findZipCapableTar(env) {
+export function findZipCapableTar(env: NodeJS.ProcessEnv) {
   const candidates = process.platform === 'win32'
     ? [path.join(env.SystemRoot ?? env.SYSTEMROOT ?? 'C:\\Windows', 'System32', 'tar.exe')]
     : []
@@ -193,7 +201,7 @@ export function findZipCapableTar(env) {
  * @param {string} options.target - the version directory.
  * @returns {{ok: true}|{error: string, stderr: string[]}} the outcome.
  */
-export function unpackAsset({ pin, asset, target }) {
+export function unpackAsset({ pin, asset, target }: { pin: Pick<ShellPin, 'extractor' | 'extractTo'>; asset: string; target: string }): HelperResult {
   const into = path.resolve(target, pin.extractTo)
   if (pin.extractor === 'zip') {
     const tar = findZipCapableTar(process.env)
@@ -235,12 +243,12 @@ export function unpackAsset({ pin, asset, target }) {
  * @returns {object} the validated pin.
  * @throws {Error} when a field is missing or malformed.
  */
-export function validatePin(value, index) {
+export function validatePin(value: unknown, index: number): ShellPin {
   const at = `pins[${index}]`
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${at} must be an object`)
   }
-  const pin = /** @type {Record<string, unknown>} */ (value)
+  const pin = value as Record<string, unknown>
   for (const field of PIN_REQUIRED_FIELDS) {
     if (pin[field] === undefined) throw new Error(`${at}.${field} is required`)
   }
@@ -250,7 +258,7 @@ export function validatePin(value, index) {
    * @param {string} key - the field.
    * @returns {string} its value.
    */
-  const text = (key) => {
+  const text = (key: string) => {
     const entry = pin[key]
     if (typeof entry !== 'string' || entry.trim() === '') {
       throw new Error(`${at}.${key} must be a non-empty string, got ${JSON.stringify(entry)}`)
@@ -263,7 +271,7 @@ export function validatePin(value, index) {
    * @param {string} key - the field.
    * @returns {string} its value.
    */
-  const segment = (key) => {
+  const segment = (key: string) => {
     const entry = text(key)
     if (entry.includes('/') || entry.includes('\\') || entry.includes('..') || path.isAbsolute(entry)) {
       throw new Error(`${at}.${key} must be a plain name, got ${JSON.stringify(entry)}`)
@@ -276,7 +284,7 @@ export function validatePin(value, index) {
    * @param {string} key - the field.
    * @returns {string} its value.
    */
-  const relative = (key) => {
+  const relative = (key: string) => {
     const entry = text(key)
     if (path.isAbsolute(entry) || entry.split(/[\\/]/u).includes('..')) {
       throw new Error(`${at}.${key} must be a relative path inside the version directory, got ${JSON.stringify(entry)}`)
@@ -294,14 +302,14 @@ export function validatePin(value, index) {
   if (!/^[0-9a-f]{64}$/u.test(text('sha256'))) {
     throw new Error(`${at}.sha256 must be 64 lowercase hex characters, got ${JSON.stringify(pin.sha256)}`)
   }
-  if (!Number.isSafeInteger(pin.bytes) || /** @type {number} */ (pin.bytes) <= 0) {
+  if (typeof pin.bytes !== 'number' || !Number.isSafeInteger(pin.bytes) || pin.bytes <= 0) {
     throw new Error(`${at}.bytes must be a positive whole number, got ${JSON.stringify(pin.bytes)}`)
   }
   const executableRelativePath = relative('executableRelativePath')
   // The expected file name follows the pin's own platform, not the host's: a pin
   // table is validated on whatever machine runs the provisioner, and a `darwin`
   // pin's payload has no `.exe`.
-  const expectedExecutable = shellExecutable(name, text('platform'))
+  const expectedExecutable = shellExecutable(name as ShellKind, text('platform'))
   if (path.basename(executableRelativePath) !== expectedExecutable) {
     throw new Error(`${at}.executableRelativePath must end in ${expectedExecutable}, `
       + `got ${JSON.stringify(executableRelativePath)}`)
@@ -312,7 +320,9 @@ export function validatePin(value, index) {
 
   return {
     ...pin,
-    name,
+    name: name as ShellKind,
+    sha256: text('sha256'),
+    bytes: pin.bytes,
     version: segment('version'),
     platform: text('platform'),
     arch: text('arch'),
@@ -334,22 +344,22 @@ export function validatePin(value, index) {
  * @returns {object[]} the pins.
  * @throws {Error} when the file is unreadable or a pin is malformed.
  */
-export function pinTable(file) {
+export function pinTable(file: string | undefined): ShellPin[] {
   if (file === undefined) return SHELL_UPSTREAM_PINS.map((pin, index) => validatePin(pin, index))
   const resolved = path.resolve(file)
   let text
   try {
     text = fs.readFileSync(resolved, 'utf8')
   } catch (error) {
-    throw new Error(`--pin does not name a readable file: ${resolved} (${error.message})`)
+    throw new Error(`--pin does not name a readable file: ${resolved} (${errorMessage(error)})`)
   }
-  let value
+  let value: unknown
   try {
     value = JSON.parse(text)
   } catch (error) {
-    throw new Error(`--pin must hold one JSON document of pins: ${error.message}`)
+    throw new Error(`--pin must hold one JSON document of pins: ${errorMessage(error)}`)
   }
-  const list = Array.isArray(value) ? value : value?.pins
+  const list = Array.isArray(value) ? value : value !== null && typeof value === 'object' && 'pins' in value ? value.pins : undefined
   if (!Array.isArray(list)) {
     throw new Error('--pin must hold one JSON array of pins (or an object with a "pins" array)')
   }
@@ -361,10 +371,10 @@ export function pinTable(file) {
  * @param {string} file - the marker file.
  * @returns {object|undefined} the parsed marker.
  */
-export function readShellReceipt(file) {
+export function readShellReceipt(file: string): Record<string, unknown> | undefined {
   try {
-    const value = JSON.parse(fs.readFileSync(file, 'utf8'))
-    return value !== null && typeof value === 'object' ? value : undefined
+    const value: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
+    return value !== null && typeof value === 'object' ? value as Record<string, unknown> : undefined
   } catch {
     return undefined
   }
@@ -384,7 +394,7 @@ export function readShellReceipt(file) {
  * @param {boolean} options.dryRun - report what would happen, and download nothing.
  * @returns {boolean} whether this shell is provisioned (or already was).
  */
-export function provisionShell(pin, { force, dryRun }) {
+export function provisionShell(pin: ShellPin, { force, dryRun }: { force: boolean; dryRun: boolean }) {
   const target = provisionedShellVersionDir({ kind: pin.name, version: pin.version })
   const executable = path.join(target, pin.executableRelativePath)
   const receiptFile = path.join(target, SHELL_RECEIPT_FILE)
@@ -484,7 +494,7 @@ export function provisionShell(pin, { force, dryRun }) {
       fs.rmSync(stale, { recursive: true, force: true })
       console.log(`  removed:    ${stale} (a version this pin no longer names)`)
     } catch (error) {
-      console.error(`  warning:    could not remove the previous version ${stale}: ${error.message}`)
+      console.error(`  warning:    could not remove the previous version ${stale}: ${errorMessage(error)}`)
     }
   }
 
@@ -510,7 +520,7 @@ export function provisionShell(pin, { force, dryRun }) {
  * @param {string|undefined} options.pinFile - read the pins from this JSON file instead.
  * @returns {number} the exit code: 0 when every selected shell is in place, 1 otherwise.
  */
-export function commandProvisionShells({ kinds, force, dryRun, pinFile }) {
+export function commandProvisionShells({ kinds, force, dryRun, pinFile }: { kinds: ShellKind[]; force: boolean; dryRun: boolean; pinFile?: string }) {
   // The pinned payload is the Windows one: a Windows host carries no POSIX shell, so this
   // distribution provisions and digest-checks one there. A POSIX host already has its
   // distribution's own bash, so there is nothing to install — say that instead of failing on an
@@ -524,7 +534,7 @@ export function commandProvisionShells({ kinds, force, dryRun, pinFile }) {
   try {
     pins = pinTable(pinFile)
   } catch (error) {
-    console.error(error.message)
+    console.error(errorMessage(error))
     return 1
   }
 
