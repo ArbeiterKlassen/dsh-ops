@@ -35,6 +35,22 @@ The 0.3.1 baseline is commit `4b51b6333213c376c8b7c173c12f35b408fdec2d`. The pre
 
 The earlier worker/renderer-only 3×8 probe recorded 2,256 baseline and 1,949 candidate bytes (13.608% reduction), with `modelRounds: null` and `hostAuthorityExercised: false`. This remains limited historical evidence.
 
-The subsequent real AgentLoop primary case recorded 8,883 OPS 0.3.1 bytes, 5,457 official-reader bytes and 6,239 candidate bytes. Replaying those unchanged canonical receipts through the compact renderer gives 5,348 bytes: 39.795% below 0.3.1, still below 40%. The final integrated host rerun remains required.
+The subsequent real AgentLoop primary case recorded 8,883 OPS 0.3.1 bytes, 5,457 official-reader bytes and 6,239 candidate bytes. Replaying those unchanged canonical receipts through the compact renderer gives 5,348 bytes: 39.795% below 0.3.1, still below 40%. The final integrated host rerun confirms those same byte counts and still fails the primary target.
 
 The primary source lines alone occupy 4,320 UTF-8 bytes. Forty percent below the 5,457-byte official result requires at most 3,274.2 bytes, so that comparison cannot pass without source omission or compression even before path/revision/coverage labels. The report includes this numerical lower bound and an illustrative absolute-path/range label size; shared-base layouts can reduce the latter. Long source lines likewise prevent universal percentage savings. Output paths, host contracts and formatter revisions affect measured bytes, so all exact receipts remain attached.
+
+## Integrated Windows result (2026-10-19)
+
+Candidate `02577ed140c16e1739bf2588172ee38d9370ec52` had a clean worktree, host `0.2.0-rc.2`, Node `25.2.1`, and the source-built worker SHA-256 `b29b8f130e109ec507d808b8a488d9461b08f28353222b41b40631cd062702b8`. The local worker used Cargo `1.99.0`; the manual CI workflow pins `1.97.1` and has not yet supplied cross-platform results.
+
+| Gate | Result |
+| --- | --- |
+| BM-01 | Failed: 5,348 candidate / 8,883 OPS 0.3.1 / 5,457 official bytes; 39.795% and 1.997% reductions. Exact source lines retained. |
+| BM-02 | Passed: five edits in one tool-bearing round; both stale-CAS cases rejected with exact file bytes preserved. |
+| BM-03 | Failed: actual published order 660 tokens / 3,219 bytes with explicit validated optional Bash and real host jobs. The separately ordered schema fixture counts 661 tokens; byte totals agree. |
+| BM-04 | Passed: PDF absent initially, available in provider request two after discovery, absent for the sibling, text verified. |
+| BM-05 | Passed: credential reads and outside writes rejected, files unchanged, no denied parent-path or secret-body disclosure. |
+
+The candidate uses one tool-bearing round plus the final response. Sequential comparators use three plus final; parallel comparator controls also use one plus final. The 8-line/1-line/32-line/long-line/Unicode sensitivities save 47.843%/55.768%/40.990%/7.560%/40.358% against 0.3.1; no universal percentage claim follows. A prior fresh-home run without optional Bash reported BM-03 blocked, never passed at 241 tokens.
+
+The retained raw local artifact is `040-benchmark-final-pinned-bash.json` with SHA-256 `cc94fcb4f444a39858795ef9003553de54735eff128191f3037a21666db1de98`; its companion Markdown summarizes all gates. Full acceptance remains false; the baseline and budget-scope decisions remain unresolved.
