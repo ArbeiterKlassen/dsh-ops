@@ -137,6 +137,14 @@ CI runs on every pull request and every push to `main`; a PR must be green on al
 - **No retries to hide flakes.** A concurrency assertion that fails intermittently is a bug in the
   implementation; fix the cause. Retries in the gate (#164) only ever cover suite timeouts.
 
+Capability names, component ownership, presentation modes, mutation/concurrency flags and file/PTC
+schemas live in `src/capabilities/`. Keep new capability metadata there; adapters own registration
+and rendering. `src/kernel/` defines the 0.4 `Outcome<T>`, coverage/search/reference types and
+error-to-retry policies. Their later adapter migrations will change wire results; this foundation
+preserves existing output. `node test/run.mjs capabilities kernel-errors kernel-types` checks the
+catalogue, retry rules and positive/negative TypeScript contracts. Node declarations are pinned to
+`@types/node@22.20.5` (published 2026-10-01) to type the supported Node 22 API without runtime code.
+
 ## Code and documentation conventions
 
 - **Language:** code, comments, CLI output and commit messages are English. User-facing docs are
@@ -146,7 +154,7 @@ CI runs on every pull request and every push to `main`; a PR must be green on al
 - **File size:** keep new files under about 500 lines. If a file grows past that, split it into
   modules and group related modules in a folder, following the existing `src/components/*` and
   `test/lib/` layout.
-- **Tool names** always come from `publicToolName()` in `src/policy.js`; never hand-write the `ops_`
+- **Tool names** always come from `publicToolName()` in `src/policy.ts`; never hand-write the `ops_`
   prefix.
 - **Config validation** lives in `src/config.js`; an unknown key is an error that names the key.
   Defaults in `cordis.patch.yml` must match the defaults in code.

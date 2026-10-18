@@ -1,10 +1,10 @@
-/** Single native contract drives host schemas, SDK types and callable names. */
-import { publicToolName } from '../policy.js'
-const string = { type: 'string' }
-const integer = { type: 'integer' }
-const object = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false })
-export const PTC_TOOLS = ['batch', 'result']
-export const PTC_SECTION = 'dsh-ops:repository-tooling:ptc'
+/** Batch and result capability data; publication remains scoped to PTC-only agents. */
+import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
+import type { ParameterSchema } from './types.js'
+
+const string: JsonSchemaNode = { type: 'string' }
+const integer: JsonSchemaNode = { type: 'integer' }
+const object = (properties: Record<string, JsonSchemaNode>, required: string[] = []): ParameterSchema => ({ type: 'object', properties, required, additionalProperties: false })
 export const PARAMETERS = {
   batch: object({
     root: string,
@@ -25,7 +25,7 @@ export const PARAMETERS = {
   }, ['action']),
 }
 // Open JSON values exist only in the data plane (caller-owned rows), not in operation inputs.
-export const OUTPUT = {
+export const OUTPUT: JsonSchemaNode = {
   type: 'object', properties: {
     id: string, root: string, status: string, phase: string, done: integer, total: integer,
     failed: integer, unknown: integer, logicalBytes: integer, byteSemantics: string,
@@ -41,11 +41,4 @@ export const OUTPUT = {
 export const DESCRIPTIONS = {
   batch: 'Preflight and verify copy/move/remove. action=plan requires operations and creates a no-effect audit plan; execute that exact plan with action=resume plus id (do not change it to run). action=run requires operations and executes immediately. root, when supplied, must be an absolute path: a relative root is rejected at preflight with INVALID_ARGUMENT. Omit root to use the session workspace root; an absolute root follows DSH permissions (unrestricted in full access). Operations use relative / paths, no overwrite or link traversal. Page detailsRef with ops_result, passing the same root whenever the plan root differs from the session workspace root. Parameter errors return structured error objects.',
   result: 'Session-owned object rows: put items (up to 10000; 2 MiB request/store cap), page, release. Pages default to offset=0, limit=64, maxBytes=16384; follow nextOffset until complete. equals filters top-level exact values before fields projection; offset/total/omitted count filtered rows. sourceTotal/contentHash identify all ordered rows before filtering/projection (SHA-256 of worker compact JSON with sorted object keys); compare hashes across pages to detect changed audits, never as authority. An oversized row returns OUTPUT_LIMIT: project fewer fields or raise maxBytes (max 65536). Result expiry is 24h, returned as Unix seconds; audit pages have expires=null and cannot be released. operationsRef in ops_batch accepts only owned unexpired result rows. Pass the same root as the batch when paging detailsRef, or expect NOT_FOUND. Failures are structured values, not thrown errors. In run_code, process pages locally and return only needed summaries.',
-}
-export function definition(tool, execute) {
-  return { name: publicToolName(tool), description: DESCRIPTIONS[tool], parameters: PARAMETERS[tool],
-    timeoutMs: 300000,
-    output: { schema: OUTPUT, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
-    execute,
-  }
 }

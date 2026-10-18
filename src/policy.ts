@@ -1,18 +1,18 @@
+import { FILE_TOOLS, IN_PROCESS_TOOLS } from './capabilities/registry.js'
+export { FILE_TOOLS, FILE_MUTATIONS, IN_PROCESS_TOOLS } from './capabilities/registry.js'
+
 /** Model-facing routing, kept in one section. No shared registry mutation. */
 export const TOOLING_SECTION = 'dsh-ops:repository-tooling'
 // Legacy section name kept for consumers; the plugin no longer publishes it.
 export const HOST_SHELL_SECTION = 'dsh-ops:host-shell-policy'
 export const SECTION_ORDERS = Object.freeze({ [TOOLING_SECTION]: 3250 })
 export const TOOL_PREFIX = 'ops_'
-export const FILE_TOOLS = Object.freeze(['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove'])
-export const FILE_MUTATIONS = Object.freeze(['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove'])
 // The plugin's second layer executes POSIX commands; pwsh7 uses the host tool.
-export const IN_PROCESS_TOOLS = Object.freeze(['bash'])
-export function publicToolName(rawName) { return `${TOOL_PREFIX}${rawName}` }
-export const BASH_TOOL = publicToolName('bash')
+export function publicToolName(rawName: string) { return `${TOOL_PREFIX}${rawName}` }
+export const BASH_TOOL = publicToolName(IN_PROCESS_TOOLS[0])
 
 /** Resolve the actual command capability, not the presence of a shell executable. */
-export function ladderLevels({ published, pwsh = false }) {
+export function ladderLevels({ published, pwsh = false }: { published: Iterable<string>, pwsh?: boolean }) {
   const names = new Set(published)
   return {
     files: FILE_TOOLS.some(name => names.has(publicToolName(name))),
@@ -21,8 +21,17 @@ export function ladderLevels({ published, pwsh = false }) {
   }
 }
 
+interface ToolingPolicyOptions {
+  published?: Iterable<string>
+  mounted?: boolean
+  levels?: { files?: boolean, bash?: boolean, pwsh?: boolean }
+  pwsh7?: boolean
+  shellComponent?: boolean
+  extraGuidance?: string
+}
+
 /** A single compact table; absent tools never get advertised. */
-export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false, shellComponent = true, extraGuidance = '' }) {
+export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false, shellComponent = true, extraGuidance = '' }: ToolingPolicyOptions) {
   const names = new Set(published ?? (mounted || levels?.files
     ? [...FILE_TOOLS, ...(levels?.bash ? IN_PROCESS_TOOLS : [])].map(publicToolName) : []))
   if (levels?.pwsh) names.add('pwsh')
@@ -34,7 +43,7 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
   const heading = hasBash ? '# Shell routing: bash → PowerShell 7'
     : hasFiles ? '# Repository file tools' : '# Windows-native shell'
   const lines = [heading, '', '| Task | Tool |', '| --- | --- |']
-  const row = (raw, task) => {
+  const row = (raw: string, task: string) => {
     if (names.has(publicToolName(raw))) lines.push(`| ${task} | ${publicToolName(raw)} |`)
   }
   row('inspect_local_file', 'Bounded UTF-8 lines / hex')
@@ -78,10 +87,10 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
 export function renderHostShellPolicy() { return '' }
 
 /** Explicit deny policy applies even without an ops command capability. */
-export function hostShellEnforcement({ shellPolicy }) {
+export function hostShellEnforcement({ shellPolicy }: { shellPolicy?: string }) {
   return { hide: shellPolicy === 'deny-host-shell', reason: undefined }
 }
-export function hostShellRefusal({ toolName, denied }) {
+export function hostShellRefusal({ toolName, denied }: { toolName: string, denied: ReadonlySet<string> }) {
   if (!denied.has(toolName)) return undefined
   return { kind: 'deny', reason: `Host tool ${toolName} is disabled by dsh-ops shellPolicy. Use an available file tool for file operations; otherwise request an operator policy change.` }
 }

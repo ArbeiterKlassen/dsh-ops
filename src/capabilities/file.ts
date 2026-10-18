@@ -1,15 +1,16 @@
-import { publicToolName, FILE_TOOLS, FILE_MUTATIONS } from '../policy.js'
+/** File capability data; no host services or registration side effects. */
+import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
+import type { ParameterSchema } from './types.js'
 
-const string = { type: 'string' }
-const integer = { type: 'integer', description: 'Nonnegative integer (0-based).' }
-const range = (min, max, description = '') => ({ type: 'integer', description: `${min}-${max} inclusive.${description ? ` ${description}` : ''}` })
-const bounded = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false })
+const string: JsonSchemaNode = { type: 'string' }
+const integer: JsonSchemaNode = { type: 'integer', description: 'Nonnegative integer (0-based).' }
+const range = (min: number, max: number, description = ''): JsonSchemaNode => ({ type: 'integer', description: `${min}-${max} inclusive.${description ? ` ${description}` : ''}` })
+const bounded = (properties: Record<string, JsonSchemaNode>, required: string[] = []): ParameterSchema => ({ type: 'object', properties, required, additionalProperties: false })
 
-export { FILE_TOOLS }
 // The pinned host SDK supports a schema subset: express bounds in descriptions;
 // the native worker remains authoritative for validation, including raw PTC calls.
-const revision = { type: 'string', description: '64 lowercase hex SHA-256 revision returned by inspect/stat; absent is create-only, never an overwrite wildcard.' }
-const existingRevision = { type: 'string', description: '64 lowercase hex SHA-256 revision returned by inspect/stat; absent is not accepted.' }
+const revision: JsonSchemaNode = { type: 'string', description: '64 lowercase hex SHA-256 revision returned by inspect/stat; absent is create-only, never an overwrite wildcard.' }
+const existingRevision: JsonSchemaNode = { type: 'string', description: '64 lowercase hex SHA-256 revision returned by inspect/stat; absent is not accepted.' }
 
 export const PARAMETERS = Object.freeze({
   inspect_local_file: bounded({
@@ -57,7 +58,7 @@ export const PARAMETERS = Object.freeze({
   }, ['pattern', 'replacement']),
 })
 
-export const OUTPUT = {
+export const OUTPUT: JsonSchemaNode = {
   type: 'object',
   properties: {
     revision: string, bytes: { type: 'integer' }, lineCount: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
@@ -86,42 +87,3 @@ export const DESCRIPTIONS = Object.freeze({
   remove: 'Unlink ONE regular file with required expectedRevision from inspect/stat. No recursion/directories/links. Atomic unlink; no trash. Read-only denies all mutations.' + RESULT,
   replace: 'Replace LITERAL text (pattern is not a regex) in UTF-8 files under path; glob filters files as in ops_grep. dryRun observes only; writes use revision checks and atomic replacement. Read-only sessions are rejected. Darwin nonempty extended ACLs fail closed with METADATA_UNSUPPORTED. Windows preserves owner/group/ordered DACL and supported basic attributes/timestamps; readonly overwrite is refused and unsupported streams/EA/special storage fail with METADATA_UNSUPPORTED. SACL/audit labels are not preserved.' + RESULT,
 })
-
-/** Drop unused empty placeholders strict adapters send for optional fields; never mutate the caller's object. */
-export function normalizeArguments(rawName, args) {
-  if (args === null || typeof args !== 'object' || Array.isArray(args)) return args
-  const schema = PARAMETERS[rawName]
-  if (!schema) return { ...args }
-  const required = new Set(schema.required)
-  const result = {}
-  for (const [key, value] of Object.entries(args)) {
-    if (value === undefined || value === null) continue
-    const field = schema.properties[key]
-    if (field && !required.has(key)) {
-      if (field.type === 'string' && typeof value === 'string' && value.trim() === '') continue
-      if (field.type === 'array' && Array.isArray(value) && value.length === 0) continue
-    }
-    result[key] = value
-  }
-  return result
-}
-
-// Compact only homogeneous inspect pages. Keep every non-path field and the
-// complete execution value for PTC/program consumers; never mutate worker data.
-function modelView(rawName, value) {
-  if (rawName !== 'inspect_local_file' || value?.status !== 'completed' || !Array.isArray(value.items) || value.items.length === 0) return value
-  const path = value.items[0]?.path
-  if (typeof path !== 'string' || !value.items.every(item => item?.path === path)) return value
-  return { ...value, path, items: value.items.map(({ path: _path, ...item }) => item) }
-}
-
-export function definition(rawName, execute) {
-  return {
-    name: publicToolName(rawName),
-    description: DESCRIPTIONS[rawName],
-    parameters: PARAMETERS[rawName],
-    ...(!FILE_MUTATIONS.includes(rawName) ? { isConcurrencySafe: () => true } : {}),
-    output: { schema: OUTPUT, render: (_args, value) => [{ type: 'text', text: JSON.stringify(modelView(rawName, value)) }] },
-    execute,
-  }
-}
