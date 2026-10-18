@@ -6,6 +6,7 @@ import { resultDefinition, invokeResult } from './result.js'
 import { registerNativeProvider } from './result-provider.js'
 import { safeDisposeAll } from '../teardown.js'
 import { invoke, failure } from './worker.js'
+import { createNativeReadDedup } from '../modes/native/read-dedup.js'
 
 export class NativeFileTools {
   constructor({ ctx, config, report }) {
@@ -16,6 +17,7 @@ export class NativeFileTools {
     this.active = new Map()
     this.disposers = []
     this.stopped = false
+    this.readDedup = createNativeReadDedup(ctx)
   }
 
   async start() {
@@ -26,7 +28,7 @@ export class NativeFileTools {
     }
     const definitions = NATIVE_FILE_TOOLS.map(rawName => {
       const execute = (args, exec) => this.call(rawName, args, exec)
-      return rawName === 'result' ? resultDefinition(execute) : definition(rawName, execute)
+      return this.readDedup.wrap(rawName === 'result' ? resultDefinition(execute) : definition(rawName, execute))
     })
     this.unregisterProvider = await registerNativeProvider(this.ctx, definitions, tool => this.ctx.tools.register(tool))
     return NATIVE_FILE_TOOLS.map(publicToolName)
@@ -54,6 +56,7 @@ export class NativeFileTools {
 
   async stop() {
     this.stopped = true
+    this.readDedup.dispose()
     safeDisposeAll([this.unregisterProvider].filter(Boolean), error => this.report('dsh-ops: Native pager teardown failed: ' + error, 'warn'), 'result provider')
     for (const controller of this.active.keys()) controller.abort(new Error('Native file component unloaded'))
     await Promise.allSettled(this.active.values())
