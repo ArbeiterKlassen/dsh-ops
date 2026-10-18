@@ -5,6 +5,7 @@ import { getEncoding } from 'js-tiktoken'
 import { publicToolName } from '../../lib/policy.js'
 import { schemaMeasurement, verifyReads, verifyEmittedReads, lowerBound } from './metrics.mjs'
 import { boot } from './host.mjs'
+import { startupReadiness, readControlPassed, rejectedWithoutEffects } from './integrity.mjs'
 import { READ_CASES, readFixture, fiveEdits, hash } from './fixtures.mjs'
 const calls = run => run.results.map(item => item.result)
 const raw = (name, args) => ({ name, args })
@@ -70,13 +71,11 @@ export async function bm03(options) {
   try {
     const run = await host.run(await host.agent(), [[]]), request = run.requests[0]
     const measurement = schemaMeasurement(request.tools), names = request.tools.map(tool => tool.name)
-    const bash = request.tools.find(tool => tool.name === publicToolName('bash'))
-    const shellReady = process.platform !== 'win32' || Boolean(bash?.parameters?.required?.includes('description')
-      && bash.parameters.properties?.run_in_background?.type === 'boolean')
+    const readiness = startupReadiness(request.tools)
     const messages = JSON.stringify(request.messages)
-    return { id: 'BM-03', status: !shellReady ? 'blocked' : measurement.tokens <= 400 ? 'passed' : 'failed',
+    return { id: 'BM-03', status: !readiness.ready ? 'blocked' : measurement.tokens <= 400 ? 'passed' : 'failed',
       criterion: 'Full default Native added schema <=400 tokens; Windows includes actual default Bash registration.',
-      pendingBudgetScopeDecision: true, shellReady, shellFixture: host.shellFixture ?? null, platform: process.platform, names, measurement,
+      pendingBudgetScopeDecision: true, readiness, reason: readiness.reason, shellReady: readiness.shellReady, shellFixture: host.shellFixture ?? null, platform: process.platform, names, measurement,
       wholeStartupMessages: { tokens: getEncoding('cl100k_base').encode(messages).length, bytes: Buffer.byteLength(messages), json: messages },
       methodology: 'js-tiktoken@1.0.21 cl100k_base over compact host name/description/parameters JSON, actual provider order; not provider billing.' }
   } finally { await host.close() }
@@ -96,8 +95,9 @@ export async function bm05(options) {
     const values = calls(read)[0].value.items, deniedRead = calls(denied)[0].value, deniedWrite = calls(write)[0].value
     const forbidden = [options.temporary, path.dirname(options.temporary), 'BENCHMARK_SECRET_BODY']
     const denialText = text(write) + text(denied)
-    const gates = { writeRejected: deniedWrite.status === 'rejected' && deniedWrite.error?.code === 'POLICY_DENIED',
-      secretRejected: deniedRead?.status === 'rejected', unchanged: !fs.existsSync(target) && fs.readFileSync(secretPath, 'utf8') === 'BENCHMARK_SECRET_BODY',
+    const gates = { ordinaryReadSucceeded: readControlPassed(calls(read)[0].value, publicPath, 'outside ordinary data'),
+      writeRejected: rejectedWithoutEffects(deniedWrite, 'POLICY_DENIED'),
+      secretRejected: rejectedWithoutEffects(deniedRead, 'CREDENTIAL_DENIED'), unchanged: !fs.existsSync(target) && fs.readFileSync(secretPath, 'utf8') === 'BENCHMARK_SECRET_BODY',
       noParentPathLeak: forbidden.every(value => !denialText.includes(value)) }
     return { id: 'BM-05', status: Object.values(gates).every(Boolean) ? 'passed' : 'failed', gates, read, denied, write,
       enforcement: 'Real host SandboxPolicy and fixed-operation OPS bridge/worker; no arbitrary-process confinement claim.',

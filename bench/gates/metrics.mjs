@@ -33,7 +33,8 @@ export function lowerBound(files, rows) {
     comparisons: Object.fromEntries(['baseline', 'official'].map(name => [name, { targetBytes: rows[name].outputBytes * .6,
       sourceAloneExceedsTarget: sourceUtf8Bytes > rows[name].outputBytes * .6, maximumSourceOnlySavings: 1 - sourceUtf8Bytes / rows[name].outputBytes }])) }
 }
-const escapedLine = text => text.replace(/[\r\n\t\x00-\x1f\x7f\u0085\u2028\u2029]/g, char => /[\u0085\u2028\u2029]/.test(char) ? '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0') : JSON.stringify(char).slice(1,-1))
+// Decode the documented representation with the platform JSON parser; do not mirror its encoder.
+const decodeLine = text => JSON.parse('"' + text.replaceAll('"', '\\"') + '"')
 /** Measure the actual model-visible text only after every source line is verified there too. */
 export function verifyEmittedReads(run, files, projection) {
   if (projection === 'baseline') {
@@ -56,8 +57,8 @@ export function verifyEmittedReads(run, files, projection) {
     const header = /^=== FILE: (.+) \(Lines .*\) ===$/.exec(line)
     if (header) { const name = header[1].startsWith('"') ? JSON.parse(header[1]) : header[1]; current = path.isAbsolute(name) ? name : path.join(JSON.parse(base[1]), name); assert.equal(groups.has(current), false); groups.set(current, []); continue }
     const row = /^(\d+)(?: \| |\|)(.*)$/.exec(line)
-    if (row) { assert.ok(current); groups.get(current).push({line:Number(row[1]),text:row[2]}) }
+    if (row) { assert.ok(current); groups.get(current).push({line:Number(row[1]),text:decodeLine(row[2])}) }
   }
   assert.equal(groups.size, files.length)
-  for (const file of files) assert.deepEqual(groups.get(file.path), file.expected.map(({line,text})=>({line,text:escapedLine(text)})), 'all emitted requested lines must survive before bytes are compared')
+  for (const file of files) assert.deepEqual(groups.get(file.path), file.expected, 'all emitted requested lines must survive before bytes are compared')
 }

@@ -54,3 +54,8 @@ Candidate `02577ed140c16e1739bf2588172ee38d9370ec52` had a clean worktree, host 
 The candidate uses one tool-bearing round plus the final response. Sequential comparators use three plus final; parallel comparator controls also use one plus final. The 8-line/1-line/32-line/long-line/Unicode sensitivities save 47.843%/55.768%/40.990%/7.560%/40.358% against 0.3.1; no universal percentage claim follows. A prior fresh-home run without optional Bash reported BM-03 blocked, never passed at 241 tokens.
 
 The retained raw local artifact is `040-benchmark-final-pinned-bash.json` with SHA-256 `cc94fcb4f444a39858795ef9003553de54735eff128191f3037a21666db1de98`; its companion Markdown summarizes all gates. Full acceptance remains false; the baseline and budget-scope decisions remain unresolved.
+
+
+## Integrity checks after review
+
+BM-03 now requires the exact resident file catalogue plus discovery (and the full Bash contract on Windows) before a token score can pass. Missing, duplicate or unexpected tools block the gate with a named reason. BM-05 also requires its ordinary outside-read control to succeed with exact text, and checks `CREDENTIAL_DENIED` / `POLICY_DENIED` with `effectState: none` for the denied probes. Native line checks independently decode the documented escapes, including literal backslashes; they no longer mirror the renderer. These checks change no workload, default, budget or threshold. The result snapshot above remains historical evidence for its named commit; it is not reclassified as passing.
