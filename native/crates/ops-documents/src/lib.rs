@@ -1,6 +1,8 @@
 //! Bounded table observations; cells stay strings, and incomplete traversals never invent totals.
 #![forbid(unsafe_code)]
 mod archive;
+mod pdf_syntax;
+pub mod pdf_container;
 mod xml;
 mod docx;
 mod decode;
