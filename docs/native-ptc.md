@@ -169,11 +169,15 @@ if (result.status === "error" || result.status === "rejected") {
 File parameter bounds are described in the host-compatible SDK schema and enforced
 by the native worker, even for direct PTC calls. Required fields, enums, nested
 edit shapes and strict unknown-field rejection remain discoverable.
-Inspect's model rendering shares a homogeneous page's path once at the top level;
-raw execution/PTC values retain each item's path and all pagination/truncation
-metadata. This reduces rendered bytes, not worker pagination or measured token
-billing. Long single-line text continuation is unchanged; use the hex view to
-read beyond an in-line cut.
+Native file rendering uses `=== FILE: path (Lines a-b of n) ===` and `N | text`,
+with concise mutation receipts and explicit paging/effect/retry notices. The raw
+execution value returned to PTC remains unchanged. Content blocks are capped at
+64 KiB after JSON escaping; clipped displays instruct the caller to recover
+undisplayed content without blindly advancing a cursor or repeating a write.
+Physical LF defines line counts across projections; bare CR/control separators
+are escaped for display. Invalid text encoding returns `ERR_INVALID_ENCODING`
+with document/binary-reader guidance. Use hex byte rows to read beyond an in-line
+cut. See [usage](usage.md#native-file-results) / [使用指南](使用指南.md#native-文件结果).
 
 ## Plan and execution semantics
 

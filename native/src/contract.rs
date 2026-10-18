@@ -72,6 +72,7 @@ impl Failure {
             retryable: false,
             effect_state: "none".into(),
             next_action: match code {
+                "ERR_INVALID_ENCODING" => "Use a dedicated document/binary reader, or inspect with view=hex; do not replace invalid bytes with lossy text.",
                 "METADATA_UNSUPPORTED" => "Use a filesystem/platform or dedicated tool that preserves the source metadata. Changing the permission selector or blindly retrying cannot repair this limitation.",
                 "REFERENCE_EXPIRED" => "Release the expired result and acquire a new observation; references never grant authority.",
                 "REVISION_CONFLICT" => "Inspect the current revision before preparing a new request; do not blindly retry.",

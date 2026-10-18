@@ -63,7 +63,8 @@ await test('native registration consumes the catalogue while execute values stay
       const tool = definition(name, async () => canonical)
       assert.equal(await tool.execute({}, {}), canonical)
       assert.equal(canonical.items[0].path, '/file')
-      if (name !== 'inspect_local_file') assert.deepEqual(JSON.parse(tool.output.render({}, canonical)[0].text), canonical)
+      if (names === PTC_TOOLS) assert.deepEqual(JSON.parse(tool.output.render({}, canonical)[0].text), canonical)
+      else assert.equal(typeof tool.output.render({}, canonical)[0].text, 'string')
     }
   }
   await runtime.stop()

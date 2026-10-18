@@ -154,3 +154,28 @@ This version starts no long-lived server process: the native file worker is owne
 - [Component reference](component-reference.md) — components and tools
 - [Troubleshooting](troubleshooting.md) — errors and diagnosis
 - [Native PTC](native-ptc.md) — the PTC design and build
+
+
+## Native file results
+
+Native file tools present readable text: `=== FILE: path (Lines a-b of n) ===`
+followed by `N | text`. Paths, observed revisions and paging notices remain visible.
+PTC execution values remain structured objects; inspect `status` and completeness
+before using them. Grep context labels use the physical source line, while glob
+path mode lists one path per line. Stat retains size, revision and metadata facts;
+diff shows removed/added lines. Mutation tools return short receipts without
+repeating file contents.
+
+Only physical LF ends a line (CRLF is one boundary). Empty files have zero lines;
+a final LF adds no empty line. Bare CR and Unicode separators do not add lines; control separators are escaped
+in the display so they cannot break a numbered line.
+Writing text preserves its bytes and line endings. Invalid UTF-8 or an unsupported
+text encoding returns `ERR_INVALID_ENCODING`, with guidance to use a document/binary
+reader or `view: "hex"`; no lossy text replacement is performed.
+
+Native content blocks are capped at 64 KiB after JSON escaping. A clipped display
+says `Display incomplete` / `TruncatedBy: output-budget`; request a smaller original
+read range instead of advancing past undisplayed text. A truncated line cannot be
+recovered by moving to the next line: use hex byte rows. A clipped mutation receipt
+is not permission to repeat a write: inspect current state first. Error notices
+show effect state and retry guidance before potentially long diagnostic messages.

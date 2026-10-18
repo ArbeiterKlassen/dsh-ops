@@ -342,7 +342,8 @@ fn result(items: Vec<Value>, total: usize, offset: usize, next_base: usize, matc
 
 fn inspect(request: &Request) -> Result<Value> {
     let args: InspectArgs = serde_json::from_value(request.args.clone())?;
-    if args.limit == 0 || args.limit > 10_000 || !args.encoding.eq_ignore_ascii_case("utf-8") { return Err(Failure::new("INVALID_ARGUMENT", "inspect supports UTF-8 and a bounded limit")); }
+    if args.limit == 0 || args.limit > 10_000 { return Err(Failure::new("INVALID_ARGUMENT", "inspect limit is 1-10000")); }
+    if !args.encoding.eq_ignore_ascii_case("utf-8") { return Err(Failure::new("ERR_INVALID_ENCODING", "Text inspection supports UTF-8 only")); }
     let path = target(&args.path, false)?;
     if !path.is_file() { return Err(Failure::new("INVALID_ARGUMENT", "path is a directory; use ops_glob or ops_grep")); }
     let bytes = read_bytes(&path)?;
@@ -361,7 +362,9 @@ fn inspect(request: &Request) -> Result<Value> {
         return Ok(json!({"status":"completed","phase":"verify","changed":0,"matched":1,"skipped":start,"failed":0,"complete":end == bytes.len(),"truncated":end < bytes.len(),"nextOffset":end.div_ceil(16)+1,"omitted":bytes.len().saturating_sub(end),"bytesTotal":bytes.len(),"revision":facts["revision"],"bytes":facts["bytes"],"lineCount":facts["lineCount"],"items":[{"path":path,"view":"hex","offset":start,"text":text}]}));
     }
     if args.view != "text" { return Err(Failure::new("INVALID_ARGUMENT", "view must be text or hex")); }
-    let text = String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "file is not valid UTF-8"))?;
+    let text = String::from_utf8(bytes).map_err(|_| Failure::new("ERR_INVALID_ENCODING", "File is not valid UTF-8"))?;
+    // str::lines splits physical LF/CRLF, never bare CR or Unicode separators.
+    // Empty files have zero lines; a final LF does not create a phantom line.
     let lines: Vec<_> = text.lines().enumerate().skip(args.offset.saturating_sub(1)).take(args.limit).map(|(i, line)| json!({"path":path,"line":i+1,"text":line})).collect();
     let mut output = result(lines, text.lines().count(), args.offset.saturating_sub(1), args.offset, text.lines().count(), false);
     for key in ["revision", "bytes", "lineCount"] { output[key] = facts[key].clone(); }
@@ -504,7 +507,7 @@ fn replace(request: &Request) -> Result<Value> {
         // The revision is checked against the bytes the lock returned, so the check
         // and the write cannot be separated by another open — see the lock for why.
         let expected=item["revision"].as_str().unwrap_or(""); publication::check_revision(Some(&bytes), expected)?;
-        let text=String::from_utf8(bytes).map_err(|_| Failure::new("INVALID_ARGUMENT", "replace only supports UTF-8 files"))?; let next=text.replace(&args.pattern,&args.replacement);
+        let text=String::from_utf8(bytes).map_err(|_| Failure::new("ERR_INVALID_ENCODING", "Replace only supports UTF-8 files"))?; let next=text.replace(&args.pattern,&args.replacement);
         // Report what the replacement kept. The fields are additive, so a caller
         // that ignores them sees exactly the envelope it saw before.
         if let Some((metadata,warnings))=atomic_write(&file,next.as_bytes())? { item["metadata"]=metadata; if !warnings.is_empty() { item["metadataWarnings"]=json!(warnings); } }

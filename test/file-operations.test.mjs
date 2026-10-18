@@ -81,7 +81,7 @@ await test('precise edits use one original, preserve Unicode/CRLF/BOM and reject
     fs.writeFileSync(target, 'aaa')
     failed(await call('edit_file', { path: target, expectedRevision: rev(target), edits: [{ oldText: 'aa', newText: 'b' }] }, root), 'EDIT_CONFLICT')
     fs.writeFileSync(target, Buffer.from([255]))
-    failed(await call('edit_file', { path: target, expectedRevision: rev(target), edits: [{ oldText: 'a', newText: '' }] }, root), 'INVALID_ARGUMENT')
+    failed(await call('edit_file', { path: target, expectedRevision: rev(target), edits: [{ oldText: 'a', newText: '' }] }, root), 'ERR_INVALID_ENCODING')
   })
 })
 await test('diff is a bounded read-only replacement hunk with exact before/after facts and continuation', async () => {
