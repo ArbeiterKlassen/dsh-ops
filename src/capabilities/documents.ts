@@ -8,6 +8,11 @@ const boolean: JsonSchemaNode = { type: 'boolean' }
 const strings: JsonSchemaNode = { type: 'array', items: string }
 const object = (properties: Record<string, JsonSchemaNode>, required: string[] = []): ParameterSchema => ({ type: 'object', properties, required, additionalProperties: false })
 export const DOCUMENT_PARAMETERS = Object.freeze({
+  pdf_read: object({
+    path: { ...string, description: 'Regular PDF file path relative to the current session cwd.' },
+    offset: { type: 'integer', default: 1, description: '1-32 pages, 1-based.' },
+    limit: { type: 'integer', default: 10, description: '1-32 pages.' },
+  }, ['path']),
   doc_read: object({
     path: { ...string, description: 'Regular DOCX file path relative to the current session cwd. Binary DOC is unsupported.' },
     offset: { type: 'integer', default: 1, description: '1-100000 main-body paragraphs, 1-based.' },
@@ -23,11 +28,12 @@ export const DOCUMENT_PARAMETERS = Object.freeze({
   }, ['path']),
 })
 export const DOCUMENT_DESCRIPTIONS = Object.freeze({
+  pdf_read: 'Read bounded PDF 1.3-1.7 page text and individual runs relative to session cwd. Restricted classic-xref PDFs with standard Helvetica/Courier/Times Type1 fonts and Standard/WinAnsi encoding only. Scope is text-layer content order; excludes rendered reading order, images/OCR, annotations/forms and metadata. Unsupported or malformed later pages retain preceding complete pages with error/nextAction. Check scanComplete versus pageComplete; total/revision require a stable full scan. 16 MiB input and aggregate decoded/processed streams, 1 MiB/page, 32 pages, 30s. Page offsets cannot bypass physical gaps; compare revisions across calls. Failures return status:error|rejected and error.code; never throw.',
   table_read: 'Read bounded CSV/TSV lexical string cells relative to session cwd. Preserves quoted multiline records and physical LF lineStart/lineEnd. Check scanComplete versus pageComplete; total/revision exist only after a stable full scan. Up to 32 MiB, 100000 data records, 1 MiB/record, 1024 columns and 30s; row paging cannot bypass scan gaps. Errors retain safe preceding rows with nextAction. Compare revisions before combining rescanned pages. No spreadsheet formulas or type coercion. Failures return status:error|rejected and error.code; never throw.',
   doc_read: 'Read bounded DOCX main-body paragraphs relative to session cwd, preserving Unicode text and table/row/cell coordinates. Scope excludes layout, headers/footers, notes, comments and metadata; complete applies only to that scope. Standard stored/deflated ZIP, strict UTF-8/BOM UTF-16; unsupported content and parse errors retain safe preceding paragraphs with nextAction. Check scanComplete versus pageComplete; total/revision require a stable full scan. 32 MiB archive, 8 MiB main XML, 1 MiB/paragraph, 100000 paragraphs, 30s. Paging cannot bypass physical gaps; compare revisions across calls. No binary DOC, macros, external fetch or extraction to disk. Failures return status:error|rejected and error.code; never throw.',
 })
 export const DOCUMENT_FACTS: Record<string, JsonSchemaNode> = {
-    scope: string, excludedContent: strings, blocksObserved: integer,
+    scope: string, excludedContent: strings, blocksObserved: integer, pagesObserved: integer, decodedBytes: integer, processedBytes: integer,
     format: string, encoding: string, header: boolean, columns: strings, columnCount: integer,
     bytes: integer, bytesRead: integer, rowsObserved: integer, skipped: integer,
     scanComplete: boolean, pageComplete: boolean, complete: boolean, truncated: boolean,
@@ -47,5 +53,8 @@ const DOCX_OUTPUT: JsonSchemaNode = { ...TABLE_OUTPUT, properties: { ...TABLE_OU
   items: { type: 'array', items: object({ block: integer, type: { type: 'string', enum: ['paragraph'] }, text: string,
     table: integer, row: integer, cell: integer }, ['block', 'type', 'text']) },
 } }
+const PDF_OUTPUT: JsonSchemaNode = { ...TABLE_OUTPUT, properties: { ...TABLE_OUTPUT.properties,
+  items: { type: 'array', items: object({ page: integer, text: string, runs: strings }, ['page', 'text', 'runs']) },
+} }
 export function isDocumentTool(tool: string): tool is keyof typeof DOCUMENT_PARAMETERS { return Object.hasOwn(DOCUMENT_PARAMETERS, tool) }
-export function documentOutput(tool: string): JsonSchemaNode | undefined { return tool === 'doc_read' ? DOCX_OUTPUT : tool === 'table_read' ? TABLE_OUTPUT : undefined }
+export function documentOutput(tool: string): JsonSchemaNode | undefined { return tool === 'pdf_read' ? PDF_OUTPUT : tool === 'doc_read' ? DOCX_OUTPUT : tool === 'table_read' ? TABLE_OUTPUT : undefined }

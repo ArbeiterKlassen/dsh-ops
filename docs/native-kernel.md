@@ -254,8 +254,8 @@ introduced together in the following PDF extraction slice.
 
 The one-shot worker accepts strict pdf_read { path, offset?, limit? }. The host resolves
 path from its current directory. Offset is a 1-based page number (1–32, default 1);
-limit is 1–32 pages (default 10). This remains an internal worker capability until the
-separate discovery/Native/PTC adapters are connected; no host tool is registered here.
+limit is 1–32 pages (default 10). The capability stays outside the default schema. Native selects it
+through `ops_discover`, PTC through `ops_sdk`; it activates at the owning agent's next step.
 
 Each item is { page, text, runs: string[] }. Runs retain individual PDF text-show
 operations; TJ spacing numbers are not characters. Text joins runs with newlines for
@@ -291,3 +291,10 @@ sink captures whole pages before clipping, and stored pages retain original scop
 scan/capture completeness. A reference page being complete does not fill a source gap.
 Read-only, credential denial, no-follow opens and no-business-effect failures use the
 same worker authority checks as the other document readers.
+
+Native shows page numbers and escaped text with the explicit text-layer scope and exclusions.
+PTC generated declarations retain page, text and string[] runs; unsupported or malformed observations
+keep canonical prefix data inside failure Outcomes without a looping page continuation. Stable full
+scans alone permit forward rescan pages, with revisions compared before combining results. References
+retain typed original page coverage, decoded/processed work, scope and capture facts. All reads use
+the same live authority, credentials, no-follow, shared budgets and cancellation path as file tools.

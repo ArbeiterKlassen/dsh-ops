@@ -2,7 +2,7 @@
 import type { CanonicalData, JsonValue } from './outcome.js'
 const object = (value: unknown): CanonicalData | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as CanonicalData : undefined
 const integer = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0
-const readers = ['inspect_local_file', 'read_many', 'glob', 'grep', 'diff', 'result', 'table_read', 'doc_read'] as const
+const readers = ['inspect_local_file', 'read_many', 'glob', 'grep', 'diff', 'result', 'table_read', 'doc_read', 'pdf_read'] as const
 export type ContinuationTool = typeof readers[number]
 export interface RetrievalContinuation { version: 1, tool: ContinuationTool, args: CanonicalData }
 const PREFIX = 'ops-next-v1:'
@@ -53,7 +53,7 @@ export function continuationFor(tool: string, rawArgs: unknown, data: CanonicalD
   if ((tool === 'grep' || tool === 'glob') && data.scanComplete === true && typeof data.continuation === 'string') {
     return encode(tool, { ...args, continuation: data.continuation, ...(integer(data.nextOffset) ? { offset: data.nextOffset } : {}) })
   }
-  if (tool === 'table_read' || tool === 'doc_read') {
+  if (tool === 'table_read' || tool === 'doc_read' || tool === 'pdf_read') {
     const offset = args.offset ?? 1
     return data.scanComplete === true && typeof data.revision === 'string' && /^[a-f0-9]{64}$/u.test(data.revision)
       && integer(offset) && offset > 0 && integer(data.nextOffset) && data.nextOffset > offset
