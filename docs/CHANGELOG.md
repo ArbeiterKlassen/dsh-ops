@@ -13,6 +13,15 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   safe prefixes on unsupported content, stable-scan-only continuation and scoped reference recovery.
 - DOCX 的 Native/PTC 按需启用，明确正文范围与排除内容；缺口保留安全前缀且不伪造续取。
 
+### Read bounded PDF text pages with honest coverage (#261, 15d/16)
+
+- Read a documented classic-xref/standard-font PDF subset into page text and individual runs,
+  with explicit exclusions, per-stream/page/aggregate limits and no OCR or layout claims.
+- Preserve preceding complete pages on unsupported content, keep totals/revision conditional
+  on stable full scans, and capture full pages before bounded reference spill.
+- 新增受限 PDF 文本页及 run 读取，明确排除内容和累计预算；保留此前完整页，
+  仅完整稳定扫描提供总数/修订，复用只读权限与无损引用，不声称 OCR 或阅读布局。
+
 ### Add bounded PDF container foundation (#261, 15c/16)
 
 - Validate a restricted classic-xref PDF grammar, exact object boundaries and bounded
