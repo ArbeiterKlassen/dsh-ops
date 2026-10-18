@@ -10,6 +10,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Prepare the 0.4.0 candidate version across owned npm/plugin and Rust workspace metadata without dependency changes. Audit paired release, usage, component, SDK, discovery and manual-validation documentation; keep BM-01 and full-default BM-03 failures explicit and separate from functional CI. No release/tag is created.
 - 将自有 npm/插件与 Rust workspace 版本统一为 0.4.0 候选，不变更依赖；同步双语发布、使用、组件、SDK、发现和手动验收文档。BM-01 与完整默认 BM-03 失败继续明确记录，不以功能 CI 代替验收，不创建发布或 tag。
 
+- Include each activated document reader in scoped routing guidance; validate real document receipts in the PTC API coverage suite.
+- 在作用域路由中显示已激活的文档读取工具，并用真实文档回执验证 PTC API 覆盖。
+
 - Keep table coverage honest beyond EOF and after metadata changes. Fresh PTC bundle pools follow
   the implemented catalogue; saved explicit operator pools remain unchanged.
 - 表格超出 EOF 时只统计实际跳过的行，文件变化后不声明页面完整；新 PTC 允许池遵循实现目录，保留已保存的显式选择。
