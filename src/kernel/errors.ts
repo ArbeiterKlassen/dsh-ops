@@ -27,6 +27,8 @@ export const ERROR_POLICIES: Readonly<Record<string, ErrorPolicy>> = Object.free
   ACCESS_DENIED: changed,
   EXECUTOR_UNAVAILABLE: changed,
   JOB_BUSY: policy('error', 'bounded-transient'),
+  CALL_LIMIT: policy('error', 'after-state-change'),
+  CANCELLED: settled,
   METADATA_UNSUPPORTED: settled,
   IO_ERROR: settled,
   SYNC_FAILED: settled,

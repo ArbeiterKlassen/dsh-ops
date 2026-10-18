@@ -9,6 +9,9 @@ import { resolveWorker } from '../ptc/runtime.js'
 import { FILE_MUTATIONS } from '../policy.js'
 import { normalizeArguments } from './contract.js'
 import { resolveReadMany } from './read-many.js'
+import { withCallBudget, CallBudgetError } from '../kernel/call-budget.js'
+import { withResultSession } from '../kernel/result-lifecycle.js'
+import { resultStorage } from '../kernel/result-storage.js'
 
 export { resolveWorker }
 
@@ -62,8 +65,21 @@ async function observeReplaced(ctx, fsService, value, cwd, exec, signal) {
 }
 
 export async function invoke(ctx, file, tool, args, exec, signal, config) {
-  try { return await invokeTrusted(ctx, file, tool, args, exec, signal, config) }
-  catch { return failure('EXECUTOR_UNAVAILABLE', 'DSH file authority or preparation is unavailable; no unrestricted fallback was attempted.') }
+  try {
+    const session = exec?.agent?.session
+    if (!session?.id) return failure('EXECUTOR_UNAVAILABLE', 'An authoritative session identity is required.')
+    return await withResultSession(ctx, session, signal, currentSignal =>
+      withCallBudget(ctx.root ?? ctx, String(session.id), currentSignal,
+        () => invokeTrusted(ctx, file, tool, args, exec, currentSignal, config)))
+  }
+  catch (error) {
+    if (error instanceof CallBudgetError) {
+      const value = failure(error.code, error.message)
+      value.error.nextAction = error.message
+      return value
+    }
+    return failure('EXECUTOR_UNAVAILABLE', 'DSH file authority or preparation is unavailable; no unrestricted fallback was attempted.')
+  }
 }
 async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
   const session = exec?.agent?.session
@@ -139,7 +155,9 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
   // Traversals skip credential directories by identity, so a glob or grep cannot even name a private
   // key that sits below one.
   const denyRoots = (config?.denyCredentialReads ?? true) !== false ? credentialRoots() : []
-  const envelope = workerEnvelope('file', { root: trustedPath(cwd), scope: String(session.id), tool, args: workerArgs, read_only: policy.mode === 'read-only', deny_roots: denyRoots, deny_credential_names: (config?.denyCredentialReads ?? true) !== false, ...(policy.mode === 'workspace-write' ? { write_roots: writeRoots } : {}) }, config?.toolCallTimeoutMs)
+  const storage = await resultStorage(ctx, session, exec.agent, file, tool, policy, denyRoots,
+    (config?.denyCredentialReads ?? true) !== false, signal).catch(() => undefined)
+  const envelope = workerEnvelope('file', { root: trustedPath(cwd), scope: String(session.id), tool, args: workerArgs, read_only: policy.mode === 'read-only', deny_roots: denyRoots, deny_credential_names: (config?.denyCredentialReads ?? true) !== false, ...(policy.mode === 'workspace-write' ? { write_roots: writeRoots } : {}) }, config?.toolCallTimeoutMs, storage)
   const input = JSON.stringify(envelope)
   if (Buffer.byteLength(input) > 2 * 1024 * 1024) return failure('OUTPUT_LIMIT', 'Request exceeds the 2 MiB byte budget.')
   let spawned = false

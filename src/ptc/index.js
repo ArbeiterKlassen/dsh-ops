@@ -6,6 +6,7 @@ import { PTC_TOOLS, PTC_SECTION, definition } from './contract.js'
 import { publicToolName } from '../policy.js'
 import { invoke, resolveWorker, failure } from './worker.js'
 import { mountWorkspacePreparation } from '../workspace-preparation.js'
+import { mountResultLifecycle } from '../kernel/result-lifecycle.js'
 export const name = 'dsh-ops-ptc'
 export function resolvePtcConfig(raw = {}) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('PTC config must be an object')
@@ -30,6 +31,7 @@ export function apply(root, rawConfig) {
     root.logger?.warn?.(`dsh-ops: ${e.message}`); return
   }
   root.inject(['tools', 'systemPrompt', 'sandboxPolicy', 'subprocess'], ctx => {
+    mountResultLifecycle(ctx)
     const entries = new Map(), active = new Map()
     ctx.effect(() => ctx.get('systemPrompt').section({
       name: PTC_SECTION, order: 3252, interpolate: false,

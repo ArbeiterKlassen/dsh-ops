@@ -7,6 +7,13 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Bound shared calls and expire session references (#261)
+
+- Share two active/eight waiting worker slots across Native/PTC, recheck authority after admission,
+  and cap worker execution at 30 seconds. Bind private result storage to the live host session and
+  current permissions; cancel and settle calls before authority-respecting cache cleanup.
+- Native/PTC 共用有界调用队列与 30 秒上限；引用绑定活动会话与当前权限，会话结束后按权限清理缓存并保留审计数据。
+
 ### Read multiple file ranges and apply atomic multi-edits (#261)
 
 - Add read_many with 1-32 independently reported UTF-8 ranges in one worker call, current-session

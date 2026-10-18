@@ -10,6 +10,7 @@ import { NativeFileTools } from './file/runtime.js'
 import { resolveWorker } from './ptc/runtime.js'
 import { mountWorkspacePreparation } from './workspace-preparation.js'
 import { safeDispose, safeDisposeAll } from './teardown.js'
+import { mountResultLifecycle } from './kernel/result-lifecycle.js'
 
 export const name = 'dsh-ops'
 function report(ctx, message, level = 'error') {
@@ -63,6 +64,7 @@ function installHostShellDenial(ctx, config) {
 }
 
 async function mountNativeFile(ctx, config, file) {
+  mountResultLifecycle(ctx)
   const surface = new NativeFileTools({ ctx, config: { ...config, workerPath: file },
     report: (message, level) => report(ctx, message, level) })
   // `safeDispose` isolates synchronous teardown callbacks; a *rejecting promise* needs its own
