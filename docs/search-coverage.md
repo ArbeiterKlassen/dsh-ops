@@ -21,6 +21,8 @@ inspect `scanComplete`, `pageComplete` and `complete` before treating it as exha
 `grep` count/files modes page matching files while `matchedTotal` counts matches; the legacy
 `total` counts page items. `total` and `omitted` are absent when the scan is incomplete. Existing
 `matched`, `matches` and `files` are observed counts, never a replacement for the coverage flags.
+The Native renderer puts coverage and recovery guidance before matching text. The published
+argument schemas include `continuation`; the typed output declares the report fields.
 An explicit `limit` can produce `scanComplete: true`, `pageComplete: true`,
 `truncatedBy: row-limit` and a continuation. Legacy `complete` becomes true only on the final
 fully displayed page of a complete scan.
