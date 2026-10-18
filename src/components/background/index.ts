@@ -5,9 +5,10 @@
  * Existing profiles still carry this row, so it keeps loading: it accepts any config without
  * validating it, publishes nothing, and says once that the row can be deleted.
  */
+import type { Context } from '@deepseek-ai/cordis'
 export const name = "dsh-ops-background"
 export const REMOVED_MESSAGE = "dsh-ops: the dsh-ops/background component (FastCtx background jobs) was removed in this version; it publishes no tools. Delete this row from the profile configuration."
-export function apply(ctx, _config) {
+export function apply(ctx: Context | null | undefined, _config?: unknown): void {
   const logger = ctx?.logger
   if (typeof logger?.warn === "function") logger.warn(REMOVED_MESSAGE)
   else console.warn(REMOVED_MESSAGE)

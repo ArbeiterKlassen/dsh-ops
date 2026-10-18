@@ -11,6 +11,7 @@
     "tui.ts",
     "authority.ts",
     "profile-temp.ts",
-    "host-entry.ts"
+    "host-entry.ts",
+    "config.ts"
   ]
 }

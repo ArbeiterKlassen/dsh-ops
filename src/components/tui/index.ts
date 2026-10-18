@@ -1,4 +1,7 @@
 /** Optional read-only panel. Missing tuiPanels leaves only this component pending. */
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session'
+import type { AttentionLevel } from '../../tui/attention.js'
 import { createActivityStore, resolveActivityConfig } from '../../tui/activity.js'
 import { createOpsPanel } from '../../tui/panel.js'
 import { createAttentionStore } from '../../tui/attention.js'
@@ -8,9 +11,15 @@ export const name = 'dsh-ops-tui'
 export const inject = ['tuiPanels']
 export { resolveActivityConfig as resolveTuiConfig }
 
-export function apply(ctx, rawConfig) {
+/** Narrow injected API-v1 surface, independent of a host TUI/React installation. */
+export interface TuiPanels {
+  register(descriptor: { apiVersion: 1; id: string; title: string; minColumns: number; component: ReturnType<typeof createOpsPanel> }): unknown
+  list(): readonly { id: string }[]
+  badge(id: string, value: { level: AttentionLevel | undefined; unread: number } | null): void
+}
+export function apply(ctx: Context, rawConfig?: unknown): void {
   const config = resolveActivityConfig(rawConfig)
-  const panels = ctx.get('tuiPanels')
+  const panels = ctx.get('tuiPanels') as TuiPanels
   const store = createActivityStore(config)
   const attention = createAttentionStore()
   const dispose = panels.register({ apiVersion: 1, id: 'overview', title: 'OPS', minColumns: 28,

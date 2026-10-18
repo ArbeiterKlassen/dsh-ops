@@ -7,14 +7,20 @@
  * profile or rename dsh-ops/file: name-qualified overrides would be skipped.
  * Explicit legacy panel capture:false is retained; no migration may start capture.
  */
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-config-editor'
 import { LEGACY_FASTCTX_KEYS } from './config.js'
 
 export const CONFIG_UPDATE_VERSION = 2
 
 /** Apply every pending step in order; each step runs exactly once per row. */
-export function updatedConfig(raw = {}, disableEvaluatedFallback = false) {
-  const version = Number.isSafeInteger(raw?.configUpdateVersion) ? raw.configUpdateVersion : 0
-  if (version >= CONFIG_UPDATE_VERSION) return raw
+export function updatedConfig(value: unknown = {}, disableEvaluatedFallback = false): Record<string, unknown> {
+  // The component validates effective config first; persisted raw rows can still
+  // contain loader expressions, so preserve their unknown values until the editor validates.
+  const raw = value as Record<string, unknown> | null | undefined
+  const marker = raw?.configUpdateVersion
+  const version = typeof marker === 'number' && Number.isSafeInteger(marker) ? marker : 0
+  if (version >= CONFIG_UPDATE_VERSION) return raw!
   const next = { ...raw }
   // 1 (0.2.5): retire the old implicit system-bash opt-in. Later manual opt-ins are kept.
   if (version < 1 && (raw?.allowSystemShellFallback === true || disableEvaluatedFallback)) next.allowSystemShellFallback = false
@@ -35,7 +41,7 @@ const pending = new WeakSet()
 const notedInMemory = new WeakSet()
 const warnedSaveFailure = new WeakSet()
 /** True only the first time this logger is seen, so a notice is per process, not per row. */
-function firstSight(set, logger) {
+function firstSight(set: WeakSet<object>, logger: unknown): boolean {
   // `WeakSet` keys must be objects; a logger that is missing or not one cannot be tracked, and
   // there is nothing to log to anyway.
   if (!logger || (typeof logger !== 'object' && typeof logger !== 'function')) return false
@@ -43,11 +49,11 @@ function firstSight(set, logger) {
   set.add(logger)
   return true
 }
-function noteInMemoryOnly(ctx, reason) {
+function noteInMemoryOnly(ctx: Context, reason: string): void {
   if (!firstSight(notedInMemory, ctx.logger)) return
   ctx.logger.info?.(`dsh-ops: config update ${CONFIG_UPDATE_VERSION} applied in memory only (${reason}); the migration is in effect for this activation.`)
 }
-function warnSaveFailure(ctx, error) {
+function warnSaveFailure(ctx: Context, error: unknown): void {
   if (!firstSight(warnedSaveFailure, ctx.logger)) return
   // Anything can be thrown: `error.message` on `undefined`/`null` would raise from inside the very
   // handler that promises to report a failed save, turning it into an unhandled rejection.
@@ -80,8 +86,10 @@ function warnSaveFailure(ctx, error) {
  * it never writes anything, never surfaces an error into the boot path, and never
  * needs an owning row to be correct — while the save itself is #138's channel.
  */
-export function mountConfigUpdates(ctx, raw) {
-  if ((raw?.configUpdateVersion ?? 0) >= CONFIG_UPDATE_VERSION) return
+export function mountConfigUpdates(ctx: Context, value: unknown): void {
+  // The entry point already validated this effective configuration.
+  const raw = value as Record<string, unknown> | null | undefined
+  if (((raw?.configUpdateVersion ?? 0) as number) >= CONFIG_UPDATE_VERSION) return
   const entry = ctx.fiber?.entry
   // A row this plugin does not own is none of our business: say nothing (#138's scope guard keeps
   // the no-op `dsh-ops/background` stub out of the save path). A context with no owning row at all

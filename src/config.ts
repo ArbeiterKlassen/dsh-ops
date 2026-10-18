@@ -38,7 +38,7 @@ export { ConfigError } from './config-error.js'
  * @param {string[]} known - accepted keys.
  * @returns {void}
  */
-function rejectUnknownKeys(raw, known) {
+function rejectUnknownKeys(raw: Record<string, unknown>, known: readonly string[]): void {
   const unknown = Object.keys(raw).filter((key) => !known.includes(key))
   if (unknown.length > 0) {
     throw new ConfigError(
@@ -54,7 +54,7 @@ function rejectUnknownKeys(raw, known) {
  * @param {string} key - the key to read.
  * @returns {string|undefined} the value, or undefined when absent.
  */
-function optionalString(raw, key) {
+function optionalString(raw: Record<string, unknown>, key: string): string | undefined {
   const value = raw[key]
   if (value === undefined || value === null) return undefined
   if (typeof value !== 'string' || value.trim() === '') {
@@ -70,7 +70,7 @@ function optionalString(raw, key) {
  * @param {boolean} fallback - the value when the key is absent.
  * @returns {boolean} the value.
  */
-function optionalBoolean(raw, key, fallback) {
+function optionalBoolean(raw: Record<string, unknown>, key: string, fallback: boolean): boolean {
   const value = raw[key]
   if (value === undefined || value === null) return fallback
   if (typeof value !== 'boolean') {
@@ -86,7 +86,7 @@ function optionalBoolean(raw, key, fallback) {
  * @param {string[]} fallback - the value when the key is absent.
  * @returns {string[]} the value.
  */
-function optionalStringList(raw, key, fallback) {
+function optionalStringList(raw: Record<string, unknown>, key: string, fallback: string[]): string[] {
   const value = raw[key]
   if (value === undefined || value === null) return fallback
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || entry.trim() === '')) {
@@ -95,34 +95,32 @@ function optionalStringList(raw, key, fallback) {
   return [...value]
 }
 
-/**
- * The resolved configuration, with every default applied.
- * @typedef {object} ResolvedConfig
- * @property {number} configUpdateVersion - per-row completed configuration migration version.
- * @property {string|undefined} binaryPath - explicit native worker executable.
- * @property {boolean} required - fail activation when the native worker is unavailable.
- * @property {boolean} denyCredentialReads - refuse reads of credential locations.
- * @property {'advise'|'deny-host-shell'} shellPolicy - treatment of host shell tools.
- * @property {string[]} deniedHostTools - tool names refused by `deny-host-shell`.
- * @property {boolean} promptPolicy - inject the repository-tooling prompt section.
- * @property {string} extraGuidance - extra text appended to that section.
- * @property {string|undefined} bashPath - explicit executable for the plugin's bash layer.
- * @property {boolean} publishBashTool - publish ops_bash in full-access sessions with a usable bash and subprocess service.
- * @property {boolean} allowSystemShellFallback - let the bash rung use a
- *   system-installed bash when the plugin carries no copy of its own.
- */
+/** The resolved configuration, with every default applied. */
+export interface ResolvedConfig {
+  configUpdateVersion: number
+  binaryPath: string | undefined
+  required: boolean
+  denyCredentialReads: boolean
+  shellPolicy: 'advise' | 'deny-host-shell'
+  deniedHostTools: string[]
+  promptPolicy: boolean
+  extraGuidance: string
+  bashPath: string | undefined
+  publishBashTool: boolean
+  allowSystemShellFallback: boolean
+}
 
 /**
  * Validate one plugin row's config.
  * @param {unknown} rawConfig - the `config` value from the loader row.
  * @returns {ResolvedConfig} the resolved configuration.
  */
-export function resolveConfig(rawConfig) {
+export function resolveConfig(rawConfig?: unknown): ResolvedConfig {
   if (rawConfig === undefined || rawConfig === null) rawConfig = {}
   if (typeof rawConfig !== 'object' || Array.isArray(rawConfig)) {
     throw new ConfigError(`config must be an object, got ${JSON.stringify(rawConfig)}`)
   }
-  const raw = /** @type {Record<string, unknown>} */ (rawConfig)
+  const raw = rawConfig as Record<string, unknown>
   rejectUnknownKeys(raw, [
     'binaryPath',
     'serverName',
@@ -141,7 +139,7 @@ export function resolveConfig(rawConfig) {
   ])
 
   const configUpdateVersion = raw.configUpdateVersion ?? 0
-  if (!Number.isSafeInteger(configUpdateVersion) || configUpdateVersion < 0) {
+  if (typeof configUpdateVersion !== 'number' || !Number.isSafeInteger(configUpdateVersion) || configUpdateVersion < 0) {
     throw new ConfigError('configUpdateVersion must be a non-negative safe integer')
   }
 
@@ -171,7 +169,7 @@ export function resolveConfig(rawConfig) {
     configUpdateVersion,
     binaryPath: optionalString(raw, 'binaryPath'),
     required: optionalBoolean(raw, 'required', false),
-    shellPolicy: /** @type {'advise'|'deny-host-shell'} */ (shellPolicy),
+    shellPolicy: shellPolicy as ResolvedConfig['shellPolicy'],
     deniedHostTools: optionalStringList(raw, 'deniedHostTools', DEFAULT_DENIED_HOST_TOOLS),
     promptPolicy: optionalBoolean(raw, 'promptPolicy', true),
     extraGuidance: optionalString(raw, 'extraGuidance') ?? '',
