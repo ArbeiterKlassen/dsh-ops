@@ -11,7 +11,7 @@ The component is exported now. The seven-row bundle installation and 0.3 profile
   config:
     enabled: true
     maxResults: 3
-    allowedTools: [glob, grep, replace, write_file, edit_file, diff, stat, copy, move, remove]
+    allowedTools: [read_many, edit_many, result, glob, grep, replace, write_file, edit_file, diff, stat, copy, move, remove]
     alwaysLoaded: []
 ```
 
@@ -32,10 +32,14 @@ Only this plugin's scoped `ctx.tools.register`, `restrict`, prompt sections and 
 
 ## Measurement boundaries
 
-The deterministic BM-03 entry check uses `js-tiktoken@1.0.21` with `cl100k_base`, encoding compact JSON of the pinned host `ToolSchema` fields (`name`, `description`, `parameters`). The discovery entry is **120 tokens / 552 UTF-8 bytes**. This is a reproducible schema measurement, not provider billing, and excludes tool-message framing, prompt guidance and other OPS components. The tokenizer is a test-only dependency published on 2025-08-09; its locked `base64-js` dependency is also test-only.
+The deterministic entry measurement uses `js-tiktoken@1.0.21` with `cl100k_base`, encoding compact JSON of the pinned host `ToolSchema` fields (`name`, `description`, `parameters`). The discovery entry is **120 tokens / 552 UTF-8 bytes**. This is a reproducible schema measurement, not provider billing, and excludes tool-message framing, prompt guidance and other OPS components. The tokenizer is a test-only dependency published on 2025-08-09; its locked `base64-js` dependency is also test-only.
 
-The unchanged eleven-file-tool surface plus discovery measures **2232 tokens / 10376 bytes** by the same method; this slice does not claim that whole surface passes 400. The next slice reduces the resident file set and records its own complete file/discovery baseline. Shell/PTC or operator always-loaded choices must be measured separately, not silently excluded from a global claim.
+The unchanged fourteen-tool Native file surface plus discovery measures **3183 tokens / 14942 bytes** by the same method; this slice does not claim that whole surface passes 400. The next slice reduces the resident file set and records its own complete file/discovery baseline. Shell/PTC or operator always-loaded choices must be measured separately, not silently excluded from a global claim.
 
 BM-04 runs through the real Cordis tool/prompt services and native worker: an implemented `stat` capability is absent before discovery, remains absent through current-step assembly, appears after the next pre-step boundary, and executes successfully. PDF is unimplemented, so this is the lifecycle gate, not a claim that PDF acceptance passed.
 
 The browser configuration multi-select is separate work: plain configuration validation does not automatically generate a host selector. Its UI must use the pinned host's browser plugin configuration APIs.
+
+Overlapping discovery rows use the nearest owning scope; the last row mounted in the same scope wins until it is unloaded. File rows may mount before or after discovery. Only exact OPS-owned Native registrations are yielded or masked; unrelated external registrations remain visible. PTC Native shadows retain their exact origin, and discovered activations cannot be inherited by another agent. Native `result` is page/release only and may be discovered in read-only mode; the worker still rejects forbidden release actions. `read_many` and `edit_many` retain their existing per-file completeness and CAS contracts.
+
+BM-03 remains a full default Native-surface gate, including Windows Bash when integrated. The entry-only measurement above does not satisfy that gate.

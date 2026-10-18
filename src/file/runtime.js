@@ -24,12 +24,14 @@ export class NativeFileTools {
       if (this.config.required) throw new Error('Native file worker path is unavailable.')
       return []
     }
-    const definitions = names.map(rawName => {
-      const execute = (args, exec) => this.call(rawName, args, exec)
-      return rawName === 'result' ? resultDefinition(execute) : definition(rawName, execute)
-    })
+    const definitions = names.map(rawName => this.definition(rawName))
     this.unregisterProvider = await registerNativeProvider(this.ctx, definitions, tool => this.ctx.tools.register(tool))
     return names.map(publicToolName)
+  }
+
+  definition(rawName) {
+    const execute = (args, exec) => this.call(rawName, args, exec)
+    return rawName === 'result' ? resultDefinition(execute) : definition(rawName, execute)
   }
 
   async call(tool, args, exec) {

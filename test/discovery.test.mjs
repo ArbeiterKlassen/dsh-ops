@@ -28,11 +28,11 @@ await test('discovery arguments enforce max_results 1-5 and reject hidden action
   assert.deepEqual(search('metadata revision hash', DISCOVERABLE_TOOLS, 1), ['stat'])
   assert.deepEqual(search('select:ops_pdf_read', DISCOVERABLE_TOOLS, 5), [])
 })
-await test('BM-03 discovery-entry overhead is <=400 pinned cl100k_base tokens without abbreviating contracts', () => {
+await test('discovery-entry schema has a reproducible pinned token measurement, separate from the full BM-03 gate', () => {
   const wire = JSON.stringify([{ name: publicToolName('discover'), description: DISCOVERY_DESCRIPTION, parameters: DISCOVERY_PARAMETERS }])
   const tokens = getEncoding('cl100k_base').encode(wire).length
   console.log(`  discovery schema: ${tokens} cl100k_base tokens, ${Buffer.byteLength(wire)} UTF-8 bytes; js-tiktoken 1.0.21; compact JSON name/description/parameters; not provider billing or the whole OPS surface`)
-  assert.ok(tokens <= 400)
+  assert.equal(tokens, 120)
 })
 await test('scoped file cancellation aborts active workers and disposal waits for their completion', () => withTempDir('discovery-cancel', async dir => {
   let spawned, complete

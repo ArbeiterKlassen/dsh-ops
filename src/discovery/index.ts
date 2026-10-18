@@ -5,7 +5,10 @@ import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { resolveDiscoveryConfig } from '../config.js'
 import { NativeFileTools } from '../file/runtime.js'
-import { definition } from '../file/contract.js'
+import { nativeProviders, registerNativeProvider, claimNativeSelection } from '../file/result-provider.js'
+import { ownScopes } from '../scoped-ownership.js'
+import { isNativePresentation } from '../presentation.js'
+import { mountResultLifecycle } from '../kernel/result-lifecycle.js'
 import { failure, resolveWorker } from '../file/worker.js'
 import { capability } from '../capabilities/registry.js'
 import { DISCOVERY_DESCRIPTION, DISCOVERY_PARAMETERS, DISCOVERY_OUTPUT } from '../capabilities/discovery.js'
@@ -23,6 +26,7 @@ interface Entry {
   disposers: (() => void)[]
   owned: Set<string>
   ready: Promise<void>
+  releaseSelection?: () => void
 }
 const DISCOVER = publicToolName('discover')
 const advanced = DISCOVERABLE_TOOLS.map(publicToolName)
@@ -37,11 +41,12 @@ export function apply(root: Context, raw: unknown): void {
     root.logger.warn('dsh-ops: discovery worker unavailable; no tools published.')
     return
   }
-  root.inject(['tools', 'systemPrompt', 'sandboxPolicy', 'subprocess'], ctx => {
+  root.inject(['tools', 'systemPrompt', 'sandboxPolicy', 'subprocess'], async ctx => {
     const tools = ctx.get('tools'), prompt = ctx.get('systemPrompt'), policyService = ctx.get('sandboxPolicy')
     if (!tools || !prompt || !policyService) return
     const entries = new Map<Agent, Entry>()
-    const ownedDefinitions = new WeakSet<ToolDefinition>()
+    mountResultLifecycle(ctx)
+    let ownership: Awaited<ReturnType<typeof ownScopes>> | undefined
     let stopped = false, mutating = false, epoch = 0, chain = Promise.resolve()
     const clear = (entry: Entry) => {
       entry.owned.clear()
@@ -53,44 +58,41 @@ export function apply(root: Context, raw: unknown): void {
       try {
         const policy = policyService.resolve({ session: agent.session })
         return ['read-only', 'workspace-write', 'danger-full-access'].includes(policy.mode)
-          && (!rawName || !capability(rawName)?.mutates || policy.mode !== 'read-only')
+          && (!rawName || rawName === 'result' || !capability(rawName)?.mutates || policy.mode !== 'read-only')
       } catch { return false }
     }
     const ptcOnly = (assembly: PromptAssembly): boolean => assembly.sections.some(section => section.name === 'tools:ptc-only' && Boolean(section.text.trim()))
-    const native = async (agent: Agent): Promise<boolean> => !ptcOnly(await prompt.assemble({ scope: agent }))
-    const own = (agent: Agent, entry: Entry, tool: ToolDefinition): void => {
+    const native = (agent: Agent): Promise<boolean> => isNativePresentation(prompt, agent)
+    const own = async (agent: Agent, entry: Entry, tool: ToolDefinition): Promise<void> => {
       if (!entry.ctx) return
       const execute = tool.execute
       const registration: ToolDefinition = { ...tool, execute: async (args, exec) => {
-        const available = () => !stopped && entries.get(agent) === entry && exec.agent === agent && entry.owned.has(tool.name)
-        if (!available() || !await native(agent).catch(() => false) || !available()) {
+        await chain
+        const version = epoch
+        const available = () => ownership?.owns(agent) && !stopped && entries.get(agent) === entry && exec.agent === agent && entry.owned.has(tool.name)
+        if (!available() || !await native(agent).catch(() => false) || !available() || version !== epoch) {
           return failure('POLICY_DENIED', 'Discovery capability belongs to a different or inactive scope.')
         }
         return execute(args, exec)
       } }
-      ownedDefinitions.add(registration)
-      entry.disposers.push(entry.ctx.tools.register(registration))
+      entry.disposers.push(await registerNativeProvider(entry.ctx, [registration], tool => entry.ctx!.tools.register(tool), { inheritable: false, priority: 10 }))
       entry.owned.add(tool.name)
     }
-    const inheritedNative = (agent: Agent, entry: Entry): string[] => tools.schemas(agent).map(tool => tool.name).filter(name => {
-      if ((!advanced.includes(name) && name !== DISCOVER) || entry.owned.has(name)) return false
-      const registered = tools.get(name, agent)
-      // A same-scope PTC adapter may own the same kernel name. Never mask it.
-      // Only ancestor discovery registrations or the legacy global Native row
-      // are inherited Native capabilities that this lifecycle may suppress.
-      return Boolean(registered && (ownedDefinitions.has(registered) || registered === tools.get(name)))
-    })
+    const inheritedNative = (agent: Agent, entry: Entry): string[] => nativeProviders(ctx, agent)
+      .map(provider => provider.definition.name).filter(name => (advanced.includes(name) || name === DISCOVER) && !entry.owned.has(name))
     const reconcile = (): Promise<void> => {
       if (stopped || mutating) return chain
       const version = ++epoch
       chain = chain.then(async () => {
         if (stopped || version !== epoch) return
         const ready: [Agent, Entry][] = []
-        for (const [agent, entry] of entries) if (entry.ctx && permitted(agent) && await native(agent).catch(() => false)) ready.push([agent, entry])
+        for (const [agent, entry] of entries) if (entry.ctx && ownership?.owns(agent) && permitted(agent) && await native(agent).catch(() => false)) ready.push([agent, entry])
         if (stopped || version !== epoch) return
-        mutating = true
+        mutating = true; ownership?.begin()
         try {
           for (const [agent, entry] of entries) {
+            if (!ownership?.owns(agent)) { clear(entry); entry.releaseSelection?.(); entry.releaseSelection = undefined; continue }
+            entry.releaseSelection ??= claimNativeSelection(ctx, agent, new Set(advanced))
             const isReady = ready.some(([candidate]) => candidate === agent)
             const wanted = isReady ? [...new Set([...config.alwaysLoaded, ...entry.selected])].filter(tool => permitted(agent, tool)) : []
             const desired = new Set([...(isReady && config.enabled ? [DISCOVER] : []), ...wanted.map(publicToolName)])
@@ -99,7 +101,7 @@ export function apply(root: Context, raw: unknown): void {
             // surface, or independent lifecycle listeners can amplify one another.
             if (desired.size === entry.owned.size && [...desired].every(tool => entry.owned.has(tool)) && !inherited.length) continue
             clear(entry)
-            if (isReady && config.enabled) own(agent, entry, {
+            if (isReady && config.enabled) await own(agent, entry, {
               name: DISCOVER, description: DISCOVERY_DESCRIPTION, parameters: DISCOVERY_PARAMETERS,
               output: { schema: DISCOVERY_OUTPUT, render: (_args, value) => [{ type: 'text', text: typeof value === 'object' && value && 'message' in value ? String(value.message) : JSON.stringify(value) }] },
               execute: async args => {
@@ -114,15 +116,16 @@ export function apply(root: Context, raw: unknown): void {
               },
             })
             for (const tool of wanted) {
-              own(agent, entry, definition(tool, (args, exec) => entry.runtime.call(tool, args, exec)))
+              await own(agent, entry, entry.runtime.definition(tool))
             }
           }
           // A child must not inherit its parent's activation or an old global advanced surface.
-          for (const [agent, entry] of entries) if (entry.ctx) {
+          for (const [agent, entry] of entries) if (entry.ctx && ownership?.owns(agent)) {
             const deny = inheritedNative(agent, entry)
             if (deny.length) entry.disposers.push(entry.ctx.tools.restrict({ deny }))
           }
-        } finally { mutating = false }
+        } finally { ownership?.end(); mutating = false }
+        ownership?.changedBelow()
       }).catch(() => {
         mutating = true
         try { for (const entry of entries.values()) clear(entry) } finally { mutating = false }
@@ -134,7 +137,7 @@ export function apply(root: Context, raw: unknown): void {
       if (stopped || entries.has(agent) || !agent.ctx) return entries.get(agent)?.ready ?? Promise.resolve()
       const entry: Entry = { runtime: new NativeFileTools({ ctx, config: { ...config, workerPath: worker }, report: undefined }),
         selected: new Set(), pending: new Set(), disposers: [], owned: new Set(), ready: Promise.resolve() }
-      entries.set(agent, entry)
+      entries.set(agent, entry); ownership?.track(agent)
       entry.fiber = agent.ctx.plugin({ inject: ['tools'], apply(scoped) { entry.ctx = scoped } })
       entry.ready = Promise.resolve(entry.fiber).then(async () => { await entry.runtime.start([]); await reconcile() })
       return entry.ready
@@ -143,7 +146,7 @@ export function apply(root: Context, raw: unknown): void {
     ctx.on('agent/pre-step', async (payload, next) => {
       await attach(payload.agent)
       const entry = entries.get(payload.agent)
-      if (entry && !payload.signal.aborted) {
+      if (entry && ownership?.owns(payload.agent) && !payload.signal.aborted && await native(payload.agent).catch(() => false)) {
         for (const tool of entry.pending) if (permitted(payload.agent, tool)) entry.selected.add(tool)
         entry.pending.clear()
         await reconcile()
@@ -153,11 +156,11 @@ export function apply(root: Context, raw: unknown): void {
     ctx.on('agent/disposed', async ({ agent }) => {
       const entry = entries.get(agent)
       if (!entry) return
-      entries.delete(agent); mutating = true
-      try { clear(entry) } finally { mutating = false }
+      entries.delete(agent); ownership?.forget(agent); mutating = true
+      try { clear(entry); entry.releaseSelection?.() } finally { mutating = false }
       await entry.runtime.stop(); await entry.fiber?.dispose(); await reconcile()
     })
-    ctx.on('tools/change', () => { void reconcile() })
+    ctx.on('tools/change', () => { if (!ownership?.publishing()) void reconcile() })
     ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
       const entry = entries.get(context.scope as Agent)
       // Snapshot ownership before yielding: another assembly may withdraw it while
@@ -182,8 +185,18 @@ export function apply(root: Context, raw: unknown): void {
       } finally { mutating = false }
       void reconcile()
     })
+    ownership = await ownScopes(ctx, 'discovery', () => {
+      mutating = true
+      try {
+        for (const [agent, entry] of entries) if (!ownership?.owns(agent)) {
+          entry.pending.clear(); entry.runtime.cancel('Discovery row ownership changed'); clear(entry)
+          entry.releaseSelection?.(); entry.releaseSelection = undefined
+        }
+      } finally { mutating = false }
+      void reconcile()
+    })
     ctx.effect(() => prompt.section({
-      name: 'dsh-ops:discovery-tools', order: 3253, interpolate: false,
+      name: ownership.sectionName('dsh-ops:discovery-tools'), order: 3253, interpolate: false,
       text: context => {
         const entry = entries.get(context.scope as Agent)
         return entry ? renderToolingPolicy({ published: entry.owned, shellComponent: false }) : ''
@@ -191,10 +204,12 @@ export function apply(root: Context, raw: unknown): void {
     }), 'dsh-ops: discovered capability guidance')
     ctx.effect(() => async () => {
       stopped = true; ++epoch; mutating = true
-      for (const entry of entries.values()) clear(entry)
+      for (const entry of entries.values()) { clear(entry); entry.releaseSelection?.() }
       await Promise.allSettled([...entries.values()].map(async entry => { await entry.runtime.stop(); await entry.fiber?.dispose() }))
-      entries.clear(); await chain
+      entries.clear(); ownership?.dispose(); await chain
     }, 'dsh-ops: discovery lifecycle')
-    for (const agent of ctx.get('agents')?.list() ?? []) void attach(agent)
+    for (const agent of entries.keys()) ownership.track(agent)
+    ownership.refresh()
+    for (const agent of new Set([...(ctx.get('agents')?.list() ?? []), ...ownership.agents()])) void attach(agent)
   })
 }

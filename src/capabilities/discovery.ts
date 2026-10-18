@@ -3,6 +3,9 @@ import type { ParameterSchema } from './types.js'
 
 /** Reviewed, currently implemented advanced operations. Future formats are absent. */
 export const DISCOVERY_TERMS = Object.freeze({
+  read_many: 'read inspect multiple files bounded line windows',
+  edit_many: 'edit patch multiple files atomic per file revision cas',
+  result: 'result reference page release stored output continuation',
   glob: 'glob find search file paths patterns',
   grep: 'grep search content regex matching text count summary',
   replace: 'batch literal text replacement across files',
