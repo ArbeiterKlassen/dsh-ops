@@ -86,15 +86,46 @@ fn control(sd: &SecurityDescriptor) -> io::Result<u16> {
 
 /// CREATE_NEW relative to a held directory, with a protected current-process
 /// user DACL at creation, before any bytes can be written. No inherited grants.
-pub fn create_private(parent: &File, name: &str) -> io::Result<File> {
+pub fn create_private(parent: &File, name: &str) -> io::Result<File> { create_private_object(parent, name, false, None) }
+/// A private cache directory, created relative to an already-held directory.
+pub fn create_cache_object(parent: &File, name: &str, directory: bool, write_sid: Option<&str>) -> io::Result<File> {
+    if let Some(capability) = write_sid {
+        let _ = private_descriptor(Some(capability))?;
+        // The envelope names the host's exact private-temp capability, and the held
+        // parent must already grant it. Never synthesize workspace/public grants.
+        let inherited = sddl(&*descriptor(parent)?)?.to_string_lossy().split('(').any(|ace| {
+            let parts: Vec<_> = ace.trim_end_matches(')').split(';').collect();
+            if parts.len() != 6 || parts[0] != "A" || parts[5] != capability { return false; }
+            let mask = if parts[2] == "FA" { 0x1f01ff } else { u32::from_str_radix(parts[2].trim_start_matches("0x"), 16).unwrap_or(0) };
+            mask & 0x116 == 0x116
+        });
+        if !inherited { return Err(unsupported("Cache parent lacks the trusted private-temp write capability")); }
+    }
+    create_private_object(parent, name, directory, write_sid)
+}
+fn private_descriptor(write_sid: Option<&str>) -> io::Result<LocalBox<SecurityDescriptor>> {
+    let sid = windows_permissions::utilities::current_process_sid()?;
+    let extra = match write_sid {
+        None => String::new(),
+        Some(capability) => {
+            let parts: Vec<_> = capability.split('-').collect();
+            if parts.len() != 6 || parts[..3] != ["S", "1", "4"] || parts[5] != "1"
+                || !parts[3..5].iter().all(|part| part.parse::<u32>().is_ok_and(|value| value > 0 && value < 1 << 30 && value.to_string() == *part)) {
+                return Err(unsupported("Expected the host's private-temp capability SID"));
+            }
+            format!("(A;;FA;;;{capability})")
+        }
+    };
+    format!("D:P(A;;FA;;;{sid}){extra}").parse()
+}
+fn create_private_object(parent: &File, name: &str, directory: bool, write_sid: Option<&str>) -> io::Result<File> {
     if name.is_empty() || name.contains(['/', '\\', ':', '\0']) || name == "." || name == ".." {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Expected a single sibling name",
         ));
     }
-    let sid = windows_permissions::utilities::current_process_sid()?;
-    let private: LocalBox<SecurityDescriptor> = format!("D:P(A;;FA;;;{sid})").parse()?;
+    let private = private_descriptor(write_sid)?;
     let mut wide: Vec<u16> = name.encode_utf16().collect();
     let length = u16::try_from(wide.len() * 2)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Sibling name too long"))?;
@@ -126,10 +157,10 @@ pub fn create_private(parent: &File, name: &str) -> io::Result<File> {
             &attributes,
             &mut status,
             std::ptr::null(),
-            0x80,                     // FILE_ATTRIBUTE_NORMAL
+            if directory { 0x10 } else { 0x80 }, // DIRECTORY or NORMAL
             7,                        // FILE_SHARE_READ|WRITE|DELETE
             2,                        // FILE_CREATE (never overwrite)
-            0x00200000 | 0x40 | 0x20, // OPEN_REPARSE_POINT|NON_DIRECTORY|SYNCHRONOUS_IO_NONALERT
+            0x00200000 | (if directory { 0x1 } else { 0x40 }) | 0x20, // no-follow, object kind, synchronous
             std::ptr::null(),
             0,
         )
@@ -139,25 +170,22 @@ pub fn create_private(parent: &File, name: &str) -> io::Result<File> {
     }
     // SAFETY: successful NtCreateFile transferred one live owned file handle.
     let file = unsafe { File::from_raw_handle(handle) };
-    let verified = (|| -> io::Result<()> {
-        let actual = descriptor(&file)?;
-        let actual_dacl = sddl(&actual)?
-            .to_string_lossy()
-            .split("D:")
-            .nth(1)
-            .unwrap_or("")
-            .replace("AI", "");
-        let expected = sddl(&private)?.to_string_lossy().into_owned();
-        if actual_dacl != expected.trim_start_matches("D:") {
-            return Err(unsupported("Private creation DACL verification failed"));
-        }
-        Ok(())
-    })();
+    let verified = verify_cache(&file, write_sid);
     if let Err(error) = verified {
         let _ = discard(&file);
         return Err(error);
     }
     Ok(file)
+}
+
+/// Cache objects are private to the current user plus exactly the trusted temp capability.
+pub fn verify_cache(file: &File, write_sid: Option<&str>) -> io::Result<()> {
+    let private = private_descriptor(write_sid)?;
+    let actual = descriptor(file)?;
+    let actual_dacl = sddl(&actual)?.to_string_lossy().split("D:").nth(1).unwrap_or("").replace("AI", "");
+    let expected = sddl(&private)?.to_string_lossy().into_owned();
+    if actual_dacl != expected.trim_start_matches("D:") { return Err(unsupported("Private creation DACL verification failed")); }
+    Ok(())
 }
 
 /// Captures mandatory security and supported basic metadata. Named streams,

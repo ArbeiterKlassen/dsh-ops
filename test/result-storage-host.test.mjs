@@ -6,7 +6,7 @@ import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import { assert, test, report, withTempDir } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
 import { WORKER, requireWorker } from './lib/boundary.mjs'
-import { publicToolName } from '../lib/policy.js'
+import { definition } from '../lib/file/contract.js'
 import { windowsCacheLocation, resultStorage } from '../lib/kernel/result-storage.js'
 import { mountResultLifecycle, expireResultSession } from '../lib/kernel/result-lifecycle.js'
 import { invoke } from '../lib/ptc/worker.js'
@@ -31,7 +31,9 @@ await test('real host references bind live session, current authority and produc
       await ctx.plugin(Subprocess); await ctx.plugin(Sandbox)
       await ctx.plugin(inner => inner.provide('sandboxPolicy', { resolve: () => ({ mode, workspaceRoot: root, sessionId: session.id }) }))
       await ctx.plugin(inner => mountResultLifecycle(inner))
-      const registration = await ctx.plugin(inner => inner.tools.register({ name: publicToolName('grep'), description: 'visible producer', parameters: { type: 'object', properties: {} }, execute: async () => ({}) }))
+      const registration = await ctx.plugin(inner => {
+        inner.inject(['tools'], scoped => { scoped.tools.register(definition('grep', async () => ({ status: 'completed' }))) })
+      })
       const policy = () => ctx.get('sandboxPolicy').resolve({ session })
       const metadata = await resultStorage(ctx, session, undefined, WORKER, 'result', policy(), [], false)
       assert.ok(metadata, 'real host must provide private storage')

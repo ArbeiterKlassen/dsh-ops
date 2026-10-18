@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 pub mod envelope;
 pub mod search;
+pub mod storage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -151,6 +152,9 @@ pub type Result<T> = std::result::Result<T, Failure>;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
+    /// Trusted envelope metadata; never accepted from the tool argument/request data plane.
+    #[serde(skip)]
+    pub storage: Option<storage::StorageContext>,
     pub root: String,
     #[serde(default)]
     pub read_only: bool,
@@ -192,6 +196,7 @@ pub struct ResultArgs {
     pub offset: usize,
     pub limit: Option<usize>,
     pub max_bytes: Option<usize>,
+    pub ttl_ms: Option<u64>,
     pub fields: Option<Vec<String>>,
     pub equals: Option<std::collections::BTreeMap<String, Value>>,
 }
