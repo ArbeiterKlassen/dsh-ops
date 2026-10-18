@@ -34,6 +34,14 @@ export function toOutcome(tool: string, args: unknown, value: unknown): Outcome<
   if (error) return failure(data, typeof error.code === 'string' ? error.code : 'RESULT_UNKNOWN',
     typeof error.message === 'string' ? error.message : 'The operation did not return a settled receipt.', effect(error, 'unknown'),
     typeof error.nextAction === 'string' ? error.nextAction : undefined)
+  const action = record(args)?.action
+  if (tool === 'result' && action === 'release' && data.status === 'released' && typeof data.id === 'string') {
+    return { status: 'completed', data }
+  }
+  if (tool === 'result' && action === 'put' && data.status === undefined && typeof data.id === 'string'
+    && typeof data.contentHash === 'string' && Number.isSafeInteger(data.total) && Number(data.total) >= 0) {
+    return { status: 'completed', data }
+  }
   if (data.status !== undefined && !['completed', 'planned', 'partial', 'partial_completion', 'unknown', 'rejected', 'conflict', 'error'].includes(String(data.status))) {
     return failure(data, 'RESULT_UNKNOWN', 'The worker returned an unrecognized execution status.', 'unknown')
   }

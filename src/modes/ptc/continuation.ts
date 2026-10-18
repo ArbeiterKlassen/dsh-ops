@@ -24,7 +24,8 @@ export function decodeContinuation(token: string): RetrievalContinuation | undef
   } catch { return undefined }
 }
 function readMany(args: CanonicalData, data: CanonicalData): CanonicalData | undefined {
-  if (!Array.isArray(args.files) || !Array.isArray(data.items) || !integer(data.nextIndex)) return undefined
+  if (!Array.isArray(args.files) || !Array.isArray(data.items) || !integer(data.nextIndex)
+    || data.nextIndex === 0 || data.nextIndex !== data.items.length) return undefined
   const files: JsonValue[] = []
   for (const [index, raw] of data.items.entries()) {
     const item = object(raw), request = object(args.files[index])
@@ -39,13 +40,15 @@ function readMany(args: CanonicalData, data: CanonicalData): CanonicalData | und
 }
 export function continuationFor(tool: string, rawArgs: unknown, data: CanonicalData): string | undefined {
   const args = object(rawArgs) ?? {}
+  // A page carries its original reference too; advance that page before considering a new spill.
+  if (tool === 'result') {
+    return args.action === 'page' && integer(data.nextOffset) && data.nextOffset > Number(args.offset ?? 0)
+      ? encode('result', { ...args, offset: data.nextOffset }) : undefined
+  }
   const reference = object(data.reference)
   if (typeof reference?.refId === 'string' && reference.refId.startsWith('ref://')) {
     return encode('result', { action: 'page', id: reference.refId, offset: 0,
       ...(typeof data.referenceRoot === 'string' ? { root: data.referenceRoot } : {}) })
-  }
-  if (tool === 'result' && args.action === 'page' && integer(data.nextOffset) && data.nextOffset > Number(args.offset ?? 0)) {
-    return encode('result', { ...args, offset: data.nextOffset })
   }
   if ((tool === 'grep' || tool === 'glob') && data.scanComplete === true && typeof data.continuation === 'string') {
     return encode(tool, { ...args, continuation: data.continuation, ...(integer(data.nextOffset) ? { offset: data.nextOffset } : {}) })

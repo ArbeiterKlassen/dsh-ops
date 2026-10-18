@@ -40,9 +40,15 @@ await test('batch summaries distinguish successful plans from partial or unknown
 })
 await test('result creation succeeds without echoing rows while partial pages continue readonly', () => {
   assert.equal(toOutcome('result', { action: 'put' }, { status: 'completed', complete: false, reference: { refId: 'ref://s/result/x' } }).status, 'completed')
-  const out = toOutcome('result', { action: 'page', id: 'ref://s/result/x', root: '/original', limit: 1 }, { complete: false, nextOffset: 1, items: [{ n: 0 }] })
+  const out = toOutcome('result', { action: 'page', id: 'ref://s/result/x', root: '/original', limit: 1 }, { complete: false, nextOffset: 1, reference: { refId: 'ref://s/result/x' }, items: [{ n: 0 }] })
   assert.equal(out.status, 'partial'); assert.equal(out.coverage.isComplete, false)
   assert.deepEqual(decodeContinuation(out.continuation), { version: 1, tool: 'result', args: { action: 'page', id: 'ref://s/result/x', root: '/original', limit: 1, offset: 1 } })
+})
+await test('successful release and legacy put receipts remain completed', () => {
+  const released = { status: 'released', id: 'ref://s/result/x' }
+  assert.equal(toOutcome('result', { action: 'release' }, released).status, 'completed')
+  assert.equal(toOutcome('write_file', {}, released).status, 'unknown')
+  assert.equal(toOutcome('result', { action: 'put' }, { id: 'r-x', total: 2, contentHash: 'sha256:x', complete: false }).status, 'completed')
 })
 await test('search gaps never claim completed coverage or invent resumable scan cursors', () => {
   const data = { complete: false, scanComplete: false, pageComplete: true, scannedFiles: 10000, matchedObserved: 8, truncatedBy: 'scan-budget', items: [] }
@@ -67,6 +73,11 @@ await test('line and read_many cursors retain unconsumed ranges and reject zero-
   const clipped = toOutcome('inspect_local_file', { path: '/a', offset: 1 }, { complete: false, truncated: true, nextOffset: 1, items: [{ truncatedInLine: true }] })
   assert.equal(clipped.status, 'error'); assert.equal('continuation' in clipped, false)
   assert.equal(toOutcome('read_many', args, { ...data, failed: 1 }).status, 'error')
+  const original = { files: Array.from({ length: 32 }, (_, n) => ({ path: `/${n}` })) }
+  const refusedSpill = { status: 'partial', complete: false, nextIndex: 0, pending: 32,
+    items: Array.from({ length: 14 }, () => ({ complete: true })), storageError: { code: 'POLICY_DENIED' } }
+  const halted = toOutcome('read_many', original, refusedSpill)
+  assert.equal(halted.status, 'error'); assert.equal('continuation' in halted, false, 'a bounded head never repeats the same full request')
 })
 await test('bounded continuation decoding never admits mutation or result-release tokens', () => {
   for (const tool of ['write_file','edit_many','batch','bash']) assert.equal(decodeContinuation('ops-next-v1:' + JSON.stringify({ version: 1, tool, args: {} })), undefined)
