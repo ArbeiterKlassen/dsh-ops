@@ -23,7 +23,7 @@ export function verifyReads(run, files, projection) {
 }
 
 export const verdict = gates => gates.length > 0 && gates.every(gate => gate.status === 'passed')
-export const fullAcceptance = gates => verdict(gates) && new Set(gates.map(gate => gate.id)).size === 5 && ['BM-01', 'BM-02', 'BM-03', 'BM-04', 'BM-05'].every(id => gates.some(gate => gate.id === id))
+export const fullAcceptance = gates => gates.length === 5 && verdict(gates) && new Set(gates.map(gate => gate.id)).size === 5 && ['BM-01', 'BM-02', 'BM-03', 'BM-04', 'BM-05'].every(id => gates.some(gate => gate.id === id))
 
 export function lowerBound(files, rows) {
   const sourceUtf8Bytes = files.reduce((sum, file) => sum + Buffer.byteLength(file.expected.map(line => line.text).join('\n')), 0)
