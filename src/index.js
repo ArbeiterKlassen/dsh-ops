@@ -2,7 +2,7 @@
 import { resolveConfig } from './config.js'
 import { mountConfigUpdates, updatedConfig } from './config-updates.js'
 import { SECTION_ORDERS, TOOLING_SECTION, BASH_TOOL, publicToolName, hostShellRefusal, renderToolingPolicy } from './policy.js'
-import { FILE_TOOLS } from './file/contract.js'
+import { NATIVE_FILE_TOOLS as FILE_TOOLS, NATIVE_RESIDENT_FILE_TOOLS } from './capabilities/registry.js'
 import { resolveShells } from './shells.js'
 import { mountSessionBash } from './session-shells.js'
 import { mountBundledPwsh } from './session-pwsh.js'
@@ -10,6 +10,7 @@ import { NativeFileTools } from './file/runtime.js'
 import { resolveWorker } from './ptc/runtime.js'
 import { mountWorkspacePreparation } from './workspace-preparation.js'
 import { safeDispose, safeDisposeAll } from './teardown.js'
+import { mountResultLifecycle } from './kernel/result-lifecycle.js'
 
 export const name = 'dsh-ops'
 function report(ctx, message, level = 'error') {
@@ -63,14 +64,15 @@ function installHostShellDenial(ctx, config) {
 }
 
 async function mountNativeFile(ctx, config, file) {
+  mountResultLifecycle(ctx)
   const surface = new NativeFileTools({ ctx, config: { ...config, workerPath: file },
     report: (message, level) => report(ctx, message, level) })
   // `safeDispose` isolates synchronous teardown callbacks; a *rejecting promise* needs its own
   // catch, or the rejection is dropped and the worker's shutdown failure stays invisible (#30).
   ctx.effect(() => () => {
-    void surface.stop().catch(error => report(ctx, `dsh-ops: native file worker shutdown failed: ${error?.message ?? error}`, 'warn'))
+    return surface.stop().catch(error => report(ctx, `dsh-ops: native file worker shutdown failed: ${error?.message ?? error}`, 'warn'))
   }, 'dsh-ops: native file worker')
-  const tools = await surface.start()
+  const tools = await surface.start(NATIVE_RESIDENT_FILE_TOOLS)
   if (tools.length) report(ctx, `dsh-ops: native Rust file worker ready; ${tools.length} tools.`, 'info')
 }
 

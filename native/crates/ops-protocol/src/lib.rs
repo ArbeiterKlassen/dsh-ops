@@ -1,4 +1,8 @@
-//! Typed operation contracts, independent of DSH transport and presentation.
+#![forbid(unsafe_code)]
+pub mod capture;
+pub mod envelope;
+pub mod search;
+pub mod storage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -72,6 +76,7 @@ impl Failure {
             retryable: false,
             effect_state: "none".into(),
             next_action: match code {
+                "ERR_INVALID_ENCODING" => "Use a dedicated document/binary reader, or inspect with view=hex; do not replace invalid bytes with lossy text.",
                 "METADATA_UNSUPPORTED" => "Use a filesystem/platform or dedicated tool that preserves the source metadata. Changing the permission selector or blindly retrying cannot repair this limitation.",
                 "REFERENCE_EXPIRED" => "Release the expired result and acquire a new observation; references never grant authority.",
                 "REVISION_CONFLICT" => "Inspect the current revision before preparing a new request; do not blindly retry.",
@@ -148,6 +153,13 @@ pub type Result<T> = std::result::Result<T, Failure>;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
+    #[serde(skip)]
+    pub output_sink: Option<std::rc::Rc<capture::OutputSink>>,
+    #[serde(skip)]
+    pub output_budget: usize,
+    /// Trusted envelope metadata; never accepted from the tool argument/request data plane.
+    #[serde(skip)]
+    pub storage: Option<storage::StorageContext>,
     pub root: String,
     #[serde(default)]
     pub read_only: bool,
@@ -189,6 +201,7 @@ pub struct ResultArgs {
     pub offset: usize,
     pub limit: Option<usize>,
     pub max_bytes: Option<usize>,
+    pub ttl_ms: Option<u64>,
     pub fields: Option<Vec<String>>,
     pub equals: Option<std::collections::BTreeMap<String, Value>>,
 }
@@ -213,5 +226,21 @@ mod tests {
             let failure = serde_json::to_value(Failure::new(code, "Restriction")).unwrap();
             assert!(failure.get("reason").is_none());
         }
+    }
+}
+
+impl Job {
+    pub fn authorize(&self, request: &Request) -> Result<()> {
+        if self.version != 1
+            || self.scope != request.scope
+            || self.root != request.root
+            || self.root_identity != request.root_identity
+        {
+            return Err(Failure::new(
+                "POLICY_DENIED",
+                "Job scope, root or version mismatch",
+            ));
+        }
+        Ok(())
     }
 }

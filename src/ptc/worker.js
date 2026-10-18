@@ -1,4 +1,8 @@
 /** Native worker bridge. Every execution uses DSH policy, confinement and process governance. */
+import { workerEnvelope } from '../worker-protocol.js'
+import { withCallBudget, CallBudgetError } from '../kernel/call-budget.js'
+import { withResultSession } from '../kernel/result-lifecycle.js'
+import { resultStorage } from '../kernel/result-storage.js'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -13,8 +17,21 @@ export function failure(code, message, effectState = 'none') {
     nextAction: effectState === 'none' ? 'Correct the request or restore host authority.' : 'Inspect the persistent job manifest; never blindly rerun an interrupted batch.', message } }
 }
 export async function invoke(ctx, file, tool, args, exec, signal, config) {
-  try { return await invokeTrusted(ctx, file, tool, args, exec, signal, config) }
-  catch { return failure('EXECUTOR_UNAVAILABLE', 'DSH authority or execution services are unavailable; no unrestricted fallback was attempted.') }
+  try {
+    const session = exec?.agent?.session
+    if (!session?.id) return failure('EXECUTOR_UNAVAILABLE', 'An authoritative session identity is required.')
+    return await withResultSession(ctx, session, signal, currentSignal =>
+      withCallBudget(ctx.root ?? ctx, String(session.id), currentSignal,
+        () => invokeTrusted(ctx, file, tool, args, exec, currentSignal, config)))
+  }
+  catch (error) {
+    if (error instanceof CallBudgetError) {
+      const value = failure(error.code, error.message)
+      value.error.nextAction = error.message
+      return value
+    }
+    return failure('EXECUTOR_UNAVAILABLE', 'DSH authority or execution services are unavailable; no unrestricted fallback was attempted.')
+  }
 }
 async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
   const session = exec?.agent?.session
@@ -33,6 +50,7 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
     if (args?.root !== undefined && (typeof args.root !== 'string' || !path.isAbsolute(args.root))) return failure('INVALID_ARGUMENT', 'root must be an absolute path.')
     const operationRoot = args?.root ?? policy.workspaceRoot
     const { root: _selectedRoot, ...workerArgs } = args ?? {}
+    if (tool === 'result' && args?.action === 'purge') return failure('INVALID_ARGUMENT', 'purge is reserved for trusted session cleanup.')
     const readOnly = policy.mode === 'read-only'
     if (readOnly && !(tool === 'result' && args?.action === 'page')) return denied(policy, `${tool} ${args?.action ?? ''}`, 'workspace-write', 'The user selected read-only. Only existing result pages are permitted; no audit or business data was written.')
     // A batch root can reach a credential file through a copy, a move or a result snapshot, so the
@@ -47,8 +65,8 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
     if (policy.mode === 'workspace-write' && requiredMode(policy) === 'danger-full-access') {
       return denied(policy, `${tool} outside the workspace and session temporary directory`, 'danger-full-access', 'The selected root is outside the user-authorized workspace.')
     }
-    const input = JSON.stringify({ root: operationRoot, scope: String(session.id), tool, args: workerArgs, read_only: readOnly, deny_roots: (config?.denyCredentialReads ?? true) !== false ? credentialRoots() : [], deny_credential_names: (config?.denyCredentialReads ?? true) !== false, ...(jobId ? { job_id: jobId } : {}) })
-    if (Buffer.byteLength(input) > 2 * 1024 * 1024) return failure('OUTPUT_LIMIT', 'Request exceeds the 2 MiB byte budget.')
+    const denyRoots = (config?.denyCredentialReads ?? true) !== false ? credentialRoots() : []
+    if (Buffer.byteLength(JSON.stringify(workerArgs)) > 2 * 1024 * 1024) return failure('OUTPUT_LIMIT', 'Request exceeds the 2 MiB byte budget.')
     let argv = [file]
     if (policy.mode !== 'danger-full-access') {
       const sandbox = ctx.get('sandbox')
@@ -60,6 +78,14 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
       }
       argv = confined.argv
     }
+    const storage = await resultStorage(ctx, session, exec.agent, file, tool, policy, denyRoots,
+      (config?.denyCredentialReads ?? true) !== false, signal, confined).catch(() => undefined)
+    if (tool === 'result' && (args?.action === 'put' || String(args?.id ?? '').startsWith('ref://')) && !storage) {
+      return failure('EXECUTOR_UNAVAILABLE', 'Session result storage is unavailable under current host authority.')
+    }
+    const envelope = workerEnvelope('ptc', { root: operationRoot, scope: String(session.id), tool, args: workerArgs, read_only: readOnly, deny_roots: denyRoots, deny_credential_names: (config?.denyCredentialReads ?? true) !== false, ...(jobId ? { job_id: jobId } : {}) }, undefined, storage)
+    const input = JSON.stringify(envelope)
+    if (Buffer.byteLength(input) > 2 * 1024 * 1024) return failure('OUTPUT_LIMIT', 'Request exceeds the 2 MiB byte budget.')
     signal?.throwIfAborted?.()
     // Authority may change during asynchronous sandbox preparation.
     const current = policyService.resolve({ session })
@@ -71,7 +97,7 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
       return authorityChanged(current, operation)
     }
     const handle = subprocess.spawn({ argv, cwd: policy.workspaceRoot,
-      stdio: { stdin: { data: input }, stdout: { maxBytes: 128 * 1024 }, stderr: { maxBytes: 16 * 1024 } },
+      stdio: { stdin: { data: input }, stdout: { maxBytes: envelope.budget.maxBytes }, stderr: { maxBytes: 16 * 1024 } },
       graceMs: 1000, signal })
     spawned = true
     const outcome = await handle.done

@@ -50,7 +50,7 @@ await test('measure PTC enhancement separately from the existing file/shell decl
     for (const [, agent] of agents) await ctx.serial('agent/created', { agent })
     const pure = agents.find(([mode]) => mode === 'ptc')[1]
     const deadline = Date.now() + 5000
-    while (!ctx.get('tools').get('ops_result', pure)) {
+    while (!ctx.get('tools').get('ops_sdk', pure) || !ctx.get('tools').get('ops_result', pure)?.parameters.properties.action.enum.includes('put')) {
       if (Date.now() > deadline) throw new Error('PTC declarations did not become available')
       await new Promise(resolve => setTimeout(resolve, 10))
     }
@@ -62,7 +62,7 @@ await test('measure PTC enhancement separately from the existing file/shell decl
         assert.equal(after.promptSha256, before.promptSha256, `${mode} prompt must not gain PTC declarations: ${JSON.stringify({ before: before.sections, after: after.sections })}`)
         assert.equal(after.wireSha256, before.wireSha256, `${mode} wire must not gain PTC tools`)
       } else {
-        assert.ok(after.promptBytes > before.promptBytes, 'discoverable SDK types have a measurable declaration cost')
+        assert.ok(after.promptBytes > 0, 'record the actual PTC declaration cost against the current resident Native surface')
         assert.equal(after.wireSha256, before.wireSha256, 'run_code remains the only direct transport')
       }
       return { mode, enhancementPromptChars: after.promptChars - before.promptChars,

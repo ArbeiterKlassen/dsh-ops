@@ -13,6 +13,94 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Legacy `strict`, `scope`, and `additionalOfficialTools` remain validated but inert. Document argument/coverage differences and exclude write/edit because their CAS contracts differ. Cordis validation is implemented; a browser multi-select is separate UI work.
 - 官方工具改为通过 `replaceTools: []` 逐项选择 `read`、`glob`、`grep` 替代流程；未选工具保持可见且无警告列表，只校验所选替代工具的作用域就绪状态。
 - 旧 `strict`、`scope`、`additionalOfficialTools` 仅校验不生效；文档说明参数与覆盖差异，写入/编辑因 CAS 契约不同而不提供替换。已实现 Cordis 校验，浏览器多选界面另行实现。
+### Keep Native startup to the bounded multi-file reader (#261, 9/16)
+
+- Publish `ops_read_many` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
+- Measure compact file/discovery schemas at 241 tokens and the current full surface with Bash at 610 tokens; the full 400-token BM-03 gate remains unresolved pending the redesigned shell contract.
+- Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；完整工具面含 Bash 仍超过 400-token 门禁，保留真实测量而不宣称通过。
+### Publish progressive tools before the next real provider snapshot (#261, 7–8/16)
+
+- Activate pending Native and PTC selections at the owning session’s committed step end, before the pinned host captures the next provider schema. Drain owned publication during ordinary assembly without replacing host methods; mark internal probes to avoid recursive waits.
+- Verify Native startup, immediately following discovery, same-call SDK isolation and next-request PTC loading through the real AgentLoop with a scripted provider. The exact test-only loop dependency `0.2.0-rc.2` was published 2026-09-29.
+- 修复真实宿主先组装后 pre-step 导致多延迟一轮的问题；会话提交步骤结束后发布，在下一供应商请求前完成本插件队列，保持当前 SDK 快照与作用域隔离。
+
+### Expose canonical PTC outcomes and generated declarations (#261, 7/16)
+
+- Wrap PTC canonical data in discriminated completed/partial/failure outcomes with stable effects
+  and retry guidance. Safe continuations describe read-only retrieval without replaying mutations.
+- Generate and ship type-only `dsh-ops/ptc-sdk` declarations from the same catalogue/output schemas;
+  verify status narrowing, argument shapes and real worker receipts with the pinned host validator.
+- PTC 返回可收窄的规范结果信封；安全续取只描述只读操作，绝不重放修改。构建并发布同源类型声明，
+  保留参数、覆盖范围、副作用和重试约束。
+
+### Load scoped PTC SDKs progressively (#261, 7/16)
+
+- PTC owns typed file, batch and result APIs independently of the Native file row. Start with the reader, result storage/pager and SDK loader; requested advanced APIs publish only at the next agent step.
+- Keep per-agent allowed pools and always-loaded selections, Native/both isolation, owned registration handoff and structured Outcome failures.
+- PTC 独立提供类型化文件、批处理与引用 API；高级 SDK 按代理在下一步骤加载，支持允许池和始终加载配置，并保持 Native 隔离及结构化失败。
+
+### Page stored references from Native file tools (#261, 6d/16)
+
+- Add a Native page/release projection of the shared ops_result capability, independently owned by
+  the file row. PTC retains put and typed data; Native descendants of PTC agents keep page-only schemas.
+- Bind paging to current session cwd (or explicit original root), authority and visible producer.
+  Preserve source/capture facts and tagged JSON chunks; bounded display never advances past omitted rows.
+- 新增文件组件独立提供的 Native 引用分页/释放能力；PTC 保留 put。分别报告页面、原始操作与捕获完整性，
+  保持会话、权限与生产工具可见性检查，显示截断时要求原偏移重试。
+
+### Bound shared calls and expire session references (#261)
+
+- Share two active/eight waiting worker slots across Native/PTC, recheck authority after admission,
+  and cap worker execution at 30 seconds. Bind private result storage to the live host session and
+  current permissions; cancel and settle calls before authority-respecting cache cleanup.
+- Native/PTC 共用有界调用队列与 30 秒上限；引用绑定活动会话与当前权限，会话结束后按权限清理缓存并保留审计数据。
+
+### Read multiple file ranges and apply atomic multi-edits (#261)
+
+- Add read_many with 1-32 independently reported UTF-8 ranges in one worker call, current-session
+  paths, credential preflight, per-file revisions/errors and explicit pending-file/line recovery.
+- Add edit_many as a single-file atomic CAS edit operation with short receipts. Bound escaped
+  read output using actual metadata bytes; an incomplete line retains its offset and hex guidance.
+- 新增多文件范围读取与单文件原子多段编辑；逐文件报告版本、错误及未读范围，保持权限边界与短回执。
+### Spill oversized canonical output into bounded session snapshots (#261, 6b/16)
+
+- Preserve a useful head and original operation root, execution facts and mutation effects while
+  storing requested file/search rows as bounded, losslessly reconstructable tagged JSON records.
+- Keep original scan coverage separate from stored-page and capture completeness; quota rollback
+  never leaves partial logical JSON. Cache errors remain separate from business effects.
+- Authorize trusted cache roots independently of business write roots, preserving no-follow,
+  credential and readonly boundaries; reference pages never create nested references.
+- 大结果保留有界开头与原始根目录，并以可无损重建的分块引用缓存请求范围；区分扫描、捕获和
+  分页完整性，缓存失败不覆盖业务副作用，缓存专用授权不扩大业务写入范围。
+
+### Add private session snapshot references (#261, 6a/16)
+
+- Add trusted-envelope `ref://session/tool/uuid` storage with 10 MiB snapshot and 100 MiB session
+  quotas, serialized LRU, physical byte accounting, no-follow objects and separate durable audits.
+- Recheck live authority/producer scope on access; default TTL follows session lifetime. Bounded
+  pages never nest references. Readonly reads leave storage unchanged; guarded purge preserves
+  the lock and audit namespace and reports partial cleanup honestly.
+- Preserve Windows private-temp capability isolation; real confined create/reopen/readonly and
+  foreign-session denial assertions cover the protected cache ACL.
+### Discover advanced tools in the requesting Native scope (#261, 8/16)
+
+- Add `dsh-ops/discovery` and `ops_discover`: deterministic allowed-pool selection, a 1-5 per-call cap, and always-loaded choices. Publish pending capabilities only at the next model-step boundary, with scope isolation, permission withdrawal and owned cleanup.
+- Coordinate overlapping discovery rows and exact Native ownership with progressive PTC publication. Preserve unrelated external registrations and same-scope file handoff; include current batch reads/edits and the Native reference pager.
+- 协调重叠发现行、Native 精确归属和渐进式 PTC 发布，保留外部注册与同作用域文件交接；纳入现有批量读写及 Native 引用分页器。
+- Add pinned schema token measurement and real Cordis/native-worker lifecycle checks. Discovery alone measures 120 cl100k_base tokens; this is not a whole-OPS or PDF acceptance claim.
+- 新增按需发现组件与 `ops_discover`：允许池、单次 1-5 项上限和始终加载选择；仅在下一模型步骤挂载，并保证作用域隔离、权限变更撤销及卸载清理。
+- 新增固定分词器的 schema 计量和真实 Cordis/原生 worker 生命周期测试；发现入口为 120 cl100k_base tokens，不代表全体 OPS 或 PDF 验收通过。
+
+### Render Native file results as bounded, readable text (#261)
+
+- Show file headings and physical line numbers, concise mutation receipts, and explicit
+  completion, paging, metadata, effect and retry notices. PTC execution data stays unchanged.
+- Bound Native content blocks to 64 KiB after escaping, with recovery guidance when the
+  display is clipped. Preserve Unicode pairs, grep context line numbers and glob path results.
+- Reject invalid UTF-8/unsupported text encodings with `ERR_INVALID_ENCODING` and binary-reader
+  guidance; verify identical physical-LF counts and unmodified write bytes across projections.
+- Native 文件结果改为带物理行号的有界文本，保留分页、元数据、副作用与重试提示；PTC 数据不变。
+  转义后最多 64 KiB，截断时明确提示；非法编码返回 `ERR_INVALID_ENCODING`，不进行有损替换。
 
 ### Centralize capability metadata and prepare typed kernel contracts (#261)
 
@@ -22,6 +110,27 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Add typed Outcome, search coverage and result-reference contracts plus explicit error/retry
   policies for subsequent adapter slices. Incomplete searches cannot claim a known total.
 - Pin Node 22 declarations and check valid/invalid contracts in the regular test runner.
+
+### Report search coverage and validate continuation state (#261)
+
+- Search reports distinguish scan coverage from page delivery, count skip reasons, and omit full
+  totals after unreadable, encoding, size or execution-budget gaps. Bounded rescan continuations
+  reject changed queries, authority and observed filesystem state; incomplete traversals require
+  a narrower fresh query. Search retains physical LF accounting and bounded output prefixes.
+
+### Version the one-shot worker request protocol (#261)
+
+- Send strict v1 requests with per-call IDs, component provenance, and enforced deadline/output
+  budgets while retaining existing host authority checks and canonical success results. Reject
+  malformed envelopes before effects; interrupted or oversized mutation receipts never imply no
+  effects. Keep explicit v0 decoding for benchmark compatibility with bounded transport defaults.
+
+### Split the native kernel into workspace crates (#261)
+
+- Extract protocol, file, search, batch, and result-storage crates while retaining the one-shot
+  worker and existing authority, metadata, no-follow, and audit rules. Test the complete Cargo
+  workspace and include every path dependency in published source packages.
+- Include workspace crates and platform metadata adapters when checking for stale benchmark workers.
 
 ### Build plugin source into the existing JavaScript package layout (#261)
 

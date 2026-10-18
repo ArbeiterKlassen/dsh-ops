@@ -42,6 +42,11 @@ try {
     console.error('build: TypeScript compilation failed; assets were not copied.')
   } else {
     const assets = copyAssets(source)
+    if (existsSync(path.join(source, 'ptc/contract.ts'))) {
+      const { writePtcDeclarations } = await import('./lib/build/ptc-sdk.mjs')
+      const sdk = await writePtcDeclarations(root)
+      console.log(`build: generated PTC declarations for ${sdk.tools} capabilities (${sdk.bytes} bytes)`)
+    }
     console.log(`build: compiled src/ to lib/ and copied ${assets} assets`)
   }
 } catch (error) {

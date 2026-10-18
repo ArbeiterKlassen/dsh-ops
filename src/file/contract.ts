@@ -2,11 +2,10 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { publicToolName } from '../policy.js'
 import { capability } from '../capabilities/registry.js'
 import type { FileToolName } from '../capabilities/registry.js'
-import { PARAMETERS, DESCRIPTIONS, OUTPUT } from '../capabilities/file.js'
+import { PARAMETERS, DESCRIPTIONS, OUTPUT, fileOutput } from '../capabilities/file.js'
 export { FILE_TOOLS } from '../capabilities/registry.js'
 export { PARAMETERS, DESCRIPTIONS, OUTPUT }
-type OutputValue = Parameters<ToolDefinition['output']['render']>[1]
-const record = (value: OutputValue | undefined): value is Record<string, OutputValue> => value !== null && typeof value === 'object' && !Array.isArray(value)
+import { renderNative } from '../modes/native/render.js'
 
 /** Drop unused empty placeholders strict adapters send for optional fields; never mutate the caller's object. */
 export function normalizeArguments(rawName: string, args: unknown): unknown {
@@ -28,22 +27,13 @@ export function normalizeArguments(rawName: string, args: unknown): unknown {
   return result
 }
 
-// Compact only homogeneous inspect pages. Keep every non-path field and the
-// complete execution value for PTC/program consumers; never mutate worker data.
-function modelView(rawName: FileToolName, value: OutputValue): OutputValue {
-  if (rawName !== 'inspect_local_file' || !record(value) || value.status !== 'completed' || !Array.isArray(value.items) || value.items.length === 0) return value
-  const path = (record(value.items[0]) ? value.items[0].path : undefined)
-  if (typeof path !== 'string' || !value.items.every(item => record(item) && item.path === path)) return value
-  return { ...value, path, items: value.items.map(item => { const { path: _path, ...rest } = item as Record<string, OutputValue>; return rest }) }
-}
-
 export function definition(rawName: FileToolName, execute: ToolDefinition['execute']): ToolDefinition {
   return {
     name: publicToolName(rawName),
     description: DESCRIPTIONS[rawName],
     parameters: PARAMETERS[rawName],
     ...(capability(rawName)?.concurrencySafe ? { isConcurrencySafe: () => true } : {}),
-    output: { schema: OUTPUT, render: (_args, value) => [{ type: 'text', text: JSON.stringify(modelView(rawName, value)) }] },
+    output: { schema: fileOutput(rawName), render: (args, value) => [{ type: 'text', text: renderNative(rawName, args, value) }] },
     execute,
   }
 }

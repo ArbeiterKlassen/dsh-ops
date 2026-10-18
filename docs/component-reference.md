@@ -7,7 +7,7 @@ What each of the six components publishes, with parameters and permission requir
 | Row `name` | Description | Default | Published tools |
 | --- | --- | --- | --- |
 | `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
-| `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Four file tools |
+| `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | `ops_read_many`; advanced tools load through discovery |
 | `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
 | `dsh-ops/panel` | Data capture, off at the switch: new conversations write `<cwd>/.dsh-ops/panel/<sessionId>.json` plus the viewer `panel.html` | Row on, `capture: false` | None; see the [configuration reference](configuration-reference.md) |
 | `dsh-ops/tui` | Read-only current-session OPS sidebar | Off | None; see [sidebar guide](tui-panel.md) |
@@ -21,6 +21,7 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 
 | Tool | Purpose | Full-access requirement |
 | --- | --- | --- |
+| `ops_read_many` | Resident bounded UTF-8 ranges from 1-32 files | No command permission gate¹ |
 | `ops_inspect_local_file` | Bounded UTF-8 text lines and hex | No command permission gate¹ |
 | `ops_grep` | Rust regex search, multiple file filters, counts/summaries | No command permission gate¹ |
 | `ops_glob` | Multiple path patterns with exclusions | No command permission gate¹ |
@@ -36,7 +37,9 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 
 ## `dsh-ops/file` — file tools
 
-All file tools resolve relative paths against the DSH session cwd, accept a single `path`, and expose no `root`, `workspace`, `cwd` or `file_path` alias. All are UTF-8 first with bounded output; glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
+Only the bounded multi-file reader `ops_read_many` is resident; `ops_inspect_local_file`, including hex reading, is discoverable. The advanced contracts below are activated through [tool discovery](discovery.md) or explicit always-loaded choices. Routing lists only the tools currently published.
+
+File paths resolve relative to the DSH session cwd. `ops_read_many` takes a `files` array of paths with independent 1-based offsets and limits; single-file operations take `path`. The Native reference pager accepts the original reference `root`. No file tool accepts `workspace`, `cwd` or `file_path` aliases. All are UTF-8 first with bounded output; glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
 
 When the host provides its `fs` service, `ops_inspect_local_file` reads and real `ops_replace` writes are recorded in the host's read-before-edit table (`fs/observed`) exactly like host `read`/`edit`: a file read with ops can be edited with host `edit` directly, and an ops write does not make the host's earlier read look like an external change. `ops_grep`, `ops_glob` and `dryRun` record nothing.
 
@@ -131,12 +134,13 @@ Preflight and verify copy / move / remove.
 
 ### `ops_result`
 
-Bounded session-owned result references: put object rows, page with top-level `equals`/`fields` and quantity/byte budgets, release results. 24h expiry. Job audits are read-only. References are observations, never authority.
+Bounded session-owned result references: PTC can put object rows; Native file tools expose page/release only for ref:// handles. Page uses top-level equals/fields and quantity/byte budgets. New references default to session lifetime (ttlMs=0), optionally up to seven days; only legacy r- snapshots use 24h expiry. Job audits are read-only and remain PTC-only. References are observations, never authority. Native root defaults to current session cwd; PTC defaults to the workspace root. See [paging and capture completeness](result-budgets.md#native-and-ptc-reference-pages).
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
 | `action` | `put` \| `page` \| `release` (required) | Action |
-| `items` | object array, ≤10000 items | Rows for `put` |
+| `items` | object array, ≤10000 items | PTC put; whole request ≤2 MiB, snapshot ≤10 MiB |
+| `ttlMs` | integer 0–604800000 | PTC put; default 0 means session lifetime |
 | `root` / `id` | string | Operation root and result id |
 | `offset` | integer ≥ 0 | Paging start |
 | `limit` | integer 1–512 | Rows per page |

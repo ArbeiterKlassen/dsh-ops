@@ -1,4 +1,5 @@
 /** Native file worker bridge. The host owns path resolution and DSH authority. */
+import { workerEnvelope } from '../worker-protocol.js'
 import path from 'node:path'
 import { credentialPath, credentialRefusal, credentialRoots } from '../credential-policy.js'
 import { ensureSessionTemp, sessionTempDir } from '../session-temp.js'
@@ -7,6 +8,10 @@ import { inside, canonicalAnchor, anchoredPath, sessionAnchors } from '../author
 import { resolveWorker } from '../ptc/runtime.js'
 import { FILE_MUTATIONS } from '../policy.js'
 import { normalizeArguments } from './contract.js'
+import { resolveReadMany } from './read-many.js'
+import { withCallBudget, CallBudgetError } from '../kernel/call-budget.js'
+import { withResultSession } from '../kernel/result-lifecycle.js'
+import { resultStorage } from '../kernel/result-storage.js'
 
 export { resolveWorker }
 
@@ -60,8 +65,21 @@ async function observeReplaced(ctx, fsService, value, cwd, exec, signal) {
 }
 
 export async function invoke(ctx, file, tool, args, exec, signal, config) {
-  try { return await invokeTrusted(ctx, file, tool, args, exec, signal, config) }
-  catch { return failure('EXECUTOR_UNAVAILABLE', 'DSH file authority or preparation is unavailable; no unrestricted fallback was attempted.') }
+  try {
+    const session = exec?.agent?.session
+    if (!session?.id) return failure('EXECUTOR_UNAVAILABLE', 'An authoritative session identity is required.')
+    return await withResultSession(ctx, session, signal, currentSignal =>
+      withCallBudget(ctx.root ?? ctx, String(session.id), currentSignal,
+        () => invokeTrusted(ctx, file, tool, args, exec, currentSignal, config)))
+  }
+  catch (error) {
+    if (error instanceof CallBudgetError) {
+      const value = failure(error.code, error.message)
+      value.error.nextAction = error.message
+      return value
+    }
+    return failure('EXECUTOR_UNAVAILABLE', 'DSH file authority or preparation is unavailable; no unrestricted fallback was attempted.')
+  }
 }
 async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
   const session = exec?.agent?.session
@@ -77,15 +95,19 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
 
   args = normalizeArguments(tool, args)
   const mutates = FILE_MUTATIONS.includes(tool)
+  const reads = tool === 'read_many' ? resolveReadMany(args, cwd) : undefined
+  if (reads?.error) return failure('INVALID_ARGUMENT', reads.error)
   const operationPath = absoluteTarget(args?.path ?? '.', cwd)
   if (!operationPath) return failure('INVALID_ARGUMENT', 'path must be a non-empty path.')
   // Credential locations are refused before the worker is spawned, so no read of one ever reaches a
   // result. On by default; a row can turn the fence off for itself (report: credential fence).
   if ((config?.denyCredentialReads ?? true) !== false) {
-    const verdict = credentialPath(operationPath)
-    if (verdict.denied) {
-      const refusal = credentialRefusal(operationPath, verdict.matched)
-      return credentialDenied(refusal.message)
+    for (const target of reads ? reads.files.map(file => file.path) : [operationPath]) {
+      const verdict = credentialPath(target)
+      if (verdict.denied) {
+        const refusal = credentialRefusal(target, verdict.matched)
+        return credentialDenied(refusal.message)
+      }
     }
   }
   const destination = ['copy', 'move'].includes(tool) ? absoluteTarget(args?.to, cwd) : undefined
@@ -127,11 +149,16 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
 
   // Do NOT realpath the caller's parents here: that would erase a symlink/junction before
   // the no-follow native traversal could reject it (especially on create-only writes).
-  const workerArgs = { ...args, path: trustedPath(operationPath), ...(destination ? { to: trustedPath(destination) } : {}) }
+  const workerArgs = reads
+    ? { ...args, files: reads.files.map(file => ({ ...file, path: trustedPath(file.path) })) }
+    : { ...args, path: trustedPath(operationPath), ...(destination ? { to: trustedPath(destination) } : {}) }
   // Traversals skip credential directories by identity, so a glob or grep cannot even name a private
   // key that sits below one.
   const denyRoots = (config?.denyCredentialReads ?? true) !== false ? credentialRoots() : []
-  const input = JSON.stringify({ root: trustedPath(cwd), scope: String(session.id), tool, args: workerArgs, read_only: policy.mode === 'read-only', deny_roots: denyRoots, deny_credential_names: (config?.denyCredentialReads ?? true) !== false, ...(policy.mode === 'workspace-write' ? { write_roots: writeRoots } : {}) })
+  const storage = await resultStorage(ctx, session, exec.agent, file, tool, policy, denyRoots,
+    (config?.denyCredentialReads ?? true) !== false, signal).catch(() => undefined)
+  const envelope = workerEnvelope('file', { root: trustedPath(cwd), scope: String(session.id), tool, args: workerArgs, read_only: policy.mode === 'read-only', deny_roots: denyRoots, deny_credential_names: (config?.denyCredentialReads ?? true) !== false, ...(policy.mode === 'workspace-write' ? { write_roots: writeRoots } : {}) }, config?.toolCallTimeoutMs, storage)
+  const input = JSON.stringify(envelope)
   if (Buffer.byteLength(input) > 2 * 1024 * 1024) return failure('OUTPUT_LIMIT', 'Request exceeds the 2 MiB byte budget.')
   let spawned = false
   try {
@@ -143,6 +170,7 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
     const fsService = hostFs(ctx)
     // Stat before reading, like host read: a concurrent change records the older version and fails stale later.
     const readObservation = ['inspect_local_file', 'stat'].includes(tool) ? await hostObservation(fsService, operationPath, cwd, signal) : undefined
+    const readObservations = reads ? await Promise.all(reads.files.map(file => hostObservation(fsService, file.path, cwd, signal))) : []
     signal?.throwIfAborted?.()
     const current = policyService.resolve({ session })
     if (current.mode !== policy.mode || current.workspaceRoot !== policy.workspaceRoot) {
@@ -151,7 +179,7 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
       if (mutates && (current.mode === 'read-only' || (current.mode === 'workspace-write' && required === 'danger-full-access'))) return denied(current, tool, required, 'Authority changed during preparation; no files were changed.')
       return authorityChanged(current, tool)
     }
-    const handle = subprocess.spawn({ argv, cwd, stdio: { stdin: { data: input }, stdout: { maxBytes: 128 * 1024 }, stderr: { maxBytes: 16 * 1024 } }, graceMs: 1000, signal })
+    const handle = subprocess.spawn({ argv, cwd, stdio: { stdin: { data: input }, stdout: { maxBytes: envelope.budget.maxBytes }, stderr: { maxBytes: 16 * 1024 } }, graceMs: 1000, signal })
     spawned = true
     const outcome = await handle.done
     const stdout = handle.collected.stdout.readFrom(0)
@@ -163,6 +191,11 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
     try { value = JSON.parse(stdout.text) } catch { return failure('RESULT_UNKNOWN', 'Worker returned invalid JSON; inspect postconditions.', 'verify', 'unknown') }
     // Report reads/writes to the host's read-before-edit table, exactly like host read/edit. (#17)
     if (['inspect_local_file', 'stat'].includes(tool) && value?.status === 'completed') emitObserved(ctx, readObservation, exec)
+    if (reads && Array.isArray(value?.items)) {
+      for (const [index, item] of value.items.entries()) {
+        if (item?.status === 'completed') emitObserved(ctx, readObservations[index], exec)
+      }
+    }
     if (mutates) await observeReplaced(ctx, fsService, value, cwd, exec, signal)
     value = normalizeNativeDenial(value, policy, tool, mutates ? requiredMode(policy) : 'workspace-write')
     return { ...value, sandbox: { mode: policy.mode, enforcement: 'policy', boundary: 'trusted-native-file-operations' } }

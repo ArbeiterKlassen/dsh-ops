@@ -71,7 +71,7 @@ pub(super) fn run(request: &Request) -> Result<Value> {
                 |_| Ok(args.content.clone().into_bytes()),
             )
         }
-        "edit_file" => {
+        "edit_file" | "edit_many" => {
             let args: EditArgs = serde_json::from_value(request.args.clone())?;
             valid_revision(&args.expected_revision, false)?;
             write_single(
@@ -83,7 +83,7 @@ pub(super) fn run(request: &Request) -> Result<Value> {
                     let text = std::str::from_utf8(original.ok_or_else(|| {
                         Failure::new("NOT_FOUND", "Edit requires an existing file")
                     })?)
-                    .map_err(|_| Failure::new("INVALID_ARGUMENT", "Edit requires UTF-8"))?;
+                    .map_err(|_| Failure::new("ERR_INVALID_ENCODING", "Edit requires UTF-8"))?;
                     if args.edits.is_empty() || args.edits.len() > 100 {
                         return Err(Failure::new("INVALID_ARGUMENT", "Use 1-100 exact edits"));
                     }
@@ -258,7 +258,7 @@ fn diff_file(request: &Request) -> Result<Value> {
     }
     let bytes = read_bytes(Path::new(&args.path))?;
     let text = std::str::from_utf8(&bytes)
-        .map_err(|_| Failure::new("INVALID_ARGUMENT", "Diff requires UTF-8"))?;
+        .map_err(|_| Failure::new("ERR_INVALID_ENCODING", "Diff requires UTF-8"))?;
     let old: Vec<_> = text.split_inclusive('\n').collect();
     let new: Vec<_> = args.content.split_inclusive('\n').collect();
     let prefix = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
@@ -284,7 +284,7 @@ fn diff_file(request: &Request) -> Result<Value> {
         .skip(args.offset)
         .take(args.limit)
         .collect();
-    let mut output = result(items, total, args.offset, args.offset, total, false);
+    let mut output = result(request, items, total, args.offset, args.offset, total, false);
     output["before"] = content_facts(&bytes);
     output["after"] = content_facts(args.content.as_bytes());
     output["hunk"] = json!({"startLine":prefix+1,"removed":removed.len(),"added":added.len()});

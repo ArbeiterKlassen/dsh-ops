@@ -1,6 +1,5 @@
 //! One bounded result-reference protocol; no second REPL or query language.
 use crate::{
-    batch,
     contract::*,
     store::{Store, now},
 };
@@ -20,6 +19,7 @@ struct Record {
 const TTL: u64 = 86400;
 
 pub fn referenced_items(store: &Store, request: &Request, id: &str) -> Result<Vec<Value>> {
+    if id.starts_with("ref://") { return crate::references::referenced_items(request, id); }
     Store::validate_id(id)?;
     if !id.starts_with("r-") {
         return Err(Failure::new(
@@ -45,6 +45,7 @@ pub fn referenced_items(store: &Store, request: &Request, id: &str) -> Result<Ve
 }
 pub fn run(store: &Store, request: &Request) -> Result<Value> {
     let args: ResultArgs = serde_json::from_value(request.args.clone())?;
+    if args.ttl_ms.is_some() { return Err(Failure::new("INVALID_ARGUMENT", "ttlMs requires the versioned session cache")); }
     match args.action.as_str() {
         "put" => {
             if args.id.is_some() {
@@ -92,7 +93,7 @@ pub fn run(store: &Store, request: &Request) -> Result<Value> {
             Store::validate_id(id)?;
             let (items, expires) = if id.starts_with("j-") {
                 let job: Job = store.read(id)?;
-                batch::authorize(&job, request)?;
+                job.authorize(request)?;
                 if args.action == "release" {
                     return Err(Failure::new("INVALID_ARGUMENT", "Job audits are read-only and cannot be released"));
                 }

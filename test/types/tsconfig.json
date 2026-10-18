@@ -5,6 +5,7 @@
     "noEmit": true
   },
   "include": [
-    "kernel.ts"
+    "kernel.ts",
+    "ptc-sdk.ts"
   ]
 }

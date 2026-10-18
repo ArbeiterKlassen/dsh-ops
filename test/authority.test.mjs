@@ -16,7 +16,12 @@ import { anchoredPath } from '../lib/authority-paths.js'
 import { sessionTempDir, ensureSessionTemp } from '../lib/session-temp.js'
 
 const signal = () => new AbortController().signal
-const execution = root => ({ agent: { session: { id: 'authority-test', header: { cwd: root } } }, signal: signal() })
+// SessionStore keeps one exact Session object throughout a live session, including mode changes.
+const sessions = new Map()
+const execution = root => {
+  if (!sessions.has(root)) sessions.set(root, { id: 'authority-test', header: { cwd: root } })
+  return { agent: { session: sessions.get(root) }, signal: signal() }
+}
 const writeArgs = file => ({ path: file, content: 'new', expectedRevision: 'absent' })
 
 await test('native normalization requires a recognized stable reason and preserves effect facts', () => {
@@ -134,7 +139,7 @@ await test('PTC canonical containment rejects an external linked root without re
       for (const current of ['read-only', 'danger-full-access']) {
         mode = current
         value = await ptcCall(ctx, 'unused', 'result', { root: link, action: 'page' }, execution(root), signal())
-        assert.equal(value.status, 'completed', JSON.stringify(value)); assert.equal(received.root, link)
+        assert.equal(value.status, 'completed', JSON.stringify(value)); assert.equal(received.request.root, link)
       }
     } finally { await shutdown(ctx) }
   })

@@ -10,7 +10,7 @@ await test('npm pack includes compiled host code and native sources, never host 
     { cwd: PACKAGE_ROOT, encoding: 'utf8', timeout: 30000 })
   assert.equal(result.status, 0, result.stderr)
   const files = JSON.parse(result.stdout)[0].files.map(file => file.path)
-  const required = ['lib/index.js', 'lib/policy.js', 'lib/components/panel/index.js',
+  const required = ['lib/ptc/sdk.d.ts', 'lib/index.js', 'lib/policy.js', 'lib/components/panel/index.js',
     'lib/components/panel/package.json', 'lib/components/panel/icon.png', 'lib/panel/panel.html',
     'lib/components/tui/dsh-plugin.json', 'native/Cargo.toml', 'native/Cargo.lock', 'native/src/lib.rs',
     'native/windows-metadata/Cargo.toml', 'native/windows-metadata/src/lib.rs',
@@ -18,11 +18,21 @@ await test('npm pack includes compiled host code and native sources, never host 
   for (const name of required) assert.ok(files.includes(name), `missing source-build dependency: ${name}`)
   assert.equal(files.some(name => name.startsWith('src/')), false, 'host source must not ship beside compiled lib/')
   assert.equal(files.some(name => /^native\/(?:target[^/]*|(?:windows|darwin)-metadata\/target)\//u.test(name)), false)
-  const manifest = fs.readFileSync(path.join(PACKAGE_ROOT, 'native/Cargo.toml'), 'utf8')
-  for (const match of manifest.matchAll(/^path\s*=\s*"([^"]+)"/gmu)) {
-    // src/lib.rs is a file; the adapter dependency is a directory with a manifest.
-    const relative = `native/${match[1]}`
-    assert.ok(files.includes(relative) || files.includes(`${relative}/Cargo.toml`), `unpacked Cargo path is missing: ${relative}`)
+  const pending = ['native/Cargo.toml'], visited = new Set()
+  while (pending.length) {
+    const name = pending.pop()
+    if (visited.has(name)) continue
+    visited.add(name)
+    assert.ok(files.includes(name), `unpacked Cargo manifest is missing: ${name}`)
+    const manifest = fs.readFileSync(path.join(PACKAGE_ROOT, name), 'utf8')
+    const source = path.posix.join(path.posix.dirname(name), 'src/lib.rs')
+    assert.ok(files.includes(source), `unpacked crate source is missing: ${source}`)
+    for (const match of manifest.matchAll(/\bpath\s*=\s*"([^"]+)"/gu)) {
+      const relative = path.posix.normalize(path.posix.join(path.posix.dirname(name), match[1]))
+      assert.ok(relative.startsWith('native/'), 'path dependencies stay within the native workspace')
+      if (fs.statSync(path.join(PACKAGE_ROOT, relative)).isDirectory()) pending.push(`${relative}/Cargo.toml`)
+      else assert.ok(files.includes(relative), `unpacked Cargo path is missing: ${relative}`)
+    }
   }
 })
 report('package-source')
