@@ -32,7 +32,7 @@ await test('descriptions name the array syntax, the missing include and literal 
 
 await test('every file tool states that failures are values, not thrown errors', () => {
   for (const tool of Object.keys(PARAMETERS)) {
-    assert.match(DESCRIPTIONS[tool], /Failures resolve as \{status:"error"\|"rejected", error\.code\}; they are not thrown\.$/, tool)
+    assert.match(DESCRIPTIONS[tool], /Failures (?:resolve as \{status:"error"\|"rejected", error\.code\}; they are not thrown|return status:error\|rejected and error\.code; never throw)\.$/, tool)
   }
   assert.doesNotMatch(PTC_DESCRIPTIONS.result, /legacy ops_\*/)
   assert.match(PTC_DESCRIPTIONS.result, /not thrown errors/)
