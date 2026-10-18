@@ -99,14 +99,15 @@ fn observe(request: &Request, args: &Args, format: &str, encoding: Encoding, del
     }
     if let Some(error) = &mut failure { recovery(error); }
     let next = args.offset.saturating_add(selected);
-    let page_observed = scan_complete || rows >= args.offset.saturating_add(args.limit).saturating_sub(1);
+    let page_observed = failure.as_ref().is_none_or(|error| error.code != "FILE_CHANGED")
+        && (scan_complete || rows >= args.offset.saturating_add(args.limit).saturating_sub(1));
     let more = !scan_complete || next <= rows;
     let cause = if let Some(error) = &failure { match error.code.as_str() {
         "ERR_INVALID_ENCODING" => "encoding", "TABLE_PARSE_ERROR" => "parse-error", "DEADLINE_EXCEEDED" => "time", "FILE_CHANGED" => "changed", _ => "scan-budget",
     }} else if more { "row-limit" } else { "none" };
     let mut output = json!({"status":if failure.is_some() {"partial"} else {"completed"},"phase":"verify","changed":0,"effectState":"none",
         "path":path,"format":format,"encoding":encoding.name(),"header":args.header,"columns":columns,"columnCount":width.unwrap_or(0),
-        "bytes":before.len(),"bytesRead":input.bytes_read(),"rowsObserved":rows,"skipped":args.offset-1,
+        "bytes":before.len(),"bytesRead":input.bytes_read(),"rowsObserved":rows,"skipped":(args.offset-1).min(rows),
         "scanComplete":scan_complete,"pageComplete":page_observed,"complete":scan_complete && !more,"truncated":more,
         "truncatedBy":cause,"nextOffset":next,"items":[]});
     if scan_complete { output["rowCount"] = json!(rows); output["total"] = json!(rows); output["omitted"] = json!(rows.saturating_sub(next.saturating_sub(1))); output["revision"] = json!(input.revision()); }
