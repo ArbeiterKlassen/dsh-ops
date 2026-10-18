@@ -7,6 +7,15 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Build plugin source into the existing JavaScript package layout (#261)
+
+- Move plugin source to `src/` and introduce the TypeScript build with JavaScript migration
+  support. `lib/` becomes generated output; package exports and component entry paths stay the
+  same. Component assets are copied alongside the emitted JavaScript.
+- Build before verification and packaging, and document the build step for direct suite runs
+  and source installations in both contributor guides. Published packages keep shipping `lib/`
+  without `src/`; this toolchain slice does not change tool behaviour.
+
 ### File-tool discoverability, honest grep pages and compact inspect rendering
 
 - All eleven file argument schemas render concrete types in the pinned host SDK.
