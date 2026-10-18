@@ -134,7 +134,7 @@ await test('PTC canonical containment rejects an external linked root without re
       for (const current of ['read-only', 'danger-full-access']) {
         mode = current
         value = await ptcCall(ctx, 'unused', 'result', { root: link, action: 'page' }, execution(root), signal())
-        assert.equal(value.status, 'completed', JSON.stringify(value)); assert.equal(received.root, link)
+        assert.equal(value.status, 'completed', JSON.stringify(value)); assert.equal(received.request.root, link)
       }
     } finally { await shutdown(ctx) }
   })

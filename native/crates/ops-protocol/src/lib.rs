@@ -1,4 +1,5 @@
-//! Typed operation contracts, independent of DSH transport and presentation.
+#![forbid(unsafe_code)]
+pub mod envelope;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -214,5 +215,21 @@ mod tests {
             let failure = serde_json::to_value(Failure::new(code, "Restriction")).unwrap();
             assert!(failure.get("reason").is_none());
         }
+    }
+}
+
+impl Job {
+    pub fn authorize(&self, request: &Request) -> Result<()> {
+        if self.version != 1
+            || self.scope != request.scope
+            || self.root != request.root
+            || self.root_identity != request.root_identity
+        {
+            return Err(Failure::new(
+                "POLICY_DENIED",
+                "Job scope, root or version mismatch",
+            ));
+        }
+        Ok(())
     }
 }

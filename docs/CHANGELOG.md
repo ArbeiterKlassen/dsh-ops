@@ -26,6 +26,19 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Add typed Outcome, search coverage and result-reference contracts plus explicit error/retry
   policies for subsequent adapter slices. Incomplete searches cannot claim a known total.
 - Pin Node 22 declarations and check valid/invalid contracts in the regular test runner.
+### Version the one-shot worker request protocol (#261)
+
+- Send strict v1 requests with per-call IDs, component provenance, and enforced deadline/output
+  budgets while retaining existing host authority checks and canonical success results. Reject
+  malformed envelopes before effects; interrupted or oversized mutation receipts never imply no
+  effects. Keep explicit v0 decoding for benchmark compatibility with bounded transport defaults.
+
+### Split the native kernel into workspace crates (#261)
+
+- Extract protocol, file, search, batch, and result-storage crates while retaining the one-shot
+  worker and existing authority, metadata, no-follow, and audit rules. Test the complete Cargo
+  workspace and include every path dependency in published source packages.
+- Include workspace crates and platform metadata adapters when checking for stale benchmark workers.
 
 ### Build plugin source into the existing JavaScript package layout (#261)
 

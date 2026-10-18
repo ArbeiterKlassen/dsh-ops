@@ -209,7 +209,7 @@ export function inspectModulePath({ modulePath, windows, isDirectory } = {}) {
 }
 
 /**
- * The newest Rust input under `native/` — `<native>/src/**` plus the crate manifests —
+ * The newest Rust input under `native/` — workspace source directories plus the crate manifests —
  * skipping `native/target`, which is build output rather than input.
  * @param {string} nativeDir - the crate root.
  * @returns {{file: string, mtimeMs: number}|null} the newest input, or null when there is none.
@@ -220,12 +220,14 @@ function newestRustInput(nativeDir) {
     let stat
     try { stat = fs.statSync(file) } catch { return }
     if (stat.isDirectory()) {
-      for (const entry of fs.readdirSync(file, { withFileTypes: true })) visit(path.join(file, entry.name))
+      for (const entry of fs.readdirSync(file, { withFileTypes: true })) {
+        if (entry.name !== 'target') visit(path.join(file, entry.name))
+      }
       return
     }
     if (!newest || stat.mtimeMs > newest.mtimeMs) newest = { file, mtimeMs: stat.mtimeMs }
   }
-  for (const input of ['src', 'Cargo.toml', 'Cargo.lock']) visit(path.join(nativeDir, input))
+  for (const input of ['src', 'crates', 'windows-metadata', 'darwin-metadata', 'Cargo.toml', 'Cargo.lock']) visit(path.join(nativeDir, input))
   return newest
 }
 
@@ -319,7 +321,7 @@ export function inspectLocalBuild({ root = REPO_ROOT, platform = process.platfor
   } else {
     const rust = newestRustInput(path.join(root, 'native'))
     if (rust && rust.mtimeMs > fs.statSync(worker).mtimeMs) {
-      warnings.push(`the staged worker is older than ${path.relative(root, rust.file)}: this sweep may measure a build that predates native/src (rebuild: npm run build:ptc)`)
+      warnings.push(`the staged worker is older than ${path.relative(root, rust.file)}: this sweep may measure a build that predates the Rust workspace (rebuild: npm run build:ptc)`)
     }
   }
   // The proxies exist for win32-x64 only, and only when the sources shipped with them.

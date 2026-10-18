@@ -31,7 +31,7 @@ pub(super) fn open_update_lock(parent: &Dir, name: &str) -> Result<std::fs::File
     Ok(file.into_std())
 }
 
-pub(super) fn check_revision(bytes: Option<&[u8]>, expected: &str) -> Result<()> {
+pub fn check_revision(bytes: Option<&[u8]>, expected: &str) -> Result<()> {
     if expected != "absent" && !(expected.len() == 64 && expected.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))) {
         return Err(Failure::new("INVALID_ARGUMENT", "expectedRevision must be absent or lowercase SHA-256"));
     }
@@ -40,7 +40,7 @@ pub(super) fn check_revision(bytes: Option<&[u8]>, expected: &str) -> Result<()>
     Ok(())
 }
 
-pub(super) fn authorize_write(request: &Request, raw: &str) -> Result<PathBuf> {
+pub fn authorize_write(request: &Request, raw: &str) -> Result<PathBuf> {
     if request.read_only { return Err(Failure::policy("read-only", "User authorization is read-only")); }
     let checked = crate::file_path::checked_leaf(raw, true)?;
     request.authorize_path(&checked.display)?;

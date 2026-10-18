@@ -89,7 +89,7 @@ plugin.
 Most suites drive the real native worker. Without one they cannot answer, and they **skip**:
 
 ```console
-cargo test --locked --manifest-path native/Cargo.toml   # worker unit tests
+cargo test --workspace --locked --manifest-path native/Cargo.toml   # worker unit tests
 npm run build:ptc                                       # build + stage runtime/<platform>-<arch>/
 npm run build:bash-ipc                                  # Windows only: Bash IPC proxies
 ```

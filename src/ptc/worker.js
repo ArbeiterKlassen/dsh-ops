@@ -1,4 +1,5 @@
 /** Native worker bridge. Every execution uses DSH policy, confinement and process governance. */
+import { workerEnvelope } from '../worker-protocol.js'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -47,7 +48,8 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
     if (policy.mode === 'workspace-write' && requiredMode(policy) === 'danger-full-access') {
       return denied(policy, `${tool} outside the workspace and session temporary directory`, 'danger-full-access', 'The selected root is outside the user-authorized workspace.')
     }
-    const input = JSON.stringify({ root: operationRoot, scope: String(session.id), tool, args: workerArgs, read_only: readOnly, deny_roots: (config?.denyCredentialReads ?? true) !== false ? credentialRoots() : [], deny_credential_names: (config?.denyCredentialReads ?? true) !== false, ...(jobId ? { job_id: jobId } : {}) })
+    const envelope = workerEnvelope('ptc', { root: operationRoot, scope: String(session.id), tool, args: workerArgs, read_only: readOnly, deny_roots: (config?.denyCredentialReads ?? true) !== false ? credentialRoots() : [], deny_credential_names: (config?.denyCredentialReads ?? true) !== false, ...(jobId ? { job_id: jobId } : {}) })
+    const input = JSON.stringify(envelope)
     if (Buffer.byteLength(input) > 2 * 1024 * 1024) return failure('OUTPUT_LIMIT', 'Request exceeds the 2 MiB byte budget.')
     let argv = [file]
     if (policy.mode !== 'danger-full-access') {
@@ -71,7 +73,7 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
       return authorityChanged(current, operation)
     }
     const handle = subprocess.spawn({ argv, cwd: policy.workspaceRoot,
-      stdio: { stdin: { data: input }, stdout: { maxBytes: 128 * 1024 }, stderr: { maxBytes: 16 * 1024 } },
+      stdio: { stdin: { data: input }, stdout: { maxBytes: envelope.budget.maxBytes }, stderr: { maxBytes: 16 * 1024 } },
       graceMs: 1000, signal })
     spawned = true
     const outcome = await handle.done

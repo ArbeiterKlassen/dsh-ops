@@ -127,15 +127,12 @@ version = "0.3.1"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
- "dsh-ops-darwin-metadata",
- "dsh-ops-windows-metadata",
- "fs2",
- "regex",
- "rustix",
- "serde",
+ "ops-batch",
+ "ops-files",
+ "ops-protocol",
+ "ops-results",
+ "ops-search",
  "serde_json",
- "sha2",
- "uuid",
 ]
 
 [[package]]
@@ -295,6 +292,74 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "ops-batch"
+version = "0.3.1"
+dependencies = [
+ "cap-std",
+ "ops-files",
+ "ops-protocol",
+ "ops-results",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "ops-files"
+version = "0.3.1"
+dependencies = [
+ "cap-fs-ext",
+ "cap-std",
+ "dsh-ops-darwin-metadata",
+ "dsh-ops-windows-metadata",
+ "fs2",
+ "ops-protocol",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "uuid",
+]
+
+[[package]]
+name = "ops-protocol"
+version = "0.3.1"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ops-results"
+version = "0.3.1"
+dependencies = [
+ "cap-fs-ext",
+ "cap-std",
+ "fs2",
+ "ops-files",
+ "ops-protocol",
+ "serde",
+ "serde_json",
+ "sha2",
+ "uuid",
+]
+
+[[package]]
+name = "ops-search"
+version = "0.3.1"
+dependencies = [
+ "cap-fs-ext",
+ "cap-std",
+ "ops-files",
+ "ops-protocol",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "uuid",
+]
 
 [[package]]
 name = "pin-project-lite"
