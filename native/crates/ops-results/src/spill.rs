@@ -19,7 +19,7 @@ fn mark_head(request: &Request, value: &mut Value) {
     let skipped = if request.tool == "replace" { 0 } else { value["skipped"].as_u64().unwrap_or(0) };
     if let Some(total) = value["total"].as_u64() { value["omitted"] = json!(total.saturating_sub(skipped)); }
     if value.get("nextOffset").is_some() {
-        value["nextOffset"] = json!(if request.tool == "inspect_local_file" {
+        value["nextOffset"] = json!(if request.tool == "table_read" { skipped + 1 } else if request.tool == "inspect_local_file" {
             if request.args["view"] == "hex" { skipped / 16 + 1 } else { skipped + 1 }
         } else { skipped });
     }

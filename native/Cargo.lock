@@ -128,6 +128,7 @@ dependencies = [
  "cap-fs-ext",
  "cap-std",
  "ops-batch",
+ "ops-documents",
  "ops-files",
  "ops-protocol",
  "ops-results",
@@ -303,6 +304,17 @@ dependencies = [
  "ops-results",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "ops-documents"
+version = "0.3.1"
+dependencies = [
+ "ops-files",
+ "ops-protocol",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

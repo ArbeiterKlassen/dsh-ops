@@ -7,6 +7,16 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Add bounded CSV/TSV worker observations (#261, 15a/16)
+
+- Add an ops-documents workspace crate with strict UTF-8/UTF-16 CSV/TSV decoding, positional
+  string cells, physical line ranges, bounded row pages and safe preceding rows on parse failures.
+- Separate complete physical scans from requested pages and reference capture; reuse no-follow,
+  credential, readonly and automatic-spill boundaries without new external dependencies.
+- 新增有界 CSV/TSV worker 读取，严格解码、保留原字符串与物理行范围；错误保留此前有效行，
+  并分别报告扫描、分页和引用捕获完整性，不新增外部依赖。发现/宿主注册由后续切片接入。
+
+
 ### Deduplicate Native reads with current-context evidence (#261, 10/16)
 
 - Replace repeated line bodies only when the exact successful prior read is present in the latest completed ordinary model request and every file is freshly revalidated. Keep revisions, coverage, paging notices and canonical values. Compaction, redaction, authority changes and uncertain evidence restore full output.
