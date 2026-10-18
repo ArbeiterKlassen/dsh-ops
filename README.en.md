@@ -26,9 +26,10 @@ PTC code receives typed Outcome values from the same one-shot Rust worker. Host 
 strict TypeScript, compiled to the existing JavaScript package paths.
 
 > [!IMPORTANT]
-> This branch is the **0.4.0 release candidate**, not a published release. Release is blocked:
-> BM-01 does not meet its output-reduction threshold, and the full default Windows Native schema
-> exceeds BM-03's 400-token budget. Functional CI does not satisfy these performance gates.
+> This branch is the **0.4.0 release candidate**, not a published release. Approved acceptance requires
+> at least 40% less BM-01 output than OPS 0.3.x; the official reader is a separate comparison.
+> BM-03 limits file/discovery schemas to 400 tokens while keeping Bash at startup and reporting the
+> full total separately. Final measured evidence and functional CI are both required.
 > See [release status and limitations](docs/release-0.4.0.md). Commands using `@latest` below select
 > the published package; build and pack this checkout to evaluate the candidate.
 

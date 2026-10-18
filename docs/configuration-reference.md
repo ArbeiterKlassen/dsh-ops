@@ -211,7 +211,7 @@ Cordis validates configuration through `StandardSchemaV1`; detached public setti
 
 ## Prompt registration
 
-Prompts are registered as scoped runtime sections, not written to AGENTS.md. Disabling shell withdraws its routing; disabling file withdraws its Native file guidance. Fresh Native file publishes only ops_read_many, discovery publishes ops_discover, and eligible Windows shell scopes add ops_bash. Advanced Native tools are discovered or explicitly always loaded. PTC owns its separate typed SDK and current permission checks. Fixed-schema costs are measured separately; full-default BM-03 remains unresolved.
+Prompts are registered as scoped runtime sections, not written to AGENTS.md. Disabling shell withdraws its routing; disabling file withdraws its Native file guidance. Fresh Native file publishes only ops_read_many, discovery publishes ops_discover, and eligible Windows shell scopes add ops_bash. Advanced Native tools are discovered or explicitly always loaded. PTC owns its separate typed SDK and current permission checks. The approved BM-03 budget measures file/discovery schemas at ≤400 tokens. Bash startup residency is unchanged; its schema and the complete startup total are reported separately, and missing Bash cannot satisfy the Windows readiness check.
 
 ---
 

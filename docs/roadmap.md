@@ -15,7 +15,7 @@
 
 ## 0.4.0 candidate
 
-Separate Native/PTC projections, scoped discovery, bounded CSV/TSV, DOCX and restricted PDF readers, runtime/settings changes and strict TypeScript source are implemented. This is not a release announcement: BM-01 and the full-default BM-03 remain blockers. See [candidate status and format limits](release-0.4.0.md).
+Separate Native/PTC projections, scoped discovery, bounded CSV/TSV, DOCX and restricted PDF readers, runtime/settings changes and strict TypeScript source are implemented. This is not a release announcement: final evidence must satisfy the approved OPS 0.3.x BM-01 threshold and file/discovery BM-03 budget, while separately reporting the official comparison and full Bash-inclusive startup total. See [candidate status and format limits](release-0.4.0.md).
 
 ## Later
 

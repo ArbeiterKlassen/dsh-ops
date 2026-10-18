@@ -3,8 +3,10 @@
 中文：[0.4.0 发布候选](0.4.0发布候选.md).
 
 **Not released.** Version fields identify this candidate; they do not authorize a tag, npm publication
-or a final merge. Functional CI and the five acceptance benchmarks are separate gates. BM-01 and the
-full default BM-03 are still failing, so release remains blocked.
+or a final merge. Functional CI and the five acceptance benchmarks are separate gates. The approved
+BM-01 threshold is at least 40% fewer output bytes than OPS 0.3.x; the official reader remains a
+separate comparison. BM-03 applies ≤400 tokens to file/discovery schemas while retaining Bash at
+startup and reporting its cost and the full startup total separately. Final measured evidence is required.
 
 ## Implemented surface
 
@@ -70,14 +72,14 @@ The detailed limits above and in linked contracts remain part of acceptance.
 | 6 — References/budgets | 10 MiB/result, 100 MiB/session; two active/eight waiting calls and 30-second worker ceiling; audit data separate. | result-references/spill/lifecycle, call-budget, native-result; permission-limited cleanup can leave invalidated temp blobs. |
 | 7 — PTC | 19 typed SDK APIs, three resident entries; allowed pools and next-step loading independent of Native. | ptc-outcome/schema/sdk and progressive-loop; current frozen SDK cannot call queued APIs. |
 | 8 — Discovery | Native allowed pool, always-loaded subset and 1–5 selections; owning agent's next request only. | discovery/composition and real AgentLoop BM-04; no filesystem permission grant. |
-| 9 — Resident surface | read_many plus discover, with eligible Windows Bash; advanced tools absent initially. | Exact provider inventory; full Windows BM-03 is 660 tokens, so the ≤400 target is unresolved. |
+| 9 — Resident surface | read_many plus discover, with eligible Windows Bash; advanced tools absent initially. | Exact provider inventory; approved BM-03 gates the file/discovery subtotal at ≤400 and separately reports the full Bash-inclusive total. |
 | 10 — Re-read evidence | Exact successful body in the latest completed ordinary provider request plus fresh file checks. | context-read-dedup/many with real replacement/projection; missing evidence restores full output. |
 | 11 — Bash | Host approvals/jobs/subprocess, absolute executor, 120/600-second timing, optional managed/Git Bash. | shells-host/execution/manager; Windows confinement remains partial and runtime compatibility is mandatory. |
 | 12 — PowerShell | No bundled payload or executor overlay; explicit standard host upgrade plan and execution. | Host runtime manager/transport regressions; no real operator installation performed; restart/custom-path review required. |
 | 13 — Replacement | Opt-in read/glob/grep with exact OPS definition identity and readiness; read maps to inspect_local_file. | Real scoped mount/readiness regressions; write/edit replacement is excluded because CAS contracts differ. |
 | 14 — Migration/settings | Seven stable rows, saved overrides, fresh defaults and physical panel stop; validated built-in forms. | platform-defaults, settings-host/UI/client/carrier/runtime and panel-stop; custom pages need optional offline carrier; real TUI requires a separate host. |
 | 15 — Documents | Discoverable CSV/TSV, DOCX and restricted classic-xref PDF readers with honest safe prefixes. | table/docx/pdf worker+host suites and BM-04; unsupported formats/layout/OCR remain excluded, as detailed above. |
-| 16 — Acceptance/release | Strict TS/TSX, versioned candidate, paired docs and separate opt-in BM-01–05 evidence. | Functional CI and benchmark acceptance are separate; BM-01/BM-03 fail, so no final release approval. |
+| 16 — Acceptance/release | Strict TS/TSX, versioned candidate, paired docs and separate opt-in BM-01–05 evidence. | Functional CI and benchmark acceptance remain separate; rerun all five gates under the explicitly approved criteria before final review. |
 
 ## Stacked review and staging rollout
 
@@ -95,32 +97,37 @@ verify that its diff contains only the intended slice, and rerun required CI aft
 change. Do not merge a successor into an obsolete predecessor merely because it remains the review
 base. Keep shared history intact; this work does not merge maintainers' PRs.
 
-Only after all required functional gates and acceptance decisions are resolved should maintainers
-review release/0.4.0 → main as the final release PR. BM-01 needs an explicit decision about the fixed
-lossless workload/comparator requirement; BM-03 needs an explicit decision about full startup residency
-versus the 400-token budget while preserving contracts. No such decision is assumed here. Any approved
-requirement change must update the issue, documentation and acceptance assertions transparently before
-rerunning them. A version bump, a ready PR or passing functional CI does not authorize a tag/publication.
+Only after all required functional gates and approved acceptance criteria pass should maintainers
+review release/0.4.0 → main as the final release PR. The operator explicitly approved OPS 0.3.x as the
+authoritative BM-01 comparator, with the official reader reported separately, and the file/discovery
+≤400-token BM-03 scope while keeping Bash at startup. The fixed lossless workload, full default tool
+inventory, schema contracts and authority checks remain unchanged. The earlier full-scope failure
+is retained below; it is not silently reclassified. A version bump, a ready PR or passing functional
+CI alone does not authorize a tag/publication.
 
-## Acceptance status
+## Acceptance evidence
 
-The reviewed Windows snapshot uses the fixed issue workload and pinned host; it is not a universal
-speedup or provider-billing measurement. [Benchmark gates](benchmark-gates.md) define reproducible
-commands, evidence provenance and current rerun status.
+Apply the approved criteria above to each final candidate and retain all five gate results. The
+following Windows snapshot predates the scope approval and compact per-file receipt refinement; it
+is historical evidence, not a verdict for the updated candidate. It uses the fixed issue workload
+and pinned host, not a universal speedup or provider-billing measurement. [Benchmark gates](benchmark-gates.md)
+define reproducible commands, evidence provenance and current rerun status.
 
-| Gate | Reviewed result |
+| Gate | Historical result before the approved refinements |
 | --- | --- |
 | BM-01 | Fail: 5348 candidate bytes versus 8883 OPS 0.3.1 bytes (39.795% reduction); official read 5457 bytes (1.997%). Requested source alone is 4320 bytes. |
 | BM-02 | Pass: five edits in one tool-bearing round and both stale-CAS controls rejected. |
-| BM-03 | Fail: full actual provider order 660 tokens/3219 bytes, including Windows Bash and real jobs; target ≤400. Catalogue order 661 is a separate tokenizer boundary result. |
+| BM-03 | Prior full-scope failure: actual provider order 660 tokens/3219 bytes, including Windows Bash and real jobs, exceeded the then-full ≤400 target. The approved file/discovery subtotal was 241 tokens/1094 bytes; catalogue order 661 describes the full surface in a different order. |
 | BM-04 | Pass: PDF absent initially, available on the owning provider request after discovery, absent for a sibling, then executed. |
 | BM-05 | Pass: credential-fenced reads and outside writes rejected without denied-path/content leakage; an ordinary permitted outside read is an explicit allowed control. |
 
-The file/discovery-only 241-token measurement does not pass the full-default BM-03 gate. No schema
-contract, requested source, threshold or workload was removed to claim success. A missing optional
-Bash fixture blocks the full Windows measurement rather than reducing its denominator. The final
-candidate needs fresh functional and benchmark evidence after all fixes; unresolved failures must
-remain explicit until maintainers decide how to resolve them.
+The approved scope changes which BM-03 subtotal is compared with 400; it does not remove Bash from
+startup or from the exact readiness inventory. Report the file/discovery score, Bash cost and complete
+provider total together. A missing optional Bash fixture still blocks the Windows measurement.
+The compact receipt removes only a repeated per-file `Notice: ` prefix and terminal period; full
+revisions, continuation offsets, EOF/completeness and the aggregate notice remain. Requested source,
+workload and schema/authority contracts are unchanged. Fresh results after these refinements must be
+reported explicitly; historical failures alone neither pass nor fail the revised candidate.
 
 Use the [manual acceptance checklist](manual-validation.md). This candidate does not merge PRs,
 publish binaries or enable a disabled release workflow.
