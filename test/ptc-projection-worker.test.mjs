@@ -35,6 +35,14 @@ await test('all file observations validate and retain text, hex, stat and search
     assert.equal((await call(root, 'grep', { path: root, pattern: '[' })).error.code, 'INVALID_ARGUMENT')
   })
 })
+await test('table observations validate actual lexical rows through the PTC output schema', async () => {
+  await withTempDir('ptc-table', async root => {
+    const file = path.join(root, 'rows.csv'); fs.writeFileSync(file, 'name,value\nalpha,01\n')
+    const out = await call(root, 'table_read', { path: file })
+    assert.equal(out.status, 'completed'); assert.deepEqual(out.data.items[0].cells, ['alpha', '01'])
+    assert.equal(out.data.scanComplete, true); assert.equal(out.data.rowCount, 1)
+  })
+})
 await test('mutation receipts and batch plans preserve effects without changing the native kernel', async () => {
   await withTempDir('ptc-write', async root => {
     const file = path.join(root, 'a.txt'), copy = path.join(root, 'copy.txt'), moved = path.join(root, 'moved.txt')
