@@ -30,6 +30,16 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Build candidate host
         run: npm run build
+      - name: Acquire optional pinned Windows Bash fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:DSH_HOME = Join-Path $env:RUNNER_TEMP 'ops-benchmark-bash'
+          node bin/dsh-ops.mjs bash-runtime install
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $fixture = node --input-type=module -e "import {pinnedBashExecutable} from './lib/shells/pinned.js'; console.log(pinnedBashExecutable())"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "DSH_OPS_TEST_BASH=$fixture" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Build candidate worker
         run: npm run build:ptc
       - name: Materialize exact 0.3.1 source blobs

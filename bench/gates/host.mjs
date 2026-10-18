@@ -18,11 +18,13 @@ import * as OfficialTools from '@deepseek-ai/dsh-tool-fs'
 import * as shell from '../../lib/components/shell/index.js'
 import * as file from '../../lib/components/file/index.js'
 import * as discovery from '../../lib/components/discovery/index.js'
+import { pinnedBashExecutable } from '../../lib/shells/pinned.js'
 let identity = 0
 const textOf = content => content.filter(block => block.type === 'text').map(block => block.text).join('\n')
 
 /** Real AgentLoop, Session, tool dispatch and policy; only the model response is scripted. */
 export async function boot({ root, worker, baselineSource, projection = 'candidate', alwaysLoaded = [], withShell = false }) {
+  const shellFixture = withShell && process.env.DSH_OPS_TEST_BASH ? pinnedBashExecutable({ file: process.env.DSH_OPS_TEST_BASH }) : undefined
   const ctx = new Context(); ctx.logger.level = 0
   const queues = new Map(), requests = [], results = [], events = [], errors = []
   for (const plugin of [Agents, Sessions, Projections, Prompt]) await ctx.plugin(plugin, {})
@@ -61,7 +63,7 @@ export async function boot({ root, worker, baselineSource, projection = 'candida
     } })
   } else {
     await ctx.plugin(file, { binaryPath: worker, required: true })
-    if (withShell) await ctx.plugin(shell, {})
+    if (withShell) await ctx.plugin(shell, shellFixture ? { bashPath: shellFixture } : {})
     await ctx.plugin(discovery, { binaryPath: worker, required: true, alwaysLoaded })
   }
   await ctx.plugin(Loop, { agents: [], maxParallelToolCalls: 3 })
@@ -83,5 +85,5 @@ export async function boot({ root, worker, baselineSource, projection = 'candida
     return { providerRequests: calls.length, toolBearingRounds: calls.filter(value => value.toolCalls > 0).length,
       requests: calls, results: results.slice(start.results), committed, outputBytes: committed.reduce((sum, value) => sum + Buffer.byteLength(value.text), 0) }
   }
-  return { ctx, agent, run, close: () => ctx.fiber.dispose() }
+  return { ctx, agent, run, shellFixture, close: () => ctx.fiber.dispose() }
 }

@@ -41,6 +41,7 @@ export async function main(argv, io = { out: console.log, err: console.error }) 
   const report = { format: 'ops-040-gates-v1', createdAt: new Date().toISOString(), platform: process.platform, arch: process.arch,
     node: process.version, hostVersion: '0.2.0-rc.2', model: 'scripted, no network or paid model calls', temporary,
     candidateRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
+    candidateWorktreeStatus: execFileSync('git', ['status', '--short'], { cwd: root, encoding: 'utf8' }).trim(),
     fixtureSourceSha256: createHash('sha256').update(fs.readFileSync(new URL('./fixtures.mjs', import.meta.url))).digest('hex'),
     candidateWorker: { path: options.worker, sha256: createHash('sha256').update(fs.readFileSync(options.worker)).digest('hex') }, gates: [] }
   const tasks = { 'BM-01': bm01, 'BM-02': bm02, 'BM-03': bm03, 'BM-04': bm04, 'BM-05': bm05 }

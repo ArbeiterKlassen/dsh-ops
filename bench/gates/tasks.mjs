@@ -70,11 +70,13 @@ export async function bm03(options) {
   try {
     const run = await host.run(await host.agent(), [[]]), request = run.requests[0]
     const measurement = schemaMeasurement(request.tools), names = request.tools.map(tool => tool.name)
-    const shellReady = process.platform !== 'win32' || names.includes(publicToolName('bash'))
+    const bash = request.tools.find(tool => tool.name === publicToolName('bash'))
+    const shellReady = process.platform !== 'win32' || Boolean(bash?.parameters?.required?.includes('description')
+      && bash.parameters.properties?.run_in_background?.type === 'boolean')
     const messages = JSON.stringify(request.messages)
     return { id: 'BM-03', status: !shellReady ? 'blocked' : measurement.tokens <= 400 ? 'passed' : 'failed',
       criterion: 'Full default Native added schema <=400 tokens; Windows includes actual default Bash registration.',
-      pendingBudgetScopeDecision: true, shellReady, platform: process.platform, names, measurement,
+      pendingBudgetScopeDecision: true, shellReady, shellFixture: host.shellFixture ?? null, platform: process.platform, names, measurement,
       wholeStartupMessages: { tokens: getEncoding('cl100k_base').encode(messages).length, bytes: Buffer.byteLength(messages), json: messages },
       methodology: 'js-tiktoken@1.0.21 cl100k_base over compact host name/description/parameters JSON, actual provider order; not provider billing.' }
   } finally { await host.close() }
