@@ -159,7 +159,8 @@ bounded decoder read-ahead), scanComplete and pageComplete separately. rowCount/
 raw-byte SHA-256 revision appear only after a clean EOF with unchanged observed file metadata.
 Complete also requires no remaining rows after the requested page. A malformed suffix preserves
 preceding valid rows with status=partial/error and no invented total, even when the requested page
-was already fully observed. Metadata changes invalidate the complete-scan claim.
+was already fully observed. Metadata changes invalidate both scanComplete and pageComplete.
+The skipped count includes only rows physically observed before the requested range, even beyond EOF.
 
 Hard limits are 32 MiB input, 100000 data records plus one bounded EOF lookahead, 1 MiB decoded
 record, 1024 columns, 8192 serialized header bytes and 30 seconds between records (the host/worker
@@ -181,6 +182,10 @@ Malformed/changed input and physical scan limits retain prefix data and recovery
 continuation that would repeat the same gap. Native reference pages and PTC result pages preserve
 original table coverage separately from stored-row pagination. Shared admission, current authority,
 credential checks, cancellation and storage bindings apply unchanged.
+
+Fresh bundled PTC rows derive their allowed pool from the implemented catalogue; saved explicit
+allowedTools arrays remain authoritative across refresh and restart. Document APIs remain unloaded
+until requested through the owning scope.
 
 ## Bounded DOCX main-body observations (15b/16)
 
