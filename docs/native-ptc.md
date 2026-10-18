@@ -1,4 +1,7 @@
-# Native PTC enhancement — 0.3.1 Windows x64, Linux x64, Apple Silicon
+# Native PTC enhancement — Windows x64, Linux x64, Apple Silicon
+
+0.4.0 PTC callers use [Outcome contracts](ptc-outcomes.md) / [PTC 结果契约](PTC结果契约.md).
+The historical worker/recovery details below remain applicable; SDK results now wrap canonical facts in `data`.
 
 Issues: [#3](https://github.com/T-Auto/dsh-ops/issues/3), [#8](https://github.com/T-Auto/dsh-ops/issues/8).
 The file and PTC components use an independent Rust worker. The FastCtx-backed
@@ -159,10 +162,12 @@ alone misses these failures. For example:
 
 ```ts
 const result = await tools.ops_grep({ path: "src", pattern: "TODO", outputMode: "summary" });
-if (result.status === "error" || result.status === "rejected") {
-  console.log({ status: result.status, error: result.error });
+if (result.status === "completed") {
+  console.log({ files: result.data.files, matches: result.data.matches });
+} else if (result.status === "partial") {
+  console.log({ coverage: result.coverage, continuation: result.continuation });
 } else {
-  console.log({ files: result.files, matches: result.matches, complete: result.complete });
+  console.log({ status: result.status, error: result.error });
 }
 ```
 
@@ -170,8 +175,8 @@ File parameter bounds are described in the host-compatible SDK schema and enforc
 by the native worker, even for direct PTC calls. Required fields, enums, nested
 edit shapes and strict unknown-field rejection remain discoverable.
 Native file rendering uses `=== FILE: path (Lines a-b of n) ===` and `N | text`,
-with concise mutation receipts and explicit paging/effect/retry notices. The raw
-execution value returned to PTC remains unchanged. Content blocks are capped at
+with concise mutation receipts and explicit paging/effect/retry notices. PTC wraps the unchanged canonical
+execution data in a typed Outcome envelope. Content blocks are capped at
 64 KiB after JSON escaping; clipped displays instruct the caller to recover
 undisplayed content without blindly advancing a cursor or repeating a write.
 Physical LF defines line counts across projections; bare CR/control separators
@@ -186,7 +191,10 @@ no-effect manifest and returns a `detailsRef`/job id. It does **not** convert in
 an executable `run` request. Execute that exact planned manifest with:
 
 ```ts
-await tools.ops_batch({ action: "resume", id: plan.id });
+if (plan.status === "completed") {
+  const execution = await tools.ops_batch({ action: "resume", id: plan.data.id });
+  console.log(execution); // inspect its status before reading execution.data
+}
 ```
 
 `action: "run"` is a separate immediate path and requires the operations again;
@@ -207,8 +215,8 @@ const result = await tools.ops_batch({
     { op: "remove", path: "cache/explicitly-approved-target" }
   ]
 });
-console.log({status: result.status, done: result.done, failed: result.failed,
-  unknown: result.unknown, detailsRef: result.detailsRef});
+console.log({ status: result.status, receipt: result.data,
+  error: result.status === "completed" || result.status === "partial" ? undefined : result.error });
 ```
 
 Workspace authority comes only from `sandboxPolicy.resolve({session})`.
@@ -239,12 +247,16 @@ preflight and current DSH policy checks run again.
 
 ```ts
 // Small data is better processed directly in JavaScript.
-const stored = await tools.ops_result({action: "put", items: operationRows});
-const batch = await tools.ops_batch({action: "run", operationsRef: stored.id});
-const page = await tools.ops_result({action: "page", id: batch.detailsRef,
-  offset: 0, limit: 64, maxBytes: 16384, fields: ["operation", "state", "error"]});
-console.log(page.items.filter(row => row.state !== "completed"));
-await tools.ops_result({action: "release", id: stored.id});
+const stored = await tools.ops_result({ action: "put", items: operationRows });
+if (stored.status !== "completed") return stored;
+const batch = await tools.ops_batch({ action: "run", operationsRef: stored.data.id });
+if (batch.data?.detailsRef) {
+  const page = await tools.ops_result({ action: "page", id: batch.data.detailsRef,
+    offset: 0, limit: 64, maxBytes: 16384, fields: ["operation", "state", "error"] });
+  console.log(page); // partial pages include an explicit continuation
+}
+const released = await tools.ops_result({ action: "release", id: stored.data.id });
+console.log({ batch, released });
 ```
 
 put stores object rows; page supports top-level equality and field selection,

@@ -7,6 +7,15 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Expose canonical PTC outcomes and generated declarations (#261, 7/16)
+
+- Wrap PTC canonical data in discriminated completed/partial/failure outcomes with stable effects
+  and retry guidance. Safe continuations describe read-only retrieval without replaying mutations.
+- Generate and ship type-only `dsh-ops/ptc-sdk` declarations from the same catalogue/output schemas;
+  verify status narrowing, argument shapes and real worker receipts with the pinned host validator.
+- PTC 返回可收窄的规范结果信封；安全续取只描述只读操作，绝不重放修改。构建并发布同源类型声明，
+  保留参数、覆盖范围、副作用和重试约束。
+
 ### Page stored references from Native file tools (#261, 6d/16)
 
 - Add a Native page/release projection of the shared ops_result capability, independently owned by

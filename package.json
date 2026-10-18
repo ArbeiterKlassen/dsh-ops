@@ -59,6 +59,7 @@
     "./ptc": {
       "default": "./lib/components/ptc/index.js"
     },
+    "./ptc-sdk": { "types": "./lib/ptc/sdk.d.ts" },
     "./ptc/package.json": "./lib/components/ptc/package.json",
     "./ptc/locale/*.json": "./lib/components/ptc/locale/*.json",
     "./panel": {

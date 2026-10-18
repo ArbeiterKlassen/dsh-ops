@@ -6,6 +6,7 @@ import { STORAGE_REFERENCE } from '../../capabilities/result.js'
 const string: JsonSchemaNode = { type: 'string' }
 const integer: JsonSchemaNode = { type: 'integer' }
 const boolean: JsonSchemaNode = { type: 'boolean' }
+const nullableInteger: JsonSchemaNode = { oneOf: [integer, { type: 'null' }] }
 const object = (properties: Record<string, JsonSchemaNode>): JsonSchemaNode => ({ type: 'object', properties })
 const array = (items: JsonSchemaNode): JsonSchemaNode => ({ type: 'array', items })
 const physicalLine = object({ path: string, line: integer, text: string, view: string, offset: integer,
@@ -28,9 +29,9 @@ export function canonicalOutput(tool: FileToolName | PtcToolName): JsonSchemaNod
   const properties: Record<string, JsonSchemaNode> = { ...entry.output.properties, ...cache }
   if (tool === 'inspect_local_file') Object.assign(properties, facts, { path: string, items: array(physicalLine) })
   else if (tool === 'read_many') properties.items = array(object({ ...range, items: array(physicalLine) }))
-  else if (tool === 'glob') properties.items = array({ oneOf: [string, object({ path: string, bytes: integer, modified: integer })] })
+  else if (tool === 'glob') properties.items = array({ oneOf: [string, object({ path: string, bytes: integer, modified: nullableInteger })] })
   else if (tool === 'grep') properties.items = array(object({ path: string, line: integer, text: string, count: integer, matches: integer }))
-  else if (tool === 'stat') Object.assign(properties, facts, { exists: boolean, path: string, readonly: boolean, mode: string, modifiedMs: integer })
+  else if (tool === 'stat') Object.assign(properties, facts, { exists: boolean, path: string, readonly: boolean, mode: string, modifiedMs: nullableInteger })
   else if (tool === 'diff') Object.assign(properties, { before: object(facts), after: object(facts),
     hunk: object({ startLine: integer, removed: integer, added: integer }), items: array(object({ kind: string, line: integer, text: string })) })
   else if (tool === 'result') properties.source = object({ ...range, ...coverage, root: string,
