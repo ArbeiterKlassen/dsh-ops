@@ -226,9 +226,11 @@ await test('sessionWorkdir resolves placeholders to the session directory', asyn
   assert.equal(sessionWorkdir({ workdir: '' }, session), 'C:\\session\\cwd')
   assert.equal(sessionWorkdir({ workdir: '   ' }, session), 'C:\\session\\cwd')
   assert.equal(sessionWorkdir({ workdir: 'D:\\chosen' }, session), 'D:\\chosen')
-  // A meaningful string passes through unaltered, and a non-string is not
-  // silently coerced to the default; the executor rejects it.
-  assert.equal(sessionWorkdir({ workdir: '  D:\\chosen  ' }, session), '  D:\\chosen  ')
+  // A relative path is anchored at the session workspace -- the spaces here are
+  // filename bytes, not padding -- and a non-string is not silently coerced to
+  // the default; the executor rejects it. The full resolution matrix, including
+  // the Windows drive rules, lives in test/shells-guards.test.mjs.
+  assert.equal(sessionWorkdir({ workdir: '  D:\\chosen  ' }, session), 'C:\\session\\cwd\\  D:\\chosen  ')
   assert.equal(sessionWorkdir({ workdir: 5 }, session), 5)
 })
 
