@@ -298,3 +298,10 @@ keep canonical prefix data inside failure Outcomes without a looping page contin
 scans alone permit forward rescan pages, with revisions compared before combining results. References
 retain typed original page coverage, decoded/processed work, scope and capture facts. All reads use
 the same live authority, credentials, no-follow, shared budgets and cancellation path as file tools.
+
+## Typed runtime ownership (16/16)
+
+Worker selection and Native runtime lifecycle are strict TypeScript. Resolution is a discriminated
+success/path or failure/reason value; configuration and Native tool names are checked at compile
+time. Missing runtime initialization returns an unavailable value before creating call state.
+The shipped runtime paths remain .js, with the same provenance, scope and cancellation behavior.

@@ -83,4 +83,11 @@ await test('native registration consumes the catalogue while execute values stay
   await runtime.stop()
   assert.deepEqual(disposed.sort(), registered.map(item => item.name).sort())
 })
+await test('unstarted Native runtimes return an unavailable value before creating call state', async () => {
+  const runtime = new NativeFileTools({ ctx: {}, config: { workerPath: 'fixture-worker' } })
+  const value = await runtime.call('stat', { path: '.' }, {})
+  assert.equal(value.error.code, 'EXECUTOR_UNAVAILABLE')
+  assert.match(value.error.message, /worker path is unavailable/)
+  assert.equal(runtime.active.size, 0)
+})
 report('capabilities')

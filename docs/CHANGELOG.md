@@ -7,6 +7,13 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Type worker resolution and Native runtime ownership (#261, 16/16)
+
+- Compile worker discovery and Native lifecycle as strict TypeScript; preserve runtime .js paths,
+  provenance checks and scoped teardown, and reject calls before runtime initialization.
+- worker 解析与 Native 生命周期改为严格 TypeScript，保留发布路径和权限边界，未初始化调用返回明确失败值。
+
+
 ### Expose scoped DOCX paragraphs (#261, 15b/16)
 
 - Add discoverable Native main-body paragraphs and typed PTC outcomes with explicit excluded content,

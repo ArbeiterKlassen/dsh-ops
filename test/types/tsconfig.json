@@ -6,6 +6,7 @@
   },
   "include": [
     "kernel.ts",
-    "ptc-sdk.ts"
+    "ptc-sdk.ts",
+    "worker-runtime.ts"
   ]
 }
