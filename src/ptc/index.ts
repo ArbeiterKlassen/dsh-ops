@@ -4,6 +4,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
+import { inspectPresentation, isPresentationProbe } from '../presentation.js'
 import { WORKER_TIMEOUT_MS } from '../worker-protocol.js'
 import { FILE_TOOLS, PTC_TOOLS } from '../capabilities/registry.js'
 import { PTC_SECTION, definition } from './contract.js'
@@ -45,6 +46,12 @@ export function apply(root: Context, rawConfig: unknown): void {
     const entries = new Map<Agent, Entry>()
     const active = new Map<AbortController, { owner: Agent; promise: Promise<unknown> }>()
     let stopped = false, mutating = false, epoch = 0, chain = Promise.resolve(), lastSnapshot = ''
+    let settled = chain
+    const drain = async () => {
+      let current: Promise<void>
+      do { current = chain; await current } while (current !== chain)
+      settled = current
+    }
     const ids = new WeakMap<object, number>(); let sequence = 0
     const snapshot = (): string => JSON.stringify([...entries.keys()].map(agent => tools.schemas(agent).map(schema => {
       const def = tools.get(schema.name, agent)
@@ -57,7 +64,7 @@ export function apply(root: Context, rawConfig: unknown): void {
         try { dispose() } catch (error) { ctx.logger.warn('dsh-ops: PTC teardown failed; continuing:', error) }
       }
     }
-    const ptcOnly = async (agent: Agent, signal?: AbortSignal): Promise<boolean> => Boolean(ctx.get('ptcRuntime')) && isPtc(await prompt.assemble({ scope: agent, signal }))
+    const ptcOnly = async (agent: Agent, signal?: AbortSignal): Promise<boolean> => Boolean(ctx.get('ptcRuntime')) && isPtc(await inspectPresentation(prompt, agent, signal))
     const abortOwner = (agent: Agent, reason: string) => {
       for (const [controller, work] of active) if (work.owner === agent) controller.abort(new Error(reason))
     }
@@ -169,6 +176,13 @@ export function apply(root: Context, rawConfig: unknown): void {
     })
     ctx.on('tools/change', () => { if (!ownership?.publishing()) void reconcile(true) })
     ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+      // The pinned host assembles BEFORE agent/pre-step. Wait for publication
+      // queued by the previous committed step, then obtain a fresh public assembly.
+      if (!isPresentationProbe(context)) {
+        const entry = entries.get(context.scope as Agent), before = chain, pending = chain !== settled
+        await entry?.ready; await drain()
+        if (pending || before !== chain) return prompt.assemble(context)
+      }
       const entry = entries.get(context.scope as Agent), heldPtc = Boolean(entry?.ptc && entry.owned.size)
       const result = await next()
       if (!entry || !heldPtc || isPtc(result)) return result
@@ -179,6 +193,15 @@ export function apply(root: Context, rawConfig: unknown): void {
       return prompt.assemble(context)
     })
     ctx.on('session/event', (session, event) => {
+      if (event.type === 'step/end') {
+        let changed = false
+        for (const [agent, entry] of entries) if (agent.session === session && ownership?.owns(agent) && entry.pending.size) {
+          for (const tool of entry.pending) if (entry.ptc) entry.selected.add(tool)
+          entry.pending.clear(); changed = true
+        }
+        if (changed) void reconcile(true)
+        return
+      }
       if (event.type !== 'sandbox/mode') return
       for (const [agent, entry] of entries) if (agent.session === session) { entry.pending.clear(); abortOwner(agent, 'Sandbox authority changed') }
       void reconcile(true)

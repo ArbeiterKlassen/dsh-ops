@@ -2,7 +2,7 @@
 
 中文：[工具发现](工具发现.md).
 
-`dsh-ops/discovery` publishes `ops_discover` in each eligible Native scope. Describe a capability (`metadata revision hash`) or select an exact public name (`select:ops_stat`). Discovery only chooses tools; it performs no file action. A successful selection is pending until the next admitted model step (`agent/pre-step`), before that step's prompt is assembled. Current and diagnostic assemblies cannot activate it. Newly published tools remain scoped to their owner; parents, children and siblings must discover independently.
+`dsh-ops/discovery` publishes `ops_discover` in each eligible Native scope. Describe a capability (`metadata revision hash`) or select an exact public name (`select:ops_stat`). Discovery only chooses tools; it performs no file action. A successful selection remains pending through the current tool round. Its owning session's committed `step/end` publishes it for the next provider request. The pinned host assembles before `agent/pre-step`; queued publication is therefore drained and the public prompt service reassembles a stale snapshot. Diagnostic assemblies before that committed boundary cannot activate pending names. Newly published tools remain scoped to their owner; parents, children and siblings must discover independently.
 
 The component is exported now. The seven-row bundle installation and 0.3 profile migration are a separate release slice. A manually added row can use:
 
@@ -36,7 +36,7 @@ The deterministic entry measurement uses `js-tiktoken@1.0.21` with `cl100k_base`
 
 The unchanged fourteen-tool Native file surface plus discovery measures **3183 tokens / 14942 bytes** by the same method; this slice does not claim that whole surface passes 400. The next slice reduces the resident file set and records its own complete file/discovery baseline. Shell/PTC or operator always-loaded choices must be measured separately, not silently excluded from a global claim.
 
-BM-04 runs through the real Cordis tool/prompt services and native worker: an implemented `stat` capability is absent before discovery, remains absent through current-step assembly, appears after the next pre-step boundary, and executes successfully. PDF is unimplemented, so this is the lifecycle gate, not a claim that PDF acceptance passed.
+BM-04 runs through the real Cordis tool/prompt services and native worker: an implemented `stat` capability is absent before discovery, remains absent through current-step assembly, appears in the immediately following real AgentLoop provider request, and executes successfully. PDF is unimplemented, so this is the lifecycle gate, not a claim that PDF acceptance passed.
 
 The browser configuration multi-select is separate work: plain configuration validation does not automatically generate a host selector. Its UI must use the pinned host's browser plugin configuration APIs.
 

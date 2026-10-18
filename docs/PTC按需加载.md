@@ -2,7 +2,7 @@
 
 PTC 组件独立于 Native 文件组件提供文件 API。PTC-only 代理初始只包含 ops_inspect_local_file、ops_result 和 ops_sdk。宿主根据已注册的参数与 Outcome 输出 schema 生成类型化 SDK；Native 与 both 模式不显示 SDK 加载器。
 
-在 run_code 内调用 tools.ops_sdk({ tools: ['grep', 'read_many'] })。成功 Outcome 的 data.tools 列出请求名称，data.nextTurn 为 true。结束当前代码调用后，请求的 API 才会在下一个代理 pre-step 发布，当前冻结的 SDK 快照无法调用新 API。系统提示组装、诊断组装和工具注册通知都不会提前激活排队请求。
+在 run_code 内调用 tools.ops_sdk({ tools: ['grep', 'read_many'] })。成功 Outcome 的 data.tools 列出请求名称，data.nextTurn 为 true。当前工具轮次结束、所属会话提交 step/end 后，请求的 API 会在紧接着的供应商请求中发布；当前冻结的 SDK 快照无法调用新 API。该边界前的系统提示组装、诊断组装以及工具注册通知不会提前激活排队请求。组装会等待本插件发布并按需通过公开服务获取新快照；内部呈现探测跳过此屏障，防止递归等待。
 
 PTC 行配置由统一配置入口验证：
 
