@@ -138,7 +138,7 @@ async function invokeTrusted(ctx: Context, file: string, tool: string, args: unk
   const trustedPath = (value: string): string => anchoredPath(value, anchors)
   const writeRoots = [canonicalAnchor(policy.workspaceRoot), trustedPath(privateTemp)]
   const writeTargets = tool === 'copy' && destination ? [destination] : [operationPath, ...(destination ? [destination] : [])]
-  const requiredMode = (current: SandboxExecutionPolicy) => {
+  const requiredMode = (current: SandboxExecutionPolicy): 'workspace-write' | 'danger-full-access' => {
     const roots = [canonicalAnchor(current.workspaceRoot), anchoredPath(privateTemp, sessionAnchors(current, cwd))]
     return writeTargets.every(target => roots.some(root => inside(root, anchoredPath(target, sessionAnchors(current, cwd)))))
       ? 'workspace-write' : 'danger-full-access'

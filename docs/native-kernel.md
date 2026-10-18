@@ -311,3 +311,9 @@ execution types with unknown-valued input/output records. Non-object arguments f
 malformed or non-object process results report unknown effects and never record a successful read.
 Receipt observations preserve the provider's version facts. This validation does not change the fixed
 Native subprocess path, permission checks or the separate PTC confinement path.
+
+The PTC bridge uses the same typed input/output narrowing, plus the host's exact confinement and
+runner-failure contracts. Non-object argument failures precede batch admission; invalid JSON receipts
+after a spawn retain unknown effects and the generated audit identity. Only recognized runner-failure
+evidence may claim the wrapped worker never ran. Permission rechecks and per-call confined argv remain
+mandatory; this migration adds no unconfined fallback or cache/business authority expansion.

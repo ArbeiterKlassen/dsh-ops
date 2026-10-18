@@ -37,3 +37,12 @@ void fileCall(ctx, 3, 'stat', {}, exec)
 void fileCall(ctx, '/worker', 'stat', {}, exec, undefined, { denyCredentialReads: 'true' })
 // @ts-expect-error Effect state must be an explicit kernel fact.
 void fileFailure('RESULT_UNKNOWN', 'lost output', 'execute', 'success')
+
+import { invoke as ptcCall, failure as ptcFailure } from '../../src/ptc/worker.js'
+const ptcValue: unknown = await ptcCall(ctx, '/worker', 'result', { action: 'page' }, exec)
+// @ts-expect-error A transport receipt is narrowed before caller-specific projection.
+void ptcValue.status
+// @ts-expect-error A subprocess cancellation signal cannot be a configuration object.
+void ptcCall(ctx, '/worker', 'batch', {}, exec, {})
+// @ts-expect-error PTC effects follow the same kernel vocabulary as Native effects.
+void ptcFailure('RESULT_UNKNOWN', 'lost output', 'success')

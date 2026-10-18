@@ -2,6 +2,7 @@
 import { assert, test, report, withTempDir } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
 import { invoke as fileCall } from '../lib/file/worker.js'
+import { invoke as ptcCall } from '../lib/ptc/worker.js'
 
 async function fixture(body) {
   await withTempDir('worker-boundary', async root => {
@@ -55,6 +56,34 @@ await test('Native invalid or scalar JSON after execution retains unknown effect
     state.text = 'null'
     const unsettled = await fileCall(ctx, 'unused', 'write_file', { path: 'new.txt', content: 'new', expectedRevision: 'absent' }, exec, signal)
     assert.equal(unsettled.error.effectState, 'unknown', 'a write may already have happened')
+  })
+})
+await test('PTC non-object arguments fail before spawning batch work', async () => {
+  await fixture(async ({ ctx, exec, state, signal }) => {
+    for (const args of [undefined, null, 1, true, 'run', [], [{ action: 'run' }]]) {
+      const value = await ptcCall(ctx, 'unused', 'batch', args, exec, signal)
+      assert.equal(value.error.code, 'INVALID_ARGUMENT', JSON.stringify(value))
+      assert.equal(value.error.effectState, 'none'); assert.equal(value.detailsRef, undefined)
+    }
+    assert.equal(state.spawns, 0)
+  })
+})
+
+await test('PTC unsettled JSON after spawning keeps possible batch effects and audit identity', async () => {
+  await fixture(async ({ ctx, exec, state, signal }) => {
+    const outputs = ['{', 'null', 'true', '0', '"completed"', '[]', '[{"status":"completed"}]']
+    for (const text of outputs) {
+      state.text = text
+      const value = await ptcCall(ctx, 'unused', 'batch', { action: 'run', operations: [] }, exec, signal)
+      assert.equal(value.error.code, 'RESULT_UNKNOWN', JSON.stringify(value))
+      assert.equal(value.error.effectState, 'unknown'); assert.equal(value.error.retryable, false)
+      assert.match(value.error.nextAction, /never blindly rerun/); assert.match(value.detailsRef, /^j-/)
+    }
+    assert.equal(state.spawns, outputs.length)
+    state.text = '{"status":"error","changed":1,"error":{"code":"POLICY_DENIED","reason":"write-roots","effectState":"applied"}}'
+    const denied = await ptcCall(ctx, 'unused', 'batch', { action: 'run', operations: [] }, exec, signal)
+    assert.equal(denied.status, 'rejected'); assert.equal(denied.changed, 1)
+    assert.equal(denied.error.effectState, 'applied'); assert.equal(denied.detailsRef, undefined)
   })
 })
 report('worker-boundary')

@@ -7,6 +7,12 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Type the confined PTC worker boundary (#261, 16/16)
+
+- Compile PTC policy, confinement, runner diagnostics and receipts under strict TypeScript; retain
+  per-call authorization and unknown effects with audit identity when worker output is invalid.
+- PTC 桥使用严格权限、限制执行与诊断类型；非法 worker 输出保留未知副作用及审计标识。
+
 ### Type the trusted Native worker boundary (#261, 16/16)
 
 - Compile host policy, observations and Native worker invocation under strict TypeScript; reject
