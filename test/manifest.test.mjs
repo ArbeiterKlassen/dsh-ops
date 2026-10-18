@@ -10,7 +10,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  FILE_TOOLS,
   HOST_SHELL_SECTION,
   IN_PROCESS_TOOLS,
   TOOLING_SECTION,
@@ -18,6 +17,7 @@ import {
   publicToolName,
   renderToolingPolicy,
 } from '../lib/policy.js'
+import { NATIVE_FILE_TOOLS } from '../lib/capabilities/registry.js'
 import { assert, PACKAGE_ROOT, report, test } from './lib/harness.mjs'
 
 const manifestFile = path.join(PACKAGE_ROOT, 'dsh-plugin.json')
@@ -64,8 +64,8 @@ await test('every declared tool is one the policy actually names', () => {
   const hosted = namespaces[0]
   assert.deepEqual(
     [...hosted.tools].sort(),
-    [...FILE_TOOLS].sort(),
-    'the native namespace declares exactly the four file tools',
+    [...NATIVE_FILE_TOOLS].sort(),
+    'the native namespace declares the owned file tools and Native result projection',
   )
   assert.equal(hosted.transport, 'in-process')
   for (const tool of hosted.tools) {

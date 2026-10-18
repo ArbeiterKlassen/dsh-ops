@@ -67,9 +67,11 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
   if (hasFiles) lines.push('- Use file tools for file operations and batch independent requests.')
   if (names.has(publicToolName('grep'))) lines.push('- ops_grep: summary for aggregate file/match totals; count for per-file counts; content for matching text. Follow nextOffset for remaining pages, but do not loop blindly on truncated/failed scans: they are not exhaustive.')
   if (hasFiles) lines.push(
-    '- Single-file tools use `path`, resolved relative to the current DSH session cwd. `to` on copy/move uses the same base. Use `/` separators; do not pass workspace, cwd, or file_path aliases. ops_result accepts the original reference root; read_many takes files.',
+    '- Single-file tools use `path`, resolved relative to the current DSH session cwd. `to` on copy/move uses the same base. Use `/` separators; do not pass workspace, cwd, or file_path aliases.',
     '- Native file tools are UTF-8 first and bounded. glob and grep do not traverse symlinks, junctions, reparse points, hidden files, or `.git`.',
   )
+  if (names.has(publicToolName('result'))) lines.push(`- ${publicToolName('result')} accepts the original reference root; page completeness describes stored rows only.`)
+  if (names.has(publicToolName('read_many'))) lines.push(`- ${publicToolName('read_many')} takes files with independent ranges and per-file recovery.`)
   const globbing = ['glob', 'grep', 'replace'].filter(raw => names.has(publicToolName(raw)))
   if (globbing.length) {
     const arrays = [names.has(publicToolName('glob')) && 'ops_glob `pattern`', (names.has(publicToolName('grep')) || names.has(publicToolName('replace'))) && 'the `glob` filters'].filter(Boolean).join(' and ')
