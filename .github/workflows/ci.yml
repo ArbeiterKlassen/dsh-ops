@@ -236,6 +236,22 @@ jobs:
       - name: Check workflow structure
         run: node scripts/check-workflows.mjs
 
+  # The size gate: no tracked code file may cross a thousand lines. It needs no
+  # dependencies and no Rust — `git ls-files` and the repository's own script are
+  # the whole input — so it is its own job instead of a step in one of the heavier
+  # ones, where its failure would be attributed to whatever that job is really
+  # about.
+  source-size:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check that every code file is at or under 1000 lines
+        run: node scripts/check-file-size.mjs
+
   # `package.json` promises `^22.19 || >=24`, but the matrix above only ever runs 24, so the lower
   # bound was never exercised. One job on the declared floor keeps that promise honest without
   # tripling the platform matrix.
@@ -275,7 +291,7 @@ jobs:
   ci-required:
     name: CI required
     if: always()
-    needs: [validate, workflow-lint, node-floor, tools-trial, bench-smoke]
+    needs: [validate, workflow-lint, source-size, node-floor, tools-trial, bench-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -284,10 +300,11 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
-          for job in validate workflow-lint node-floor; do
+          for job in validate workflow-lint source-size node-floor; do
             case "$job" in
               validate) result='${{ needs.validate.result }}' ;;
               workflow-lint) result='${{ needs.workflow-lint.result }}' ;;
+              source-size) result='${{ needs.source-size.result }}' ;;
               node-floor) result='${{ needs.node-floor.result }}' ;;
             esac
             echo "${job}: ${result}"
