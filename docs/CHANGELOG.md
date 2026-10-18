@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Complete the strict TypeScript source migration and disable JavaScript compilation. Reject unimported JavaScript source during packaging while preserving published `.js` paths.
+- 完成严格 TypeScript 源码迁移并关闭 JavaScript 编译；打包时拒绝未导入的 JavaScript 源码，保持发布的 `.js` 路径不变。
+
 - Type central configuration validation, deferred profile migrations, and the remaining TUI/background entries strictly; retain their emitted paths, defaults, validation errors and lifecycle behavior.
 - 将中央配置校验、延迟 profile 迁移及剩余 TUI/background 入口迁为严格 TypeScript；保留产物路径、默认值、校验错误及生命周期行为。
 

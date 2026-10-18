@@ -57,16 +57,16 @@ npm run verify
 
 ## Building the plugin and installing from source
 
-Edit the plugin in `src/`. The TypeScript compiler accepts the existing JavaScript during the
-migration and emits JavaScript into `lib/`; `npm run build` recreates that directory and copies
-component manifests, locale files, icons and the panel HTML. `lib/` is ignored by Git and must not
-be edited by hand. Package exports, component entries and tests continue to load `lib/`.
+Edit the plugin in `src/` using strict TypeScript or TSX. `npm run build` emits JavaScript into
+`lib/` and copies component manifests, locale files, icons and the panel HTML. `lib/` is ignored by
+Git and must not be edited by hand. Package exports, component entries and tests load `lib/`;
+runtime imports retain their `.js` paths.
 
 Run `npm run build` after changing source or assets and before invoking a suite directly with
 `node test/run.mjs <filter>`. `npm test`, `npm run test:ptc` and `npm run verify` build first;
-`npm run typecheck` checks the compiler configuration and migrated TypeScript without emitting
-files. JavaScript type checking remains disabled during the migration. Host execution boundaries, central configuration validation and migration, and component entry modules
-use strict TypeScript. The compiler accepts remaining JavaScript until the final migration audit.
+`npm run typecheck` checks all plugin source without emitting files. JavaScript source under `src/`
+is rejected by the build, including unimported files that the TypeScript compiler would otherwise
+silently ignore. Repository scripts and tests may continue to use JavaScript.
 
 For a local or Git-source installation, build and pack a checkout before installing it into DSH:
 

@@ -13,6 +13,16 @@ const output = path.join(root, 'lib')
 const compiler = path.join(root, 'node_modules/typescript/lib/tsc.js')
 const codeFile = /\.(?:[cm]?[jt]s|[jt]sx)$/i
 
+function requireTypedSource(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const from = path.join(directory, entry.name)
+    if (entry.isDirectory()) requireTypedSource(from)
+    else if (entry.isFile() && /\.(?:[cm]?js|jsx)$/i.test(entry.name)) {
+      throw new Error(`JavaScript source is not supported: ${path.relative(root, from)}; migrate it to TypeScript.`)
+    }
+  }
+}
+
 function copyAssets(directory) {
   let count = 0
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -35,6 +45,9 @@ try {
   // Both paths are fixed children of this checkout. Remove only generated output so deleted
   // source modules cannot remain importable after a successful rebuild.
   rmSync(output, { recursive: true, force: true })
+  // tsc silently ignores unimported JavaScript when allowJs is disabled. Refuse it explicitly
+  // so a missed source migration cannot produce an apparently successful incomplete package.
+  requireTypedSource(source)
   const result = spawnSync(process.execPath, [compiler, '-p', path.join(root, 'tsconfig.json')], {
     cwd: root, stdio: 'inherit', windowsHide: true,
   })
