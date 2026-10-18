@@ -73,3 +73,9 @@ The corrected Unicode sensitivity is 2,616 candidate / 4,185 OPS 0.3.1 / 2,469 o
 ## Integrity checks after review
 
 BM-03 now requires the exact resident file catalogue plus discovery (and the full Bash contract on Windows) before a token score can pass. Missing, duplicate or unexpected tools block the gate with a named reason. BM-05 also requires its ordinary outside-read control to succeed with exact text, and checks `CREDENTIAL_DENIED` / `POLICY_DENIED` with `effectState: none` for the denied probes. Native line checks independently decode the documented escapes, including literal backslashes; they no longer mirror the renderer. These integrity checks change no workload, default or numerical threshold; only the explicitly approved acceptance scopes above determine current verdicts. The result snapshot above remains historical evidence for its named commit; it is not reclassified as passing.
+
+## Approved-scope validation
+
+The clean implementation at `112e34e` passed all five gates on Windows through the real pinned host. BM-01 returned 5,321 bytes versus 8,883 for OPS 0.3.1: **40.099% reduction**, with all requested source intact. The official reader returned 5,457 bytes (2.492% reduction), reported separately. BM-02 retained both stale-CAS rejections; BM-04 and BM-05 retained activation isolation and authority controls.
+
+BM-03 passed at **241 file/discovery tokens / 1,094 bytes**, while Bash remained resident. The full startup schema remained **660 tokens / 3,219 bytes**, reported separately. Removing only the redundant per-file notice label and terminal period saved 27 bytes across the fixed three-file task; revisions, continuation/EOF facts and the aggregate notice remain. Historical results above keep their original verdicts. Final release PR validation records the final candidate revision and evidence artifact.
