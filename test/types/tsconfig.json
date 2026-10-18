@@ -8,6 +8,7 @@
     "kernel.ts",
     "ptc-sdk.ts",
     "worker-runtime.ts",
-    "tui.ts"
+    "tui.ts",
+    "authority.ts"
   ]
 }

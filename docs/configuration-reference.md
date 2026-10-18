@@ -44,6 +44,8 @@ A `dsh-ops/background` row left over from an earlier version loads as a no-op st
 
 ### The credential fence (`denyCredentialReads`)
 
+Preflight credential denials retain `rejected`, `CREDENTIAL_DENIED`, no-effect and no-retry guidance. Their Native text and PTC values omit the denied path, resolved parents and matching policy rules.
+
 The key name is historical; the fence itself is on the **path**, not on one direction of access. A
 credential location is refused as a read (`inspect_local_file`, and `grep`/`glob` never report or
 list one), as a write (`write`, `edit`, `replace`, `remove`), and as the destination of `copy`/`move` —

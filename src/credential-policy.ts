@@ -20,6 +20,9 @@ import path from 'node:path'
 /** Environment variable naming extra denied paths, separated by the platform delimiter. */
 export const DENY_ENV = 'DSH_OPS_DENY_READ'
 
+export interface CredentialOptions { home?: string; env?: NodeJS.ProcessEnv }
+export type CredentialVerdict = { denied: true; matched: string } | { denied: false }
+
 /**
  * Credential files and directories, as path suffixes below the user's home.
  *
@@ -62,7 +65,7 @@ const CREDENTIAL_NAMES = Object.freeze([
 ])
 
 /** Extra suffixes from the environment, resolved once per call so a deployment can add its own. */
-function configuredSuffixes(env) {
+function configuredSuffixes(env: NodeJS.ProcessEnv): string[] {
   const raw = env?.[DENY_ENV]
   if (typeof raw !== 'string' || raw.trim() === '') return []
   return raw.split(path.delimiter).map(entry => entry.trim()).filter(entry => entry !== '')
@@ -71,16 +74,14 @@ function configuredSuffixes(env) {
 /**
  * The extra denied locations from the environment, as `[comparisonForm, label]` pairs.
  *
- * An **absolute** entry is used as written; a relative one is resolved below the home. The refusal
- * message prints the absolute path it refused, so the natural thing for an operator to paste back
- * into `DSH_OPS_DENY_READ` is that absolute path — joining it onto the home instead would make the
- * documented way out silently do nothing. An absolute entry also works with no home at all.
+ * An absolute entry is used as written; a relative one is resolved below the home.
+ * Absolute entries work without a home. Labels stay internal and are never included in refusals.
  * @param {NodeJS.ProcessEnv} env - the environment to read.
  * @param {string|undefined} resolvedHome - the home directory for relative entries.
  * @returns {Array<[string, string]>} the comparison form and the entry as written.
  */
-function configuredRoots(env, resolvedHome) {
-  const roots = []
+function configuredRoots(env: NodeJS.ProcessEnv, resolvedHome: string | undefined): Array<[string, string]> {
+  const roots: Array<[string, string]> = []
   for (const entry of configuredSuffixes(env)) {
     if (path.isAbsolute(entry)) { roots.push([canonical(entry), entry]); continue }
     if (typeof resolvedHome === 'string' && resolvedHome !== '') roots.push([canonical(path.join(resolvedHome, entry)), entry])
@@ -95,7 +96,7 @@ function configuredRoots(env, resolvedHome) {
  * @param {string} value - the path.
  * @returns {string} the comparison form.
  */
-function canonical(value) {
+function canonical(value: string): string {
   let resolved = path.resolve(value)
   try { resolved = fs.realpathSync.native(resolved) } catch {
     // Resolve the nearest existing parent too: a missing leaf below an 8.3
@@ -115,10 +116,10 @@ function canonical(value) {
  * @param {NodeJS.ProcessEnv} [options.env] - the environment to read extra entries from.
  * @returns {{denied: true, matched: string}|{denied: false}} the verdict and the suffix that matched.
  */
-export function credentialPath(candidate, { home, env = process.env } = {}) {
+export function credentialPath(candidate: unknown, { home, env = process.env }: CredentialOptions = {}): CredentialVerdict {
   if (typeof candidate !== 'string' || candidate === '') return { denied: false }
   const target = canonical(candidate)
-  const roots = []
+  const roots: Array<[string, string]> = []
   const resolvedHome = home ?? env?.HOME ?? env?.USERPROFILE
   if (typeof resolvedHome === 'string' && resolvedHome !== '') {
     for (const suffix of CREDENTIAL_SUFFIXES) roots.push([canonical(path.join(resolvedHome, suffix)), suffix])
@@ -145,9 +146,9 @@ export function credentialPath(candidate, { home, env = process.env } = {}) {
  * @param {object} [options] - the same inputs as {@link credentialPath}.
  * @returns {string[]} the absolute directories, deduplicated.
  */
-export function credentialRoots({ home, env = process.env } = {}) {
+export function credentialRoots({ home, env = process.env }: CredentialOptions = {}): string[] {
   const resolvedHome = home ?? env?.HOME ?? env?.USERPROFILE
-  const roots = new Set()
+  const roots = new Set<string>()
   if (typeof resolvedHome === 'string' && resolvedHome !== '') {
     for (const suffix of CREDENTIAL_SUFFIXES) roots.add(canonical(path.join(resolvedHome, suffix)))
   }
@@ -160,14 +161,15 @@ export function credentialRoots({ home, env = process.env } = {}) {
  * out, because "denied" without either invites a retry loop, and it names both
  * directions: a caller stopped from writing must not read the message as "reads
  * are fenced" (#204 P4).
- * @param {string} candidate - the denied path.
- * @param {string} matched - the suffix or pattern that matched.
+ * Denied paths and matching rules are intentionally absent: either can reveal a real parent path.
+ * @param {string} _candidate - ignored; retained for internal call compatibility.
+ * @param {string} _matched - ignored; the refusal does not disclose the matching rule.
  * @returns {{code: string, message: string, nextAction: string}} the refusal.
  */
-export function credentialRefusal(candidate, matched) {
+export function credentialRefusal(_candidate: string, _matched: string) {
   return {
     code: 'POLICY_DENIED',
-    message: `${candidate} is inside a credential location (${matched}); the dsh-ops file tools neither read nor write credentials: reads, writes, copy/move destinations, replace targets and removal are refused.`,
+    message: 'The requested path is inside a credential location; the dsh-ops file tools neither read nor write credentials: reads, writes, copy/move destinations, replace targets and removal are refused.',
     nextAction: 'Use a path inside the workspace. An operator who really needs this path can add it to '
       + `${DENY_ENV} (which only widens the list) or disable the fence with denyCredentialReads: false.`,
   }

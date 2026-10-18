@@ -7,6 +7,17 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Strict authority types ([16/16])
+
+- Migrate credential fences, trusted path anchors and permission failures to strict TypeScript without changing emitted entrypoints or authority decisions. Preserve worker effect facts during denial normalization and assert typed host modes/unknown-input narrowing.
+- 将凭据围栏、可信路径锚点和权限错误迁移为严格 TypeScript，保持生成入口和权限决策不变；拒绝归一化保留 worker 效果事实，并验证宿主模式及未知输入的类型缩窄。
+
+### Keep credential denial paths private (#261, BM-05)
+
+- Omit denied paths and matching policy roots from shared preflight refusal messages while retaining rejection codes, effect state and no-retry guidance for Native and PTC.
+- 凭据预检拒绝不再返回被拒路径与匹配规则；保留 Native/PTC 的拒绝代码、无副作用状态及禁止重试指引，权限边界不变。
+
+
 - Check collected subprocess readers explicitly; absent output after execution remains unknown and retains PTC audit identity. 显式检查子进程输出读取器；运行后缺失输出时保留未知副作用及 PTC 审计标识。
 
 - Type the confined Bash and workspace-preparation boundaries; reject malformed IPC proxy receipts before staging a runtime. 严格类型化受限 Bash 与工作区准备边界；代理收据格式错误时，在暂存运行时前明确拒绝。
