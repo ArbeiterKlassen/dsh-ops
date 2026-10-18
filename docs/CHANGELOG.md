@@ -7,6 +7,12 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Preserve Bash cancellation through pending confinement preparation (#261)
+
+- Bash execution exposes one live handle for observation and settlement. Cancellation settles
+  pending sandbox preparation immediately, and a late provider response cannot start a command.
+  The first timeout or caller cancellation remains the reported stop cause.
+
 ### Deduplicate Native reads with current-context evidence (#261, 10/16)
 
 - Replace repeated line bodies only when the exact successful prior read is present in the latest completed ordinary model request and every file is freshly revalidated. Keep revisions, coverage, paging notices and canonical values. Compaction, redaction, authority changes and uncertain evidence restore full output.

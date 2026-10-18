@@ -14,19 +14,15 @@
  */
 
 import fs from 'node:fs'
-import { Buffer } from 'node:buffer'
 import {
   BASH_ARGUMENTS,
   BASH_TOOL_NAME,
   DEFAULT_BASH_TIMEOUT_MS,
   DEFAULT_GRACE_MS,
-  DEFAULT_MAX_OUTPUT_BYTES,
-  DEFAULT_MAX_SPILL_BYTES,
   MAX_BASH_TIMEOUT_MS,
-  shellEnvOverrides,
 } from './constants.js'
 import { BashArgumentError } from './argument-error.js'
-import { formatBashSpawnError } from './spawn-error.js'
+import { startBashExecution } from './execution.js'
 
 /**
  * Reject a value this tool cannot run with, naming the field.
@@ -110,33 +106,6 @@ export function renderBashResult(value) {
   if (value.signal !== undefined) markers.push(`[signal: ${value.signal}]`)
   if (value.exitCode !== undefined && value.exitCode !== 0) markers.push(`[exit code: ${value.exitCode}]`)
   return [body, ...markers].join('\n')
-}
-
-/**
- * Read one settled collect-mode stream as its complete retained output.
- * @param {{readFrom: (from: number) => {text: string, lossy: boolean, spillPath?: string}}|undefined} reader - the reader.
- * @returns {{text: string, truncated: boolean, spillPath?: string}} the canonical stream value.
- */
-function settledStream(reader, includeMetadata = false) {
-  if (reader === undefined || typeof reader.readFrom !== 'function') return { text: '', truncated: false }
-  const read = reader.readFrom(0)
-  const text = typeof read.text === 'string' ? read.text : ''
-  if (!includeMetadata) {
-    return {
-      text,
-      truncated: read.lossy === true,
-      ...read.spillPath !== undefined ? { spillPath: read.spillPath } : {},
-    }
-  }
-  const lines = text === '' ? 0 : text.split(/\n/).length - (text.endsWith('\n') ? 1 : 0)
-  return {
-    text,
-    truncated: read.lossy === true,
-    bytes: Buffer.byteLength(text),
-    bytesTotal: Number.isFinite(read.nextOffset) ? read.nextOffset : Buffer.byteLength(text),
-    lines,
-    ...read.spillPath !== undefined ? { spillPath: read.spillPath } : {},
-  }
 }
 
 /**
@@ -247,8 +216,8 @@ export function bashToolDescription() {
  * @param {{spawn: (spec: object) => object}} options.subprocess - the harness subprocess service.
  * @returns {object} the definition `ctx.tools.register()` accepts.
  */
-export function bashToolDefinition({ file, source, subprocess, prepareArgv, env = {} }) {
-  return {
+export function bashToolDefinition({ file, source, subprocess, prepareArgv, env = {}, projectResult = withBashStatus }) {
+  const definition = {
     name: BASH_TOOL_NAME,
     description: bashToolDescription(),
     parameters: {
@@ -301,7 +270,7 @@ export function bashToolDefinition({ file, source, subprocess, prepareArgv, env 
      * @param {{signal?: AbortSignal}} [exec] - the host execution context.
      * @returns {Promise<object>} the canonical result value.
      */
-    async execute(args, exec) {
+    start(args, exec = {}, { onExpiry } = {}) {
       assertKnownArguments(args, BASH_ARGUMENTS)
       // Every refusal in this body is a BashArgumentError, never a plain Error: the session layer
       // folds RUNTIME failures into a value (#168) and rethrows a caller's bad argument, so a wrong
@@ -362,89 +331,11 @@ export function bashToolDefinition({ file, source, subprocess, prepareArgv, env 
         }
       }
 
-      // No subprocess re-check here: `publishShellTools` publishes this tool
-      // only while `ctx.subprocess` is mounted, so a definition that exists at
-      // all always has the one service it needs.
-
-      // One deadline plus the caller's cancellation, fused into the signal the
-      // subprocess service terminates its process range on.
-      const controller = new AbortController()
-      let timedOut = false
-      let cancelled = false
-      const startedAt = performance.now()
-      const timer = setTimeout(() => {
-        timedOut = true
-        controller.abort(new Error(`command timed out after ${timeoutMs}ms`))
-      }, timeoutMs)
-      timer.unref?.()
-      const callerSignal = exec?.signal
-      const onCallerAbort = () => {
-        cancelled = true
-        controller.abort(callerSignal?.reason)
-      }
-      if (callerSignal !== undefined) {
-        if (callerSignal.aborted) onCallerAbort()
-        else callerSignal.addEventListener('abort', onCallerAbort, { once: true })
-      }
-
-      try {
-        let handle
-        try {
-          const argv = hasCommand ? [file, '-c', command] : [file, scriptPath]
-          if (controller.signal.aborted) throw controller.signal.reason ?? new Error('bash execution cancelled')
-          const preparedArgv = prepareArgv ? await prepareArgv(argv, controller.signal) : argv
-          if (controller.signal.aborted) throw controller.signal.reason ?? new Error('bash execution cancelled')
-          handle = subprocess.spawn({
-            argv: preparedArgv,
-            cwd: workdir,
-            stdio: {
-              stdin: 'ignore',
-              stdout: { maxBytes: DEFAULT_MAX_OUTPUT_BYTES, spill: { maxBytes: DEFAULT_MAX_SPILL_BYTES } },
-              stderr: { maxBytes: DEFAULT_MAX_OUTPUT_BYTES, spill: { maxBytes: DEFAULT_MAX_SPILL_BYTES } },
-            },
-            graceMs,
-            signal: controller.signal,
-            // The terminal overrides and nothing else: the subprocess service's
-            // own scrub decides what else a child may inherit, and this plugin
-            // never adds a credential-shaped name or a `DSH_*` fact to that set.
-            env: shellEnvOverrides(process.env, env),
-          })
-          const outcome = await handle.done
-          // "Nothing to report" is an ABSENT key, not a null: the output schema
-          // declares single types only (see BASH_OUTPUT_SCHEMA).
-          return withBashStatus({
-            ...outcome?.exitCode !== undefined && outcome?.exitCode !== null ? { exitCode: outcome.exitCode } : {},
-            ...outcome?.signal !== undefined && outcome?.signal !== null ? { signal: outcome.signal } : {},
-            timedOut,
-            timeoutMs,
-            ...(cancelled ? { cancelled: true } : {}),
-            stdout: settledStream(handle.collected?.stdout, includeDiagnostics),
-            stderr: settledStream(handle.collected?.stderr, includeDiagnostics),
-            ...(includeDiagnostics ? { diagnostics: {
-              durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
-              executor: { kind: 'subprocess', source },
-            } } : {}),
-          })
-        } catch (error) {
-          return withBashStatus({
-            // The workdir is part of the diagnosis: a vanished cwd and a vanished executable
-            // both surface as one ENOENT, and only one of them is the bash payload (#180).
-            error: formatBashSpawnError(error, file, source, workdir),
-            timedOut,
-            timeoutMs,
-            ...(cancelled ? { cancelled: true } : {}),
-            stdout: { text: '', truncated: false },
-            stderr: { text: '', truncated: false },
-            ...(includeDiagnostics ? { diagnostics: {
-              durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
-              executor: { kind: 'subprocess', source },
-            } } : {}),
-          })
-        }
-      } finally {
-        clearTimeout(timer)
-        callerSignal?.removeEventListener('abort', onCallerAbort)
-      }
+      return startBashExecution({ file, source, subprocess, prepareArgv, env, projectResult }, {
+        command, scriptPath, workdir, timeoutMs, graceMs, includeDiagnostics, onExpiry,
+      }, exec)
     },
+    async execute(args, exec) { return definition.start(args, exec).result() },
   }
+  return definition
 }
