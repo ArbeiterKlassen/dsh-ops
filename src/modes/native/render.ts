@@ -131,6 +131,8 @@ function diff(args: Row, value: Row): string[] {
 
 function listing(tool: string, args: Row, value: Row): string[] {
   const output: string[] = []
+  if (value.scanComplete !== undefined) output.push(`[Notice: ${facts(value, ['scanComplete', 'pageComplete', 'scannedFiles', 'skippedFiles', 'skipReasons', 'matchedObserved', 'matchedTotal'])}.]`)
+  if (typeof value.nextAction === 'string') output.push(`Next: ${label(value.nextAction)}`)
   const items = Array.isArray(value.items) ? value.items : []
   for (const item of items) {
     if (typeof item === 'string') { output.push(label(item)); continue }
