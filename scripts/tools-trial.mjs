@@ -115,7 +115,7 @@ try {
     exited = 1
   }
   await attempt('bash', { command: 'node -e "console.log(\'trial-ok\')"' }, 'trial-ok', 'ran a real command',
-    'the shell row publishes nothing on a bare host; test/shells.test.mjs covers that contract')
+    'the shell row publishes nothing on a bare host; test/shells-bash-tool.test.mjs covers that contract')
 
   // Anything published but not yet in the table above is reported honestly rather than ignored.
   const attempted = new Set(results.map(result => result.tool))

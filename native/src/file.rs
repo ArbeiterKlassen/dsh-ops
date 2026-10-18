@@ -240,7 +240,52 @@ fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     if bytes.len() as u64 > MAX_FILE_BYTES { return Err(Failure::new("OUTPUT_LIMIT", "File exceeds the bounded read budget")); }
     Ok(bytes)
 }
-fn modified(path: &Path) -> u64 { fs::symlink_metadata(path).ok().map_or(0, |m| m.len()) }
+/// Modification time of `metadata` in whole milliseconds since the Unix epoch,
+/// or `None` when the platform will not report one.
+///
+/// This is the file tools' one definition of a timestamp quantity: `ops_stat`'s
+/// `modifiedMs` and `ops_glob`'s `modified` describe the same instant the same
+/// way, so the two cannot drift into different units. Milliseconds since the
+/// epoch carry no timezone, and they are what `stat -c %Y` reports as whole
+/// seconds — the same instant, at the resolution a single-second field loses.
+fn modified_ms(metadata: &fs::Metadata) -> Option<u128> {
+    metadata.modified().ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|time| time.as_millis())
+}
+/// Last modification time of one path, in milliseconds since the Unix epoch.
+///
+/// `symlink_metadata`, not `metadata`: this module never follows links, and a
+/// link, junction or reparse entry is refused before it can become a candidate
+/// (`host_link_or_reparse`, `file_path::link`), so no `ops_glob` item is a link
+/// and "the link or its target" cannot arise in a result. Probing the entry
+/// itself keeps the timestamp probe consistent with every other path probe
+/// here; a caller that needs the target of a link asks `ops_stat`, which opens
+/// the file and reports the opened inode's time.
+///
+/// This used to return `symlink_metadata(..).len()` — the byte count — so
+/// `details.modified` was a second copy of `details.bytes` and
+/// `sort: "modified"` ordered by file size and never by time (#236, reproduced
+/// in #204 P2). `None`, not `0`, is the honest answer for a time the
+/// filesystem cannot report or one that predates the epoch; `ops_stat` reports
+/// the same `null` there, so both tools answer "unknown" the same way.
+fn modified(path: &Path) -> Option<u128> { fs::symlink_metadata(path).ok().as_ref().and_then(modified_ms) }
+/// Order candidates for `sort: "modified"`: newest first, an unreadable time
+/// last, equal times in the walk's path order.
+///
+/// `Reverse` keeps the direction the size-based key already produced
+/// (descending), so this fix changes the key, not the ordering contract. The
+/// sort is stable (`sort_by_key`), so equal timestamps — a coarse clock, a copy
+/// that preserves a timestamp, two writes inside one second — keep the path
+/// order the walk produced instead of reshuffling between identical calls.
+/// `Reverse(None)` sorts last because `None` is below every `Some`.
+fn sort_by_modified(files: &mut [PathBuf]) { files.sort_by_key(|file| std::cmp::Reverse(modified(file))); }
+/// One `details` item: the path, its on-disk size, and its modification time as
+/// an epoch-millisecond number (`null` when unreadable). The size is a size and
+/// the time is a time; neither stands in for the other.
+fn details(file: &Path) -> Value {
+    json!({"path":file,"bytes":fs::symlink_metadata(file).map(|metadata| metadata.len()).unwrap_or(0),"modified":modified(file)})
+}
 /// What one character costs in serde_json's encoding.
 fn encoded_cost(character: char) -> usize {
     match character {
@@ -328,10 +373,13 @@ fn glob(request: &Request) -> Result<Value> {
     let root = target(&args.path, false)?; if !root.is_dir() { return Err(Failure::new("INVALID_ARGUMENT", "glob path must be a directory")); }
     let walked = walk(&root, request)?;
     let mut files: Vec<_> = walked.files.into_iter().filter(|f| matches_any(&root, f, &args.pattern)).collect();
-    if args.sort == "modified" { files.sort_by_key(|f| std::cmp::Reverse(modified(f))); } else if !args.sort.is_empty() && args.sort != "path" { return Err(Failure::new("INVALID_ARGUMENT", "sort must be path or modified")); }
+    // `sort` is optional: empty keeps the walk's path order, which is what `path`
+    // asks for explicitly. The whole candidate list is ordered before paging, so a
+    // page boundary always falls in the same sequence a full listing would produce.
+    if args.sort == "modified" { sort_by_modified(&mut files); } else if !args.sort.is_empty() && args.sort != "path" { return Err(Failure::new("INVALID_ARGUMENT", "sort must be path or modified")); }
     let output_mode = if args.output_mode.is_empty() { "paths" } else { args.output_mode.as_str() };
     if output_mode != "paths" && output_mode != "details" { return Err(Failure::new("INVALID_ARGUMENT", "outputMode must be paths or details")); }
-    let total = files.len(); let selected: Vec<_> = files.into_iter().skip(args.offset).take(args.limit).map(|f| if output_mode == "paths" { json!(f) } else { let modified_at = modified(&f); json!({"path":f,"bytes":fs::symlink_metadata(&f).map(|m|m.len()).unwrap_or(0),"modified":modified_at}) }).collect();
+    let total = files.len(); let selected: Vec<_> = files.into_iter().skip(args.offset).take(args.limit).map(|f| if output_mode == "paths" { json!(f) } else { details(&f) }).collect();
     Ok(result(selected, total, args.offset, args.offset, total, walked.truncated))
 }
 fn grep(request: &Request) -> Result<Value> {
@@ -580,6 +628,40 @@ impl PreservedMetadata {
 /// the old inode while the path already names a new one. Cooperating writers all
 /// use this persistent lock inode, held until publication and directory sync.
 /// Non-cooperating writers remain outside this advisory serialization contract.
+///
+/// The sidecar is created *before* the target is read, so an operation refused
+/// after the lock was taken leaves it behind. That is the declared behavior
+/// (#240 P5), not an accident, and it cannot be removed: unlinking the sidecar
+/// on release would let a waiter that already opened the old inode hold a lock
+/// on an inode the path no longer names, while the next writer locks a fresh
+/// file under the same name — two writers on one target. A zero-byte artifact
+/// that can be named, counted and documented is strictly better than that hole.
+///
+/// Which refusals have already taken the lock (and so leave the sidecar): a
+/// stale `expectedRevision` on write/edit/copy/move/remove, an ambiguous or
+/// overlapping `edit_file` edit, and a copy/move refused because the
+/// destination exists. `replace` is the broad one: it locks every file its
+/// `glob` selects before it knows whether a file holds a match, so a refusal
+/// there — the `maxReplacements` ceiling, a `write_roots` fence, a revision
+/// conflict while publishing — leaves a sidecar beside every candidate, matching
+/// or not, and only a narrower `glob` bounds that. Refusals decided before the
+/// lock — read-only mode, the credential fence, path validation — leave nothing.
+///
+/// Declared lifecycle:
+///
+/// - One file per distinct target *name* (lowercased), beside the target:
+///   `.dsh-ops-update-<sha256(name)>.lock`, created mode 0600. Later operations
+///   on the same name reuse that inode, so sidecars do not accumulate; one write
+///   may leave at most one per file it locked.
+/// - Nothing removes it automatically, and nothing should while a `dsh-ops`
+///   writer may be active: deleting it is what re-opens the race above. An
+///   operator may delete sidecars in a directory no writer is using; the next
+///   write recreates whatever it needs.
+/// - It stays invisible to every selection tool. The name starts with `.`, and
+///   the walker drops any path with a hidden component (`hidden`) before a glob
+///   can match it, so `ops_glob`, `ops_grep` and a directory-wide `ops_replace`
+///   never return, count or rewrite one; `ops_batch` resolves its operations
+///   from the request, never from a walk.
 fn lock_and_read_for_update(file: &Path) -> Result<(std::fs::File, Vec<u8>)> {
     let raw = file.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;
     let checked = crate::file_path::checked_leaf(raw, true)?;
@@ -685,3 +767,107 @@ mod publication;
 #[path = "file_single.rs"]
 mod single;
 use single::content_facts;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    /// One private fixture directory under the canonical ambient temp root.
+    ///
+    /// The no-follow traversal refuses linked ancestry, and `TMPDIR` sits behind
+    /// one on Darwin, so the ambient root is resolved before anything is created —
+    /// the reason `single::tests::copy_changed_source_is_not_published` does the
+    /// same.
+    struct Fixture { root: PathBuf }
+    impl Fixture {
+        fn new(tag: &str) -> Self {
+            let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("dsh-ops-{tag}-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir(&root).unwrap();
+            Self { root }
+        }
+        /// Write one fixture file and stamp it with `modified_ms` since the epoch.
+        fn file(&self, name: &str, bytes: &[u8], modified_ms: u64) -> PathBuf {
+            let path = self.root.join(name);
+            std::fs::write(&path, bytes).unwrap();
+            let stamp = UNIX_EPOCH + Duration::from_millis(modified_ms);
+            std::fs::OpenOptions::new().write(true).open(&path).unwrap()
+                .set_times(fs::FileTimes::new().set_accessed(stamp).set_modified(stamp)).unwrap();
+            path
+        }
+        /// The sidecar `lock_and_read_for_update` creates for `name`.
+        fn sidecar(&self, name: &str) -> PathBuf {
+            self.root.join(format!(".dsh-ops-update-{:x}.lock", Sha256::digest(name.to_lowercase().as_bytes())))
+        }
+        fn names(files: &[PathBuf]) -> Vec<String> {
+            files.iter().map(|file| file.file_name().unwrap().to_string_lossy().into_owned()).collect()
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.root); }
+    }
+
+    /// #236: `modified` was `metadata.len()`, so every `details` item reported
+    /// `modified == bytes` and `sort: "modified"` ordered by size. The fixtures
+    /// are inverted on purpose — the larger file is the older one — so a
+    /// size-based key reverses them.
+    #[test]
+    fn modified_is_epoch_milliseconds_and_ordering_ignores_size() {
+        let fixture = Fixture::new("glob-modified");
+        let old_big = fixture.file("a-old-big.txt", &[b'x'; 8192], 1_600_000_000_000);
+        let new_small = fixture.file("z-new-small.txt", b"tiny", 1_600_000_120_000);
+        let (old, new) = (modified(&old_big).expect("mtime"), modified(&new_small).expect("mtime"));
+        assert!(old > 1_000_000_000_000, "modified must be epoch milliseconds, got {old}");
+        assert_ne!(old, 8192, "modified must not be the byte count");
+        // A filesystem may keep coarser than a millisecond; one second of slack
+        // covers that without accepting a different quantity or unit.
+        for (path, expected) in [(&old_big, 1_600_000_000_000_i128), (&new_small, 1_600_000_120_000_i128)] {
+            let actual = modified(path).unwrap() as i128;
+            assert!((actual - expected).abs() <= 1_000, "{}: expected {expected} ms ±1s, got {actual}", path.display());
+        }
+        assert!(new > old, "the newer file must carry the larger timestamp");
+        assert_eq!(modified(&fixture.root.join("absent.txt")), None, "an unreadable time is null, not zero");
+        assert_eq!(details(&old_big)["bytes"], json!(8192));
+
+        let mut files = vec![new_small, old_big];
+        sort_by_modified(&mut files);
+        assert_eq!(Fixture::names(&files), ["z-new-small.txt", "a-old-big.txt"], "newest first, independent of size");
+    }
+
+    /// Equal timestamps must not reshuffle, so two identical calls page the same
+    /// way: the sort is stable and the walk's path order decides the tie.
+    #[test]
+    fn equal_timestamps_keep_the_candidate_order() {
+        let fixture = Fixture::new("glob-modified-tie");
+        let first = fixture.file("a.txt", b"a", 1_600_000_000_000);
+        let second = fixture.file("b.txt", b"bb", 1_600_000_000_000);
+        let third = fixture.file("c.txt", b"ccc", 1_600_000_000_000);
+        assert_eq!(modified(&first), modified(&second), "the fixture must produce equal timestamps");
+        let mut files = vec![second, first, third];
+        sort_by_modified(&mut files);
+        assert_eq!(Fixture::names(&files), ["b.txt", "a.txt", "c.txt"], "ties keep their relative order");
+    }
+
+    /// #240 P5, declared behavior: the update lock creates the persistent hidden
+    /// sidecar before the target is read, so a refusal after the lock already
+    /// left it behind; it is one empty file per target name and is reused, never
+    /// accumulated, and a later successful write keeps using the same inode.
+    #[test]
+    fn the_update_lock_sidecar_is_created_once_and_reused() {
+        let fixture = Fixture::new("update-lock");
+        let target = fixture.file("notes.txt", b"one", 1_600_000_000_000);
+        let sidecar = fixture.sidecar("notes.txt");
+        assert!(!sidecar.exists(), "no sidecar before the first update attempt");
+        drop(lock_and_read_for_update(&target).unwrap());
+        assert!(sidecar.is_file(), "the lock is a persistent sibling, not the target");
+        assert_eq!(fs::metadata(&sidecar).unwrap().len(), 0, "the sidecar carries no payload");
+        drop(lock_and_read_for_update(&target).unwrap());
+        // A refused read is the shape #240 reports: the sidecar is already there
+        // when the target itself cannot be read; a stale-revision write refuses the
+        // same way, after the same lock.
+        let missing = fixture.root.join("missing.txt");
+        assert_eq!(lock_and_read_for_update(&missing).unwrap_err().code, "NOT_FOUND");
+        assert!(fixture.sidecar("missing.txt").is_file(), "a refused operation still leaves the declared sidecar");
+        assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), 3, "one target and two sidecars, never more");
+    }
+}

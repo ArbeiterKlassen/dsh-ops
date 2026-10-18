@@ -115,6 +115,7 @@
     "check:ptc-runtime": "node bin/native-runtime.mjs check --staged",
     "test:ptc": "node test/run.mjs ptc",
     "validate:manifest": "node scripts/validate-manifest.mjs",
+    "check:size": "node scripts/check-file-size.mjs",
     "test": "node test/run.mjs",
     "verify:release": "npm run verify && node bin/check-release.mjs",
     "verify": "node scripts/validate-manifest.mjs && node test/run.mjs",

@@ -8,7 +8,7 @@ a reviewer can trust a green PR without re-running anything by hand.
 
 | Workflow | Trigger | Blocks a merge? | Purpose |
 | --- | --- | --- | --- |
-| `ci.yml` — **Cross-platform validation** | `push: main`, `pull_request: main`, `merge_group`, manual dispatch | **Yes** (via the single `CI required` check) | The functional gate on Windows, Linux and macOS, plus the Node floor, workflow lint and the tool trial |
+| `ci.yml` — **Cross-platform validation** | `push: main`, `pull_request: main`, `merge_group`, manual dispatch | **Yes** (via the single `CI required` check) | The functional gate on Windows, Linux and macOS, plus the Node floor, the source size gate, workflow lint and the tool trial |
 | `sync-master.yml` — **Sync master with main** | `push: main`, manual dispatch | No | Fast-forwards the `master` mirror; fast-forward only, so a divergent `master` fails loudly |
 | `release.yml` — **Release** | `push: v*` tags, manual dispatch | No (`disabled_manually` today) | Builds the three declared targets, gates them, and publishes the GitHub Release. Nothing here runs on a branch or a pull request |
 
@@ -19,6 +19,7 @@ a reviewer can trust a green PR without re-running anything by hand.
 | `validate` | `windows-latest` (win32-x64), `ubuntu-24.04` (linux-x64), `macos-latest` (darwin-arm64) | **Yes** | `cargo test --locked`, the native worker builds, then `scripts/verify-gate.mjs --skip-install`: no unauthorised skips (`DSH_OPS_REQUIRE_RUNTIME=1` on POSIX turns a missing runtime into a failure), every suite file on disk was collected, and the packed artifact unpacks and passes `native-runtime check` |
 | `node-floor` | `ubuntu-24.04` | **Yes** | `package.json` promises `^22.19 \|\| >=24`; this runs the same gate on the declared **floor** so the promise is exercised rather than asserted |
 | `workflow-lint` | `ubuntu-24.04` | **Yes** | `scripts/check-workflows.mjs`: every workflow parses, declares triggers/jobs/permissions, bounds each job with `timeout-minutes`, avoids `write-all` and `pull_request_target`, and keeps `ci.yml`'s aggregate check wired to every other job |
+| `source-size` | `ubuntu-24.04` | **Yes** | `scripts/check-file-size.mjs`: every tracked code file stays at or under 1000 lines. The file set comes from `git ls-files`, so a new module is in scope the moment it is added |
 | `tools-trial` | `ubuntu-24.04` | **No** (`continue-on-error`) | Boots a real host and calls every published tool; a broken tool shows up in its own job and in the uploaded `tools-trial-report` without blocking unrelated work |
 | `ci-required` | `ubuntu-24.04` | — (this is the check to require) | Collapses the matrix into one status: it fails unless every blocking job succeeded, and merely reports `tools-trial` |
 
@@ -37,8 +38,9 @@ npm run build:ptc
 # The gate, exactly as CI runs it (POSIX: a skipped runtime suite is a failure, not a pass)
 DSH_HOME=$(mktemp -d) node scripts/verify-gate.mjs --skip-install
 
-# The workflow lint and the tool trial
+# The workflow lint, the size gate and the tool trial
 node scripts/check-workflows.mjs
+node scripts/check-file-size.mjs
 node scripts/tools-trial.mjs
 ```
 
@@ -83,6 +85,23 @@ workflow file):
 `gh workflow enable Release`, dispatches it once on `main` as a dry run (the `publish` job is skipped
 for a non-tag ref, so nothing is written), checks the three `native-*` artifacts plus `release-dist`
 and `SHA256SUMS`, and only then pushes the `v*` tag.
+
+## Fork pull requests
+
+Two GitHub mechanics decide whether a pull request runs anything at all:
+
+- For a `pull_request` event GitHub reads the workflow files **from the pull request itself**, not
+  from `main`. A branch whose head predates the live `ci.yml` therefore starts no run, and the
+  checks listed above only appear once the branch carries a `pull_request` trigger.
+- The first run for a pull request opened from a fork waits for a maintainer to approve it
+  (`action_required`); every later push to that branch runs without a new approval. Approving one is
+  a write on the run, not on the branch:
+
+  ```bash
+  gh api -X POST repos/T-Auto/dsh-ops/actions/runs/<run-id>/approve
+  ```
+
+A pull request whose head is a branch of this repository runs immediately and needs neither.
 
 ## Known gaps, stated rather than hidden
 
