@@ -67,4 +67,4 @@ export {
 
 export { publishShellTools } from './shells/publish.js'
 
-/** @typedef {import('./shells/paths.js').ShellResolution} ShellResolution */
+export type { ShellResolution } from './shells/paths.js'

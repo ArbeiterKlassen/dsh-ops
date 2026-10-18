@@ -23,6 +23,8 @@
  */
 
 import { PACKAGE_ROOT } from '../paths.js'
+import type { ResolvedConfig } from '../config.js'
+import type { BundledCause, ShellResolution } from './paths.js'
 import {
   POSIX_BASH_REMEDY,
   bashRemedy,
@@ -34,6 +36,14 @@ import {
   provisionedShell,
   wellKnownCandidates,
 } from './paths.js'
+
+interface BashProbe {
+  configured?: string; provisioned?: { file: string; version: string }; bundled?: string
+  bundledDetail?: string; bundledCause?: BundledCause; allowSystemFallback: boolean
+  env: NodeJS.ProcessEnv; platform: string; posix?: boolean
+}
+export interface ShellResolutionOptions { bundleRoot?: string; env?: NodeJS.ProcessEnv; platform?: string; arch?: string }
+type ShellConfig = Partial<Pick<ResolvedConfig, 'bashPath' | 'publishBashTool' | 'allowSystemShellFallback'>>
 
 /** The directory this module was loaded from; the resolution root of a checkout. */
 const MODULE_ROOT = PACKAGE_ROOT
@@ -68,7 +78,7 @@ function resolveBash({
   env,
   platform,
   posix = platform !== 'win32',
-}) {
+}: BashProbe): ShellResolution {
   if (configured !== undefined) {
     return isSpawnableFile(configured)
       ? { available: true, file: configured, source: 'config', detail: 'configured bash executable' }
@@ -143,7 +153,7 @@ function resolveBash({
 }
 
 /** The host owns PowerShell selection. Legacy OPS copies are never automatically activated. */
-function resolvePwsh() {
+function resolvePwsh(): ShellResolution {
   return { available: false, file: undefined, source: 'host',
     detail: 'PowerShell is managed by the host; OPS does not supply or override its executable. Use dsh-ops upgrade-host-pwsh on Windows, then restart DSH. An explicit host pwshPath remains authoritative.' }
 }
@@ -163,7 +173,7 @@ function resolvePwsh() {
  * @param {string} [options.arch] - `process.arch`.
  * @returns {{bash: import('./paths.js').ShellResolution, pwsh: import('./paths.js').ShellResolution}} one resolution per rung.
  */
-export function resolveShells(config, options = {}) {
+export function resolveShells(config: ShellConfig | undefined, options: ShellResolutionOptions = {}): { bash: ShellResolution; pwsh: ShellResolution } {
   const bundleRoot = options.bundleRoot ?? MODULE_ROOT
   const env = options.env ?? process.env
   const platform = options.platform ?? process.platform

@@ -20,12 +20,19 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import type { ShellKind } from './pins.js'
 import {
   PLATFORM_PACKAGES,
   provisionedShellStore,
   shellExecutable,
   shellUpstreamPin,
 } from './pins.js'
+
+export type ShellResolution = { available: true; file: string; source: string; detail: string }
+  | { available: false; file?: undefined; source: string; detail: string }
+export type BundledCause = 'no-manifest' | 'not-declared' | 'not-installed' | 'incomplete-tree'
+interface BundleProbe { kind: ShellKind; bundleRoot: string; platform: string; arch: string }
+type PackageProbe = { found: true; file: string } | { found: false; detail: string; cause: BundledCause }
 
 /**
  * Historical PowerShell layout order, retained for compatibility probes only.
@@ -54,7 +61,7 @@ export const PWSH_LAYOUT_ORDER = Object.freeze(['provisioned', 'package', 'vendo
  * @param {string|undefined} file - the candidate path.
  * @returns {boolean} whether the candidate exists and is not a directory.
  */
-export function isSpawnableFile(file) {
+export function isSpawnableFile(file: unknown): file is string {
   if (typeof file !== 'string' || file === '') return false
   try {
     const stat = fs.lstatSync(file)
@@ -71,7 +78,7 @@ export function isSpawnableFile(file) {
  * @param {string} arch - `process.arch`.
  * @returns {string} the key.
  */
-function platformKey(platform, arch) {
+function platformKey(platform: string, arch: string) {
   return `${platform}-${arch}`
 }
 
@@ -100,7 +107,7 @@ export const BUNDLED_LAYOUT_ORDER = Object.freeze(['package', 'vendor'])
  * @param {string} options.arch - `process.arch`.
  * @returns {string} the path the bundled copy would occupy.
  */
-export function bundledShellPath({ kind, bundleRoot, platform, arch }) {
+export function bundledShellPath({ kind, bundleRoot, platform, arch }: BundleProbe) {
   const target = PLATFORM_PACKAGES[kind]
   return path.join(bundleRoot, 'vendor', target.vendor, platformKey(platform, arch), shellExecutable(kind, platform))
 }
@@ -132,12 +139,12 @@ export function bundledShellPath({ kind, bundleRoot, platform, arch }) {
  * @param {string} options.arch - `process.arch`.
  * @returns {{found: true, file: string}|{found: false, detail: string, cause: BundledCause}} the candidate.
  */
-function platformPackageShell({ kind, bundleRoot, platform, arch }) {
+function platformPackageShell({ kind, bundleRoot, platform, arch }: BundleProbe): PackageProbe {
   const target = PLATFORM_PACKAGES[kind]
   const name = `${target.prefix}${platformKey(platform, arch)}`
   let declared
   try {
-    const manifest = JSON.parse(fs.readFileSync(path.join(bundleRoot, 'package.json'), 'utf8'))
+    const manifest = JSON.parse(fs.readFileSync(path.join(bundleRoot, 'package.json'), 'utf8')) as { optionalDependencies?: Record<string, unknown>; dependencies?: Record<string, unknown> }
     declared = { ...manifest.optionalDependencies, ...manifest.dependencies }
   } catch {
     return { found: false, cause: 'no-manifest', detail: `${name} is not installed (no readable plugin manifest)` }
@@ -166,7 +173,7 @@ function platformPackageShell({ kind, bundleRoot, platform, arch }) {
  * @param {(string|undefined)[]} candidates - candidate paths, most preferred first.
  * @returns {string|undefined} the first existing candidate.
  */
-export function preferredBundledFile(candidates) {
+export function preferredBundledFile(candidates: readonly (string | undefined)[]) {
   for (const candidate of candidates) {
     if (isSpawnableFile(candidate)) return candidate
   }
@@ -191,7 +198,7 @@ export function preferredBundledFile(candidates) {
  *   the executable and, when there is none, why the plugin's own copy is
  *   unusable — as text for a report, and as the cause behind it.
  */
-export function bundledShell({ kind, bundleRoot, platform, arch }) {
+export function bundledShell({ kind, bundleRoot, platform, arch }: BundleProbe) {
   const packaged = platformPackageShell({ kind, bundleRoot, platform, arch })
   const vendored = bundledShellPath({ kind, bundleRoot, platform, arch })
   // The same preference rule, in the same order, as the L3 patch expression.
@@ -200,7 +207,7 @@ export function bundledShell({ kind, bundleRoot, platform, arch }) {
   // the platform package's absence, and reporting the absence beside a usable
   // file would be a fact about nothing.
   return file === undefined
-    ? { file: undefined, detail: packaged.detail, cause: packaged.cause }
+    ? { file: undefined, detail: packaged.found ? undefined : packaged.detail, cause: packaged.found ? undefined : packaged.cause }
     : { file, detail: undefined, cause: undefined }
 }
 
@@ -231,7 +238,7 @@ export function bundledShell({ kind, bundleRoot, platform, arch }) {
  * @returns {{file: string, version: string}|undefined} the executable and the
  *   version directory it came from, or undefined when the store has none.
  */
-export function provisionedShell({ kind, env, platform = process.platform, arch = process.arch }) {
+export function provisionedShell({ kind, env, platform = process.platform, arch = process.arch }: { kind: ShellKind; env: NodeJS.ProcessEnv; platform?: string; arch?: string }) {
   const store = path.join(provisionedShellStore({ env }), kind)
   let versions
   try {
@@ -262,7 +269,7 @@ export function provisionedShell({ kind, env, platform = process.platform, arch 
  * @param {string|undefined} options.pathValue - the PATH value to walk.
  * @returns {string|undefined} the first existing entry, or undefined.
  */
-export function fromPath({ names, pathValue, reject }) {
+export function fromPath({ names, pathValue, reject }: { names: readonly string[]; pathValue?: string; reject?: (file: string) => boolean }) {
   if (typeof pathValue !== 'string' || pathValue.trim() === '') return undefined
   for (const entry of pathValue.split(path.delimiter)) {
     // PATH entries may carry surrounding quotes from `setx`-style definitions.
@@ -287,11 +294,11 @@ export function fromPath({ names, pathValue, reject }) {
  * @param {string} platform - target platform.
  * @returns {boolean} whether the candidate is the WSL launcher.
  */
-export function isWslBashLauncher(file, env, platform) {
+export function isWslBashLauncher(file: string, env: NodeJS.ProcessEnv, platform: string) {
   if (platform !== 'win32') return false
   const systemRoot = env.SystemRoot ?? env.SYSTEMROOT
   if (typeof systemRoot !== 'string' || systemRoot.trim() === '') return false
-  const normalize = value => path.win32.normalize(value).replace(/[\\/]+$/, '').toLowerCase()
+  const normalize = (value: string) => path.win32.normalize(value).replace(/[\\/]+$/, '').toLowerCase()
   return normalize(file) === normalize(path.win32.join(systemRoot, 'System32', 'bash.exe'))
 }
 
@@ -309,7 +316,7 @@ export function isWslBashLauncher(file, env, platform) {
  * @param {string} options.platform - `process.platform`.
  * @returns {string[]} the candidate paths, in order.
  */
-export function wellKnownCandidates({ kind, env, platform }) {
+export function wellKnownCandidates({ kind, env, platform }: { kind: ShellKind; env: NodeJS.ProcessEnv; platform: string }) {
   if (platform !== 'win32') {
     // Only bash has a POSIX rung here. PowerShell resolution belongs to
     // the host on every platform.
@@ -349,7 +356,7 @@ export function wellKnownCandidates({ kind, env, platform }) {
  * @param {string} platform - `process.platform`.
  * @returns {string[]} the names, in probe order.
  */
-export function executableNames(kind, platform) {
+export function executableNames(kind: ShellKind, platform: string) {
   const base = kind === 'bash' ? 'bash' : 'pwsh'
   return platform === 'win32' ? [`${base}.exe`, base] : [base]
 }
@@ -418,7 +425,7 @@ export const POSIX_BASH_WELL_KNOWN = Object.freeze([
  * @param {BundledCause|undefined} cause - why the plugin's own copy is unusable.
  * @returns {string} the remedy, as a clause that ends a detail line.
  */
-export function bashRemedy(cause) {
+export function bashRemedy(cause: BundledCause | undefined) {
   if (cause === 'not-installed') {
     return 'the registry this profile installed from may not carry that platform package, '
       + 'so run `dsh-ops provision-shells --bash` to fetch the pinned copy from upstream releases instead'
