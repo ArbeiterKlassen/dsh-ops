@@ -60,6 +60,9 @@ await test('bounded row pages keep full observed totals separate from page compl
     assert.deepEqual(tail.items.map(item => item.cells), [['499'], ['500']]); assert.equal(tail.complete, true); assert.equal(tail.nextOffset, 501)
     const after = await run(root, { path: file, offset: 999 })
     assert.equal(after.complete, true); assert.deepEqual(after.items, []); assert.equal(after.nextOffset, 999)
+    assert.equal(after.skipped, 500, "skipped counts observed rows, not the requested offset")
+    const empty = await run(root, { path: fileAt(root, "empty.csv", "id\n"), offset: 999 })
+    assert.equal(empty.skipped, 0); assert.equal(empty.rowsObserved, 0)
   })
 })
 await test('UTF-16 byte orders decode strictly and all conflicting BOMs are refused', async () => {
