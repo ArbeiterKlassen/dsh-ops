@@ -33,7 +33,7 @@ await test('the resident file row publishes one bounded reader even with the dis
     fs.writeFileSync(path.join(dir, 'second.txt'), 'second file')
     const read = await callTool(ctx, READ, { files: [{ path: 'read.txt' }, { path: 'second.txt' }] }, undefined, agent)
     assert.equal(read.value.status, 'completed')
-    assert.match(read.text, /1 \| bounded reader/); assert.match(read.text, /1 \| second file/)
+    assert.match(read.text, /1\|bounded reader/); assert.match(read.text, /1\|second file/)
     const absent = await ctx.get('tools').execute({ agent, name: publicToolName('stat'), arguments: { path: 'read.txt' }, callId: 'absent', signal: new AbortController().signal })
     assert.equal(absent.isError, true)
   } finally { await shutdown(ctx) }

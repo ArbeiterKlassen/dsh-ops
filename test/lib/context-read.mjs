@@ -13,10 +13,10 @@ import { bootHost, mountPlugin, shutdown } from './host.mjs'
 
 export const READ = publicToolName('inspect_local_file')
 export const text = result => result.content.map(block => block.type === 'text' ? block.text : '').join('\n')
-export const full = result => assert.match(text(result), /^1 \| payload/m)
+export const full = result => assert.match(text(result), /^1(?: \| |\|)payload/m)
 export const elided = result => {
   assert.match(text(result), /Unchanged file range; body already present in the current model context/)
-  assert.doesNotMatch(text(result), /^\d+ \| /m)
+  assert.doesNotMatch(text(result), /^\d+(?: \| |\|)/m)
   assert.match(text(result), /=== FILE: .*Lines \d+-\d+ of \d+/)
   assert.match(text(result), /revision=[a-f0-9]{64}/)
 }
