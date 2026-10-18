@@ -49,3 +49,21 @@ bindings. Unsupported content yields explicit errors or partial observations.
 
 PDF parsing has a separate follow-up review. This slice neither adds a PDF dependency nor
 claims PDF support; the table/DOCX readers are not substitutes for the PDF benchmark.
+
+## PDF foundation review (15c/16, 2026-10-19)
+
+The original bounded container grammar adds a direct exact dependency on flate2 1.1.10
+with defaults disabled and zlib-rs selected. Both versions were already locked, licensed
+and reviewed above; this adds no resolved package or version. The low-level decoder
+checks actual decoded bytes, the zlib checksum/terminator and trailing input.
+
+A general parser was evaluated and declined for this narrow slice. lopdf 0.42 predates
+the configurable stream limits added in 0.44; newer releases also bring a mandatory
+crypto dependency tree despite disabled default features. The reviewed crypto buffer
+conversion required the [upstream inout correction](https://github.com/RustCrypto/utils/pull/1556),
+whose follow-up 0.2.4 release was younger than seven days at review. No affected older
+version or vendored patch was selected to evade the age rule. None of the evaluated
+lopdf/crypto packages remains in this lockfile. See the publisher's
+[lopdf changelog](https://github.com/J-F-Liu/lopdf/blob/main/CHANGELOG.md) and
+[inout 0.2.4 release metadata](https://crates.io/api/v1/crates/inout/0.2.4).
+This is a targeted source review, not a general PDF compliance or security-audit claim.

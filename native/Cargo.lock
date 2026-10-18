@@ -368,6 +368,7 @@ dependencies = [
 name = "ops-documents"
 version = "0.3.1"
 dependencies = [
+ "flate2",
  "ops-files",
  "ops-protocol",
  "quick-xml",
