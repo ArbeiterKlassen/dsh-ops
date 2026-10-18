@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer'
 import { renderDocument } from './documents.js'
 import { isDocumentTool } from '../../capabilities/documents.js'
+import { compactRanges } from './ranges.js'
 import { renderResult } from './result.js'
 import { errorPolicy } from '../../kernel/errors.js'
 import type { EffectState } from '../../kernel/outcome.js'
@@ -166,7 +167,7 @@ export function renderNative(tool: string, args: unknown, result: unknown): stri
   if (isDocumentTool(tool)) lines = renderDocument(tool, input, result)
   else if (record(result.error) || ['error', 'rejected', 'conflict', 'unknown', 'failed'].includes(String(result.status))) lines = failure(result)
   else if (tool === 'result') return capNativeText(renderResult(input, result), NATIVE_OUTPUT_BYTES, 'Repeat the same offset with smaller limit/maxBytes; do not advance past undisplayed rows.')
-  else if (tool === 'read_many') lines = readMany(result)
+  else if (tool === 'read_many') lines = compactRanges(input, result) ?? readMany(result)
   else if (tool === 'inspect_local_file') lines = inspect(input, result)
   else if (mutations.has(tool)) lines = receipts(tool, result)
   else if (tool === 'stat') lines = stat(input, result)

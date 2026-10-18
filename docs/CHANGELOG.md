@@ -196,6 +196,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - 新增有界 CSV/TSV worker 读取，严格解码、保留原字符串与物理行范围；错误保留此前有效行，
   并分别报告扫描、分页和引用捕获完整性，不新增外部依赖。通过发现/SDK 按代理在下一步骤启用；解析缺口保留前缀且不伪造续取。
 
+### Compact fully returned Native file ranges (#261, BM-01)
+
+- Use exact numbered multi-file bodies, quoted shared parent paths and one full-revision/continuation receipt per file. Preserve canonical metadata and diagnostic output for clipped, failed or uncertain ranges; update current-context repeat suppression for compact line labels.
+- 多文件范围以紧凑行号、带引号的共享父目录及完整版本/续读提示展示；规范数据不变，截断、失败及不确定覆盖保留诊断信息，当前上下文去重同步支持新行号格式。
 
 ### Deduplicate Native reads with current-context evidence (#261, 10/16)
 

@@ -58,8 +58,9 @@ export function observeRead(tool: ToolDefinition, exec: Readonly<ToolExecution>,
   }
 }
 export function unchangedContent(body: string, callId: string, messageId: string): string | undefined {
-  const kept = body.split('\n').filter(line => !/^\d+ \| /.test(line))
-    .map(line => line.replace(/^(\[Notice: \d+ items?) displayed;/, '$1 revalidated;'))
+  const kept = body.split('\n').filter(line => !/^\d+(?: \| |\|)/.test(line))
+    .map(line => line.replace(/^(\[Notice: \d+ items?) displayed;/, '$1 revalidated;')
+      .replace(/requested ranges returned\./, 'requested ranges revalidated.'))
   const notice = `[Notice: Unchanged file range; body already present in the current model context in tool call ${JSON.stringify(callId)} / message ${JSON.stringify(messageId)}. Fresh read revalidated the revision above.]`
   const compact = [...kept, notice].join('\n')
   return Buffer.byteLength(compact, 'utf8') < Buffer.byteLength(body, 'utf8') ? compact : undefined
