@@ -125,10 +125,12 @@ mod tests {
     fn fallback_capture_never_promotes_an_already_clipped_item_to_complete() {
         let root = std::env::temp_dir().join(format!("dsh-ops-spill-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root).unwrap();
+        // macOS temporary paths can contain /var -> /private/var; cache authority requires canonical roots.
+        let root = std::fs::canonicalize(root).unwrap();
         let mut request: Request = serde_json::from_value(json!({"root":root,"scope":"fallback-test","tool":"future_tool","args":{}})).unwrap();
         request.storage = Some(serde_json::from_value(json!({"root":root,"authorityId":"a".repeat(64),"allowedTools":["future_tool","result"]})).unwrap());
         let head = finish(&request, json!({"status":"completed","complete":false,"items":[{"text":"prefix","truncatedInLine":true}]}));
-        let id = head["reference"]["refId"].as_str().expect("bounded fallback reference");
+        let id = head["reference"]["refId"].as_str().unwrap_or_else(|| panic!("bounded fallback reference: {head}"));
         request.tool = "result".into(); request.args = json!({"action":"page","id":id});
         let page = references::run(&request).unwrap();
         assert_eq!(page["source"]["captureComplete"], false);
