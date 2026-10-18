@@ -94,3 +94,9 @@ tarballs of earlier versions.
 
 FastCtx is developed and maintained at
 https://github.com/yc-duan/fastctx
+
+
+DeepSeek Harness shell contract, approval and job adapters are adapted from
+@deepseek-ai/dsh-tool-bash 0.2.0-rc.2 (MIT), Copyright (c) 2026 DeepSeek.
+Upstream: https://github.com/deepseek-ai/deepseek-harness
+License: licenses/deepseek-harness/LICENSE

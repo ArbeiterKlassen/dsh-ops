@@ -157,6 +157,12 @@ Routing: **toolkit → bash → PowerShell 7**.
   On Windows, `\child` uses the session's drive; a drive-relative path such as `C:child` on a different drive must be written as an absolute path.
 - Host `pwsh`: Windows-native operations, using bundled PowerShell 7.
 
+`ops_bash` requires a non-empty `description` and keeps the host Bash fields and result kinds: `foreground`, `background`, or `promoted`. Its default timeout is 120 seconds and the cap is 600 seconds. When the host jobs service is available, `run_in_background: true` returns a job ID immediately; a foreground timeout promotes the same running job. Use the host `job_output` and `job_kill` tools to collect or stop it. Without host jobs, the background parameter is absent and a foreground timeout stops the command. Unknown arguments are rejected before execution.
+
+`sandbox_permissions` plus `justification` can request a strictly wider mode through the host approval service. An allowed-once grant applies to that command only; rejection never executes it or changes the session mode. Authority is checked again after approval and sandbox preparation. Windows confinement reports the host provider’s actual enforcement (including `partial`); incompatible Bash runtimes fail closed.
+
+`script_path` (instead of `command`), `graceMs`, and `includeDiagnostics` remain explicit OPS compatibility extensions. They do not change the host command contract or its timeout limits.
+
 "Prefer bash as the terminal" means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. When the shell component is on, the official configuration lifecycle temporarily sets the PowerShell 7 path for `pwsh-sandbox`; when off, it restores the executor's latest original configuration without writing profile configuration. Switching executor configuration does not cancel already-running host commands.
 
 The routing table the model sees is rendered by the plugin from what it actually published:

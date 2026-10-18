@@ -17,7 +17,8 @@ import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { assert, report, scenarioDir, skipSuite, test, waitFor, withTempDir } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
-import { resolveShells, withBashStatus } from '../lib/shells.js'
+import { resolveShells } from '../lib/shells.js'
+import { hostForeground } from '../lib/shells/host-contract.js'
 import { BASH_ARGUMENT_ERROR_CODE } from '../lib/shells/argument-error.js'
 import { bashRefusalValue, mountSessionBash } from '../lib/session-shells.js'
 
@@ -78,7 +79,7 @@ async function relativeWorkdirRunsInTheSession() {
               ['retest-dir/../retest-dir', child],
               [child, child],
             ]) {
-              const value = await tool.execute({ command: 'pwd -P', workdir }, { agent, signal: signal() })
+              const value = await tool.execute({ command: 'pwd -P', description: 'Check session working directory', workdir }, { agent, signal: signal() })
               assert.equal(value.status, 'completed', JSON.stringify(value))
               assert.equal(value.stdout.text.trim(), expected, 'workdir=' + JSON.stringify(workdir))
             }
@@ -165,14 +166,32 @@ await test('every value the session layer settles on satisfies its registered sc
       const { agent, scope, tool } = await publishOpsBash(ctx, 'shells-session-schema', workspace)
       try {
         for (const command of ['printf ok', 'exit 7']) {
-          const value = await tool.execute({ command }, { agent, signal: signal() })
+          const value = await tool.execute({ command, description: 'Check the registered result schema' }, { agent, signal: signal() })
           assert.deepEqual(validateJsonSchemaValue(tool.output.schema, value, 'value'), [], JSON.stringify(value))
         }
         // The refusal shape the session layer folds a runtime failure into: this is the value that
         // must not fail the host's own validation.
-        const folded = withBashStatus(bashRefusalValue(new Error('EXECUTOR_UNAVAILABLE: probe')))
+        const folded = hostForeground(bashRefusalValue(new Error('EXECUTOR_UNAVAILABLE: probe')))
         assert.deepEqual(validateJsonSchemaValue(tool.output.schema, folded, 'value'), [])
         assert.equal(folded.status, 'failed')
+      } finally { await scope.dispose() }
+    })
+  } finally { await shutdown(ctx) }
+})
+
+
+await test('host jobs mount and teardown update the scoped background schema', async () => {
+  const { ctx } = await bootHost()
+  try {
+    await withTempDir('shells-session-jobs', async workspace => {
+      const { agent, scope } = await publishOpsBash(ctx, 'shells-session-jobs', workspace)
+      try {
+        const current = () => ctx.get('tools').get('ops_bash', agent)
+        assert.equal(current().parameters.properties.run_in_background, undefined)
+        const jobs = await ctx.plugin(inner => inner.provide('jobs', {}))
+        await waitFor(() => current()?.parameters.properties.run_in_background !== undefined, { what: 'background Bash schema publication' })
+        await jobs.dispose()
+        await waitFor(() => current()?.parameters.properties.run_in_background === undefined, { what: 'background Bash schema removal' })
       } finally { await scope.dispose() }
     })
   } finally { await shutdown(ctx) }

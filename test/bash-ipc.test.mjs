@@ -38,7 +38,7 @@ await test('private runtime accepts only matching original MSYS, and never edits
     assert.match(message,/works only in danger-full-access/)
     assert.match(message,/remove bashPath/)
     assert.match(message,/provision-shells --bash/)
-    assert.match(message,/no per-call sandbox_permissions escalation/)
+    assert.match(message,/Approvals never repair an incompatible confined runtime/)
     assert.doesNotMatch(message,/Rebuild the matching proxies/)
     const check=restrictedCompatibility(bash)
     assert.equal(check.compatible,false)

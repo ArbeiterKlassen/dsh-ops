@@ -133,9 +133,7 @@ is refused before it can become a candidate, so no `ops_glob` item is a link;
 `ops_stat` reports the opened file's time for a path reached through one.
 
 The native schemas deliberately do not expose `root`, `workspace`, `cwd`, or
-`file_path` aliases. `ops_bash` accepts the host-compatible optional
-`description` field but remains foreground-only; it does not accept
-`run_in_background` or create job IDs.
+`file_path` aliases. `ops_bash` requires `description`, uses the host foreground/background/promoted result contract, and exposes `run_in_background` when host jobs are available. See the bilingual shell contract in [component-reference.md](component-reference.md) / [组件参考.md](组件参考.md).
 
 Their important fields are (paths resolve relative to the DSH session cwd):
 

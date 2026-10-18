@@ -177,7 +177,7 @@ export const BASH_OUTPUT_SCHEMA = Object.freeze({
  */
 export function withBashStatus(value) {
   const completed = value.exitCode === 0 && value.error === undefined && value.permission === undefined && value.restriction === undefined
-    && value.signal === undefined && value.timedOut !== true && value.cancelled !== true
+    && value.signal == null && value.timedOut !== true && value.cancelled !== true
   return { ...value, status: completed ? 'completed' : 'failed' }
 }
 
@@ -270,7 +270,7 @@ export function bashToolDefinition({ file, source, subprocess, prepareArgv, env 
      * @param {{signal?: AbortSignal}} [exec] - the host execution context.
      * @returns {Promise<object>} the canonical result value.
      */
-    start(args, exec = {}, { onExpiry } = {}) {
+    resolve(args) {
       assertKnownArguments(args, BASH_ARGUMENTS)
       // Every refusal in this body is a BashArgumentError, never a plain Error: the session layer
       // folds RUNTIME failures into a value (#168) and rethrows a caller's bad argument, so a wrong
@@ -331,9 +331,11 @@ export function bashToolDefinition({ file, source, subprocess, prepareArgv, env 
         }
       }
 
-      return startBashExecution({ file, source, subprocess, prepareArgv, env, projectResult }, {
-        command, scriptPath, workdir, timeoutMs, graceMs, includeDiagnostics, onExpiry,
-      }, exec)
+      return { command, scriptPath, workdir, timeoutMs, graceMs, includeDiagnostics }
+    },
+    start(args, exec = {}, { onExpiry } = {}) {
+      const spec = definition.resolve(args)
+      return startBashExecution({ file, source, subprocess, prepareArgv, env, projectResult }, { ...spec, onExpiry }, exec)
     },
     async execute(args, exec) { return definition.start(args, exec).result() },
   }

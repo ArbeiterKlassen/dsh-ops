@@ -356,21 +356,22 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       let bash
       for(let n=0;n<50;n++) { bash=ctx.get('tools').get('ops_bash',agent);if(bash)break;await new Promise(r=>setTimeout(r,10)) }
       assert.ok(bash)
-      let result=await bash.execute({command:"printf 'READ_OK'",workdir:root,timeoutMs:10000},exec)
+      let result=await bash.execute({description:"Check session permission enforcement",command:"printf 'READ_OK'",workdir:root,timeoutMs:10000},exec)
       if (process.platform==='win32' && result.error?.startsWith('EXECUTOR_UNAVAILABLE')) {
         assert.match(result.error,/not a user authorization denial/)
         throw new Error('Windows confined Bash regression: initialization failed; do not bypass the DSH sandbox.')
       } else {
         assert.equal(result.exitCode,0,JSON.stringify(result));assert.equal(result.stdout.text,'READ_OK')
-        result=await bash.execute({command:"printf bad > denied.txt",workdir:root,timeoutMs:10000},exec)
+        if (process.platform==='win32') assert.equal(result.sandbox.enforcement,'partial','Windows must preserve the host partial-enforcement fact')
+        result=await bash.execute({description:"Check session permission enforcement",command:"printf bad > denied.txt",workdir:root,timeoutMs:10000},exec)
         assert.notEqual(result.exitCode,0); assert.ok(!fs.existsSync(path.join(root,'denied.txt')))
         assert.equal(result.restriction?.code,'EXECUTION_RESTRICTED',JSON.stringify(result))
         agent.session.mode='workspace-write'
-        result=await bash.execute({command:"printf forbidden > outside.txt",workdir:outside,timeoutMs:10000},exec)
+        result=await bash.execute({description:"Check session permission enforcement",command:"printf forbidden > outside.txt",workdir:outside,timeoutMs:10000},exec)
         assert.notEqual(result.exitCode,0,JSON.stringify(result))
         assert.equal(result.restriction?.code,'EXECUTION_RESTRICTED',JSON.stringify(result))
         assert.ok(!fs.existsSync(path.join(outside,'outside.txt')))
-        result=await bash.execute({command:"printf allowed > allowed.txt",workdir:root,timeoutMs:10000},exec)
+        result=await bash.execute({description:"Check session permission enforcement",command:"printf allowed > allowed.txt",workdir:root,timeoutMs:10000},exec)
         assert.equal(result.exitCode,0,JSON.stringify(result));assert.equal(fs.readFileSync(path.join(root,'allowed.txt'),'utf8'),'allowed')
       }
       await ctx.plugin(NodePtc,{})
@@ -378,10 +379,10 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       agent.session.mode='workspace-write'
       fs.writeFileSync(path.join(root,'probe.sh'),"printf 'SCRIPT_OK'\n")
       const request = {name:'run_code',callId:'ptc-bash-acceptance',agent,signal:exec.signal,arguments:{description:'Test confined Bash via pure PTC SDK',code:`
-        const command = await tools.ops_bash({command:"printf 'PTC_OK'",workdir:${JSON.stringify(root)},timeoutMs:10000});
-        const script = await tools.ops_bash({script_path:${JSON.stringify(path.join(root,'probe.sh'))},workdir:${JSON.stringify(root)},timeoutMs:10000});
-        const pipeline = await tools.ops_bash({command:"printf 'PIPE_OK' | cat",workdir:${JSON.stringify(root)},timeoutMs:10000});
-        const denied = await tools.ops_bash({command:"printf blocked > ptc-outside.txt",workdir:${JSON.stringify(outside)},timeoutMs:10000});
+        const command = await tools.ops_bash({description:"Check programmatic Bash permissions",command:"printf 'PTC_OK'",workdir:${JSON.stringify(root)},timeoutMs:10000});
+        const script = await tools.ops_bash({description:"Check programmatic Bash permissions",script_path:${JSON.stringify(path.join(root,'probe.sh'))},workdir:${JSON.stringify(root)},timeoutMs:10000});
+        const pipeline = await tools.ops_bash({description:"Check programmatic Bash permissions",command:"printf 'PIPE_OK' | cat",workdir:${JSON.stringify(root)},timeoutMs:10000});
+        const denied = await tools.ops_bash({description:"Check programmatic Bash permissions",command:"printf blocked > ptc-outside.txt",workdir:${JSON.stringify(outside)},timeoutMs:10000});
         return {command,script,pipeline,denied};
       `}}
       const ptc=await ctx.get('tools').execute(request)
@@ -398,12 +399,12 @@ await test('owned Modify-only workspace starts real DSH sandbox; three modes and
       assert.ok(!fs.existsSync(path.join(outside,'ptc-outside.txt')))
       assert.doesNotMatch(ptcText,/3221225794|EXECUTOR_UNAVAILABLE|fatal error/)
       agent.session.mode='read-only'
-      const downgrade=await ctx.get('tools').execute({...request,callId:'ptc-bash-downgrade',arguments:{description:'Verify PTC permission downgrade',code:`return await tools.ops_bash({command:"printf blocked > ptc-readonly.txt",workdir:${JSON.stringify(root)},timeoutMs:10000});`}})
+      const downgrade=await ctx.get('tools').execute({...request,callId:'ptc-bash-downgrade',arguments:{description:'Verify PTC permission downgrade',code:`return await tools.ops_bash({description:"Check programmatic Bash permissions",command:"printf blocked > ptc-readonly.txt",workdir:${JSON.stringify(root)},timeoutMs:10000});`}})
       assert.notEqual(downgrade.isError,true,JSON.stringify(downgrade))
       assert.equal(downgrade.value.result.restriction.code,'EXECUTION_RESTRICTED')
       assert.ok(!fs.existsSync(path.join(root,'ptc-readonly.txt')))
       agent.session.mode='danger-full-access'
-      result=await bash.execute({command:"printf 'FULL_OK'",workdir:outside,timeoutMs:10000},exec)
+      result=await bash.execute({description:"Check session permission enforcement",command:"printf 'FULL_OK'",workdir:outside,timeoutMs:10000},exec)
       assert.equal(result.exitCode,0); assert.equal(result.sandbox.mode,'danger-full-access')
       const full=await ptcCall(ctx,worker,'batch',{root:outside,action:'run',operations:[{op:'copy',path:'keep.txt',to:'full-copy.txt'}]},exec,exec.signal)
       assert.equal(full.status,'completed',JSON.stringify(full))

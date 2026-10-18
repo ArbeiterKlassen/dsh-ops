@@ -7,6 +7,15 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Reuse host Bash approvals and background jobs (#261)
+
+- Require command descriptions and return host foreground/background/promoted result kinds, with
+  120-second defaults and 600-second caps. Reuse host jobs for background work and foreground
+  timeout promotion, host per-call approvals for wider access, and host subprocess governance.
+- Recheck session authority after approval and confinement; retain absolute executable selection,
+  verified Windows IPC compatibility, honest partial enforcement and fail-closed runtime errors.
+- Keep script_path, graceMs and includeDiagnostics as documented OPS compatibility extensions.
+
 ### Preserve Bash cancellation through pending confinement preparation (#261)
 
 - Bash execution exposes one live handle for observation and settlement. Cancellation settles

@@ -45,9 +45,10 @@ export function startBashExecution({ file, source, subprocess, prepareArgv, env 
     timer = setTimeout(() => stop('timeout', new Error(`command timed out after ${spec.timeoutMs}ms`)), spec.timeoutMs)
     timer.unref?.()
   }
-  const reader = stream => ({ readFrom: offset => handle?.collected?.[stream]?.readFrom(offset) ?? emptyRead() })
+  const reader = stream => ({ readFrom: offset => handle?.collected?.[stream]?.readFrom(offset) ?? { ...emptyRead(), nextOffset: offset } })
   const process = {
     status: 'running',
+    get started() { return handle !== undefined },
     observed: { stdout: reader('stdout'), stderr: reader('stderr') },
     kill: reason => stop('cancelled', new Error(reason ?? 'bash execution cancelled')),
     result: () => result,

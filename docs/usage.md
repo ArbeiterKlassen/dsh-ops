@@ -127,7 +127,11 @@ Use `ops_bash`'s `command` for short commands and pipelines. For scripts longer 
 
 `script_path` accepts only the script path, so the script body is not repeated in the `ops_bash` arguments. `command` and `script_path` are mutually exclusive and exactly one is required. This interface cannot repair JSON that the model or host failed to parse; an unparseable tool call still requires a host/model retry.
 
-`ops_bash` arguments are **strict**: a key the schema does not declare is refused before execution, and the error names both the unknown keys and the accepted ones instead of ignoring them. **This tool has no `run_in_background` and returns no job id**; every command runs in the foreground. The host `bash` and `pwsh` tools do accept `run_in_background`, so a model may reasonably try it here; such a call is rejected rather than silently run in the foreground. For a server, listener or watcher, use the host `pwsh` tool's `run_in_background`, or detach the process from inside the command (for example `nohup ... & disown`). Otherwise the call occupies the whole `timeoutMs` (up to `MAX_BASH_TIMEOUT_MS`, about 24.9 days).
+`ops_bash` requires a non-empty `description` and keeps the host Bash fields and result kinds: `foreground`, `background`, or `promoted`. Its default timeout is 120 seconds and the cap is 600 seconds. When the host jobs service is available, `run_in_background: true` returns a job ID immediately; a foreground timeout promotes the same running job. Use the host `job_output` and `job_kill` tools to collect or stop it. Without host jobs, the background parameter is absent and a foreground timeout stops the command. Unknown arguments are rejected before execution.
+
+`sandbox_permissions` plus `justification` can request a strictly wider mode through the host approval service. An allowed-once grant applies to that command only; rejection never executes it or changes the session mode. Authority is checked again after approval and sandbox preparation. Windows confinement reports the host provider’s actual enforcement (including `partial`); incompatible Bash runtimes fail closed.
+
+`script_path` (instead of `command`), `graceMs`, and `includeDiagnostics` remain explicit OPS compatibility extensions. They do not change the host command contract or its timeout limits.
 
 ---
 

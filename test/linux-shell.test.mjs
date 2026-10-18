@@ -146,7 +146,7 @@ await test('ops_bash runs a real command through the host bash', async () => {
         definition = ctx.get('tools').get(BASH_TOOL, agent)
       }
       assert.ok(definition, `ops_bash must be published to the session on Linux, got ${publicToolNames(ctx).join(', ')}`)
-      const value = await definition.execute({ command: 'echo dsh-ops-linux-bash' }, { agent, signal: new AbortController().signal })
+      const value = await definition.execute({ description: 'Check confined Bash execution', command: 'echo dsh-ops-linux-bash' }, { agent, signal: new AbortController().signal })
       assert.equal(value.sandbox?.mode, 'danger-full-access', JSON.stringify(value.sandbox))
       assert.match(String(value.stdout?.text ?? ''), /dsh-ops-linux-bash/, `the host bash must have run: ${JSON.stringify(value)}`)
       // The resolved executable is the machine's own bash, not a plugin-owned copy.
@@ -178,7 +178,7 @@ await test('a confined mode is refused rather than run unrestricted', async () =
         definition = ctx.get('tools').get(BASH_TOOL, agent)
       }
       assert.ok(definition, 'a confined session with a provider must still see ops_bash')
-      const value = await definition.execute({ command: 'echo no' }, { agent, signal: new AbortController().signal })
+      const value = await definition.execute({ description: 'Check invalid confinement refuses execution', command: 'echo no' }, { agent, signal: new AbortController().signal })
       // The refusal arrives as an error envelope rather than a thrown exception — the plugin's
       // documented shape, and the same one Windows gets (#44 status stamping). What matters here is
       // that the host sandbox was consulted and that the command did not run.
@@ -225,7 +225,7 @@ await test('session bash resolves workdir before validating or spawning it (#180
         await new Promise(resolve => setTimeout(resolve, 50))
       }
       assert.ok(definition, 'the session must publish ops_bash')
-      const execute = args => definition.execute(args, { agent, signal: new AbortController().signal })
+      const execute = args => definition.execute({ description: 'Check session Bash execution', ...args }, { agent, signal: new AbortController().signal })
       for (const [workdir, expected] of [
         [undefined, workspace], ['', workspace], ['   ', workspace], ['.', workspace],
         ['retest-dir', child], ['./retest-dir', child], ['retest-dir/../retest-dir', child], [child, child],

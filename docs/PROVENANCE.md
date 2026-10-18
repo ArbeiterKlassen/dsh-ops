@@ -3,6 +3,19 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
+## Unreleased: host Bash contract
+
+The shell contract, approval and job adapters in `src/shells/` adapt
+`@deepseek-ai/dsh-tool-bash` 0.2.0-rc.2 (MIT, Copyright (c) 2026 DeepSeek).
+The executor was checked against `@deepseek-ai/dsh-bash-local` at the same version.
+OPS selects an absolute executable, preserves its argument and Windows IPC validation,
+and borrows host services without replacing them. The upstream MIT license is retained
+in `licenses/deepseek-harness/LICENSE`; the package adds no host value imports.
+
+Shell 契约、审批与 jobs 适配改写自同版本宿主工具（MIT，2026 DeepSeek），
+执行器参照同版本 bash-local 核验。OPS 保留绝对执行路径、参数及 Windows IPC 校验，
+只借用宿主服务，不替换服务，也不增加宿主值导入。上游许可证保留于上述路径。
+
 ## Unreleased: FastCtx removed
 
 The FastCtx-backed `dsh-ops/background` component was removed together with the
