@@ -1,5 +1,7 @@
 /** Validate real canonical worker receipts through the actual PTC output schemas. */
 import fs from 'node:fs'
+import { textPdf, show } from './lib/pdf-fixture.mjs'
+import { docx, paragraph } from './lib/document-fixture.mjs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { validateJsonSchemaValue, assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
@@ -33,6 +35,30 @@ await test('all file observations validate and retain text, hex, stat and search
     const failed = await call(root, 'read_many', { files: [{ path: file }, { path: path.join(root, 'missing') }] })
     assert.equal(failed.status, 'error'); assert.equal(failed.data.items[0].items[1].text, 'βeta')
     assert.equal((await call(root, 'grep', { path: root, pattern: '[' })).error.code, 'INVALID_ARGUMENT')
+  })
+})
+await test('table observations validate actual lexical rows through the PTC output schema', async () => {
+  await withTempDir('ptc-table', async root => {
+    const file = path.join(root, 'rows.csv'); fs.writeFileSync(file, 'name,value\nalpha,01\n')
+    const out = await call(root, 'table_read', { path: file })
+    assert.equal(out.status, 'completed'); assert.deepEqual(out.data.items[0].cells, ['alpha', '01'])
+    assert.equal(out.data.scanComplete, true); assert.equal(out.data.rowCount, 1)
+  })
+})
+await test('DOCX observations validate actual main-body paragraphs through the PTC output schema', async () => {
+  await withTempDir('ptc-docx', async root => {
+    const file = path.join(root, 'paragraphs.docx'); fs.writeFileSync(file, docx(paragraph('Exact Unicode 中')))
+    const out = await call(root, 'doc_read', { path: file })
+    assert.equal(out.status, 'completed'); assert.equal(out.data.items[0].text, 'Exact Unicode 中')
+    assert.equal(out.data.scanComplete, true); assert.equal(out.data.scope, 'main-body-paragraphs')
+  })
+})
+await test('PDF observations validate actual text-layer pages through the PTC output schema', async () => {
+  await withTempDir('ptc-pdf', async root => {
+    const file = path.join(root, 'pages.pdf'); fs.writeFileSync(file, textPdf([show('Exact PDF text')]))
+    const out = await call(root, 'pdf_read', { path: file })
+    assert.equal(out.status, 'completed'); assert.equal(out.data.items[0].text, 'Exact PDF text')
+    assert.equal(out.data.scanComplete, true); assert.equal(out.data.scope, 'page-text-layer-content-order')
   })
 })
 await test('mutation receipts and batch plans preserve effects without changing the native kernel', async () => {
