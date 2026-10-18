@@ -204,3 +204,8 @@ React type packages, jsdom 26.1.0 and the pinned `0.2.0-rc.2` client contracts s
 DOM interactions and the real host slot lifecycle tests. No browser bundler or production dependency
 is added. `settings-ui`, `settings-client`, `settings-host` and `settings-runtime` suites cover the
 form-to-profile and reviewed-action boundaries.
+
+The optional carrier regression also uses development-only `@deepseek-ai/dsh-client-modules`
+`0.2.0-rc.2` (published 2026-09-29) to assert actual client registry activation, teardown and
+restart against temporary installed profiles. `settings-carrier` covers exact composition,
+backups and atomic rollback; it never migrates a developer profile.

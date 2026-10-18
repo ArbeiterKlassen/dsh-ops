@@ -35,6 +35,32 @@ this carrier unloads all custom settings pages. Use the host's **built-in row sw
 it. There is no automatic form fallback. A disabled target row must also be re-enabled before its
 settings can be edited. The discovery page is available once its component row is installed.
 
+### Enable the optional browser carrier
+
+This is an opt-in offline profile migration, not a prerequisite for upgrading. With DSH stopped,
+preview the installed profile using absolute paths:
+
+```console
+dsh-ops settings-profile --profile-dir <profile-directory> --host-anchor <DSH-installation-package.json> --dsh-home <DSH-home>
+```
+
+`--host-anchor` identifies the host installation whose public profile APIs the command uses.
+After reviewing the preview, repeat it with `--offline --yes`. The command selects
+`dsh-ops/lib/profiles/client` **instead of** `dsh-ops`, removes only verified legacy file-name
+matchers in that profile's patch, and preserves all seven IDs, switches, and effective configuration.
+It refuses skipped bundles, duplicate OPS rows, external name-qualified file overrides,
+incompatible higher-priority patches, or stale previews. Home patches are included; launch-time command-line overlays are outside this preview.
+No other profile is changed. Do not enable both bundle choices together.
+
+Original files are backed up in the reported `.dsh-ops-settings-backup-*` directory. Each write uses
+the host's atomic writer and profile lock. The first write remains valid with the old bundle if the
+process stops before the second; reported write failures restore unchanged originals when possible.
+For manual recovery while stopped, restore `package.json` first, then `cordis.patch.yml` as described
+in `recovery.json`. Keep the backup until the restarted profile is verified. The installed `dsh-ops`
+package supplies both bundle choices; the nested layer is not a separate package to install.
+An already-disabled file row remains disabled, so re-enable it through the builtin switch before
+expecting custom pages. The default legacy bundle remains supported without this command.
+
 ---
 
 ## Where configuration lives

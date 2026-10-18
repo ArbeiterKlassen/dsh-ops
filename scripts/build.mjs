@@ -5,6 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:f
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bundleClient } from './lib/build/client.mjs'
+import { buildClientProfile } from './lib/build/client-profile.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const source = path.join(root, 'src')
@@ -49,6 +50,7 @@ try {
       const sdk = await writePtcDeclarations(root)
       console.log(`build: generated PTC declarations for ${sdk.tools} capabilities (${sdk.bytes} bytes)`)
     }
+    buildClientProfile(root)
     console.log(`build: compiled src/ to lib/ and copied ${assets} assets`)
   }
 } catch (error) {
