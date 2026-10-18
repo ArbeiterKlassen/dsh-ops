@@ -19,8 +19,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   with explicit exclusions, per-stream/page/aggregate limits and no OCR or layout claims.
 - Preserve preceding complete pages on unsupported content, keep totals/revision conditional
   on stable full scans, and capture full pages before bounded reference spill.
+- Publish discoverable-only Native PDF text and typed PTC page/run outcomes, retaining source scope,
+  safe failed prefixes, forward stable-scan continuations and reference recovery metadata.
 - 新增受限 PDF 文本页及 run 读取，明确排除内容和累计预算；保留此前完整页，
-  仅完整稳定扫描提供总数/修订，复用只读权限与无损引用，不声称 OCR 或阅读布局。
+  仅完整稳定扫描提供总数/修订，复用只读权限与无损引用，不声称 OCR 或阅读布局。Native/PTC 按代理按需启用，保留正文缺口与类型化页数据。
 
 ### Add bounded PDF container foundation (#261, 15c/16)
 
