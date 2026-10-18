@@ -12,6 +12,7 @@
     "authority.ts",
     "profile-temp.ts",
     "host-entry.ts",
+    "panel-collector.ts",
     "config.ts"
   ]
 }

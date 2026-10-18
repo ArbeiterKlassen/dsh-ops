@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Complete the strict TypeScript source migration and disable JavaScript compilation. Reject unimported JavaScript source during packaging while preserving published `.js` paths.
+- 完成严格 TypeScript 源码迁移并关闭 JavaScript 编译；打包时拒绝未导入的 JavaScript 源码，保持发布的 `.js` 路径不变。
+
 - Type central configuration validation, deferred profile migrations, and the remaining TUI/background entries strictly; retain their emitted paths, defaults, validation errors and lifecycle behavior.
 - 将中央配置校验、延迟 profile 迁移及剩余 TUI/background 入口迁为严格 TypeScript；保留产物路径、默认值、校验错误及生命周期行为。
 
@@ -40,6 +43,11 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - 新增可选双语浏览器设置页面，支持逐工具替换、发现池及显式 Bash/宿主 PowerShell 运行时计划。默认保留旧文件行；自定义页面需要客户端承载行，关闭承载行即卸载页面。
 - Add an opt-in offline settings-carrier migration with exact host composition checks, original-file backups, atomic writes and recovery. The normal upgrade retains legacy file-row names and settings.
 - 新增可选离线设置承载行迁移：精确验证宿主配置合成结果，备份原文件，原子写入并支持恢复。常规升级仍保留旧文件行名称与配置。
+
+### Type panel capture and persisted records (#261, 16/16)
+
+- Migrate panel collection to strict TypeScript while preserving queued-stop, issued-I/O waiting and explicit sealing. Count malformed persisted fields and mark incomplete capture without corrupting valid text or usage totals.
+- 将面板采集迁移为严格 TypeScript，保留排队停止、等待已发起 I/O 与显式封存；错误的持久化字段计入 malformed 并标记不完整，不破坏有效正文或用量总计。
 
 - Add discovery as the seventh bundle row; preserve existing named row overrides. Fresh defaults enable shell only on Windows and leave panel/TUI/replacements off. Enabling a fresh panel row starts capture; explicit legacy capture:false stays inert. Provide builtin validated file/PTC/TUI configuration.
 - bundle 新增第七行 discovery，保留已有带名称行覆盖。首次安装仅 Windows 默认启用 shell，panel/TUI/替换默认关闭；启用新 panel 行即采集，旧配置 capture:false 保持不采集。补充文件/PTC/TUI 内置校验配置。

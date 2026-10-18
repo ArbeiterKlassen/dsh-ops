@@ -38,7 +38,7 @@ capabilities.
 
 | Path | Contents |
 | --- | --- |
-| `src/` | Plugin source (TypeScript and not-yet-migrated JavaScript). Compiled by `tsc` to `lib/` |
+| `src/` | Plugin source (strict TypeScript and TSX). Compiled by `tsc` to `lib/` |
 | `lib/` | Build output that is shipped and imported by tests — gitignored, never edited by hand |
 | `src/components/<name>/` | One directory per DSH component row (`shell`, `file`, `ptc`, `panel`, `tui`, `hide-official`, …): entry, `package.json`, `locale/`, `icon.png` |
 | `native/` | Rust worker (`dsh-ops-worker`); one JSON request on stdin, one JSON result on stdout, spawned per call through the host subprocess/sandbox |
