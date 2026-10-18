@@ -7,6 +7,12 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Type Rust toolchain discovery and source builds (#261, 16/16)
+
+- Compile Cargo discovery and explicit locked build helpers under strict TypeScript with checked
+  toolchain inputs, output callbacks and numeric completion codes; retain the shipped CLI paths.
+- Rust 工具链解析与显式锁定构建改为严格类型，检查输入、文本回调及退出码，发布 CLI 路径不变。
+
 ### Type the confined PTC worker boundary (#261, 16/16)
 
 - Compile PTC policy, confinement, runner diagnostics and receipts under strict TypeScript; retain

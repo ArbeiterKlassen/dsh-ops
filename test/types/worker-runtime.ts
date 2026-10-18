@@ -46,3 +46,19 @@ void ptcValue.status
 void ptcCall(ctx, '/worker', 'batch', {}, exec, {})
 // @ts-expect-error PTC effects follow the same kernel vocabulary as Native effects.
 void ptcFailure('RESULT_UNKNOWN', 'lost output', 'success')
+
+import { cargoBuild, findCargo, CargoNotFoundError } from '../../src/rust.js'
+const cargo = findCargo({ platform: 'linux', env: { DSH_OPS_CARGO: '/cargo' } })
+const built = await cargoBuild({ cargo, sourceDir: '/crate', extraArgs: ['--offline'], onLine: line => { const text: string = line; void text } })
+const exitCode: number = built.code
+const output: string = built.output
+const tried: string[] = new CargoNotFoundError('unavailable', ['/cargo']).tried
+// @ts-expect-error Rust builds require a crate source directory.
+void cargoBuild({ cargo })
+// @ts-expect-error Rust builds require an explicitly resolved toolchain.
+void cargoBuild({ sourceDir: '/crate' })
+// @ts-expect-error Output handlers receive text rather than byte counts.
+void cargoBuild({ cargo, sourceDir: '/crate', onLine: (line: number) => { void line } })
+// @ts-expect-error Environment overrides are process environment strings.
+void findCargo({ env: { DSH_OPS_CARGO: false } })
+void [exitCode, output, tried]

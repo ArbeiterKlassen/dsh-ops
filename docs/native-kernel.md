@@ -317,3 +317,9 @@ runner-failure contracts. Non-object argument failures precede batch admission; 
 after a spawn retain unknown effects and the generated audit identity. Only recognized runner-failure
 evidence may claim the wrapped worker never ran. Permission rechecks and per-call confined argv remain
 mandatory; this migration adds no unconfined fallback or cache/business authority expansion.
+
+Source-build helpers are strict TypeScript as well. Cargo discovery returns an executable, provenance
+label, version and environment; building requires that resolved toolchain and a crate directory,
+streams text diagnostics, and returns a numeric exit code with collected output. The CLI still runs
+an explicit locked release build and stages its existing provenance receipt; no dependency, toolchain
+installation, runtime path or automatic-build behavior changes in this typing slice.
