@@ -238,12 +238,14 @@ await test('session bash resolves workdir before validating or spawning it (#180
       const file = path.join(workspace, 'not-a-directory')
       fs.writeFileSync(file, 'file')
       for (const workdir of ['missing', 'not-a-directory', path.join(workspace, 'absent')]) {
-        await assert.rejects(() => execute({ command: 'touch must-not-run', workdir }), error => {
-          assert.match(error.message, /invalid workdir: must be an existing directory/)
-          assert.ok(error.message.includes(path.resolve(workspace, workdir)), error.message)
-          assert.doesNotMatch(error.message, /bash executable|provision-shells/)
-          return true
-        })
+        const value = await execute({ command: 'touch must-not-run', workdir })
+        assert.equal(value.status, 'failed')
+        assert.equal(value.failure.code, 'INVALID_BASH_ARGUMENT')
+        assert.equal(value.failure.effectState, 'none')
+        assert.equal(value.failure.retry, 'after-input-change')
+        assert.match(value.error, /invalid workdir: must be an existing directory/)
+        assert.ok(value.error.includes(path.resolve(workspace, workdir)), value.error)
+        assert.doesNotMatch(value.error, /bash executable|provision-shells/)
       }
       assert.equal(fs.existsSync(marker), false)
       assert.equal(fs.existsSync(path.join(workspace, 'must-not-run')), false)

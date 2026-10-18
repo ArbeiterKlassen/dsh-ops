@@ -66,7 +66,8 @@ try {
   // can provision a shell, and record the reason when it cannot.
   try {
     const shell = await import('../lib/components/shell/index.js')
-    await ctx.plugin(shell.default ?? shell, { publishBashTool: true, enableShellTools: false, required: false, toolCallTimeoutMs: 120_000 })
+    await ctx.plugin(shell.default ?? shell, { publishBashTool: true, enableShellTools: false, required: false, toolCallTimeoutMs: 120_000,
+      ...(process.env.DSH_OPS_TEST_BASH ? { bashPath: process.env.DSH_OPS_TEST_BASH } : {}) })
   } catch (error) {
     record('ops_bash', 'skipped', `shell component did not mount: ${error.message.split('\n')[0]}`)
   }
@@ -121,7 +122,7 @@ try {
     record('ops_replace', 'failed', 'the file on disk did not change')
     exited = 1
   }
-  await attempt('bash', { command: 'node -e "console.log(\'trial-ok\')"' }, 'trial-ok', 'ran a real command',
+  await attempt('bash', { description: 'Print the trial success marker', command: 'node -e "console.log(\'trial-ok\')"' }, 'trial-ok', 'ran a real command',
     'the shell row publishes nothing on a bare host; test/shells-bash-tool.test.mjs covers that contract')
 
   // Anything published but not yet in the table above is reported honestly rather than ignored.
