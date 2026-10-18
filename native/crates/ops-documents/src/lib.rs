@@ -1,5 +1,8 @@
 //! Bounded table observations; cells stay strings, and incomplete traversals never invent totals.
 #![forbid(unsafe_code)]
+mod archive;
+mod xml;
+mod docx;
 mod decode;
 mod parse;
 use decode::{Decoder, Encoding};
@@ -36,6 +39,7 @@ fn recovery(error: &mut Failure) {
 }
 struct Source { path: PathBuf, file: File, before: Metadata, started: Instant }
 pub fn dispatch(request: &Request) -> Result<Value> {
+    if request.tool == "doc_read" { return docx::read(request); }
     if request.tool != "table_read" { return Err(Failure::new("INVALID_ARGUMENT", "Unknown document capability")); }
     let args: Args = serde_json::from_value(request.args.clone())?;
     if args.offset == 0 || args.offset > MAX_ROWS || args.limit == 0 || args.limit > 1000 {

@@ -17,7 +17,9 @@ await test('npm pack includes compiled host code and native sources, never host 
     'native/darwin-metadata/Cargo.toml', 'native/darwin-metadata/src/lib.rs',
     'native/crates/ops-documents/Cargo.toml', 'native/crates/ops-documents/src/lib.rs',
     'native/crates/ops-documents/src/decode.rs', 'native/crates/ops-documents/src/parse.rs',
-    'native/crates/ops-documents/src/tests.rs']
+    'native/crates/ops-documents/src/tests.rs', 'native/crates/ops-documents/src/archive.rs',
+    'native/crates/ops-documents/src/xml.rs', 'native/crates/ops-documents/src/docx.rs',
+    'licenses/documents/THIRD-PARTY-NOTICES.txt']
   for (const name of required) assert.ok(files.includes(name), `missing source-build dependency: ${name}`)
   assert.equal(files.some(name => name.startsWith('src/')), false, 'host source must not ship beside compiled lib/')
   assert.equal(files.some(name => /^native\/(?:target[^/]*|(?:windows|darwin)-metadata\/target)\//u.test(name)), false)
