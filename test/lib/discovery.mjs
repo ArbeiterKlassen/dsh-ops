@@ -6,6 +6,7 @@ import { createScope } from '@deepseek-ai/dsh-scope'
 import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import * as discovery from '../../lib/components/discovery/index.js'
+import { definition } from '../../lib/file/contract.js'
 import { publicToolName } from '../../lib/policy.js'
 import { assert, test, waitFor, withTempDir } from './harness.mjs'
 import { bootHost, registryHasOwnRegister, scopedToolNames, shutdown } from './host.mjs'
@@ -160,6 +161,27 @@ export async function discoveryMountChecks() {
       lift()
     } finally { await shutdown(ctx) }
   }))
+  await test('a separate PTC adapter keeps ownership of its same-scope kernel definitions', () => withTempDir('discovery', async dir => {
+    const { ctx } = await boot()
+    try {
+      ctx.provide('ptcRuntime', { language: 'typescript' })
+      const native = await mint(ctx, 'discovery-sdk-native', dir)
+      const code = await mint(ctx, 'discovery-sdk-code', dir)
+      code.ctx.tools.presentAs('ptc')
+      const adapter = definition('stat', async () => ({ status: 'completed', owner: 'ptc-adapter' }))
+      const dispose = code.ctx.tools.register(adapter)
+      const assembly = await assemble(ctx, code)
+      assert.deepEqual(assembly.tools.map(tool => tool.name), ['run_code'])
+      assert.equal(ctx.get('tools').get(publicToolName('stat'), code), adapter)
+      assert.ok(assembly.sections.some(section => section.text.includes(publicToolName('stat'))))
+      assert.equal(scopedToolNames(ctx, code).includes(DISCOVER), false)
+      assert.ok(scopedToolNames(ctx, native).includes(DISCOVER))
+      await call(ctx, native, 'discover', { query: 'select:ops_stat' })
+      await nextStep(ctx, native)
+      assert.equal(ctx.get('tools').get(publicToolName('stat'), code), adapter)
+      dispose()
+    } finally { await shutdown(ctx) }
+  }))
   await test('pure PTC presentation withdraws Native discovery and advanced registrations', () => withTempDir('discovery', async dir => {
     const { ctx } = await boot()
     try {
@@ -167,7 +189,13 @@ export async function discoveryMountChecks() {
       await call(ctx, agent, 'discover', { query: 'select:ops_stat' })
       await nextStep(ctx, agent)
       ctx.provide('ptcRuntime', { language: 'typescript' })
+      const cached = ctx.get('tools').get(publicToolName('stat'), agent)
       const lift = agent.ctx.tools.presentAs('ptc')
+      const immediate = assemble(ctx, agent)
+      const cachedCall = cached.execute({ path: '.' }, { agent, signal: new AbortController().signal })
+      const immediateResult = await immediate
+      assert.ok(immediateResult.sections.every(section => !section.text.includes(publicToolName('stat'))), 'immediate PTC assembly must not expose a stale Native SDK')
+      assert.equal((await cachedCall).status, 'rejected', 'cached Native definitions cannot execute during withdrawal')
       await waitFor(() => !scopedToolNames(ctx, agent).includes(DISCOVER))
       const result = await assemble(ctx, agent)
       assert.deepEqual(result.tools.map(tool => tool.name), ['run_code'])
@@ -178,3 +206,5 @@ export async function discoveryMountChecks() {
     } finally { await shutdown(ctx) }
   }))
 }
+
+export { boot as bootDiscoveryHost, mint as mintDiscoveryAgent, nextStep as discoveryNextStep }

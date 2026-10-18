@@ -1,7 +1,7 @@
 import type { Context, Fiber } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { resolveDiscoveryConfig } from '../config.js'
 import { NativeFileTools } from '../file/runtime.js'
@@ -41,6 +41,7 @@ export function apply(root: Context, raw: unknown): void {
     const tools = ctx.get('tools'), prompt = ctx.get('systemPrompt'), policyService = ctx.get('sandboxPolicy')
     if (!tools || !prompt || !policyService) return
     const entries = new Map<Agent, Entry>()
+    const ownedDefinitions = new WeakSet<ToolDefinition>()
     let stopped = false, mutating = false, epoch = 0, chain = Promise.resolve()
     const clear = (entry: Entry) => {
       entry.owned.clear()
@@ -55,21 +56,30 @@ export function apply(root: Context, raw: unknown): void {
           && (!rawName || !capability(rawName)?.mutates || policy.mode !== 'read-only')
       } catch { return false }
     }
-    const native = async (agent: Agent): Promise<boolean> => {
-      const assembly = await prompt.assemble({ scope: agent })
-      return !assembly.sections.some(section => section.name === 'tools:ptc-only' && section.text.trim())
-    }
+    const ptcOnly = (assembly: PromptAssembly): boolean => assembly.sections.some(section => section.name === 'tools:ptc-only' && Boolean(section.text.trim()))
+    const native = async (agent: Agent): Promise<boolean> => !ptcOnly(await prompt.assemble({ scope: agent }))
     const own = (agent: Agent, entry: Entry, tool: ToolDefinition): void => {
       if (!entry.ctx) return
       const execute = tool.execute
-      entry.disposers.push(entry.ctx.tools.register({ ...tool, execute: async (args, exec) => {
-        if (stopped || entries.get(agent) !== entry || exec.agent !== agent || !entry.owned.has(tool.name)) {
+      const registration: ToolDefinition = { ...tool, execute: async (args, exec) => {
+        const available = () => !stopped && entries.get(agent) === entry && exec.agent === agent && entry.owned.has(tool.name)
+        if (!available() || !await native(agent).catch(() => false) || !available()) {
           return failure('POLICY_DENIED', 'Discovery capability belongs to a different or inactive scope.')
         }
         return execute(args, exec)
-      } }))
+      } }
+      ownedDefinitions.add(registration)
+      entry.disposers.push(entry.ctx.tools.register(registration))
       entry.owned.add(tool.name)
     }
+    const inheritedNative = (agent: Agent, entry: Entry): string[] => tools.schemas(agent).map(tool => tool.name).filter(name => {
+      if ((!advanced.includes(name) && name !== DISCOVER) || entry.owned.has(name)) return false
+      const registered = tools.get(name, agent)
+      // A same-scope PTC adapter may own the same kernel name. Never mask it.
+      // Only ancestor discovery registrations or the legacy global Native row
+      // are inherited Native capabilities that this lifecycle may suppress.
+      return Boolean(registered && (ownedDefinitions.has(registered) || registered === tools.get(name)))
+    })
     const reconcile = (): Promise<void> => {
       if (stopped || mutating) return chain
       const version = ++epoch
@@ -84,7 +94,7 @@ export function apply(root: Context, raw: unknown): void {
             const isReady = ready.some(([candidate]) => candidate === agent)
             const wanted = isReady ? [...new Set([...config.alwaysLoaded, ...entry.selected])].filter(tool => permitted(agent, tool)) : []
             const desired = new Set([...(isReady && config.enabled ? [DISCOVER] : []), ...wanted.map(publicToolName)])
-            const inherited = tools.schemas(agent).map(tool => tool.name).filter(tool => (advanced.includes(tool) || tool === DISCOVER) && !entry.owned.has(tool))
+            const inherited = inheritedNative(agent, entry)
             // Registry changes from other components must not republish an unchanged
             // surface, or independent lifecycle listeners can amplify one another.
             if (desired.size === entry.owned.size && [...desired].every(tool => entry.owned.has(tool)) && !inherited.length) continue
@@ -109,8 +119,7 @@ export function apply(root: Context, raw: unknown): void {
           }
           // A child must not inherit its parent's activation or an old global advanced surface.
           for (const [agent, entry] of entries) if (entry.ctx) {
-            const deny = tools.schemas(agent).map(tool => tool.name)
-              .filter(tool => (advanced.includes(tool) || tool === DISCOVER) && !entry.owned.has(tool))
+            const deny = inheritedNative(agent, entry)
             if (deny.length) entry.disposers.push(entry.ctx.tools.restrict({ deny }))
           }
         } finally { mutating = false }
@@ -149,6 +158,20 @@ export function apply(root: Context, raw: unknown): void {
       await entry.runtime.stop(); await entry.fiber?.dispose(); await reconcile()
     })
     ctx.on('tools/change', () => { void reconcile() })
+    ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+      const entry = entries.get(context.scope as Agent)
+      // Snapshot ownership before yielding: another assembly may withdraw it while
+      // this request still contains an already-rendered Native SDK section.
+      const heldNative = Boolean(entry?.owned.size)
+      const result = await next()
+      if (!entry || !heldNative || !ptcOnly(result)) return result
+      mutating = true
+      try { entry.runtime.cancel('Native presentation withdrawn'); clear(entry) }
+      finally { mutating = false }
+      // Rebuild through the public host service after removing only our tools.
+      // This cannot activate pending requests or rewrite another provider's text.
+      return prompt.assemble(context)
+    })
     ctx.on('session/event', (session, event) => {
       if (event.type !== 'sandbox/mode') return
       mutating = true
