@@ -107,8 +107,8 @@ export const ENV_OVERRIDES = Object.freeze({
  * @param {NodeJS.ProcessEnv} [explicit] - the caller's own entries.
  * @returns {NodeJS.ProcessEnv} the environment to pass to the spawn.
  */
-export function shellEnvOverrides(ambient = process.env, explicit = {}) {
-  const env = { ...ENV_OVERRIDES, ...explicit }
+export function shellEnvOverrides(ambient: NodeJS.ProcessEnv = process.env, explicit: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...ENV_OVERRIDES, ...explicit }
   const all = explicit.LC_ALL ?? ambient.LC_ALL
   if (typeof all === 'string' && all !== '') {
     env.LC_ALL = ''

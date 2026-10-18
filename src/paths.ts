@@ -16,7 +16,7 @@ export const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.
  * @param {NodeJS.ProcessEnv} [env] - the environment to read.
  * @returns {string} the absolute DSH home.
  */
-export function dshHome(env = process.env) {
+export function dshHome(env: NodeJS.ProcessEnv = process.env) {
   return env.DSH_HOME && env.DSH_HOME.trim() !== ''
     ? path.resolve(env.DSH_HOME)
     : path.join(os.homedir(), '.dsh')

@@ -13,8 +13,8 @@
  * actually wrong never reached the caller (#204 P1, #235).
  *
  * A distinct type is what lets the session layer keep the two apart: the
- * executor's runtime failures are values, while a caller's bad argument is a
- * thrown refusal whose message names the field and what it expected.
+ * internal validator throws a refusal naming the field; the public host adapter
+ * converts it to a failed foreground value with no effects and input-change guidance.
  *
  * @module dsh-ops/shells/argument-error
  */
@@ -29,11 +29,13 @@ export const BASH_ARGUMENT_ERROR_CODE = 'INVALID_BASH_ARGUMENT'
  * command ran and which field to fix.
  */
 export class BashArgumentError extends Error {
+  declare readonly code: string
+  declare readonly argument?: string
   /**
    * @param {string} message - the refusal, naming the argument and what was expected.
    * @param {string} [argument] - the declared argument to fix, when the refusal is one field.
    */
-  constructor(message, argument) {
+  constructor(message: string, argument?: string) {
     super(message)
     this.name = 'BashArgumentError'
     this.code = BASH_ARGUMENT_ERROR_CODE
@@ -51,6 +53,6 @@ export class BashArgumentError extends Error {
  * @param {unknown} error - the thrown value.
  * @returns {boolean} whether it is an argument refusal.
  */
-export function isBashArgumentError(error) {
-  return error instanceof BashArgumentError || error?.code === BASH_ARGUMENT_ERROR_CODE
+export function isBashArgumentError(error: unknown) {
+  return error instanceof BashArgumentError || ((typeof error === 'object' && error !== null || typeof error === 'function') && 'code' in error && error.code === BASH_ARGUMENT_ERROR_CODE)
 }

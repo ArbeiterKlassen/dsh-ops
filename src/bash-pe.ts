@@ -1,14 +1,14 @@
 /** Strict PE import redirection, never patch executable instructions or original package bytes. */
-export function patchMsys(bytes) {
+export function patchMsys(bytes: Uint8Array) {
   const b = Buffer.from(bytes)
   if (b.toString('ascii',0,2) !== 'MZ') throw Error('Expected PE')
   const pe=b.readUInt32LE(60), optional=pe+24
   if(b.readUInt32LE(pe)!==0x4550 || b.readUInt16LE(pe+4)!==0x8664 || b.readUInt16LE(optional)!==0x20b) throw Error('Expected x64 PE32+')
-  const section=optional+b.readUInt16LE(pe+20), sections=[]
+  const section=optional+b.readUInt16LE(pe+20), sections: { rva: number; size: number; raw: number }[]=[]
   for(let i=0;i<b.readUInt16LE(pe+6);i++) { const at=section+40*i; sections.push({rva:b.readUInt32LE(at+12),size:Math.max(b.readUInt32LE(at+8),b.readUInt32LE(at+16)),raw:b.readUInt32LE(at+20)}) }
-  const off=r=>{const s=sections.find(s=>r>=s.rva&&r<s.rva+s.size);if(!s)throw Error('PE RVA outside sections');return r-s.rva+s.raw}
-  const string=r=>{const at=off(r),end=b.indexOf(0,at);if(end<0||end-at>256)throw Error('Invalid PE import name');return b.toString('ascii',at,end)}
-  const exports={}
+  const off=(r: number)=>{const s=sections.find(s=>r>=s.rva&&r<s.rva+s.size);if(!s)throw Error('PE RVA outside sections');return r-s.rva+s.raw}
+  const string=(r: number)=>{const at=off(r),end=b.indexOf(0,at);if(end<0||end-at>256)throw Error('Invalid PE import name');return b.toString('ascii',at,end)}
+  const exports: Record<string, string[]>={}
   let table=off(b.readUInt32LE(optional+120))
   for(let count=0;b.readUInt32LE(table+12);count++,table+=20) {
     if(count>64)throw Error('PE import limit')
@@ -22,7 +22,7 @@ export function patchMsys(bytes) {
   if(!exports['kernel32.dll']?.includes('CreateNamedPipeA')||!exports['ntdll.dll']?.includes('NtCreateNamedPipeFile'))throw Error('Unexpected MSYS imports')
   return {bytes:b,exports}
 }
-export function proxyDefinition(names, dll) {
+export function proxyDefinition(names: readonly string[], dll: string) {
   const overrides=dll==='kernel32.dll'?['CreateNamedPipeA','CreatePipe','IdnToAscii','IdnToUnicode']:['NtCreateNamedPipeFile','NtCreateSection']
   return `LIBRARY ${dll==='kernel32.dll'?'opsipc':'opsnt'}\nEXPORTS\n`+names.map(n=>` ${n}=${overrides.includes(n)?'Ops'+n:(dll==='kernel32.dll'?'KERNEL32.':'NTDLL.')+n}`).join('\n')+'\n'
 }

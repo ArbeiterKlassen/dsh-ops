@@ -20,7 +20,7 @@
  * @param {string} [label] - what was being torn down, for the log.
  * @returns {boolean} true when the callback ran (or was absent) without throwing.
  */
-export function safeDispose(fn, onError, label = 'disposer') {
+export function safeDispose(fn?: () => void, onError?: (error: unknown, label: string) => void, label = 'disposer') {
   if (typeof fn !== 'function') return true
   try {
     fn()
@@ -38,7 +38,7 @@ export function safeDispose(fn, onError, label = 'disposer') {
  * @param {string} [label] - what was being torn down, for the log.
  * @returns {number} how many callbacks threw.
  */
-export function safeDisposeAll(disposers, onError, label = 'disposers') {
+export function safeDisposeAll(disposers: Iterable<() => void>, onError?: (error: unknown, label: string) => void, label = 'disposers') {
   let failed = 0
   // Snapshot first: `Map.values()` and friends are single-use iterators, so a caller that drains
   // the list more than once (or inspects it on the way) would silently tear down nothing the

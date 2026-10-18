@@ -28,6 +28,8 @@
 import path from 'node:path'
 import { dshHome } from '../paths.js'
 
+export type ShellKind = 'bash' | 'pwsh'
+
 /**
  * The platform packages a deployment MAY carry a shell in, and the subdirectory
  * each keeps its shell in. Nothing requires them: the pinned upstream download
@@ -52,7 +54,7 @@ export const PLATFORM_PACKAGES = Object.freeze({
  * @param {string} [platform] - `process.platform`.
  * @returns {string} the executable's file name.
  */
-export function shellExecutable(kind, platform = process.platform) {
+export function shellExecutable(kind: ShellKind, platform: string = process.platform) {
   return platform === 'win32' ? PLATFORM_PACKAGES[kind].executable : kind
 }
 
@@ -146,7 +148,7 @@ export const SHELL_UPSTREAM_PINS = Object.freeze([
  * @param {string} [options.arch] - `process.arch`.
  * @returns {object|undefined} the pin, or undefined when this platform has none.
  */
-export function shellUpstreamPin({ kind, platform = process.platform, arch = process.arch }) {
+export function shellUpstreamPin({ kind, platform = process.platform, arch = process.arch }: { kind: ShellKind; platform?: string; arch?: string }) {
   return SHELL_UPSTREAM_PINS.find((pin) => (
     pin.name === kind && pin.platform === platform && pin.arch === arch
   ))
@@ -159,7 +161,7 @@ export function shellUpstreamPin({ kind, platform = process.platform, arch = pro
  * @param {NodeJS.ProcessEnv} [options.env] - the environment to read `DSH_HOME` from.
  * @returns {string} the absolute directory (`<DSH_HOME>/dsh-ops/shells`).
  */
-export function provisionedShellStore({ env = process.env } = {}) {
+export function provisionedShellStore({ env = process.env }: { env?: NodeJS.ProcessEnv } = {}) {
   return path.join(dshHome(env), 'dsh-ops', 'shells')
 }
 
@@ -171,6 +173,6 @@ export function provisionedShellStore({ env = process.env } = {}) {
  * @param {NodeJS.ProcessEnv} [options.env] - the environment to read `DSH_HOME` from.
  * @returns {string} the absolute directory (`<store>/<name>/<version>`).
  */
-export function provisionedShellVersionDir({ kind, version, env = process.env }) {
+export function provisionedShellVersionDir({ kind, version, env = process.env }: { kind: ShellKind; version: string; env?: NodeJS.ProcessEnv }) {
   return path.join(provisionedShellStore({ env }), kind, version)
 }

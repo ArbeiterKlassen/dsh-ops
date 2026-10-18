@@ -11,6 +11,7 @@
  */
 
 import fs from 'node:fs'
+import { errorMessage } from './types.js'
 import { GENERIC_BASH_REMEDY } from './paths.js'
 
 /**
@@ -25,7 +26,7 @@ import { GENERIC_BASH_REMEDY } from './paths.js'
  * @param {unknown} workdir - the cwd handed to `ctx.subprocess.spawn`.
  * @returns {boolean} whether a workdir was named and is no longer a directory.
  */
-function workdirIsGone(workdir) {
+function workdirIsGone(workdir: unknown) {
   if (typeof workdir !== 'string' || workdir === '') return false
   try {
     return fs.statSync(workdir, { throwIfNoEntry: false })?.isDirectory() !== true
@@ -52,7 +53,7 @@ const SYSTEM_BASH_SPAWN_REMEDY = 'The system bash this deployment fell back to i
  * profile installation, so most were sent somewhere that could not help.
  * @type {Readonly<Record<string, string>>}
  */
-const BASH_SPAWN_REMEDY = Object.freeze({
+const BASH_SPAWN_REMEDY: Readonly<Record<string, string>> = Object.freeze({
   bundled: "The bundled bash left the profile after it was resolved; restore the profile's "
     + 'dependencies, or run `dsh-ops provision-shells --bash` to fetch the pinned copy from '
     + 'upstream releases instead.',
@@ -86,9 +87,10 @@ const DEFAULT_BASH_SPAWN_REMEDY = `${GENERIC_BASH_REMEDY}.`
  * @param {string} [workdir] - the directory the spawn was told to run in.
  * @returns {string} the model-facing error text.
  */
-export function formatBashSpawnError(error, file, source, workdir) {
-  const code = typeof error?.code === 'string' ? ` (${error.code})` : ''
-  if (error?.code === 'ENOENT') {
+export function formatBashSpawnError(error: unknown, file: string, source: string, workdir?: string) {
+  const errorCode = (typeof error === 'object' && error !== null || typeof error === 'function') && 'code' in error ? error.code : undefined
+  const code = typeof errorCode === 'string' ? ` (${errorCode})` : ''
+  if (errorCode === 'ENOENT') {
     // Name what is actually missing. A cwd that disappeared between the pre-spawn check and the
     // spawn is the case #180 reported: the payload remedy below sent the caller to reinstall bash
     // when the session's own directory had gone away.
@@ -100,5 +102,5 @@ export function formatBashSpawnError(error, file, source, workdir) {
       : DEFAULT_BASH_SPAWN_REMEDY
     return `bash executable is unavailable${code}: ${file}. ${remedy}`
   }
-  return `bash could not be started${code}: ${String(error?.message ?? error)}`
+  return `bash could not be started${code}: ${errorMessage(error)}`
 }
