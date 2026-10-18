@@ -6,21 +6,26 @@ import path from 'node:path'
 import os from 'node:os'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { errorMessage } from './shells/types.js'
 import { patchMsys } from './bash-pe.js'
 const packageRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
-const hash=bytes=>createHash('sha256').update(bytes).digest('hex')
-const cache=new Map()
+const hash=(bytes: Uint8Array)=>createHash('sha256').update(bytes).digest('hex')
+interface Runtime { file: string; env?: NodeJS.ProcessEnv; runtime?: string }
+interface TreeEntry { size: number; mtimeMs: number; sha256?: string }
+interface Receipt { platform?: unknown; msysSha256?: unknown; files?: unknown }
+const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+const cache=new Map<string, Runtime>()
 const proxies=path.join(packageRoot,'runtime/win32-x64/bash-ipc')
-const SOURCES={config:'configured bashPath',path:'system bash on PATH','well-known':'system Git for Windows install',bundled:'bundled bash',provisioned:'provisioned bash'}
+const SOURCES: Record<string, string>={config:'configured bashPath',path:'system bash on PATH','well-known':'system Git for Windows install',bundled:'bundled bash',provisioned:'provisioned bash'}
 // Resolve both PortableGit's bin wrapper and its real usr/bin executable.
-function msysRoot(file) {
+function msysRoot(file: string) {
   const directory=path.dirname(file)
   return path.basename(directory).toLowerCase()==='bin' && path.basename(path.dirname(directory)).toLowerCase()==='usr'
     ? path.resolve(directory,'../..') : path.resolve(directory,'..')
 }
 /** The one actionable explanation for a bash that restricted modes cannot run (#42). */
-export function restrictedRemedy(file, source, why) {
-  const label=SOURCES[source] ? `${SOURCES[source]} ` : ''
+export function restrictedRemedy(file: string, source: string | undefined, why: string) {
+  const label=source !== undefined && SOURCES[source] ? `${SOURCES[source]} ` : ''
   return `EXECUTOR_UNAVAILABLE: ops_bash cannot run the ${label}${file} in restricted modes (read-only / workspace-write): ${why} `
     +'By design, restricted modes run only the pinned MSYS whose DSH IPC compatibility proxies were verified; this is not a user authorization denial. '
     +'A custom bashPath or system Git for Windows works only in danger-full-access. '
@@ -28,12 +33,12 @@ export function restrictedRemedy(file, source, why) {
     +'or ask the user to switch the session to danger-full-access. Approvals never repair an incompatible confined runtime; do not bypass confinement.'
 }
 /** Whether restricted modes can run this bash, without copying or building anything. */
-export function restrictedCompatibility(file, {platform=process.platform}={}) {
+export function restrictedCompatibility(file: string, {platform=process.platform}: { platform?: NodeJS.Platform }={}) {
   if(platform!=='win32')return {compatible:true,reason:'no MSYS IPC compatibility layer is needed on this platform'}
   const dll=path.join(msysRoot(file),'usr/bin/msys-2.0.dll')
   if(!fs.existsSync(dll))return {compatible:false,reason:`it has no usr/bin/msys-2.0.dll beside it (${dll}), which is not the supported MSYS payload layout.`}
-  let receipt
-  try { receipt=JSON.parse(fs.readFileSync(path.join(proxies,'provenance.json'),'utf8')) }
+  let receipt: Receipt
+  try { receipt=JSON.parse(fs.readFileSync(path.join(proxies,'provenance.json'),'utf8')) as Receipt }
   catch { return {compatible:false,reason:'this dsh-ops installation carries no Bash IPC compatibility receipt (runtime/win32-x64/bash-ipc/provenance.json).'} }
   const msysSha256=hash(fs.readFileSync(dll))
   if(receipt.platform==='win32-x64' && receipt.msysSha256===msysSha256)return {compatible:true,reason:'its msys-2.0.dll matches the pinned MSYS build',msysSha256,expectedSha256:receipt.msysSha256}
@@ -48,9 +53,9 @@ const PATH_DIRS=['usr/bin','ucrt64/bin','cmd']
  *  resolve — is caught too, not only the two or three files a receipt names.
  *  Records size/mtime as well as the digest, so {@link treeMatches} can re-check the whole tree
  *  with one `stat` per file instead of re-reading ~174 MB on every command. */
-function treeDigest(base,withHash=true){
-  const out={}
-  const walk=rel=>{
+function treeDigest(base: string,withHash=true){
+  const out: Record<string, TreeEntry>={}
+  const walk=(rel: string)=>{
     let entries
     try{entries=fs.readdirSync(path.join(base,rel),{withFileTypes:true})}catch{return}
     for(const e of entries.sort((a,b)=>a.name<b.name?-1:1)){
@@ -71,15 +76,15 @@ function treeDigest(base,withHash=true){
  *  contents**, so it costs one `stat` per file instead of a full digest pass. It sits on the
  *  per-command path (`confinedBash` is called from the bash tool's `execute`), which is why it
  *  must stay cheap. See the module note in `confinedBash` for what this does and does not buy. */
-function treeMatches(base,expected){
-  if(expected===null||typeof expected!=='object')return false
+function treeMatches(base: string,expected: unknown){
+  if(!record(expected))return false
   const names=Object.keys(expected)
   if(names.length===0)return false
   const actual=treeDigest(base,false)
   if(names.length!==Object.keys(actual).length)return false
   return names.every(name=>{
     const want=expected[name],got=actual[name]
-    return got!==undefined&&want!==null&&typeof want==='object'&&want.size===got.size&&want.mtimeMs===got.mtimeMs
+    return got!==undefined&&record(want)&&want.size===got.size&&want.mtimeMs===got.mtimeMs
   })
 }
 /** Per-source-tree memo. Everything derived from the **source** payload — the MSYS bytes, their
@@ -95,10 +100,11 @@ function treeMatches(base,expected){
  *  ⚠️ Consequence, stated rather than implied: if a source file is rewritten with its size and mtime
  *  preserved, this memo will not re-check it. That path was never a boundary either — the source
  *  tree lives under the profile's `node_modules`, with the same owner as the cache. */
-const sourceMemo=new Map()
+interface SourceState { key: string; bytes: Buffer; receipt: Receipt & { files: Record<string, unknown> }; proxyBytes: Record<string, Buffer>; patched: Buffer; patchedSha: string; identity: string }
+const sourceMemo=new Map<string, SourceState>()
 /** `size:mtimeMs` for a file, or `absent` — absence is part of the key, not an error. */
-const statKey = file => { try { const s=fs.statSync(file); return `${s.size}:${s.mtimeMs}` } catch { return 'absent' } }
-function sourceState(root, dll){
+const statKey = (file: string) => { try { const s=fs.statSync(file); return `${s.size}:${s.mtimeMs}` } catch { return 'absent' } }
+function sourceState(root: string, dll: string): SourceState{
   let st
   try{st=fs.statSync(dll)}catch{
     throw Error('EXECUTOR_UNAVAILABLE: Windows confined Bash requires the supported MSYS payload layout; no unconfined fallback.')
@@ -107,15 +113,15 @@ function sourceState(root, dll){
   const cached=sourceMemo.get(root)
   if(cached!==undefined&&cached.key===key)return cached
   const bytes=fs.readFileSync(dll)
-  const receipt=JSON.parse(fs.readFileSync(path.join(proxies,'provenance.json'),'utf8'))
-  if(receipt.platform!=='win32-x64'||receipt.msysSha256!==hash(bytes))throw Error('EXECUTOR_UNAVAILABLE: This MSYS version has no verified DSH IPC compatibility build. Rebuild the matching proxies; do not bypass confinement.')
-  const proxyBytes={}
+  const receipt=JSON.parse(fs.readFileSync(path.join(proxies,'provenance.json'),'utf8')) as Receipt as Receipt
+  if(receipt.platform!=='win32-x64'||receipt.msysSha256!==hash(bytes)||!record(receipt.files))throw Error('EXECUTOR_UNAVAILABLE: This MSYS version has no verified DSH IPC compatibility build. Rebuild the matching proxies; do not bypass confinement.')
+  const proxyBytes: Record<string, Buffer>={}
   for(const name of ['opsipc.dll','opsnt.dll']){
     proxyBytes[name]=fs.readFileSync(path.join(proxies,name))
     if(hash(proxyBytes[name])!==receipt.files[name])throw Error(`Bash IPC provenance mismatch: ${name}`)
   }
   const patched=patchMsys(bytes).bytes
-  const state={key,bytes,receipt,proxyBytes,patched,
+  const state: SourceState={key,bytes,receipt: { ...receipt, files: receipt.files },proxyBytes,patched,
     patchedSha:hash(patched),
     identity:hash(Buffer.from(JSON.stringify({root,msys:receipt.msysSha256,files:receipt.files}))).slice(0,24)}
   sourceMemo.set(root,state)
@@ -123,7 +129,7 @@ function sourceState(root, dll){
 }
 /** @param {string} file
  * @param {{home?: string, platform?: NodeJS.Platform, source?: string}} options */
-export function confinedBash(file, {home=process.env.DSH_HOME ?? path.join(os.homedir(),'.dsh'), platform=process.platform, source}={}) {
+export function confinedBash(file: string, {home=process.env.DSH_HOME ?? path.join(os.homedir(),'.dsh'), platform=process.platform, source}: { home?: string; platform?: NodeJS.Platform; source?: string }={}): Runtime {
   if(platform!=='win32')return {file}
   const root=msysRoot(file)
   const check=restrictedCompatibility(file,{platform})
@@ -133,7 +139,7 @@ export function confinedBash(file, {home=process.env.DSH_HOME ?? path.join(os.ho
   const selected=path.join(target,'usr/bin/bash.exe')
   const key=path.resolve(target)
   const marker=path.join(target,'.ops-ipc.json')
-  const readMarker = () => { try { return JSON.parse(fs.readFileSync(marker,'utf8')) } catch { return null } }
+  const readMarker = (): unknown => { try { return JSON.parse(fs.readFileSync(marker,'utf8')) } catch { return null } }
   /**
    * One judgement, used by **both** the cached and the cold path.
    *
@@ -157,7 +163,7 @@ export function confinedBash(file, {home=process.env.DSH_HOME ?? path.join(os.ho
    * timestamp drift passed cold and failed hot, landing in the recovery branch with no attacker
    * involved. Both now run this same function.
    */
-  const generationIntact = (m) => {
+  const generationIntact = (m: unknown) => {
     let msysOk
     try { msysOk = hash(fs.readFileSync(path.join(target,'usr/bin/msys-2.0.dll'))) === patchedSha } catch { return false }
     if(!msysOk) return false
@@ -167,11 +173,11 @@ export function confinedBash(file, {home=process.env.DSH_HOME ?? path.join(os.ho
         if(hash(fs.readFileSync(path.join(target,'usr/bin',name)))!==receipt.files[name]) return false
       }
     } catch { return false }
-    return treeMatches(target, m?.tree)
+    return treeMatches(target, record(m) ? m.tree : undefined)
   }
   let knownBad=false
   if(cache.has(key)) {
-    if(generationIntact(readMarker())) return cache.get(key)
+    if(generationIntact(readMarker())) return cache.get(key)!
     // Not a throw. A cached-but-mismatched generation takes the same quarantine + staging path as a
     // cold miss; throwing here bricked bash for the lifetime of a long-lived host process.
     knownBad=true
@@ -180,7 +186,7 @@ export function confinedBash(file, {home=process.env.DSH_HOME ?? path.join(os.ho
   // One marker read and one judgement per call: a failed cache check already proved the generation
   // bad, so re-running the (expensive) judgement on the way to quarantine just doubles the work.
   const marker0=readMarker()
-  const valid = !knownBad && fs.existsSync(selected) && marker0?.identity===identity && generationIntact(marker0)
+  const valid = !knownBad && fs.existsSync(selected) && record(marker0) && marker0.identity===identity && generationIntact(marker0)
   if(!valid){
     // A generation that exists but does not verify is **quarantined, not overwritten**: it may
     // belong to a process that is still running. Renaming keeps that guarantee while giving the next
@@ -201,7 +207,7 @@ export function confinedBash(file, {home=process.env.DSH_HOME ?? path.join(os.ho
         }catch{ /* best effort — cleanup must never block recovery */ }
         console.error(`dsh-ops: quarantined an unverifiable bash runtime generation at ${quarantine}; staging a fresh one. Delete it once no confined shell is running.`)
       }catch(error){
-        throw Error(`Bash IPC runtime at ${target} failed verification and could not be quarantined (${error.message}). `
+        throw Error(`Bash IPC runtime at ${target} failed verification and could not be quarantined (${errorMessage(error)}). `
           +'Stop any confined shell, then delete that directory and retry.')
       }
     }

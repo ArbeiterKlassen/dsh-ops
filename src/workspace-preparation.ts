@@ -3,27 +3,30 @@
  * directory-only WRITE_OWNER. The DSH provider still owns confinement/grants.
  */
 import fs from 'node:fs'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { SpawnOptionsWithStdioTuple, StdioNull, StdioPipe } from 'node:child_process'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 const script = fileURLToPath(new URL('../bin/prepare-workspace.ps1', import.meta.url))
-const pending = new Map()
-const prepared = new Set()
+const pending = new Map<string, Promise<void>>()
+const prepared = new Set<string>()
 /** Whether the given path, or any ancestor of it, is a reparse point (junction or symlink).
  * Judged on the path as given, never on its resolved form: resolving first hides a link above the
  * root, and an 8.3 short name resolves to its long form without any link being involved.
  */
-function traversesReparsePoint(target) {
+function traversesReparsePoint(target: string) {
   for (let current = path.resolve(target);; current = path.dirname(current)) {
     if (fs.lstatSync(current).isSymbolicLink()) return true
     const parent = path.dirname(current)
     if (parent === current) return false
   }
 }
-export function prepareWorkspace(policy, { platform = process.platform, run = runPreparation } = {}) {
+export function prepareWorkspace(policy: Pick<SandboxExecutionPolicy, 'mode' | 'workspaceRoot'> | undefined, { platform = process.platform, run = runPreparation }: { platform?: NodeJS.Platform; run?: (root: string) => void | Promise<void> } = {}): Promise<void> {
   if (platform !== 'win32' || policy?.mode !== 'workspace-write') return Promise.resolve()
-  if (!path.isAbsolute(policy.workspaceRoot ?? '')) return Promise.reject(new Error('Invalid authoritative workspace root'))
+  if (typeof policy.workspaceRoot !== 'string' || !path.isAbsolute(policy.workspaceRoot)) return Promise.reject(new Error('Invalid authoritative workspace root'))
   const root = fs.realpathSync.native(policy.workspaceRoot)
   // Do not silently resolve a link selected as the authority root: the authority would be a
   // directory the caller did not name. Ask that question directly instead of comparing the given
@@ -37,7 +40,7 @@ export function prepareWorkspace(policy, { platform = process.platform, run = ru
     const work = Promise.resolve().then(() => run(root)).then(() => { prepared.add(root) }).finally(() => { pending.delete(root) })
     pending.set(root, work)
   }
-  return pending.get(root)
+  return pending.get(root)!
 }
 /** Safety net only: the root DACL write no longer scales with workspace size (#43). */
 export const PREPARATION_TIMEOUT_MS = 120_000
@@ -47,7 +50,7 @@ const EXECUTION_POLICY = /about_Execution_Policies|UnauthorizedAccess|PSSecurity
 // bin/prepare-workspace.ps1's own refusals, plus a denied DACL write: the folder lacks the prerequisite.
 const PREREQUISITE = /not owned by the current user|reparse point|Explicit effective denial of WRITE_OWNER|is not a directory|WRITE_OWNER verification failed|Access is denied|0x80070005/i
 /** Name the cause of a failed preparation run, so a policy, a folder and an executor problem read differently (#66). */
-export function classifyPreparationFailure(output, { root, script: file = script } = {}) {
+export function classifyPreparationFailure(output: string, { root, script: file = script }: { root?: string; script?: string } = {}) {
   const tail = output.trim() || '(no output)'
   if (EXECUTION_POLICY.test(output)) {
     return `PowerShell execution policy blocked dsh-ops's own preparation script ${file} even with -ExecutionPolicy Bypass, so the policy comes from Group Policy (MachinePolicy/UserPolicy). Ask an administrator, check \`powershell.exe -NoProfile -Command Get-ExecutionPolicy -List\`, or use danger-full-access for this session (it skips preparation). Output: ${tail}`
@@ -77,7 +80,7 @@ export function classifyPreparationFailure(output, { root, script: file = script
  * @param {NodeJS.ProcessEnv} [source] - the environment to derive from.
  * @returns {NodeJS.ProcessEnv} a copy without the inherited module search path.
  */
-export function preparationEnvironment(source = process.env) {
+export function preparationEnvironment(source: NodeJS.ProcessEnv = process.env) {
   const env = { ...source }
   delete env.PSModulePath
   return env
@@ -92,7 +95,7 @@ export function preparationEnvironment(source = process.env) {
  * @param {string} root - the authoritative workspace root.
  * @returns {{executable: string, args: string[], options: object}}
  */
-export function preparationSpawnSpec(root) {
+export function preparationSpawnSpec(root: string): { executable: string; args: string[]; options: SpawnOptionsWithStdioTuple<StdioNull, StdioPipe, StdioPipe> } {
   const windows = process.env.SystemRoot ?? 'C:\\Windows'
   const home = process.env.DSH_HOME ?? path.join(os.homedir(), '.dsh')
   const backups = path.join(home, 'dsh-ops/acl-backups')
@@ -104,13 +107,13 @@ export function preparationSpawnSpec(root) {
     options: { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: preparationEnvironment() },
   }
 }
-export function runPreparation(root, { executable, args, timeoutMs = PREPARATION_TIMEOUT_MS } = {}) {
+export function runPreparation(root: string, { executable, args, timeoutMs = PREPARATION_TIMEOUT_MS }: { executable?: string; args?: string[]; timeoutMs?: number } = {}): Promise<void> {
   const home = process.env.DSH_HOME ?? path.join(os.homedir(), '.dsh')
   const backups = path.join(home, 'dsh-ops/acl-backups')
   const spec = preparationSpawnSpec(root)
   executable ??= spec.executable
   args ??= spec.args
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const started = Date.now()
     // `spec.options` carries the scrubbed `env`; callers may override executable/args (the suites
     // do), but the environment the interpreter inherits is this module's decision.
@@ -132,14 +135,14 @@ export function runPreparation(root, { executable, args, timeoutMs = PREPARATION
     })
   })
 }
-export function mountWorkspacePreparation(root) {
+export function mountWorkspacePreparation(root: Context) {
   if (process.platform !== 'win32') return
   root.inject(['sandboxPolicy', 'tools'], ctx => {
     // Execute-stage hook: user approval/guards have already accepted the call.
     ctx.on('tools/execute', async (exec, next) => {
       const session = exec?.agent?.session
       if (session && ['run_code', 'pwsh', 'bash', 'pwsh_persistent', 'bash_persistent'].includes(exec.name)) {
-        await prepareWorkspace(ctx.get('sandboxPolicy').resolve({ session }))
+        await prepareWorkspace(ctx.get('sandboxPolicy')!.resolve({ session }))
       }
       return next()
     })

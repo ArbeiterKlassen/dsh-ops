@@ -7,6 +7,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Type the confined Bash and workspace-preparation boundaries; reject malformed IPC proxy receipts before staging a runtime. 严格类型化受限 Bash 与工作区准备边界；代理收据格式错误时，在暂存运行时前明确拒绝。
+
 ### Leave PowerShell with its host (#261)
 
 - Remove the PowerShell npm payload dependency, shell payload release assembly and automatic
