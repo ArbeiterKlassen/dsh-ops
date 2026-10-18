@@ -33,6 +33,7 @@ pub fn dispatch(request: Request) -> Result<Value> {
     Ok(ops_results::spill::finish(&request, value))
 }
 fn execute(dir: &Dir, request: &Request) -> Result<Value> {
+    if request.tool == "table_read" { return ops_documents::dispatch(request); }
     // File reads/searches do not create or consult the durable audit store.
     // This is important for read-only sessions and keeps observation separate
     // from mutation audit records.

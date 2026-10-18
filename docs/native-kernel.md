@@ -12,6 +12,7 @@ and writes one JSON result. Splitting the kernel does not introduce a persistent
 | `ops-files` | No-follow handles, reads, CAS publication, metadata, tree operations, directory sync | protocol |
 | `ops-search` | Glob, grep and replacement orchestration over guarded file primitives | protocol, files |
 | `ops-results` | Bounded generation store, result pages and immutable job-audit access | protocol, files |
+| `ops-documents` | Strict bounded CSV/TSV Unicode decoding and typed positional rows | protocol, files |
 | `ops-batch` | Plans, write-ahead transitions and conservative recovery | protocol, files, results |
 
 The root crate routes requests and opens audit storage only for batch/result capabilities.
@@ -127,3 +128,47 @@ cannot create a reference. Cache refusal retains an incomplete bounded head with
 completed mutations must not be repeated. Reference metadata is budget-checked before publication,
 so an unusably small head budget does not create an unreachable blob. Calls without trusted storage
 retain the legacy transport contract; the host supplies recovery guidance when storage is unavailable.
+
+## CSV/TSV worker observations (15a/16)
+
+The new ops-documents crate handles `table_read` in the same one-shot worker. This slice exposes
+only the worker capability; discovery/host registration is separate. It adds no external packages:
+serde/serde_json and sha2 reuse the existing locked workspace dependency graph. PDF/DOC parsing
+remains separate work requiring its own dependency review.
+
+Arguments are `{ path, format?, encoding?, header?, offset?, limit? }`. The host resolves path
+against current cwd before sending an absolute path. Format is csv or tsv, inferred as tsv only
+for a .tsv extension (case-insensitive), otherwise csv. Encoding defaults to utf-8; utf-16le and
+utf-16be are explicit alternatives. Valid matching BOMs are consumed, contradictory BOMs and
+malformed Unicode are rejected without replacement decoding. Without a BOM the explicit encoding
+is authoritative; no unreliable byte-pattern guessing is performed.
+
+Header defaults true. Duplicate/empty column names remain positional; header=false returns an
+empty columns array and infers columnCount from the first record. Data rows are
+`{ row, cells: string[], lineStart, lineEnd }`: row is 1-based excluding the header, while lineStart
+and lineEnd count physical LF lines including the header and quoted multiline fields. Values are
+never guessed as numbers, dates or booleans. Quoted fields support delimiters, escaped double quotes
+and exact embedded LF/CRLF. Record separators are LF/CRLF; bare CR outside quotes, trailing text
+after a closing quote, unquoted quotes and inconsistent widths are errors. Blank records contain
+one empty cell; a final newline adds no phantom record. Empty files have zero rows.
+
+Offset is 1..100000 data rows, default 1; limit is 1..1000, default 200. Each call streams a bounded
+physical scan, retains only its requested rows, and reports rowsObserved, bytesRead (including
+bounded decoder read-ahead), scanComplete and pageComplete separately. rowCount/total and the
+raw-byte SHA-256 revision appear only after a clean EOF with unchanged observed file metadata.
+Complete also requires no remaining rows after the requested page. A malformed suffix preserves
+preceding valid rows with status=partial/error and no invented total, even when the requested page
+was already fully observed. Metadata changes invalidate the complete-scan claim.
+
+Hard limits are 32 MiB input, 100000 data records plus one bounded EOF lookahead, 1 MiB decoded
+record, 1024 columns, 8192 serialized header bytes and 30 seconds between records (the host/worker
+request deadline also applies). A stopped scan returns explicit scan-budget/time recovery; row
+paging does not bypass these physical limits. Use a dedicated streaming table reader for larger
+inputs. Error codes include TABLE_PARSE_ERROR, ERR_INVALID_ENCODING, OUTPUT_LIMIT, FILE_CHANGED
+and DEADLINE_EXCEEDED; preflight authority failures keep the existing policy codes.
+
+Credential and no-follow checks reuse ops-files. Readonly observations create no audit/cache
+objects. Oversized requested rows use the existing bounded spill sink before display clipping:
+references contain exact typed row JSON, source retains table/coverage facts, and captureComplete
+is independent of scanComplete. Page with the original referenceRoot. Cache effects never imply
+business writes; table_read is classified as read-only even in a writable session.
