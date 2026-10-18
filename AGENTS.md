@@ -71,7 +71,7 @@ node scripts/verify-gate.mjs --skip-install              # the full release gate
 - English for code, comments, CLI output and commit messages; user-facing docs in both languages,
   updated in the same PR.
 - Tool names always come from `publicToolName()` in `src/policy.ts`; never hand-write `ops_`.
-- Config is validated in `src/config.js`; unknown keys are errors that name the key. Defaults in
+- Config is validated in `src/config.ts`; unknown keys are errors that name the key. Defaults in
   `cordis.patch.yml` must equal the defaults in code.
 - The host half must not import `@deepseek-ai/*` values at load time; use `ctx.inject` / `ctx.get`.
   Publish tools only through this plugin's own scoped `ctx.tools.register`.

@@ -65,9 +65,8 @@ be edited by hand. Package exports, component entries and tests continue to load
 Run `npm run build` after changing source or assets and before invoking a suite directly with
 `node test/run.mjs <filter>`. `npm test`, `npm run test:ptc` and `npm run verify` build first;
 `npm run typecheck` checks the compiler configuration and migrated TypeScript without emitting
-files. JavaScript type checking remains disabled during the migration. The shell execution handle,
-host contract, approvals, jobs, session executor and runtime manager use strict TypeScript; older
-resolver, IPC and mount modules remain JavaScript with typed boundaries while their migration is staged.
+files. JavaScript type checking remains disabled during the migration. Host execution boundaries, central configuration validation and migration, and component entry modules
+use strict TypeScript. The compiler accepts remaining JavaScript until the final migration audit.
 
 For a local or Git-source installation, build and pack a checkout before installing it into DSH:
 
@@ -158,7 +157,7 @@ catalogue, retry rules and positive/negative TypeScript contracts. Node declarat
   `test/lib/` layout.
 - **Tool names** always come from `publicToolName()` in `src/policy.ts`; never hand-write the `ops_`
   prefix.
-- **Config validation** lives in `src/config.js`; an unknown key is an error that names the key.
+- **Config validation** lives in `src/config.ts`; an unknown key is an error that names the key.
   Defaults in `cordis.patch.yml` must match the defaults in code.
 - **Parsing and probing** happen synchronously in `apply`; `required: true` must refuse activation
   at load time.
