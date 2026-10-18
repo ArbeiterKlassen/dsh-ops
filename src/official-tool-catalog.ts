@@ -15,7 +15,9 @@ export const OFFICIAL_REPLACEMENTS = Object.freeze({
   grep: publicToolName('grep'),
 })
 
-export function platformSurface(platform = process.platform) {
+export type OfficialReplacement = keyof typeof OFFICIAL_REPLACEMENTS
+
+export function platformSurface(platform: string = process.platform) {
   if (!['win32', 'linux', 'darwin'].includes(platform)) throw new Error(`Unsupported official-tool hiding platform: ${platform}`)
   return { retainedCommand: platform === 'win32' ? 'pwsh' : 'bash', shellDefaultEnabled: true }
 }

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { parse } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
-import { resolveHidingConfig } from '../lib/config.js'
+import { ConfigError, resolveHidingConfig } from '../lib/config.js'
 import { OFFICIAL_REPLACEMENTS, platformSurface } from '../lib/official-tool-catalog.js'
 import { Config } from '../lib/components/hide-official/index.js'
 import { assert, PACKAGE_ROOT, report, test } from './lib/harness.mjs'
@@ -23,7 +23,7 @@ await test('invalid configuration names its key or unsupported selection', () =>
   for (const tool of ['write', 'edit', 'str_replace_editor', 'bash', 'ops_read', 'run_code', 'toString', '', null, {}]) {
     assert.throws(() => resolveHidingConfig({ replaceTools: [tool] }), /replaceTools contains unsupported tool/)
   }
-  assert.throws(() => resolveHidingConfig({ replacementTools: ['read'] }), /unknown hiding key: replacementTools/)
+  assert.throws(() => resolveHidingConfig({ replacementTools: ['read'] }), error => error instanceof ConfigError && /unknown hiding key: replacementTools/.test(error.message))
 })
 await test('legacy blanket settings are validated but never authorize replacements', () => {
   for (const scope of ['takeover', 'extended', 'off', undefined, null]) {

@@ -1,4 +1,5 @@
 /** Real host mount checks, also run before the legacy mount suite's runtime gate. */
+import { registerNativeProvider } from '../../lib/file/result-provider.js'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { apply } from '../../lib/official-tool-hiding.js'
 import { platformSurface } from '../../lib/official-tool-catalog.js'
@@ -51,7 +52,8 @@ function warningsFrom(ctx) {
   })
   return warnings
 }
-function replacements(ctx) { return FILE_TOOLS.map(name => ctx.tools.register(tool(publicToolName(name)))) }
+const replacement = (ctx, name) => registerNativeProvider(ctx, [tool(publicToolName(name))], definition => ctx.tools.register(definition))
+const replacements = ctx => Promise.all(FILE_TOOLS.map(name => replacement(ctx, name)))
 const assemble = (ctx, agent) => ctx.get('systemPrompt').assemble({ scope: agent })
 const execute = (ctx, agent, name) => ctx.get('tools').execute({ agent, name, arguments: {}, callId: 'hide-test', signal: new AbortController().signal })
 
@@ -59,7 +61,7 @@ export async function officialToolHidingMountChecks() {
   await test('selected replacements remove official schemas and dispatch, preserves unrelated scopes, and lifts on unload', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx)
+      await replacements(ctx)
       const retained = platformSurface().retainedCommand
       for (const name of ['read', 'glob', 'grep', retained, 'foreign']) ctx.tools.register(tool(name))
       const existing = await mint(ctx, 'existing-hide-agent')
@@ -93,7 +95,7 @@ export async function officialToolHidingMountChecks() {
   await test('unselected stock tools stay visible and dispatchable without warning lists', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx)
+      await replacements(ctx)
       for (const name of ['read', 'glob', 'grep', ...STOCK_UNSUPPORTED_48]) ctx.tools.register(tool(name))
       const warnings = warningsFrom(ctx)
       await mount(ctx, { replaceTools: ['read'] })
@@ -112,7 +114,7 @@ export async function officialToolHidingMountChecks() {
     for (const [official, replacement] of [['read', 'inspect_local_file'], ['glob', 'glob'], ['grep', 'grep']]) {
       const { ctx } = await bootHost()
       try {
-        ctx.tools.register(tool(publicToolName(replacement)))
+        await registerNativeProvider(ctx, [tool(publicToolName(replacement))], definition => ctx.tools.register(definition))
         for (const name of ['read', 'glob', 'grep', 'write', 'edit', 'foreign']) ctx.tools.register(tool(name))
         await mount(ctx, { replaceTools: [official] })
         const agent = await mint(ctx, 'one-selection-' + official)
@@ -127,7 +129,7 @@ export async function officialToolHidingMountChecks() {
   await test('a missing selected counterpart restores every mask and fails closed', async () => {
     const { ctx } = await bootHost()
     try {
-      ctx.tools.register(tool(publicToolName('glob')))
+      await replacement(ctx, 'glob')
       for (const name of ['read', 'glob', 'foreign', 'ops_read']) ctx.tools.register(tool(name))
       await mount(ctx, { replaceTools: ['read', 'glob'] })
       const agent = await mint(ctx, 'missing-selection')
@@ -139,7 +141,7 @@ export async function officialToolHidingMountChecks() {
   await test('replacement withdrawal restores official tools but blocks the turn until readiness returns', async () => {
     const { ctx } = await bootHost()
     try {
-      const disposers = replacements(ctx)
+      const disposers = await replacements(ctx)
       ctx.tools.register(tool('read'))
       await mount(ctx)
       const agent = await mint(ctx, 'live-readiness')
@@ -147,7 +149,7 @@ export async function officialToolHidingMountChecks() {
       disposers[0]()
       assert.ok(scopedToolNames(ctx, agent).includes('read'))
       await assert.rejects(() => assemble(ctx, agent), /missing OPS surface:.*ops_inspect_local_file/)
-      ctx.tools.register(tool(publicToolName(FILE_TOOLS[0])))
+      await replacement(ctx, FILE_TOOLS[0])
       await waitFor(() => !scopedToolNames(ctx, agent).includes('read'))
       await assemble(ctx, agent)
       // Unselected write stays visible without affecting selected read readiness.
@@ -162,7 +164,7 @@ export async function officialToolHidingMountChecks() {
   await test('own-scope official registration cannot be silently hidden by an inherited restriction', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx)
+      await replacements(ctx)
       await mount(ctx)
       const agent = await mint(ctx, 'own-official')
       agent.ctx.tools.register(tool('read'))
@@ -174,7 +176,7 @@ export async function officialToolHidingMountChecks() {
   await test('the unselected PTC transport stays visible without warnings', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx)
+      await replacements(ctx)
       ctx.provide('ptcRuntime', { language: 'typescript' })
       const warnings = warningsFrom(ctx)
       await mount(ctx)
@@ -208,7 +210,7 @@ export async function officialToolHidingMountChecks() {
   await test('a root that loses its OPS surface does not stop a healthy root', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
+      await replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
       await mount(ctx)
       const a = await mint(ctx, 'independent-a'), b = await mint(ctx, 'independent-b')
       await assemble(ctx, a); await assemble(ctx, b)
@@ -227,7 +229,7 @@ export async function officialToolHidingMountChecks() {
   await test('a failed child is blocked without stopping its healthy parent or unrelated root', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
+      await replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
       const hiding = await mount(ctx)
       const parent = await mint(ctx, 'independent-parent')
       const other = await mint(ctx, 'independent-root')
@@ -250,7 +252,7 @@ export async function officialToolHidingMountChecks() {
   await test('inherited masks cannot conceal a child missing an OPS replacement', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
+      await replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
       await mount(ctx)
       const parent = await mint(ctx, 'ready-parent')
       const child = await mint(ctx, 'filtered-child', parent)
@@ -277,6 +279,54 @@ export async function officialToolHidingMountChecks() {
       assert.equal(decision.info.code, 'READINESS_BLOCKED')
     } finally { await shutdown(ctx) }
   })
+  await test('foreign same-name tools and owned read_many cannot satisfy selected single-file read', async () => {
+    const { ctx } = await bootHost()
+    try {
+      const removeForeign = ctx.tools.register(tool(publicToolName('inspect_local_file')))
+      await replacement(ctx, 'read_many')
+      for (const name of ['read', 'foreign']) ctx.tools.register(tool(name))
+      await mount(ctx, { replaceTools: ['read'] })
+      const agent = await mint(ctx, 'foreign-read-counterpart')
+      await assert.rejects(() => assemble(ctx, agent), /missing OPS surface: read -> ops_inspect_local_file/)
+      assert.ok(scopedToolNames(ctx, agent).includes('read'))
+      assert.equal((await execute(ctx, agent, 'foreign')).isError, true)
+      removeForeign()
+      const removeOwned = await replacement(ctx, 'inspect_local_file')
+      await assemble(ctx, agent)
+      assert.equal(scopedToolNames(ctx, agent).includes('read'), false)
+      removeOwned()
+      ctx.tools.register(tool(publicToolName('inspect_local_file')))
+      await assert.rejects(() => assemble(ctx, agent), /READINESS_BLOCKED/)
+      assert.ok(scopedToolNames(ctx, agent).includes('read'))
+    } finally { await shutdown(ctx) }
+  })
+  await test('a byte-identical foreign child shadow invalidates owned readiness without harming siblings', async () => {
+    const { ctx } = await bootHost()
+    try {
+      await replacement(ctx, 'inspect_local_file')
+      for (const name of ['read', 'foreign']) ctx.tools.register(tool(name))
+      await mount(ctx, { replaceTools: ['read'] })
+      const parent = await mint(ctx, 'identity-parent')
+      const child = await mint(ctx, 'identity-child', parent)
+      const sibling = await mint(ctx, 'identity-sibling', parent)
+      const original = ctx.get('tools').get(publicToolName('inspect_local_file'), child)
+      const before = JSON.stringify(ctx.get('tools').schemas(child))
+      const removeShadow = child.ctx.tools.register({ ...original })
+      assert.equal(JSON.stringify(ctx.get('tools').schemas(child)), before, 'schema bytes stay identical despite foreign ownership')
+      assert.notEqual(ctx.get('tools').get(original.name, child), original)
+      await assert.rejects(() => assemble(ctx, child), /READINESS_BLOCKED.*ops_inspect_local_file/)
+      assert.equal((await execute(ctx, child, 'foreign')).isError, true)
+      for (const healthy of [parent, sibling]) {
+        await assemble(ctx, healthy)
+        assert.equal((await execute(ctx, healthy, 'foreign')).isError, false)
+        assert.equal(scopedToolNames(ctx, healthy).includes('read'), false)
+      }
+      removeShadow()
+      await assemble(ctx, child)
+      assert.equal(ctx.get('tools').get(original.name, child), original)
+      assert.equal((await execute(ctx, child, 'foreign')).isError, false)
+    } finally { await shutdown(ctx) }
+  })
   await test('schema-only counterpart claims do not satisfy selected readiness', async () => {
     const { ctx } = await bootHost({ withTools: false })
     try {
@@ -295,7 +345,7 @@ export async function officialToolHidingMountChecks() {
   await test('assembled injection of a hidden tool is rejected even when registry masking succeeded', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx); ctx.tools.register(tool('read'))
+      await replacements(ctx); ctx.tools.register(tool('read'))
       await mount(ctx)
       const agent = await mint(ctx, 'assembly-verification')
       ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
@@ -311,7 +361,7 @@ export async function officialToolHidingMountChecks() {
   await test('a fail-once prompt provider blocks only that assembly and recovers on the next request', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
+      await replacements(ctx); ctx.tools.register(tool('read')); ctx.tools.register(tool('foreign'))
       await mount(ctx)
       const a = await mint(ctx, 'transient-a'), b = await mint(ctx, 'transient-b')
       await assemble(ctx, a); await assemble(ctx, b)
@@ -333,7 +383,7 @@ export async function officialToolHidingMountChecks() {
   await test('agent disposal lifts restrictions and remount does not retain old masks', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx); ctx.tools.register(tool('read'))
+      await replacements(ctx); ctx.tools.register(tool('read'))
       const first = await mount(ctx)
       const agent = await mint(ctx, 'disposal')
       assert.equal(scopedToolNames(ctx, agent).includes('read'), false)
@@ -395,7 +445,7 @@ export async function officialToolHidingMountChecks() {
   await test('changing selection through remount restores deselected tools', async () => {
     const { ctx } = await bootHost()
     try {
-      replacements(ctx)
+      await replacements(ctx)
       for (const name of ['read', 'glob', 'grep']) ctx.tools.register(tool(name))
       const first = await mount(ctx, { replaceTools: ['read'] })
       const agent = await mint(ctx, 'changed-selection')

@@ -11,7 +11,6 @@
  * @module dsh-ops/config
  */
 
-import { OFFICIAL_REPLACEMENTS } from './official-tool-catalog.js'
 
 /**
  * Keys only the removed FastCtx surface read. Existing rows still carry them
@@ -30,16 +29,8 @@ export const SHELL_POLICIES = ['advise', 'deny-host-shell']
 /** Host tool names the `deny-host-shell` policy refuses by default. */
 export const DEFAULT_DENIED_HOST_TOOLS = ['pwsh', 'bash', 'pwsh_persistent']
 
-/** Error raised for a configuration value this plugin cannot honour. */
-export class ConfigError extends Error {
-  /**
-   * @param {string} message - what is wrong and what is accepted.
-   */
-  constructor(message) {
-    super(`dsh-ops config: ${message}`)
-    this.name = 'ConfigError'
-  }
-}
+import { ConfigError } from './config-error.js'
+export { ConfigError } from './config-error.js'
 
 /**
  * Reject a key the plugin does not implement instead of silently ignoring it.
@@ -196,30 +187,7 @@ export function resolveConfig(rawConfig) {
   }
 }
 
-/** Explicit reviewed replacements. Legacy blanket settings are validated but inert. */
-export function resolveHidingConfig(raw = {}) {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new ConfigError('hiding config must be an object')
-  const keys = ['replaceTools', 'strict', 'scope', 'additionalOfficialTools']
-  for (const key of Object.keys(raw)) if (!keys.includes(key)) throw new ConfigError(`unknown hiding key: ${key}`)
-  // Saved 0.3 rows must not regain blanket hiding after an update. Retain old
-  // validation for diagnostics, but only replaceTools grants new authority.
-  if (raw.strict !== undefined && raw.strict !== true) throw new ConfigError('strict is a legacy key and must be true when present')
-  if (raw.scope != null && !['takeover', 'extended', 'off'].includes(raw.scope)) {
-    throw new ConfigError('scope is a legacy key and must be takeover, extended or off')
-  }
-  const aliases = raw.additionalOfficialTools ?? []
-  if (!Array.isArray(aliases) || aliases.some(n => typeof n !== 'string' || !/^[A-Za-z0-9_-]+$/.test(n) || n.startsWith('ops_'))) {
-    throw new ConfigError('additionalOfficialTools must be an array of official tool names (not ops_* replacements)')
-  }
-  const selected = raw.replaceTools === undefined ? [] : raw.replaceTools
-  if (!Array.isArray(selected)) throw new ConfigError('replaceTools must be an array of reviewed official tool names')
-  for (const tool of selected) {
-    if (typeof tool !== 'string' || !Object.hasOwn(OFFICIAL_REPLACEMENTS, tool)) {
-      throw new ConfigError(`replaceTools contains unsupported tool: ${JSON.stringify(tool)}; choose read, glob or grep`)
-    }
-  }
-  return { replaceTools: [...new Set(selected)] }
-}
+export { resolveHidingConfig } from './official-tool-config.js'
 
 /** Independent PTC row configuration uses the same central validation entry point. */
 export { parsePtcConfig as resolvePtcConfig } from './ptc/config.js'
