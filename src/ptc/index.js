@@ -1,6 +1,7 @@
 /** PTC-only component. Public prompt assembly identifies the effective presentation;
  * never inspect private modeFor/layers, force presentAs, or infer mode from run_code existence.
  */
+import { WORKER_TIMEOUT_MS } from '../worker-protocol.js'
 import { PTC_TOOLS, PTC_SECTION, definition } from './contract.js'
 import { publicToolName } from '../policy.js'
 import { invoke, resolveWorker, failure } from './worker.js'
@@ -77,7 +78,7 @@ export function apply(root, rawConfig) {
               const controller = new AbortController()
               const abort = () => controller.abort(exec.signal?.reason)
               if (exec.signal?.aborted) abort(); else exec.signal?.addEventListener('abort', abort, { once: true })
-              const timer = setTimeout(() => controller.abort(new Error('Worker deadline exceeded')), 300000); timer.unref?.()
+              const timer = setTimeout(() => controller.abort(new Error('Worker deadline exceeded')), WORKER_TIMEOUT_MS); timer.unref?.()
               const work = monitoredInvoke(ctx, file, tool, args, exec, controller, config)
               active.set(controller, { owner: agent, promise: work })
               try { return await work }

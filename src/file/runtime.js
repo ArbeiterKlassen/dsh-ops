@@ -1,3 +1,4 @@
+import { WORKER_TIMEOUT_MS } from '../worker-protocol.js'
 import { publicToolName } from '../policy.js'
 import { definition, FILE_TOOLS } from './contract.js'
 import { safeDisposeAll } from '../teardown.js'
@@ -32,7 +33,7 @@ export class NativeFileTools {
     const abort = () => controller.abort(exec?.signal?.reason)
     if (exec?.signal?.aborted) abort()
     else exec?.signal?.addEventListener?.('abort', abort, { once: true })
-    const timer = setTimeout(() => controller.abort(new Error('Native file call timed out')), this.config.toolCallTimeoutMs ?? 300000)
+    const timer = setTimeout(() => controller.abort(new Error('Native file call timed out')), this.config.toolCallTimeoutMs ?? WORKER_TIMEOUT_MS)
     timer.unref?.()
     this.active.add(controller)
     try { return await invoke(this.ctx, this.file, tool, args, exec, controller.signal, this.config) }

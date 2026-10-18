@@ -1,4 +1,5 @@
 /** Native file worker bridge. The host owns path resolution and DSH authority. */
+import { workerEnvelope } from '../worker-protocol.js'
 import path from 'node:path'
 import { credentialPath, credentialRefusal, credentialRoots } from '../credential-policy.js'
 import { ensureSessionTemp, sessionTempDir } from '../session-temp.js'
@@ -131,7 +132,8 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
   // Traversals skip credential directories by identity, so a glob or grep cannot even name a private
   // key that sits below one.
   const denyRoots = (config?.denyCredentialReads ?? true) !== false ? credentialRoots() : []
-  const input = JSON.stringify({ root: trustedPath(cwd), scope: String(session.id), tool, args: workerArgs, read_only: policy.mode === 'read-only', deny_roots: denyRoots, deny_credential_names: (config?.denyCredentialReads ?? true) !== false, ...(policy.mode === 'workspace-write' ? { write_roots: writeRoots } : {}) })
+  const envelope = workerEnvelope('file', { root: trustedPath(cwd), scope: String(session.id), tool, args: workerArgs, read_only: policy.mode === 'read-only', deny_roots: denyRoots, deny_credential_names: (config?.denyCredentialReads ?? true) !== false, ...(policy.mode === 'workspace-write' ? { write_roots: writeRoots } : {}) }, config?.toolCallTimeoutMs)
+  const input = JSON.stringify(envelope)
   if (Buffer.byteLength(input) > 2 * 1024 * 1024) return failure('OUTPUT_LIMIT', 'Request exceeds the 2 MiB byte budget.')
   let spawned = false
   try {
@@ -151,7 +153,7 @@ async function invokeTrusted(ctx, file, tool, args, exec, signal, config) {
       if (mutates && (current.mode === 'read-only' || (current.mode === 'workspace-write' && required === 'danger-full-access'))) return denied(current, tool, required, 'Authority changed during preparation; no files were changed.')
       return authorityChanged(current, tool)
     }
-    const handle = subprocess.spawn({ argv, cwd, stdio: { stdin: { data: input }, stdout: { maxBytes: 128 * 1024 }, stderr: { maxBytes: 16 * 1024 } }, graceMs: 1000, signal })
+    const handle = subprocess.spawn({ argv, cwd, stdio: { stdin: { data: input }, stdout: { maxBytes: envelope.budget.maxBytes }, stderr: { maxBytes: 16 * 1024 } }, graceMs: 1000, signal })
     spawned = true
     const outcome = await handle.done
     const stdout = handle.collected.stdout.readFrom(0)

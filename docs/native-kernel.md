@@ -25,3 +25,23 @@ Run `cargo test --workspace --locked --manifest-path native/Cargo.toml` to inclu
 moved into the new crates. `npm run build:ptc` still produces the same worker path. Published
 packages include `native/crates/` and both metadata adapters so installed source builds work.
 The benchmark preflight checks all workspace inputs while ignoring Cargo target directories.
+
+## One-shot request protocol
+
+New bridges send `{ version: 1, requestId, component, budget, request }`. `request` retains the
+strict existing capability and host authority fields; `component` is `file` or `ptc` and never
+grants authority. The bridge generates a fresh UUID, supplies the authoritative session/root and
+policy, then rechecks authority immediately before spawning as before. Success JSON is unchanged.
+
+`budget.timeoutMs` is 1..2147483647 milliseconds, using the existing 300000ms default and existing
+host cancellation. A process-local watchdog also enforces it for direct callers; interruption exits
+124 and bridges report unknown effects. `budget.maxBytes` is 1024..131072, defaults to 131072, and
+counts serialized JSON plus its newline. The minimum leaves room for a structured error. Oversized
+read output returns `OUTPUT_LIMIT` with no effects; a lost mutation receipt reports unknown effects
+unless an existing failure already carries a more precise effect state. No automatic retry follows.
+
+The complete request remains capped at 2 MiB. Explicit legacy unversioned requests remain accepted
+for 0.3.x benchmark comparisons, with the same authority checks and bounded default transport budget.
+Any envelope marker selects strict v1 decoding: partial envelopes, unknown fields, invalid IDs,
+unsupported components/versions and unusable budgets are rejected before filesystem effects.
+Request IDs do not change result hashes. Scan/storage/reference budgets are separate later work.

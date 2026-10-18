@@ -7,6 +7,13 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Version the one-shot worker request protocol (#261)
+
+- Send strict v1 requests with per-call IDs, component provenance, and enforced deadline/output
+  budgets while retaining existing host authority checks and canonical success results. Reject
+  malformed envelopes before effects; interrupted or oversized mutation receipts never imply no
+  effects. Keep explicit v0 decoding for benchmark compatibility with bounded transport defaults.
+
 ### Split the native kernel into workspace crates (#261)
 
 - Extract protocol, file, search, batch, and result-storage crates while retaining the one-shot

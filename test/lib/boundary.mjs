@@ -97,7 +97,8 @@ export function callWorker(input, { timeoutMs = 20_000 } = {}) {
 }
 
 /**
- * Build a worker request in the exact shape `lib/file/worker.js` sends.
+ * Build an explicit legacy v0 payload for worker boundary and compatibility tests.
+ * Current host bridges wrap this payload in the versioned transport envelope.
  * @param {string} tool - the tool name.
  * @param {object} args - the tool arguments.
  * @param {object} [options] - transient request fields.
