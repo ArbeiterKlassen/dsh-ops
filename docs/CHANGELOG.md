@@ -28,6 +28,11 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Migrate credential fences, trusted path anchors and permission failures to strict TypeScript without changing emitted entrypoints or authority decisions. Preserve worker effect facts during denial normalization and assert typed host modes/unknown-input narrowing.
 - 将凭据围栏、可信路径锚点和权限错误迁移为严格 TypeScript，保持生成入口和权限决策不变；拒绝归一化保留 worker 效果事实，并验证宿主模式及未知输入的类型缩窄。
+### Preserve literal backslashes in Native source lines (#261)
+
+- Share a reversible source-line encoder across compact and general Native output so literal backslash sequences cannot be confused with tabs, control characters or Unicode separators. Canonical data and ordinary ASCII line output remain unchanged.
+- 紧凑与通用 Native 正文共用可逆行编码，区分字面反斜杠序列、制表符、控制字符和 Unicode 分隔符；规范数据和普通 ASCII 行输出不变。
+
 ### Add opt-in real-host acceptance evidence (#261, 16/16)
 
 - Run BM-01–05 with a scripted provider, exact0.3.1 and pinned official comparators, immutable sensitivity fixtures, visible-content assertions, numerical lossless lower bounds and JSON/Markdown reports. Manual cross-platform CI uploads failed and blocked evidence; no paid model calls or default gate changes.

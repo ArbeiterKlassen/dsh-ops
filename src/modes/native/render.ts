@@ -1,7 +1,8 @@
 import { Buffer } from 'node:buffer'
+import { compactRanges } from './ranges.js'
+import { encodeSourceLine } from './line-encoding.js'
 import { renderDocument } from './documents.js'
 import { isDocumentTool } from '../../capabilities/documents.js'
-import { compactRanges } from './ranges.js'
 import { renderResult } from './result.js'
 import { errorPolicy } from '../../kernel/errors.js'
 import type { EffectState } from '../../kernel/outcome.js'
@@ -13,8 +14,8 @@ const record = (value: unknown): value is Row => value !== null && typeof value 
 const rows = (value: unknown): Row[] => Array.isArray(value) ? value.filter(record) : []
 const count = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 const label = (value: unknown): string => String(value ?? '').replace(/[\r\n\t\x00-\x1f\x7f]/g, char => JSON.stringify(char).slice(1, -1))
-// Keep physical line labels intact in Markdown, including bare CR and Unicode separators.
-const contentLine = (value: unknown): string => label(value).replace(/[\u0085\u2028\u2029]/g, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`)
+// Keep physical line labels intact without confusing literal backslashes with escapes.
+const contentLine = (value: unknown): string => encodeSourceLine(String(value ?? ''))
 const field = (value: unknown): string => typeof value === 'string' ? label(value) : JSON.stringify(value)
 const encodedBytes = (text: string): number => Buffer.byteLength(JSON.stringify([{ type: 'text', text }]), 'utf8')
 

@@ -1,10 +1,9 @@
 import path from 'node:path'
+import { encodeSourceLine } from './line-encoding.js'
 type Row = Record<string, unknown>
 const record = (value: unknown): value is Row => value !== null && typeof value === 'object' && !Array.isArray(value)
 const integer = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 const quoted = (value: string): string => JSON.stringify(value).replace(/[\u0085\u2028\u2029]/g, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`)
-const content = (value: string): string => value.replace(/[\r\n\t\x00-\x1f\x7f\u0085\u2028\u2029]/g,
-  char => /[\u0085\u2028\u2029]/.test(char) ? `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}` : JSON.stringify(char).slice(1, -1))
 interface Range { path: string; revision: string; total: number; next: number; complete: boolean; lines: { line: number; text: string }[] }
 /** Compact only a fully evidenced requested range. Physical gaps keep the general diagnostic renderer. */
 function range(input: unknown, value: unknown): Range | undefined {
@@ -43,7 +42,7 @@ export function compactRanges(input: Row, value: Row): string[] | undefined {
   for (const item of observed) {
     const span = item.lines.length ? `${item.lines[0]!.line}-${item.lines.at(-1)!.line}` : 'none'
     output.push(`=== FILE: ${quoted(base ? path.basename(item.path) : item.path)} (Lines ${span} of ${item.total}) ===`)
-    for (const line of item.lines) output.push(`${line.line}|${content(line.text)}`)
+    for (const line of item.lines) output.push(`${line.line}|${encodeSourceLine(line.text)}`)
     if (!item.lines.length) output.push(item.total === 0 ? '(empty file)' : '(no lines in this range)')
     output.push(`[Notice: revision=${item.revision}; ${item.complete ? 'end of file; complete=true' : `more lines; nextOffset=${item.next}`}.]`)
   }
