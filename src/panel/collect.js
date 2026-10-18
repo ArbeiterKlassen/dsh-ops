@@ -5,7 +5,7 @@
  * One projected record per `session/event` is appended to
  * `<cwd>/.dsh-ops/panel/<sessionId>.ndjson` while a session is live, and folded
  * into the single JSON document `<sessionId>.json` at every turn end, on session
- * disposal, and at teardown. The JSON is the only data source; `panel.html` is a
+ * disposal. Disabling the component stops queued work and retains the append log. The JSON is the only data source; `panel.html` is a
  * viewer that reads it. Three contracts shape the code:
  *
  * - **Capture can never break a session.** Every entry point is wrapped, every
@@ -29,6 +29,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { dshHome } from '../paths.js'
 import { renderPanelHtml } from './render.js'
+import { activityGate } from './activity.js'
 
 /** Document format tag; a reader must reject a tag it does not know. */
 export const PANEL_FORMAT = 'dsh-ops/panel-capture@1'
@@ -438,11 +439,16 @@ export function fitDocument(document, cap) {
  * nothing; persistence is per session and lazy, so no directory exists until the
  * first event of the first captured session arrives.
  * @param {object} [options] - `config`, `io`, `env`, `now`, `report` and `meta` seams.
- * @returns {object} the collector.
+ * Returns the collector for this activation.
  */
 export function createPanelCollector(options = {}) {
   const config = options.config ?? PANEL_DEFAULTS
-  const io = options.io ?? fsp
+  const storage = options.io ?? fsp
+  const activity = activityGate()
+  // Fence each filesystem operation, including continuations after an awaited
+  // read/write. Queued folds cannot start fresh writes once the row is stopped.
+  const io = Object.fromEntries(['readFile', 'mkdir', 'appendFile', 'writeFile', 'rename', 'stat', 'rm']
+    .map(method => [method, (...args) => activity.run(() => storage[method](...args))]))
   const env = options.env ?? process.env
   const now = options.now ?? (() => Date.now())
   const report = typeof options.report === 'function' ? options.report : () => {}
@@ -450,6 +456,7 @@ export function createPanelCollector(options = {}) {
   const sessions = new Map()
   const noted = new Set()
   let disposed = false
+  let stopping
 
   // Say something at most once per kind; reporting must never escape either.
   function note(key, message, level = 'warn') {
@@ -458,6 +465,7 @@ export function createPanelCollector(options = {}) {
     try { report(message, level) } catch { /* a logger failure is not the session's problem */ }
   }
   function fail(key, error) {
+    if (activity.cancelled(error)) return
     const reason = error instanceof Error ? error.message : String(error)
     note(key, `dsh-ops panel: capture failed (${key}): ${reason}; this session continues uncaptured.`, 'warn')
   }
@@ -631,7 +639,16 @@ export function createPanelCollector(options = {}) {
       state.closed = true
       return merge(sessionId, true).then(() => { sessions.delete(sessionId) })
     },
-    /** Seal every session; called from the activation teardown. Never rejects. */
+    /** Stop collection without starting a final fold. Await all issued I/O before
+     * the loader reports this row disabled; retained append logs remain recoverable. */
+    stop() {
+      if (stopping) return stopping
+      disposed = true
+      activity.stop()
+      stopping = collector.flush().then(() => { sessions.clear() })
+      return stopping
+    },
+    /** Explicitly seal every session. Component teardown uses stop() instead. */
     dispose() {
       if (disposed) return Promise.resolve(undefined)
       disposed = true
