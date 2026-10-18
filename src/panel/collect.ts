@@ -30,6 +30,8 @@ import { createHash } from 'node:crypto'
 import { dshHome } from '../paths.js'
 import { renderPanelHtml } from './render.js'
 import { activityGate } from './activity.js'
+import { object, field, finite, foldEvent, missingFile } from './types.js'
+import type { Row, PanelConfig, PanelPaths, TextField, CoreBucket, UsageBucket, Usage, CaptureEvent, ArchiveMember, FoldedEvents, SessionState, FoldContext, CollectorOptions } from './types.js'
 
 /** Document format tag; a reader must reject a tag it does not know. */
 export const PANEL_FORMAT = 'dsh-ops/panel-capture@1'
@@ -38,7 +40,7 @@ export const PANEL_DIR = path.join('.dsh-ops', 'panel')
 /** The viewer file name inside {@link PANEL_DIR}. */
 export const PANEL_HTML = 'panel.html'
 /** Recognised row keys and their defaults; `capture` is the user-facing switch. */
-export const PANEL_DEFAULTS = Object.freeze({ capture: true, textLimit: 2_000, maxSessionBytes: 8 * 1024 * 1024 })
+export const PANEL_DEFAULTS: PanelConfig = Object.freeze({ capture: true, textLimit: 2_000, maxSessionBytes: 8 * 1024 * 1024 })
 
 // View guards: a pathological session must not turn the trace into the document.
 const TRACE_LIMIT = 20_000
@@ -48,21 +50,21 @@ const TOOL_NAME_LIMIT = 64
 /** Characters of a tool name line kept in a trace preview. */
 const PREVIEW_CHARS = 120
 /** The four core usage buckets in `bench/run.schema.json` order, and the optional ones. */
-const USAGE_BUCKETS = Object.freeze(['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'])
-const OPTIONAL_BUCKETS = Object.freeze(['reasoningTokens', 'totalTokens'])
+const USAGE_BUCKETS: readonly CoreBucket[] = Object.freeze(['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'])
+const OPTIONAL_BUCKETS: readonly UsageBucket[] = Object.freeze(['reasoningTokens', 'totalTokens'])
 
 /** Error raised for a panel configuration value this component cannot honour. */
 export class PanelConfigError extends Error {
   /** @param {string} message - what is wrong and what is accepted. */
-  constructor(message) {
+  constructor(message: string) {
     super(`dsh-ops panel config: ${message}`)
     this.name = 'PanelConfigError'
   }
 }
 
 /** Validate one row's config, applying every default; unknown or out-of-range values fail loud. */
-export function resolvePanelConfig(options = {}) {
-  if (options === null || typeof options !== 'object' || Array.isArray(options)) {
+export function resolvePanelConfig(options: unknown = {}): PanelConfig {
+  if (!object(options) || Array.isArray(options)) {
     throw new PanelConfigError(`config must be an object, got ${JSON.stringify(options)}`)
   }
   const accepted = Object.keys(PANEL_DEFAULTS)
@@ -75,14 +77,14 @@ export function resolvePanelConfig(options = {}) {
   if (typeof config.capture !== 'boolean') {
     throw new PanelConfigError(`capture must be a boolean, got ${JSON.stringify(config.capture)}`)
   }
-  if (!Number.isSafeInteger(config.textLimit) || config.textLimit < 64 || config.textLimit > 100_000) {
+  if (typeof config.textLimit !== 'number' || !Number.isSafeInteger(config.textLimit) || config.textLimit < 64 || config.textLimit > 100_000) {
     throw new PanelConfigError(`textLimit must be an integer from 64 to 100000, got ${JSON.stringify(config.textLimit)}`)
   }
-  if (!Number.isSafeInteger(config.maxSessionBytes)
+  if (typeof config.maxSessionBytes !== 'number' || !Number.isSafeInteger(config.maxSessionBytes)
     || config.maxSessionBytes < 64 * 1024 || config.maxSessionBytes > 256 * 1024 * 1024) {
     throw new PanelConfigError(`maxSessionBytes must be an integer from 65536 to 268435456, got ${JSON.stringify(config.maxSessionBytes)}`)
   }
-  return Object.freeze(config)
+  return Object.freeze({ capture: config.capture, textLimit: config.textLimit, maxSessionBytes: config.maxSessionBytes })
 }
 
 /**
@@ -91,12 +93,12 @@ export function resolvePanelConfig(options = {}) {
  * @param {unknown} value - the candidate id.
  * @returns {string|undefined} the id, or undefined when it cannot be a file name.
  */
-export function safeSessionId(value) {
+export function safeSessionId(value: unknown): string | undefined {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value) ? value : undefined
 }
 
 /** Whether `child` is `parent` or lies below it, on resolved paths. */
-function within(child, parent) {
+function within(child: string, parent: string): boolean {
   const relative = path.relative(parent, child)
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
@@ -105,7 +107,7 @@ function within(child, parent) {
  * Resolve the three panel paths for one session, or refuse.
  * @returns {{dir: string, data: string, wal: string, html: string, sessionId: string}|undefined} the paths.
  */
-export function panelPaths(cwd, sessionId, options = {}) {
+export function panelPaths(cwd: unknown, sessionId: unknown, options: { env?: NodeJS.ProcessEnv } = {}): PanelPaths | undefined {
   const id = safeSessionId(sessionId)
   if (typeof cwd !== 'string' || cwd === '' || !path.isAbsolute(cwd) || id === undefined) return undefined
   const root = path.resolve(cwd)
@@ -120,39 +122,40 @@ export function panelPaths(cwd, sessionId, options = {}) {
 }
 
 /** Clamp one text field, naming what was dropped so a reader can tell truncation apart. */
-function clamp(value, limit) {
+function clamp(value: unknown, limit: number) {
   const full = typeof value === 'string' ? value : ''
   if (full.length <= limit) return { text: full, chars: full.length, truncated: false, droppedChars: 0 }
   return { text: full.slice(0, limit), chars: full.length, truncated: true, droppedChars: full.length - limit }
 }
 
 /** Non-negative safe integer, or undefined. */
-const integer = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : undefined)
+const integer = (value: unknown) => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined)
 /** Non-empty string, or undefined. */
-const string = (value) => (typeof value === 'string' && value !== '' ? value : undefined)
+const string = (value: unknown) => (typeof value === 'string' && value !== '' ? value : undefined)
 
 /** Message content blocks of one type, in order; anything unrecognised is skipped. */
-function blocks(message, type) {
-  const content = message?.content
+function blocks(message: unknown, type: string): Row[] {
+  const content = field(message, 'content')
   if (!Array.isArray(content)) return []
-  return content.filter((block) => block !== null && typeof block === 'object' && block.type === type)
+  return content.filter((block: unknown): block is Row => object(block) && block.type === type)
 }
 
 /** Concatenate the text of one content-block type, and name the tool calls, in order. */
-function joined(message, type) {
+function joined(message: unknown, type: string): string {
   return blocks(message, type).filter((block) => typeof block.text === 'string').map((block) => block.text).join('\n')
 }
-function toolNames(message) {
-  return blocks(message, 'tool-call').filter((block) => typeof block.name === 'string').map((block) => block.name)
+function toolNames(message: unknown): string[] {
+  return blocks(message, 'tool-call').flatMap(block => typeof block.name === 'string' ? [block.name] : [])
 }
 
 /** Project one usage report onto the core buckets plus the optional ones actually sent. */
-function projectUsage(usage) {
-  if (usage === null || typeof usage !== 'object') return { reported: false, usage: {}, buckets: [] }
-  const projected = {}
-  const buckets = []
+function projectUsage(usage: unknown) {
+  if (!object(usage)) return { reported: false, usage: {}, buckets: [] }
+  const projected: Usage = {}
+  const buckets: UsageBucket[] = []
   for (const key of [...USAGE_BUCKETS, ...OPTIONAL_BUCKETS]) {
-    if (Number.isFinite(usage[key]) && usage[key] >= 0) { projected[key] = Math.round(usage[key]); buckets.push(key) }
+    const value = usage[key]
+    if (finite(value) && value >= 0) { projected[key] = Math.round(value); buckets.push(key) }
   }
   return { reported: USAGE_BUCKETS.every((key) => key in projected), usage: projected, buckets }
 }
@@ -163,18 +166,18 @@ function projectUsage(usage) {
  * up in the document instead of vanishing.
  * @returns {object|undefined} the projected record, or undefined when it is unusable.
  */
-export function projectEvent(event, config = PANEL_DEFAULTS) {
-  if (event === null || typeof event !== 'object') return undefined
+export function projectEvent(event: unknown, config: PanelConfig = PANEL_DEFAULTS): CaptureEvent | undefined {
+  if (!object(event)) return undefined
   const type = string(event.type)
   const seq = integer(event.seq)
   if (type === undefined || seq === undefined) return undefined
-  const time = Number.isFinite(event.time) && event.time >= 0 ? event.time : 0
+  const time = finite(event.time) && event.time >= 0 ? event.time : 0
   const base = { seq, time, type }
   const data = event.data
-  if (data === null || typeof data !== 'object') return base
+  if (!object(data)) return base
   switch (type) {
     case 'user/message':
-      return { ...base, role: 'user', source: string(data.source?.kind), payload: clamp(joined(data, 'text'), config.textLimit) }
+      return { ...base, role: 'user', source: string(field(data.source, 'kind')), payload: clamp(joined(data, 'text'), config.textLimit) }
     case 'assistant/message': {
       const usage = projectUsage(data.usage)
       return { ...base, role: 'assistant', turn: integer(data.turn), step: integer(data.step),
@@ -190,21 +193,21 @@ export function projectEvent(event, config = PANEL_DEFAULTS) {
       }
     case 'tool/result':
       return {
-        ...base, callId: string(data.message?.source?.callId) ?? string(data.message?.toolCallId),
-        isError: data.message?.isError === true, errorCode: string(data.error?.code), step: integer(data.step),
+        ...base, callId: string(field(field(data.message, 'source'), 'callId')) ?? string(field(data.message, 'toolCallId')),
+        isError: field(data.message, 'isError') === true, errorCode: string(field(data.error, 'code')), step: integer(data.step),
         payload: clamp(joined(data.message, 'text'), config.textLimit),
       }
     case 'turn/start': case 'turn/end': case 'step/start': case 'step/end':
       return {
         ...base, turn: integer(data.turn), step: integer(data.step),
-        reason: string(data.reason?.kind) ?? string(data.reason?.message),
+        reason: string(field(data.reason, 'kind')) ?? string(field(data.reason, 'message')),
       }
     default:
       return base
   }
 }
 /** Byte length, so the append-log budget stays honest on multi-byte text. */
-const bytes = (text) => Buffer.byteLength(text, 'utf8')
+const bytes = (text: string) => Buffer.byteLength(text, 'utf8')
 
 /**
  * Read one NDJSON append log, counting lines that are not objects instead of
@@ -212,14 +215,14 @@ const bytes = (text) => Buffer.byteLength(text, 'utf8')
  * @param {string} text - the file contents.
  * @returns {{records: object[], malformed: number}} the parsed records.
  */
-export function parseAppendLog(text) {
-  const records = []
+export function parseAppendLog(text: string): { records: Row[]; malformed: number } {
+  const records: Row[] = []
   let malformed = 0
   for (const line of text.split('\n')) {
     if (line.trim() === '') continue
     try {
-      const parsed = JSON.parse(line)
-      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) records.push(parsed)
+      const parsed: unknown = JSON.parse(line)
+      if (object(parsed) && !Array.isArray(parsed)) records.push(parsed)
       else malformed += 1
     } catch { malformed += 1 }
   }
@@ -227,9 +230,9 @@ export function parseAppendLog(text) {
 }
 
 /** A fresh four-bucket usage total. */
-const emptyUsage = () => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, grandTotal: 0 })
+const emptyUsage = (): Record<CoreBucket, number> & { grandTotal: number; reasoningTokens?: number } => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, grandTotal: 0 })
 /** One conversation row: the fields every captured message shares. */
-function messageRow(record, role) {
+function messageRow(record: CaptureEvent, role: string) {
   const payload = record.payload ?? {}
   return {
     seq: record.seq, time: record.time, at: new Date(record.time).toISOString(), role,
@@ -240,7 +243,7 @@ function messageRow(record, role) {
 }
 
 /** One trace row, in the lane vocabulary the panel draws. */
-function traceRow(record, lane, kind, extra = {}) {
+function traceRow(record: CaptureEvent, lane: string, kind: string, extra: Row = {}) {
   return { seq: record.seq, time: record.time, at: new Date(record.time).toISOString(), lane, kind, ...extra }
 }
 
@@ -250,55 +253,57 @@ function traceRow(record, lane, kind, extra = {}) {
  * @param {{config?: object, meta?: object, droppedEvents?: number, malformed?: number}} [context] - fold inputs.
  * @returns {object} the panel document.
  */
-export function foldRecords(records, context = {}) {
+export function foldRecords(records: readonly unknown[], context: FoldContext = {}) {
   const config = context.config ?? PANEL_DEFAULTS
   const supplied = { ...(context.meta ?? {}) }
-  const conversation = []
-  const trace = []
-  const pending = new Map()
+  const conversation: Row[] = []
+  const trace: Row[] = []
+  const pending = new Map<string, { name: string; startedAt: number }>()
   const usage = emptyUsage()
-  const bucketNames = new Set()
-  const eventTypes = {}
-  const toolCallsByName = {}
+  const bucketNames = new Set<string>()
+  const eventTypes: Record<string, number> = {}
+  const toolCallsByName: Record<string, number> = {}
   const counters = {
     turns: 0, steps: 0, stepsWithUsage: 0, toolCalls: 0, toolErrors: 0,
     textChars: 0, thinkingChars: 0, eventCount: 0, usageReported: true,
   }
-  let sessionId
-  let cwd
-  let startedAt
-  let endedAt
-  let turnEndReason
+  let sessionId: string | undefined
+  let cwd: string | undefined
+  let startedAt: number | undefined
+  let endedAt: number | undefined
+  let turnEndReason: string | undefined
   let capped = false
   let conversationTruncated = false
   let traceTruncated = false
   let droppedChars = 0
+  let malformedRecords = 0
 
-  const mark = (ms) => {
+  const mark = (ms: number) => {
     if (!Number.isFinite(ms) || ms <= 0) return
     if (startedAt === undefined || ms < startedAt) startedAt = ms
     if (endedAt === undefined || ms > endedAt) endedAt = ms
   }
-  const pushConversation = (row) => {
+  const pushConversation = (row: Row) => {
     if (conversation.length >= CONVERSATION_LIMIT) conversationTruncated = true
     else conversation.push(row)
   }
-  const pushTrace = (row) => {
+  const pushTrace = (row: Row) => {
     if (trace.length >= TRACE_LIMIT) traceTruncated = true
     else trace.push(row)
   }
-  const preview = (value) => String(value ?? '').replace(/\s+/gu, ' ').slice(0, PREVIEW_CHARS)
-  const dropped = (field) => { if (field?.truncated === true) droppedChars += field.droppedChars ?? 0 }
+  const preview = (value: unknown) => String(value ?? '').replace(/\s+/gu, ' ').slice(0, PREVIEW_CHARS)
+  const dropped = (field: TextField | null | undefined) => { if (field?.truncated === true) droppedChars += field.droppedChars ?? 0 }
 
   for (const record of records) {
-    if (record === null || typeof record !== 'object' || Array.isArray(record)) continue
+    if (!object(record) || Array.isArray(record)) continue
     if (record.record === 'open') {
       sessionId = string(record.sessionId) ?? sessionId
       cwd = string(record.cwd) ?? cwd
       continue
     }
     if (record.record === 'capped') { capped = true; continue }
-    if (record.record !== 'event' || integer(record.seq) === undefined) continue
+    if (record.record !== 'event') continue
+    if (!foldEvent(record)) { malformedRecords += 1; counters.usageReported = false; continue }
     const time = Number.isFinite(record.time) && record.time >= 0 ? record.time : 0
     counters.eventCount += 1
     eventTypes[record.type] = (eventTypes[record.type] ?? 0) + 1
@@ -319,8 +324,8 @@ export function foldRecords(records, context = {}) {
         if (record.usageReported === true) {
           counters.stepsWithUsage += 1
           for (const bucket of Array.isArray(record.usageBuckets) ? record.usageBuckets : []) bucketNames.add(bucket)
-          for (const key of USAGE_BUCKETS) usage[key] += Number.isFinite(record.usage?.[key]) ? record.usage[key] : 0
-          if (Number.isFinite(record.usage?.reasoningTokens)) usage.reasoningTokens = (usage.reasoningTokens ?? 0) + record.usage.reasoningTokens
+          for (const key of USAGE_BUCKETS) usage[key] += record.usage?.[key] ?? 0
+          if (finite(record.usage?.reasoningTokens)) usage.reasoningTokens = (usage.reasoningTokens ?? 0) + record.usage.reasoningTokens
         } else counters.usageReported = false
         pushConversation({ ...messageRow(record, 'assistant'), reasoning: record.reasoning?.text ?? '', toolCalls: calls, interrupted: record.interrupted === true })
         pushTrace(traceRow(record, 'milestone', record.interrupted === true ? 'assistant_interrupted' : 'assistant_message', {
@@ -376,7 +381,10 @@ export function foldRecords(records, context = {}) {
     }
   }
   usage.grandTotal = USAGE_BUCKETS.reduce((total, key) => total + usage[key], 0)
-  const at = (ms) => (ms === undefined ? undefined : new Date(ms).toISOString())
+  const at = (ms: number | undefined) => (ms === undefined ? undefined : new Date(ms).toISOString())
+  const events: FoldedEvents = { layout: 'merged', merged: true, mergedAt: undefined,
+    records: counters.eventCount, malformed: (context.malformed ?? 0) + malformedRecords, types: eventTypes, files: [] }
+  const archive: ArchiveMember[] = []
   return {
     schemaVersion: 1,
     format: PANEL_FORMAT,
@@ -390,20 +398,20 @@ export function foldRecords(records, context = {}) {
       format: PANEL_FORMAT, sessionId, startedAt: at(startedAt), endedAt: at(endedAt),
       durationMs: startedAt === undefined || endedAt === undefined ? 0 : Math.max(0, endedAt - startedAt),
       ...counters, toolCallsByName, usage, usageBucketsSeen: [...bucketNames].sort(),
-      turnEndReason, malformed: context.malformed ?? 0,
+      turnEndReason, malformed: (context.malformed ?? 0) + malformedRecords,
     },
     conversation,
     trace,
     verify: {
       checks: 0, passed: 0, failed: 0,
-      degraded: capped || conversationTruncated || traceTruncated,
+      degraded: capped || conversationTruncated || traceTruncated || malformedRecords > 0,
       notes: [
         '实时采集没有 verifier:「判卷」标签页只反映采集自身的完整性,不代表任何任务的通过情况。',
         '只有挂载之后产生的事件会被采集;挂载之前的历史与已恢复的会话前缀不回放。',
       ],
     },
-    events: { layout: 'merged', merged: true, mergedAt: undefined, records: counters.eventCount, malformed: context.malformed ?? 0, types: eventTypes, files: [] },
-    archive: [],
+    events,
+    archive,
     limits: {
       textLimit: config.textLimit ?? PANEL_DEFAULTS.textLimit, maxSessionBytes: config.maxSessionBytes ?? PANEL_DEFAULTS.maxSessionBytes,
       truncated: capped, droppedEvents: context.droppedEvents ?? 0, droppedChars,
@@ -417,7 +425,7 @@ export function foldRecords(records, context = {}) {
  * Metrics and usage totals are never dropped: they stay the complete accounting.
  * @returns {{text: string, bytes: number, trimmedRows: number}} the fitted text.
  */
-export function fitDocument(document, cap) {
+export function fitDocument(document: ReturnType<typeof foldRecords>, cap: number) {
   let text = JSON.stringify(document)
   let size = bytes(text)
   let trimmedRows = 0
@@ -441,62 +449,70 @@ export function fitDocument(document, cap) {
  * @param {object} [options] - `config`, `io`, `env`, `now`, `report` and `meta` seams.
  * Returns the collector for this activation.
  */
-export function createPanelCollector(options = {}) {
+export function createPanelCollector(options: CollectorOptions = {}) {
   const config = options.config ?? PANEL_DEFAULTS
   const storage = options.io ?? fsp
   const activity = activityGate()
   // Fence each filesystem operation, including continuations after an awaited
   // read/write. Queued folds cannot start fresh writes once the row is stopped.
-  const io = Object.fromEntries(['readFile', 'mkdir', 'appendFile', 'writeFile', 'rename', 'stat', 'rm']
-    .map(method => [method, (...args) => activity.run(() => storage[method](...args))]))
+  const io = {
+    readText: (file: string) => activity.run(() => storage.readFile(file, 'utf8')),
+    readFile: (file: string) => activity.run(() => storage.readFile(file)),
+    mkdir: (dir: string, options: { recursive: true }) => activity.run(() => storage.mkdir(dir, options)),
+    appendFile: (file: string, data: string) => activity.run(() => storage.appendFile(file, data)),
+    writeFile: (file: string, data: string) => activity.run(() => storage.writeFile(file, data)),
+    rename: (from: string, to: string) => activity.run(() => storage.rename(from, to)),
+    stat: (file: string) => activity.run(() => storage.stat(file)),
+    rm: (file: string, options: { force: true }) => activity.run(() => storage.rm(file, options)),
+  }
   const env = options.env ?? process.env
   const now = options.now ?? (() => Date.now())
   const report = typeof options.report === 'function' ? options.report : () => {}
   const meta = options.meta ?? {}
-  const sessions = new Map()
-  const noted = new Set()
+  const sessions = new Map<string, SessionState>()
+  const noted = new Set<string>()
   let disposed = false
-  let stopping
+  let stopping: Promise<void> | undefined
 
   // Say something at most once per kind; reporting must never escape either.
-  function note(key, message, level = 'warn') {
+  function note(key: string, message: string, level = 'warn') {
     if (noted.has(key)) return
     noted.add(key)
     try { report(message, level) } catch { /* a logger failure is not the session's problem */ }
   }
-  function fail(key, error) {
+  function fail(key: string, error: unknown) {
     if (activity.cancelled(error)) return
     const reason = error instanceof Error ? error.message : String(error)
     note(key, `dsh-ops panel: capture failed (${key}): ${reason}; this session continues uncaptured.`, 'warn')
   }
 
   /** Read the append log's first record and size, or undefined when it is unusable. */
-  async function readAppendLog(wal) {
+  async function readAppendLog(wal: string) {
     let text
-    try { text = await io.readFile(wal, 'utf8') } catch (error) {
-      if (error?.code === 'ENOENT') return undefined
+    try { text = await io.readText(wal) } catch (error) {
+      if (missingFile(error)) return undefined
       throw error
     }
     if (text.trim() === '') return undefined
-    let header
+    let header: Row | undefined
     try {
-      const parsed = JSON.parse(text.slice(0, text.indexOf('\n') === -1 ? text.length : text.indexOf('\n')))
-      if (parsed?.record === 'open') header = parsed
+      const parsed: unknown = JSON.parse(text.slice(0, text.indexOf('\n') === -1 ? text.length : text.indexOf('\n')))
+      if (object(parsed) && parsed.record === 'open') header = parsed
     } catch { /* a corrupted header is counted as malformed by the fold */ }
     return { header, size: bytes(text) }
   }
 
   /** Open (or resume) one session's append log; refuse with one log line, never a throw. */
-  function open(sessionId, cwd) {
+  function open(sessionId: string, cwd: unknown): SessionState | undefined {
     const existing = sessions.get(sessionId)
     if (existing !== undefined) return existing
     const paths = panelPaths(cwd, sessionId, { env })
-    if (paths === undefined) {
+    if (paths === undefined || typeof cwd !== 'string') {
       note(`path:${String(cwd)}`, `dsh-ops panel: not capturing session ${JSON.stringify(sessionId)}: `
         + 'the session needs an absolute working directory outside the DSH home and a file-name-safe id.', 'warn')
       return undefined
     }
-    const state = {
+    const state: SessionState = {
       sessionId, paths, size: 0, droppedEvents: 0, capped: false, closed: false,
       header: undefined, chain: Promise.resolve(),
     }
@@ -519,7 +535,7 @@ export function createPanelCollector(options = {}) {
   }
 
   /** Append one record, or count it as dropped once the session budget is spent. */
-  function append(state, record) {
+  function append(state: SessionState, record: CaptureEvent & { record: string }) {
     if (state.closed) return
     let line
     try { line = `${JSON.stringify(record)}\n` } catch (error) { fail('serialize', error); return }
@@ -543,11 +559,11 @@ export function createPanelCollector(options = {}) {
   }
 
   /** Write `panel.html` when it is absent or stale, and describe it for the archive. */
-  async function writeViewer(state) {
+  async function writeViewer(state: SessionState) {
     const html = renderPanelHtml()
     let current
-    try { current = await io.readFile(state.paths.html, 'utf8') } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
+    try { current = await io.readText(state.paths.html) } catch (error) {
+      if (!missingFile(error)) throw error
     }
     if (current !== html) {
       await io.mkdir(state.paths.dir, { recursive: true })
@@ -558,29 +574,29 @@ export function createPanelCollector(options = {}) {
   }
 
   /** Stat and hash one archive member, or undefined when it is not on disk. */
-  async function describe(file, relative, role) {
+  async function describe(file: string, relative: string, role: string): Promise<ArchiveMember | undefined> {
     try {
       const [info, contents] = await Promise.all([io.stat(file), io.readFile(file)])
       return { path: relative, bytes: info.size, sha256: createHash('sha256').update(contents).digest('hex'), role }
     } catch (error) {
-      if (error?.code === 'ENOENT') return undefined
+      if (missingFile(error)) return undefined
       throw error
     }
   }
 
   /** Fold the append log into the JSON document and refresh the viewer. */
-  async function materialise(state, final) {
+  async function materialise(state: SessionState, final: boolean): Promise<void> {
     const { paths } = state
     let text = ''
-    try { text = await io.readFile(paths.wal, 'utf8') } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
+    try { text = await io.readText(paths.wal) } catch (error) {
+      if (!missingFile(error)) throw error
     }
     const parsed = parseAppendLog(text)
     const document = foldRecords(parsed.records, { config, meta, droppedEvents: state.droppedEvents, malformed: parsed.malformed })
     document.events.mergedAt = new Date(now()).toISOString()
     let viewer
     try { viewer = await writeViewer(state) } catch (error) { fail('viewer', error) }
-    const archive = []
+    const archive: ArchiveMember[] = []
     if (!final) {
       const log = await describe(paths.wal, `${state.sessionId}.ndjson`, 'events')
       if (log !== undefined) {
@@ -598,7 +614,7 @@ export function createPanelCollector(options = {}) {
   }
 
   /** Queue a fold behind every append already scheduled for this session. */
-  function merge(sessionId, final = false) {
+  function merge(sessionId: string, final = false): Promise<void> {
     const state = sessions.get(sessionId)
     if (state === undefined) return Promise.resolve(undefined)
     state.chain = state.chain
@@ -610,30 +626,30 @@ export function createPanelCollector(options = {}) {
   const collector = {
     config,
     /** Observe one committed session event; never throws, never rejects. */
-    observe(session, event) {
+    observe(session: unknown, event: unknown): void {
       if (disposed) return
       try {
-        const sessionId = safeSessionId(session?.id)
+        const sessionId = safeSessionId(field(session, 'id'))
         if (sessionId === undefined) return
-        const state = open(sessionId, session?.header?.cwd ?? session?.cwd)
+        const state = open(sessionId, field(field(session, 'header'), 'cwd') ?? field(session, 'cwd'))
         if (state === undefined) return
         const projected = projectEvent(event, config)
         if (projected === undefined) return
         append(state, { record: 'event', ...projected })
         // A turn end is the idle point: fold then, so the JSON is current without
         // a timer and without waiting for the session to be disposed.
-        if (event.type === 'turn/end') void merge(sessionId)
+        if (projected.type === 'turn/end') void merge(sessionId)
       } catch (error) { fail('observe', error) }
     },
     /** Wait for every append scheduled for one session (or all of them). */
-    flush(sessionId) {
-      const targets = sessionId === undefined ? [...sessions.values()] : [sessions.get(sessionId)].filter(Boolean)
+    flush(sessionId?: string): Promise<void> {
+      const targets = sessionId === undefined ? [...sessions.values()] : [sessions.get(sessionId)].filter((state): state is SessionState => state !== undefined)
       return Promise.all(targets.map((state) => state.chain)).then(() => undefined)
     },
     /** Fold one session's append log into its JSON document. */
-    merge(sessionId) { return merge(sessionId, false) },
+    merge(sessionId: string): Promise<void> { return merge(sessionId, false) },
     /** Seal one session: final fold that drops the append log. */
-    close(sessionId) {
+    close(sessionId: string): Promise<void> {
       const state = sessions.get(sessionId)
       if (state === undefined || state.closed) return Promise.resolve(undefined)
       state.closed = true
@@ -641,7 +657,7 @@ export function createPanelCollector(options = {}) {
     },
     /** Stop collection without starting a final fold. Await all issued I/O before
      * the loader reports this row disabled; retained append logs remain recoverable. */
-    stop() {
+    stop(): Promise<void> {
       if (stopping) return stopping
       disposed = true
       activity.stop()
@@ -649,13 +665,13 @@ export function createPanelCollector(options = {}) {
       return stopping
     },
     /** Explicitly seal every session. Component teardown uses stop() instead. */
-    dispose() {
+    dispose(): Promise<void> {
       if (disposed) return Promise.resolve(undefined)
       disposed = true
       return Promise.all([...sessions.keys()].map((sessionId) => collector.close(sessionId))).then(() => undefined)
     },
     /** The paths one captured session writes to, for callers that must report them. */
-    pathsFor(sessionId) { return sessions.get(sessionId)?.paths },
+    pathsFor(sessionId: string): PanelPaths | undefined { return sessions.get(sessionId)?.paths },
     /** How many sessions this activation has captured. */
     get size() { return sessions.size },
   }

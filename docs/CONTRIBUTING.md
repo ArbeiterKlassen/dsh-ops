@@ -215,3 +215,5 @@ The optional carrier regression also uses development-only `@deepseek-ai/dsh-cli
 `0.2.0-rc.2` (published 2026-09-29) to assert actual client registry activation, teardown and
 restart against temporary installed profiles. `settings-carrier` covers exact composition,
 backups and atomic rollback; it never migrates a developer profile.
+
+`src/panel/collect.ts` uses typed filesystem seams and validates persisted event fields before folding. Valid capture documents keep their text, counters and archive behavior. Invalid persisted text/usage/timestamp fields are counted as malformed and mark the result degraded, with incomplete usage totals; they cannot be silently coerced. Stopping still cancels queued work, waits for issued I/O and retains the append log; explicit sealing remains separate. Run `node test/run.mjs ops-panel-collect panel-records panel-stop kernel-types` for recovery, bounded data, physical-stop and type checks.
