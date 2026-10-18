@@ -1,7 +1,9 @@
-//! Preflight, durable per-item transitions and conservative recovery.
+#![forbid(unsafe_code)]
+use ops_protocol as contract;
+use ops_files::paths;
+use ops_results::{self as results, store};
 use crate::{
     contract::*,
-    paths,
     store::{Store, now},
 };
 use cap_std::fs::Dir;
@@ -144,7 +146,7 @@ pub fn run(root: &Dir, store: &Store, request: &Request) -> Result<Value> {
                 .id
                 .ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Resume requires id"))?;
             let mut job: Job = store.read(&id)?;
-            authorize(&job, request)?;
+            job.authorize(request)?;
             if job.id != id {
                 return Err(Failure::new("POLICY_DENIED", "Manifest identity mismatch"));
             }
@@ -160,19 +162,6 @@ pub fn run(root: &Dir, store: &Store, request: &Request) -> Result<Value> {
             "Expected plan, run or resume",
         )),
     }
-}
-pub fn authorize(job: &Job, request: &Request) -> Result<()> {
-    if job.version != 1
-        || job.scope != request.scope
-        || job.root != request.root
-        || job.root_identity != request.root_identity
-    {
-        return Err(Failure::new(
-            "POLICY_DENIED",
-            "Job scope, root or version mismatch",
-        ));
-    }
-    Ok(())
 }
 fn validate_saved(job: &Job) -> Result<()> {
     if job.items.is_empty() || job.items.len() > MAX_OPERATIONS || job.protect.len() > 128 {

@@ -7,6 +7,13 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Split the native kernel into workspace crates (#261)
+
+- Extract protocol, file, search, batch, and result-storage crates while retaining the one-shot
+  worker and existing authority, metadata, no-follow, and audit rules. Test the complete Cargo
+  workspace and include every path dependency in published source packages.
+- Include workspace crates and platform metadata adapters when checking for stale benchmark workers.
+
 ### Build plugin source into the existing JavaScript package layout (#261)
 
 - Move plugin source to `src/` and introduce the TypeScript build with JavaScript migration
