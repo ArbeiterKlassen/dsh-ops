@@ -1,7 +1,17 @@
 use super::*;
+fn fixture_name(timestamp: u128) -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("dsh-table-{}-{timestamp}-{sequence}", std::process::id())
+}
+#[test]
+fn fixture_names_are_distinct_even_with_identical_timestamps() {
+    let names: std::collections::HashSet<_> = (0..64).map(|_| fixture_name(42)).collect();
+    assert_eq!(names.len(), 64);
+}
 fn fixture(test: impl FnOnce(PathBuf, Request, Args)) {
     let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-    let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("dsh-table-{}-{unique}", std::process::id()));
+    let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(fixture_name(unique));
     std::fs::create_dir(&root).unwrap();
     let path = root.join("table.csv"); std::fs::write(&path, "v\nsafe\n").unwrap();
     let request = serde_json::from_value(json!({"root":root,"scope":"table-unit","tool":"table_read","args":{}})).unwrap();
