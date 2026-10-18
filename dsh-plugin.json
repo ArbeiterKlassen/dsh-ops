@@ -58,6 +58,11 @@
         "name": "dsh-ops:repository-tooling:shell",
         "order": 3251,
         "summary": "Prefer bash; use the bundled PowerShell 7 for Windows-native functionality where that payload exists; removed when the shell component is off."
+      },
+      {
+        "name": "dsh-ops:repository-tooling:ptc",
+        "order": 3252,
+        "summary": "Scoped PTC batch/result guidance; absent when PTC tools are unavailable."
       }
     ],
     "x-tool-namespaces": [
@@ -70,7 +75,14 @@
           "inspect_local_file",
           "grep",
           "glob",
-          "replace"
+          "replace",
+          "write_file",
+          "edit_file",
+          "diff",
+          "stat",
+          "copy",
+          "move",
+          "remove"
         ],
         "shellPermission": "Per-call DSH sandbox policy and native subprocess"
       },
@@ -89,7 +101,7 @@
       {
         "id": "dsh-ops-ptc",
         "entry": "dsh-ops/ptc",
-        "defaultEnabled": false,
+        "defaultEnabled": true,
         "platforms": ["win32", "linux", "darwin"],
         "architectures": ["x64", "arm64"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
@@ -111,6 +123,15 @@
         "defaultEnabled": true,
         "platforms": ["win32", "linux", "darwin"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"]
+      },
+      {
+        "id": "dsh-ops-panel",
+        "entry": "dsh-ops/panel",
+        "defaultEnabled": true,
+        "presentation": "Opt-in static-file capture of new conversations: the row is addressable, its switch 「启动数据检测」(capture) is off by default and an untouched row registers nothing",
+        "platforms": ["win32", "linux", "darwin"],
+        "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
+        "tools": []
       },
       {
         "id": "dsh-ops-tui",

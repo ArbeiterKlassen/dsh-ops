@@ -29,6 +29,7 @@ import {
 } from '../lib/policy.js'
 import { resolvePtcConfig } from '../lib/ptc/index.js'
 import { resolveTuiConfig } from '../lib/components/tui/index.js'
+import { resolvePanelConfig } from '../lib/components/panel/index.js'
 import { PTC_TOOLS, definition } from '../lib/ptc/contract.js'
 import { resolveConfig } from '../lib/config.js'
 import { resolveHidingConfig } from '../lib/official-tool-hiding.js'
@@ -225,14 +226,19 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
     const rows = Array.isArray(document)
       ? document.flatMap((entry) => (Array.isArray(entry?.insert) ? entry.insert : []))
       : []
-    check(rows.length === 5, 'the bundle declares exactly five components')
+    check(rows.length === 6, 'the bundle declares exactly six components')
     check(!rows.some(candidate => candidate?.name === `${pkg.name}/background`), 'the bundle no longer inserts the removed background component')
-    for (const component of ['shell', 'file', 'ptc', 'tui', 'hide-official']) {
+    for (const component of ['shell', 'file', 'ptc', 'panel', 'tui', 'hide-official']) {
       const row = rows.find(candidate => candidate?.name === `${pkg.name}/${component}`)
       check(row?.id === `${pkg.name}-${component}`, `the ${component} component has a stable row id`)
       if (!row) continue
-      check((row.disabled === true) === ['ptc', 'tui', 'hide-official'].includes(component), `${component} has its documented enablement default`)
-      try { (component === 'tui' ? resolveTuiConfig : component === 'ptc' ? resolvePtcConfig : component === 'hide-official' ? resolveHidingConfig : resolveConfig)(row.config); check(true, `${component} config is valid`) }
+      check((row.disabled === true) === ['tui', 'hide-official'].includes(component), `${component} has its documented enablement default`)
+      const resolve = component === 'tui' ? resolveTuiConfig
+        : component === 'ptc' ? resolvePtcConfig
+          : component === 'hide-official' ? resolveHidingConfig
+            : component === 'panel' ? resolvePanelConfig
+              : resolveConfig
+      try { resolve(row.config); check(true, `${component} config is valid`) }
       catch (error) { check(false, `${component} config is valid`, String(error?.message ?? error)) }
     }
   }
@@ -303,7 +309,7 @@ for (const [index, entry] of namespaces.slice(1).entries()) {
 const sections = manifestRaw.contributes?.['x-prompt-sections'] ?? []
 const sectionNames = sections.map((section) => section.name)
 check(
-  sectionNames.length === 2 && ['file', 'shell'].every(component => sectionNames.includes(`${TOOLING_SECTION}:${component}`)),
+  sectionNames.length === 3 && ['file', 'shell', 'ptc'].every(component => sectionNames.includes(`${TOOLING_SECTION}:${component}`)),
   'the declared prompt sections match lib/policy.js',
   `declared ${sectionNames.join(', ')} vs policy ${TOOLING_SECTION}`,
 )
@@ -478,7 +484,7 @@ if (display !== undefined) {
 
 /** Payload the published package must carry, as `files` entries or paths they cover. */
 const ptc = manifestRaw.contributes?.['x-components']?.find(c => c.id === 'dsh-ops-ptc')
-check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === false, 'native PTC component is opt-in')
+check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === true, 'native PTC enhancement is enabled by default; presentation stays scoped')
 check(JSON.stringify(ptc?.tools) === JSON.stringify(PTC_TOOLS.map(publicToolName)), 'PTC declaration matches the generated tool contract')
 check(PTC_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
 check(JSON.stringify(pkg.os) === '["win32","linux","darwin"]' && JSON.stringify(pkg.cpu) === '["x64","arm64"]' &&
@@ -493,6 +499,15 @@ check(JSON.stringify(platformClaims('dsh-ops-file')) === '["win32","linux","darw
   'the file component supports the exact worker target matrix')
 check(platformClaims('dsh-ops-background') === undefined,
   'the removed background component is no longer declared')
+check(JSON.stringify(platformClaims('dsh-ops-panel')) === '["win32","linux","darwin"]',
+  'the panel capture component supports the declared targets (static files, no platform payload)')
+/** The viewer is runtime output, so the template itself has to be in the package. */
+const panelTemplate = 'lib/panel/panel.html'
+check(
+  fs.existsSync(path.join(PACKAGE_ROOT, panelTemplate)) && (pkg.files ?? []).some((entry) => publishes(entry, panelTemplate)),
+  'the panel viewer template ships inside the published package',
+  `missing or unpublished: ${panelTemplate}`,
+)
 const REQUIRED_ENTRIES = [
   'native/Cargo.toml',
   'native/Cargo.lock',

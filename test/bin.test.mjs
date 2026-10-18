@@ -272,7 +272,7 @@ function assertLadder(report_) {
   const { levels, rungs } = report_
   assert.deepEqual(rungs, [], 'the retired numbered ladder is empty')
   const published = [
-    ...(levels.files ? ['glob', 'grep', 'inspect_local_file', 'replace'].map(name => `ops_${name}`) : []),
+    ...(levels.files ? ['glob', 'grep', 'inspect_local_file', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove'].map(name => `ops_${name}`) : []),
     ...(levels.bash ? ['ops_bash'] : []),
     ...(levels.pwsh ? ['pwsh'] : []),
   ]

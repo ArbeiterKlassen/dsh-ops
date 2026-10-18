@@ -1,5 +1,5 @@
 # Component reference
-What each of the four components publishes, with parameters and permission requirements.
+What each of the six components publishes, with parameters and permission requirements.
 ---
 
 ## Components at a glance
@@ -9,7 +9,9 @@ What each of the four components publishes, with parameters and permission requi
 | `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
 | `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Four file tools |
 | `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
+| `dsh-ops/panel` | Data capture, off at the switch: new conversations write `<cwd>/.dsh-ops/panel/<sessionId>.json` plus the viewer `panel.html` | Row on, `capture: false` | None; see the [configuration reference](configuration-reference.md) |
 | `dsh-ops/tui` | Read-only current-session OPS sidebar | Off | None; see [sidebar guide](tui-panel.md) |
+| `dsh-ops/hide-official` | Strict hiding of official tools that have reviewed OPS equivalents | Off | None |
 
 The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) has been removed. A profile row that still names it loads as a no-op: it accepts any config, publishes nothing, and logs one warning that the row can be deleted.
 
@@ -54,6 +56,8 @@ Read bounded UTF-8 text lines, or a hex view of one path. Directories are reject
 
 Find regular files below `path`. `pattern` is an **array** of globs matched segment by segment against paths relative to `path` (ASCII case-insensitive), e.g. `["**/*.md","!vendor/**"]`: `*.md` matches the top level only and `**/*.md` any depth; a `!` prefix excludes, and at least one positive entry is required. A bare string is rejected; there is no `include` field.
 
+`outputMode: "details"` adds `bytes` (the on-disk size) and `modified`, a real modification time in **milliseconds since the Unix epoch** — the same quantity and unit `ops_stat` reports as `modifiedMs`, and `null` when the filesystem cannot report one. `sort: "modified"` orders newest first and is stable: equal timestamps keep the walk's path order. `sort: "path"` and an omitted `sort` both keep that walk order.
+
 | Parameter | Type | Notes |
 | --- | --- | --- |
 | `path` | string | Search root |
@@ -83,6 +87,8 @@ Search UTF-8 files below `path` with Rust regex, bounded output, paging and opti
 
 Perform a deterministic UTF-8 replacement under `path`. `pattern` is **literal text, not a regex**; `glob` works as in `ops_grep`. `dryRun` observes only; writes use revision checks and atomic replacement. Read-only sessions are rejected.
 
+Cooperating writers serialise on a persistent, hidden update-lock sidecar beside each target (`.dsh-ops-update-<sha256 of the lowercased name>.lock`). It is created before the target is read, so a refused call can leave it behind; see [Update-lock sidecars](native-ptc.md#update-lock-sidecars) for why it is not removed and who may clean it up.
+
 | Parameter | Type | Notes |
 | --- | --- | --- |
 | `pattern` | string (required) | Literal text |
@@ -102,7 +108,7 @@ Perform a deterministic UTF-8 replacement under `path`. `pattern` is **literal t
 
 ## `dsh-ops/ptc` — native batches and result references
 
-Loaded only in pure PTC sessions, off by default.
+Available by default, with tools published only in pure PTC sessions. Explicit profile disablement is preserved.
 
 ### `ops_batch`
 

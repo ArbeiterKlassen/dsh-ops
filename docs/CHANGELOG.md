@@ -7,9 +7,160 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-- Fix `ops_bash` resolving relative `workdir` paths against the host process instead of
-  the calling session's workspace (#180, #113). Directory validation now receives the
-  resolved path, so an invalid workdir reports that absolute path before a command starts.
+### The 0.3.2 real-machine findings, fixed (#204, #235, #236, #237, #240)
+
+Four findings from the 0.3.2 Linux x64 session run in #204. Three are behaviour changes, and
+each one is pinned by a suite that would fail without it.
+
+- **`ops_bash` argument errors are refusals again (#235, F1).** A regression in the 0.3.2
+  delivery stack folded *every* thrown error from the session wrapper into a value, so an
+  invalid argument came back as a value that did not satisfy the output schema and the host
+  reported `returned invalid output` — the caller never saw `invalid workdir: …`. Argument
+  validation now raises a typed refusal (`BashArgumentError`, `code:
+  INVALID_BASH_ARGUMENT`) that the wrapper re-throws with the field named, while a runtime
+  failure is still folded into a value — and a folded value now carries the full
+  `BASH_OUTPUT_SCHEMA` shape (`status`/`timedOut`/`timeoutMs`/`stdout`/`stderr`). A
+  suite asserts both halves.
+- **A relative `workdir` is resolved against the session workspace (#237, F3).** It used to
+  be passed through verbatim, so `.` or `sub` was resolved by the helper process's own
+  working directory: commands ran in the wrong directory *without an error*. Relative paths
+  now anchor to `session.header.cwd` (absolute paths unchanged, empty or whitespace still
+  falls back to the session directory, and on Windows a drive-relative path resolves against
+  the session's drive or is refused). A workspace that disappeared is reported as
+  `invalid workdir: must be an existing directory, got <session directory>`; a spawn ENOENT
+  whose `workdir` is gone no longer wears the "missing bash payload" remedy.
+- **`ops_glob` reports a real modification time (#236, F2).** `details.modified` returned the
+  file's *byte count* (`symlink_metadata().len()`), which also made `sort: "modified"` a
+  size sort. It is now milliseconds since the Unix epoch — the same quantity and unit
+  `ops_stat` reports as `modifiedMs`, and `null` when the filesystem cannot report one —
+  and `sort: "modified"` orders newest first, stably, so equal timestamps keep the walk's
+  path order. `bytes`, `sort: "path"` and the pagination envelope are unchanged.
+- **The credential fence is documented by what it does (#240, F6).** The module comment
+  claimed the fence was on *reads only* while the write path, the `copy`/`move` destination
+  and `replace` were refused as well, and the refusal text told a writer not to *read*
+  credentials. The comment, the refusal message and the configuration reference now state
+  the real reach (path-based: reads, writes, and copy/move destinations; a `.env` cannot be
+  created either), and a suite asserts the wording, the refusals and the documented reach
+  together.
+- **The update-lock sidecar is declared behaviour (#240, P5).** Published writes retain a
+  persistent 0-byte `.dsh-ops-update-<sha256(lowercased name)>.lock` beside the target;
+  unlinking it could let concurrent writers lock different inodes for the same name.
+  The lifecycle and residual refusal cases are documented in `docs/native-ptc.md`.
+
+### Refuse single-file requests before creating the update sidecar (#244, #240, #204 P5)
+
+- The credential fence also refuses removal, including under `danger-full-access`;
+  troubleshooting records that `.env` cannot be created through the ops tools.
+- Single-file requests rejected by pure snapshot checks (revision, edit planning, proposed
+  size, destination absence) now fail before taking the lock. Authoritative checks still run
+  under the lock when needed. `write_file`/`edit_file` dry runs skip the lock entirely.
+- A concurrent change or publication failure after locking can still leave a sidecar, and
+  `replace` can leave one per selected candidate even if its match budget is refused.
+  Persistent sidecars are never unlinked automatically; the cooperative lock identity is preserved.
+
+### `strict` official-tool hiding no longer blocks session readiness (#238, #207)
+
+**Behaviour change.** `dsh-ops/hide-official` used to treat *any* presented official
+tool without a registered OPS equivalent as fatal, so enabling the row with
+`strict: true` on a stock desktop profile killed the session at assembly
+(`READINESS_BLOCKED (EXECUTOR_UNAVAILABLE)` naming 48 tools). That condition is gone:
+the component now takes over only the **shell / file / ptc** faces, and `strict` means
+"hide inside those faces only what has a reviewed replacement".
+
+- Official tools outside the three faces (delegation, teams, jobs, sessions, MCP, media,
+  scheduling, goals, terminal, `workflow`, `skill`, `web_search`, `web_fetch`,
+  `ask_user_question`, `read_image`, `present`, …) are **left visible** with one aggregated
+  warning that names every tool and says it is out of scope. An `additionalOfficialTools`
+  entry for an out-of-scope tool is warned about and ignored; it never fails readiness.
+- An **in-scope** official tool without a registered equivalent (today `write`, `edit`,
+  `str_replace_editor`, `run_code`, and the non-retained shell commands) is **left visible**
+  and named in the same warning. `read`/`glob`/`grep` remain hidden because they map to
+  `ops_inspect_local_file`/`ops_glob`/`ops_grep`.
+- The only remaining fail-closed case is an **explicit** `additionalOfficialTools` request
+  for an in-scope tool that has no equivalent: `READINESS_BLOCKED
+  (HIDING_REQUEST_UNSATISFIABLE)` names the tool and both ways out (remove the name, or
+  disable the row). Infrastructure failures (missing host tool API, incomplete OPS file
+  surface, a mask that cannot hide an own-scope registration) still block that scope.
+- `hide-official` remains a **disabled opt-in row**; the default surface is unchanged.
+  Tests feed the exact 48-tool surface reported in #207 to the real host and assert that
+  assembly resolves, all 48 tools stay visible, and the warning names them.
+
+### A repository-only benchmark harness, merged from #103 and #183 (#205, #173)
+
+- `bench/` is one cross-platform harness with two measurement modes and one JSON data
+  contract. It is repository-only: `files` does not carry `bench/`, no release build
+  touches it, no default CI run executes it, and `npm run bench:*` outside a checkout
+  fails with exit 2 instead of a dead path.
+- The model-free tool-level comparison is adopted from #103 (@OldLigant): its
+  `MATCH / MISMATCH / EXPECTED_DIFFERENCE / EXPECTED_REJECTION / UNSTABLE` state machine,
+  strictly created (never overwritten) reports, and the fixed size-boundary fixture corpus.
+- The model-driven token A/B skeleton is adopted from #183 (@Richeir): pass-drop before
+  cost, per-task pairing, the geomean summary and the archive of the raw evidence.
+- #183 is merged into this history: its branch is an ancestor of the merge that landed the
+  consolidated harness, so its commits are part of `main` even though its superseded
+  artifacts (`bench/lib/fixtures.mjs`, `test/bench.test.mjs`, `bench/platform/win-ab.bat`)
+  were replaced by the split fixtures, the per-slice suites and the cross-platform CLI.
+- #103 is merged into this history the same way: its branch is an ancestor of the merge that
+  landed the consolidated harness, so its commits are part of `main` while its superseded
+  artifacts (`bench/measure.mjs`, `bench/files.mjs`, `bench/fixtures.mjs`, `bench/results/*`,
+  `test/file-bench.test.mjs`) were replaced by `bench/tools/**` and the opt-in smoke job.
+- Git-level credit for both: the harness entered `main` as a **rewrite** (each slice
+  re-implemented the source pull requests), so this entry's commit carries
+  `Co-authored-by:` trailers for @OldLigant and @Richeir.
+- This set follows #173's intent: local performance measurement. Timings are printed as
+  human evidence, never adjudicated; a cost direction is read only when the paired,
+  both-sides-passing delta clears the A/A noise floor.
+
+### Platform defaults confirmed by the operator (#170)
+
+- PTC enhancement is enabled by default (`defaultEnabled: true`, no disabled bundle row).
+  This changes the published 0.3.0/0.3.1 opt-in baseline, but does not force PTC presentation:
+  native/hybrid sessions do not acquire batch/result tools or their scoped guidance.
+- Shell stays enabled on Windows, Linux and macOS. Strict official-tool hiding stays opt-in.
+  Existing explicit profile choices are not migrated or overwritten; users can disable the
+  PTC component explicitly. Enabling the component does not raise filesystem permissions.
+- The catalog's POSIX shell-default claim now agrees with the bundle/manifest. No unsupported
+  `defaultEnabledPlatforms` field or platform `!!js` expression is needed.
+- No token saving is claimed. The pinned-host declaration-cost check is recorded in
+  `docs/ptc-cost.md`: PTC-only added 4,671 prompt characters in the isolated Windows sample;
+  native/hybrid added zero. This is not a tokenizer or net-usage measurement. #145/#148
+  comparisons require equal-task usage/latency/retry evidence before claiming savings.
+
+### PTC paging and discoverability (#171, #160)
+
+- Default enablement is decided separately in #170. Enabled PTC-only scopes
+  receive batch/result usage guidance; native/hybrid scopes do not inherit that guidance or tools.
+- Argument schemas use the pinned host's supported JSON Schema subset, retaining numeric limits
+  as descriptions and native validation. Actual host SDK rendering is tested against `unknown`.
+- Result pages expose expiry, sourceTotal and stable ordered-row contentHash before projection or
+  filtering. Hashes are observations, never authority. First/last/beyond-end pages, invalid IDs,
+  ownership, expiry, release and oversized rows have executable assertions, including real run_code.
+- Expired references return `REFERENCE_EXPIRED` with release/reobserve guidance; batch audit pages
+  have `expires: null` and cannot be released. Current authority and PTC presentation are rechecked
+  before execution; changed authority never silently reuses the producing request's permissions.
+
+### Safety and atomicity (#168)
+
+- Darwin nonempty extended ACLs now fail closed with `METADATA_UNSUPPORTED` before staging.
+  APFS cloning alone is not an exact ACL guarantee; deny-delete entries also prevent safe
+  staging rename/unlink. Use a dedicated metadata-aware tool for ACL-bearing files; changing
+  DSH permissions is not a repair. Plain files still require supported metadata-preserving cloning.
+
+- Replacement receipts hash observed bytes, not a second racy read. Cooperating writers retain
+  the persistent path lock across CAS and atomic publication. Later-file failures retain
+  `effectState: applied` when earlier files have changed; receipt output is bounded before writes.
+- Only trusted host anchors are canonicalized; descendant links remain subject to native
+  no-follow validation. Session temp paths never fall back to the shared root.
+- Windows replacement preserves supported owner/group/DACL/basic metadata through the existing
+  metadata crate. Darwin requires metadata-preserving cloning. Unsupported metadata returns
+  `METADATA_UNSUPPORTED` with repair guidance, not permission-selector advice.
+- `CREDENTIAL_DENIED`, `PATH_RESTRICTED`, `AUTHORITY_CHANGED` and `EXECUTION_RESTRICTED` distinguish
+  credential/path fences, changed authority and OS execution restrictions from actual DSH denials.
+- This cut retains four public file tools. The seven additional tools and end-to-end
+  `expectedRevision` acceptance belong to #167; the shared revision primitive is tested here.
+  Locks serialize cooperating OPS writers, not unrelated programs. Cross-compilation is not
+  macOS/Linux runtime acceptance; repeated macOS/APFS concurrency remains an acceptance gate.
+
 - Tools trial: `node scripts/tools-trial.mjs` calls every published tool on a real host and prints a
   per-tool table; CI runs it in a separate, non-required `tools-trial` job.
 - Documentation now matches the shipped 0.3.1 surface (no behavior change): the component reference
