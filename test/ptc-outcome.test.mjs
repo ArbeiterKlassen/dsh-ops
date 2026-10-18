@@ -2,6 +2,7 @@ import { assertSupportedJsonSchema, jsonSchemaToTs, validateJsonSchemaValue } fr
 import { toOutcome } from '../lib/modes/ptc/outcome.js'
 import { continuationFor, decodeContinuation } from '../lib/modes/ptc/continuation.js'
 import { outcomeSchema } from '../lib/modes/ptc/schema.js'
+import { canonicalOutput } from '../lib/modes/ptc/canonical-schema.js'
 import { assert, test, report } from './lib/harness.mjs'
 
 await test('successful observations retain exact canonical values without Native text', () => {
@@ -96,6 +97,18 @@ await test('host schema validation and generated SDK enforce the discriminated e
   assert.deepEqual(validateJsonSchemaValue(schema, { status: 'completed', data: { value: 2 } }), [])
   for (const bad of [{ status: 'partial', data: { value: 2 } }, { status: 'completed', data: { value: 2 }, coverage: { scannedFiles: 0, matchedCount: 0, isComplete: false } }, { status: 'error' }]) {
     assert.ok(validateJsonSchemaValue(schema, bad).length > 0)
+  }
+})
+await test('canonical metadata accepts unavailable timestamps without weakening numeric fields', () => {
+  for (const [tool, data] of [
+    ['stat', { exists: true, modifiedMs: null, bytes: 2 }],
+    ['glob', { complete: true, items: [{ path: 'a', bytes: 2, modified: null }] }],
+  ]) {
+    const schema = outcomeSchema(canonicalOutput(tool))
+    assert.deepEqual(validateJsonSchemaValue(schema, { status: 'completed', data }), [])
+    const invalid = tool === 'stat' ? { ...data, modifiedMs: 'not-a-time' }
+      : { ...data, items: [{ ...data.items[0], modified: 'not-a-time' }] }
+    assert.ok(validateJsonSchemaValue(schema, { status: 'completed', data: invalid }).length > 0)
   }
 })
 report('ptc-outcome')
