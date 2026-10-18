@@ -18,6 +18,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   strictly created (never overwritten) reports, and the fixed size-boundary fixture corpus.
 - The model-driven token A/B skeleton is adopted from #183 (@Richeir): pass-drop before
   cost, per-task pairing, the geomean summary and the archive of the raw evidence.
+- Git-level credit for both: the harness entered `main` as a **rewrite** (each slice
+  re-implemented the source pull requests), so this entry's commit carries
+  `Co-authored-by:` trailers for @OldLigant and @Richeir.
 - This set follows #173's intent: local performance measurement. Timings are printed as
   human evidence, never adjudicated; a cost direction is read only when the paired,
   both-sides-passing delta clears the A/A noise floor.
