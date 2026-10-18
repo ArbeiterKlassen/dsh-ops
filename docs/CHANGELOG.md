@@ -7,6 +7,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Keep table coverage honest beyond EOF and after metadata changes. Fresh PTC bundle pools follow
+  the implemented catalogue; saved explicit operator pools remain unchanged.
+- 表格超出 EOF 时只统计实际跳过的行，文件变化后不声明页面完整；新 PTC 允许池遵循实现目录，保留已保存的显式选择。
+
 ### Expose scoped DOCX paragraphs (#261, 15b/16)
 
 - Add discoverable Native main-body paragraphs and typed PTC outcomes with explicit excluded content,
