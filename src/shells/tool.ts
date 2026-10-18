@@ -14,6 +14,8 @@
  */
 
 import fs from 'node:fs'
+import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
+import type { ShellStream, ShellResult, SettledShellResult, ShellExecutorOptions, LegacyShellDefinition } from './types.js'
 import {
   BASH_ARGUMENTS,
   BASH_TOOL_NAME,
@@ -31,8 +33,8 @@ import { startBashExecution } from './execution.js'
  * @returns {void}
  * @throws {BashArgumentError} when the value is not a positive finite number.
  */
-function assertPositiveFinite(name, value) {
-  if (!Number.isFinite(value) || value <= 0) {
+function assertPositiveFinite(name: string, value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new BashArgumentError(`invalid ${name}: expected a positive finite number, got ${JSON.stringify(value)}`, name)
   }
 }
@@ -58,7 +60,7 @@ function assertPositiveFinite(name, value) {
  * @returns {void}
  * @throws {BashArgumentError} when `args` is not an object, or carries an undeclared key.
  */
-function assertKnownArguments(args, known) {
+function assertKnownArguments(args: unknown, known: readonly string[]): asserts args is Record<string, unknown> | null | undefined {
   if (args === undefined || args === null) return
   if (typeof args !== 'object' || Array.isArray(args)) {
     throw new BashArgumentError(`invalid arguments: expected an object, got ${JSON.stringify(args)}`, 'arguments')
@@ -85,8 +87,8 @@ function assertKnownArguments(args, known) {
  * @param {object} value - the canonical result value.
  * @returns {string} the rendered text.
  */
-export function renderBashResult(value) {
-  const stream = (output) => (output.truncated
+export function renderBashResult(value: ShellResult) {
+  const stream = (output: ShellStream) => (output.truncated
     ? `${output.text}\n[output truncated; full output: ${output.spillPath ?? '(unavailable)'}]`
     : output.text)
   const out = stream(value.stdout)
@@ -124,7 +126,7 @@ export function renderBashResult(value) {
  * output".
  */
 /** @type {import('@deepseek-ai/dsh-tools').JsonSchemaNode} */
-export const BASH_OUTPUT_SCHEMA = Object.freeze({
+export const BASH_OUTPUT_SCHEMA: JsonSchemaNode = Object.freeze<JsonSchemaNode>({
   type: 'object',
   additionalProperties: false,
   required: ['status', 'timedOut', 'timeoutMs', 'stdout', 'stderr'],
@@ -176,7 +178,7 @@ export const BASH_OUTPUT_SCHEMA = Object.freeze({
  * @param {import('./types.js').ShellResult} value - the canonical result value, without `status`.
  * @returns {import('./types.js').SettledShellResult} the same value with `status` (re)computed.
  */
-export function withBashStatus(value) {
+export function withBashStatus(value: ShellResult): SettledShellResult {
   const completed = value.exitCode === 0 && value.error === undefined && value.permission === undefined && value.restriction === undefined
     && value.signal == null && value.timedOut !== true && value.cancelled !== true
   return { ...value, status: completed ? 'completed' : 'failed' }
@@ -214,8 +216,8 @@ export function bashToolDescription() {
  * @param {import('./types.js').ShellExecutorOptions} options - the typed host executor inputs.
  * @returns {import('./types.js').LegacyShellDefinition} the legacy executor definition wrapped by the host projection.
  */
-export function bashToolDefinition({ file, source, subprocess, prepareArgv, env = {}, projectResult = withBashStatus }) {
-  const definition = {
+export function bashToolDefinition({ file, source, subprocess, prepareArgv, env = {}, projectResult = withBashStatus }: ShellExecutorOptions): LegacyShellDefinition {
+  const definition: LegacyShellDefinition = {
     name: BASH_TOOL_NAME,
     description: bashToolDescription(),
     parameters: {
@@ -256,7 +258,7 @@ export function bashToolDefinition({ file, source, subprocess, prepareArgv, env 
     },
     output: {
       schema: BASH_OUTPUT_SCHEMA,
-      render: (_args, value) => [{ type: 'text', text: renderBashResult(value) }],
+      render: (_args, value) => [{ type: 'text', text: renderBashResult(value as unknown as ShellResult) }],
     },
     /**
      * Run one command through the harness subprocess service.
@@ -275,7 +277,7 @@ export function bashToolDefinition({ file, source, subprocess, prepareArgv, env 
       if (args?.description !== undefined && typeof args.description !== 'string') throw new BashArgumentError('invalid description: expected a string', 'description')
       const rawCommand = args?.command
       const rawScriptPath = args?.script_path
-      for (const [name, value] of [['command', rawCommand], ['script_path', rawScriptPath]]) {
+      for (const [name, value] of [['command', rawCommand], ['script_path', rawScriptPath]] as const) {
         if (value != null && typeof value !== 'string') {
           throw new BashArgumentError(`invalid ${name}: expected a string`, name)
         }
@@ -321,7 +323,7 @@ export function bashToolDefinition({ file, source, subprocess, prepareArgv, env 
         try {
           stat = fs.statSync(workdir, { throwIfNoEntry: false })
         } catch (error) {
-          throw new BashArgumentError(`invalid workdir: cannot access directory (${error?.code ?? 'unknown error'}): ${workdir}`, 'workdir')
+          throw new BashArgumentError(`invalid workdir: cannot access directory (${typeof error === 'object' && error !== null && 'code' in error ? error.code ?? 'unknown error' : 'unknown error'}): ${workdir}`, 'workdir')
         }
         if (stat?.isDirectory() !== true) {
           throw new BashArgumentError(`invalid workdir: must be an existing directory, got ${workdir}`, 'workdir')

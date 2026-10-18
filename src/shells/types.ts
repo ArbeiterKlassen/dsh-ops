@@ -63,10 +63,12 @@ export type CreateShellExecution = (args: Record<string, unknown>, exec: ShellCa
 export interface ShellBase {
   name: string
   description: string
-  parameters: JsonSchemaNode & { properties: Record<string, JsonSchemaNode> }
+  parameters: JsonSchemaNode & Record<string, unknown> & { properties: Record<string, JsonSchemaNode> }
   resolve(args: Record<string, unknown>): unknown
 }
 export interface LegacyShellDefinition extends ShellBase {
+  resolve(args: unknown): ShellExecutionSpec
+  output: ToolDefinition['output']
   start(args: Record<string, unknown>, exec?: ShellCall, options?: ExecutionOptions): ShellExecution
   execute(args: Record<string, unknown>, exec?: ShellCall): Promise<ShellResult>
 }

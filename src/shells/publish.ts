@@ -22,6 +22,10 @@
  * @module dsh-ops/shells/publish
  */
 
+import type { Context } from '@deepseek-ai/cordis'
+import type { ResolvedConfig } from '../config.js'
+import type { ShellResolution } from './paths.js'
+import { errorMessage } from './types.js'
 import { BASH_TOOL_NAME } from './constants.js'
 import { bashToolDefinition } from './tool.js'
 
@@ -31,7 +35,7 @@ import { bashToolDefinition } from './tool.js'
  * @param {string} message - the report.
  * @returns {void}
  */
-function reportShellProblem(ctx, message) {
+function reportShellProblem(ctx: Context, message: string) {
   const logger = ctx?.logger
   if (typeof logger?.warn === 'function') {
     logger.warn(message)
@@ -57,7 +61,7 @@ function reportShellProblem(ctx, message) {
  * @param {{bash: import('./paths.js').ShellResolution, pwsh: import('./paths.js').ShellResolution}} shells - the resolution to publish for.
  * @returns {() => void} the disposer for every registration made here.
  */
-export function publishShellTools(ctx, config, shells) {
+export function publishShellTools(ctx: Context, config: Pick<ResolvedConfig, 'publishBashTool'>, shells: { bash: ShellResolution; pwsh: ShellResolution }) {
   if (config?.publishBashTool === false) return () => {}
   const bash = shells?.bash
   if (bash === undefined || bash.available !== true || typeof bash.file !== 'string') {
@@ -95,7 +99,7 @@ export function publishShellTools(ctx, config, shells) {
     // A registry conflict (a foreign `ops_bash`) or a schema rejection is
     // reported and skipped: it must not fail plugin activation.
     reportShellProblem(ctx, `dsh-ops: ${BASH_TOOL_NAME} could not be registered `
-      + `(${String(error?.message ?? error)}).`)
+      + `(${errorMessage(error)}).`)
     return () => {}
   }
   if (typeof dispose !== 'function') return () => {}

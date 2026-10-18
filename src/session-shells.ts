@@ -1,5 +1,11 @@
 /** Plugin-owned bash layers; permission changes never mutate the shared registry. */
 import path from 'node:path'
+import type { Context, Fiber } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { ResolvedConfig } from './config.js'
+import type { ShellResolution } from './shells/paths.js'
+import type { HostShellDefinition, ShellResult } from './shells/types.js'
+import { errorMessage } from './shells/types.js'
 import { BASH_TOOL } from './policy.js'
 import { bashToolDefinition, DEFAULT_BASH_TIMEOUT_MS } from './shells.js'
 import { BashArgumentError } from './shells/argument-error.js'
@@ -19,7 +25,7 @@ import { startSessionBash } from './shells/session-execution.js'
  * @param {unknown} cwd - the session workspace.
  * @returns {boolean} whether Windows path rules apply.
  */
-function windowsFlavoured(cwd) {
+function windowsFlavoured(cwd: unknown) {
   return typeof cwd === 'string' && (/^[A-Za-z]:[\\/]/.test(cwd) || (cwd[0] === '\\' && cwd[1] === '\\'))
 }
 
@@ -43,7 +49,7 @@ function windowsFlavoured(cwd) {
  * @throws {BashArgumentError} when a relative path has no absolute session workspace to anchor at,
  *   or names a drive other than the session's.
  */
-export function sessionWorkdir(args, session) {
+export function sessionWorkdir(args: { workdir?: unknown } | null | undefined, session: { header?: { cwd?: string } } | undefined) {
   const raw = args?.workdir
   const explicit = typeof raw === 'string' && raw.trim() === '' ? undefined : raw
   const cwd = session?.header?.cwd
@@ -86,9 +92,9 @@ export function sessionWorkdir(args, session) {
  * @param {unknown} error - the failure the executor raised.
  * @returns {object} the settled value, still to be stamped with `status`.
  */
-export function bashRefusalValue(error) {
+export function bashRefusalValue(error: unknown): ShellResult {
   return {
-    error: String(error?.message ?? error),
+    error: errorMessage(error),
     timedOut: false,
     timeoutMs: DEFAULT_BASH_TIMEOUT_MS,
     stdout: { text: '', truncated: false },
@@ -96,25 +102,27 @@ export function bashRefusalValue(error) {
   }
 }
 
-export function mountSessionBash(ctx, config, shells) {
+interface Entry { ctx?: Context; fiber?: Fiber; dispose?: () => void; definition?: HostShellDefinition }
+
+export function mountSessionBash(ctx: Context, config: Pick<ResolvedConfig, 'publishBashTool'>, shells: { bash: ShellResolution }) {
   if (!config.publishBashTool) return
   const bash = shells.bash
   if (!bash.available) {
     ctx.logger?.warn?.(`dsh-ops: bash unavailable: ${bash.detail}`)
     return
   }
-  const entries = new Map()
+  const entries = new Map<Agent, Entry>()
   let ready = false
   let stopped = false
-  const allowed = agent => {
+  const allowed = (agent: Agent) => {
     if (!ready || stopped || !agent?.session) return false
     try {
       const policy = ctx.get('sandboxPolicy')?.resolve({ session: agent.session })
-      return MODES.includes(policy?.mode) && (policy.mode === 'danger-full-access' || !!ctx.get('sandbox')?.confine)
+      return policy !== undefined && MODES.includes(policy.mode) && (policy.mode === 'danger-full-access' || !!ctx.get('sandbox')?.confine)
     }
     catch { return false }
   }
-  const clear = entry => {
+  const clear = (entry: Entry) => {
     // One broken teardown must not strand the rest: `reconcile()` clears every entry before
     // republishing, so an exception escaping here stops the loop at the first entry and leaves the
     // later sessions without a bash tool. Log it — a silently swallowed dispose failure would hide
@@ -122,12 +130,13 @@ export function mountSessionBash(ctx, config, shells) {
     try {
       entry.dispose?.()
     } catch (error) {
-      ctx.logger?.warn?.(`dsh-ops: bash tool teardown failed; continuing with the remaining sessions: ${error?.message ?? error}`)
+      ctx.logger?.warn?.(`dsh-ops: bash tool teardown failed; continuing with the remaining sessions: ${errorMessage(error)}`)
     } finally {
       entry.dispose = undefined
     }
   }
-  const publish = (entry, definition) => {
+  const publish = (entry: Entry, definition: HostShellDefinition) => {
+    if (!entry.ctx) return
     // A failed publication must leave the session with the definition that last worked rather than
     // with no bash tool at all (#30). `entry.definition` survives `clear()`, so it holds the last
     // definition registered successfully for this entry.
@@ -135,10 +144,10 @@ export function mountSessionBash(ctx, config, shells) {
       entry.dispose = entry.ctx.tools.register(definition)
       entry.definition = definition
     } catch (error) {
-      ctx.logger?.warn?.(`dsh-ops: bash publication failed: ${error.message}`)
+      ctx.logger?.warn?.(`dsh-ops: bash publication failed: ${errorMessage(error)}`)
       if (entry.definition === undefined) return
       try { entry.dispose = entry.ctx.tools.register(entry.definition) }
-      catch (restoreError) { ctx.logger?.warn?.(`dsh-ops: bash restoration failed: ${restoreError.message}`) }
+      catch (restoreError) { ctx.logger?.warn?.(`dsh-ops: bash restoration failed: ${errorMessage(restoreError)}`) }
     }
   }
   const reconcile = () => {
@@ -148,21 +157,21 @@ export function mountSessionBash(ctx, config, shells) {
       if (!entry.ctx || !allowed(agent)) continue
       const base = bashToolDefinition({ file: bash.file, source: bash.source, subprocess: ctx.get('subprocess') })
       const definition = hostBashDefinition(ctx, base,
-        (args, exec, standing, policy, dshEnv, options) => startSessionBash({ ctx, bash, active: () => ready && !stopped && entries.has(exec.agent) },
+        (args, exec, standing, policy, dshEnv, options) => startSessionBash({ ctx, bash, active: () => ready && !stopped && exec.agent !== undefined && entries.has(exec.agent) },
           args, exec, standing, policy, dshEnv, options), sessionWorkdir)
       publish(entry, definition)
     }
     for (const [agent, entry] of entries) {
       if (!entry.ctx || allowed(agent) || stopped) continue
-      if ((ctx.get('tools').schemas(agent) ?? []).some(tool => tool.name === BASH_TOOL)) {
+      if ((ctx.get('tools')!.schemas(agent) ?? []).some(tool => tool.name === BASH_TOOL)) {
         try { entry.dispose = entry.ctx.tools.restrict({ deny: [BASH_TOOL] }) }
-        catch (error) { ctx.logger?.warn?.(`dsh-ops: inherited bash restriction failed: ${error.message}`) }
+        catch (error) { ctx.logger?.warn?.(`dsh-ops: inherited bash restriction failed: ${errorMessage(error)}`) }
       }
     }
   }
-  const attach = agent => {
+  const attach = (agent: Agent) => {
     if (stopped || !agent?.ctx || entries.has(agent)) return
-    const entry = { ctx: undefined, fiber: undefined, dispose: undefined, definition: undefined }
+    const entry: Entry = { ctx: undefined, fiber: undefined, dispose: undefined, definition: undefined }
     entries.set(agent, entry)
     entry.fiber = agent.ctx.plugin(child => {
       child.inject(['tools'], toolsCtx => {
@@ -171,7 +180,7 @@ export function mountSessionBash(ctx, config, shells) {
       })
     })
   }
-  const detach = agent => {
+  const detach = (agent: Agent) => {
     const entry = entries.get(agent)
     if (!entry) return
     entries.delete(agent)
@@ -184,7 +193,7 @@ export function mountSessionBash(ctx, config, shells) {
     // allSettled: one failing detach must not leave the remaining sessions' bash layers published.
     await Promise.allSettled([...entries.keys()].map(detach))
   }, 'dsh-ops: session bash layers')
-  ctx.on('agent/created', ({ agent }) => attach(agent))
+  ctx.on('agent/created', ({ agent }) => { attach(agent) })
   ctx.on('agent/disposed', ({ agent }) => detach(agent))
   ctx.on('session/event', (_session, event) => { if (event.type === 'sandbox/mode') reconcile() })
   ctx.inject(['sandbox'], () => { reconcile() })
