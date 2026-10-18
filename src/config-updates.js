@@ -1,6 +1,11 @@
 /** Update configuration modification area.
  * Append migrations here; never spread upgrade write-back across components.
  * Markers belong to each owning config row, not a machine-global sentinel.
+ * The 0.4 seven-row upgrade is additive bundle composition, not a config rewrite:
+ * stable IDs and names preserve saved on/off/config overrides, and the Loader
+ * adds discovery from cordis.patch.yml. Never copy the composed tree into a
+ * profile or rename dsh-ops/file: name-qualified overrides would be skipped.
+ * Explicit legacy panel capture:false is retained; no migration may start capture.
  */
 import { LEGACY_FASTCTX_KEYS } from './config.js'
 

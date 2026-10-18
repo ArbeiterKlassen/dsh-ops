@@ -4,7 +4,7 @@
 
 `dsh-ops/discovery` publishes `ops_discover` in each eligible Native scope. Describe a capability (`metadata revision hash`) or select an exact public name (`select:ops_stat`). Discovery only chooses tools; it performs no file action. A successful selection remains pending through the current tool round. Its owning session's committed `step/end` publishes it for the next provider request. The pinned host assembles before `agent/pre-step`; queued publication is therefore drained and the public prompt service reassembles a stale snapshot. Diagnostic assemblies before that committed boundary cannot activate pending names. Newly published tools remain scoped to their owner; parents, children and siblings must discover independently.
 
-The component is exported now. The seven-row bundle installation and 0.3 profile migration are a separate release slice. A manually added row can use:
+The seven-row bundle enables this component by default and preserves existing named row overrides. Its configuration is:
 
 ```yaml
 - name: dsh-ops/discovery

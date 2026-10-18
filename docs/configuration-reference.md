@@ -2,20 +2,80 @@
 
 Every configuration key, and **which component row owns it**.
 
+## Built-in row configuration
+
+Active rows expose validated settings through the host Settings/ConfigEditor. Accepted changes persist through the profile writer and reload the owning row; stale or invalid changes preserve saved values. Disabled rows must first be re-enabled with the host row switch, and pending services must become available before editing.
+
+The default bundle retains `dsh-ops/file` and stable ID `dsh-ops-file`, so saved name-qualified overrides continue to match. It does not activate custom browser pages on the pinned host.
+
+## Optional browser settings pages
+
+When a bare-package client carrier is configured, the replacement, discovery and shell rows have settings pages in the host plugin manager. The default seven-row bundle keeps its legacy file module name and does not activate these pages. Changes
+remain a draft until **Save changes** succeeds. A stale or refused save keeps the draft for review;
+**Reset to saved** loads the latest saved values. Accepted changes persist through the host profile
+writer and reload the affected row.
+
+- **Replacements:** choose `read`, `glob` and `grep` independently. Selected tools use OPS contracts.
+  Keep each selected counterpart (`inspect_local_file` for `read`, `glob` or `grep`) always loaded in Discovery, or activate it before selecting the replacement. `read_many` does not satisfy the single-file `read` replacement contract.
+- **Discovery:** choose the allowed pool, its always-loaded subset and a result limit from 1 to 5.
+  Removing an allowed capability removes it from the always-loaded subset in the same save.
+- **Shell:** enable Bash, enter an absolute executor override, or select detected managed/Git Bash.
+  Selecting a runtime fills the draft path; save it explicitly. Clearing the override inherits the
+  configured default. Runtime installation does not silently change that selection.
+
+Bash installation/removal and PowerShell upgrade buttons first show a plan. Execute that reviewed
+plan explicitly; cancellation after launch can leave changes and reports an unknown effect. Managed
+Bash removal only deletes receipt-owned installations. Stop Bash jobs first. PowerShell actions use
+WinGet for the standard host PowerShell 7 installation, preserve Windows PowerShell 5.1, and require
+a DSH restart. Check a custom host `pwshPath` separately. No installer runs when opening a page.
+
+A client carrier uses the stable `dsh-ops-file` row with the bare package name `dsh-ops` to load these browser pages. Its
+server behavior remains the file component; the `dsh-ops/file` export remains compatible. Disabling
+this carrier unloads all custom settings pages. Use the host's **built-in row switch** to re-enable
+it. There is no automatic form fallback. A disabled target row must also be re-enabled before its
+settings can be edited. The discovery page is available once its component row is installed.
+
+### Enable the optional browser carrier
+
+This is an opt-in offline profile migration, not a prerequisite for upgrading. With DSH stopped,
+preview the installed profile using absolute paths:
+
+```console
+dsh-ops settings-profile --profile-dir <profile-directory> --host-anchor <DSH-installation-package.json> --dsh-home <DSH-home>
+```
+
+`--host-anchor` identifies the host installation whose public profile APIs the command uses.
+After reviewing the preview, repeat it with `--offline --yes`. The command selects
+`dsh-ops/lib/profiles/client` **instead of** `dsh-ops`, removes only verified legacy file-name
+matchers in that profile's patch, and preserves all seven IDs, switches, and effective configuration.
+It refuses skipped bundles, duplicate OPS rows, external name-qualified file overrides,
+incompatible higher-priority patches, or stale previews. Home patches are included; launch-time command-line overlays are outside this preview.
+No other profile is changed. Do not enable both bundle choices together.
+
+Original files are backed up in the reported `.dsh-ops-settings-backup-*` directory. Each write uses
+the host's atomic writer and profile lock. The first write remains valid with the old bundle if the
+process stops before the second; reported write failures restore unchanged originals when possible.
+For manual recovery while stopped, restore `package.json` first, then `cordis.patch.yml` as described
+in `recovery.json`. Keep the backup until the restarted profile is verified. The installed `dsh-ops`
+package supplies both bundle choices; the nested layer is not a separate package to install.
+An already-disabled file row remains disabled, so re-enable it through the builtin switch before
+expecting custom pages. The default legacy bundle remains supported without this command.
+
 ---
 
 ## Where configuration lives
 
-In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/file`, `dsh-ops/ptc` or `dsh-ops/panel` row, adjust `config`, then save; unknown configuration keys cause errors naming the key.
-The bundle declares six independently toggled components. On first installation shell, file and the panel row are enabled, and the panel row's own switch (`capture`) is **off**:
+In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/file` (`dsh-ops-file`), `dsh-ops/ptc` or `dsh-ops/panel` row, adjust `config`, then save; unknown configuration keys cause errors naming the key.
+The bundle declares seven independently toggled components. Fresh defaults follow the table. Saved profile switches and raw configuration override bundle defaults; adding discovery does not rewrite them. Profiles without explicit switch overrides inherit updated defaults.
 | Row `name` | Component | Default |
 | --- | --- | --- |
-| `dsh-ops/shell` | Terminal and shell | On |
-| `dsh-ops/file` | Rust file tools | On |
-| `dsh-ops/ptc` | Native PTC batches | Off |
-| `dsh-ops/panel` | Data capture, off at the switch | Row on, `capture: false` |
+| `dsh-ops/shell` | Terminal and shell | Windows on; Linux/macOS off |
+| `dsh-ops/file` (`dsh-ops-file`) | Rust file tools | On |
+| `dsh-ops/ptc` | Native PTC batches | On |
+| `dsh-ops/discovery` | Advanced Native tool discovery | On |
+| `dsh-ops/panel` | Capture subsequent events | Row off; enabling starts capture |
 | `dsh-ops/tui` | Read-only sidebar, separate config | Off |
-| `dsh-ops/hide-official` | Strict official-tool hiding, separate config | Off |
+| `dsh-ops/hide-official` | Per-tool official replacements, separate config | Off |
 
 A `dsh-ops/background` row left over from an earlier version loads as a no-op stub (the FastCtx background component was removed); it ignores its config and can be deleted.
 
@@ -38,7 +98,7 @@ A `dsh-ops/background` row left over from an earlier version loads as a no-op st
 | `deniedHostTools` | string array | `[pwsh, bash, pwsh_persistent]` | shell |
 | `allowSystemShellFallback` | boolean | `false` | shell |
 | `denyCredentialReads` | boolean | `true` | file / ptc |
-| `capture` | boolean | `false` | panel |
+| `capture` | boolean | `true` | panel (row defaults off) |
 | `textLimit` | integer | `2000` | panel |
 | `maxSessionBytes` | integer | `8388608` | panel |
 
@@ -83,11 +143,11 @@ config:
   # configUpdateVersion: 2
 ```
 
-The `dsh-ops/panel` row — the settings item 「启动数据检测」 (`capture`) is **off by default**:
+The `dsh-ops/panel` row is **disabled by default**. Enabling a fresh row starts capture; explicit legacy `capture: false` remains off until the operator changes it:
 
 ```yaml
 config:
-  capture: false        # 「启动数据检测」: on captures NEW conversations only
+  capture: true         # The row switch controls capture; legacy false stays inert
   textLimit: 2000       # characters kept per text field, marked when clamped
   maxSessionBytes: 8388608
 ```
@@ -108,7 +168,9 @@ config:
 - `bashPath` **(Windows) must match the pinned MSYS for restricted execution.** In read-only and workspace-write, `ops_bash` runs only the pinned MSYS whose IPC compatibility proxies were verified (`dsh-ops bash-runtime install`, or a compatible existing copy); any other `msys-2.0.dll`, including your own Git for Windows, returns `EXECUTOR_UNAVAILABLE` by design and is never run unconfined. Do not point `bashPath` at your own Git Bash to work around a restricted-mode problem. Check a selection with `dsh-ops ladder --config <file>`, which reports `restricted: yes/no` for the resolved bash. See [Troubleshooting](troubleshooting.md#ops_bash-cannot-run-a-custom-bashpath-or-git-for-windows-in-restricted-modes).
 - `deniedHostTools`: the host tool names refused by the `deny-host-shell` policy.
 - `configUpdateVersion`: completion marker for the configuration migrations (currently `2`: update 1 retires the old implicit system-bash opt-in, update 2 removes the deprecated FastCtx keys). Do not remove it, or the self-check runs again.
-- `capture` (「启动数据检测」): defaults to `false`, and **off means nothing happens** — the row registers no listener and creates no directory. When on, every *new* conversation writes into its own working directory:
+Disabling the row or saving `capture: false` stops event collection immediately, cancels queued filesystem work, and waits for already-started I/O before the host finishes the change. It does not start a final fold: existing NDJSON remains recoverable, and a temporary file from an interrupted fold may remain. Re-enabling captures only subsequent events; disabled events are not replayed.
+
+- The panel row defaults disabled and registers no listener or file. Once enabled, `capture` defaults to `true`; an explicit legacy `false` still registers nothing and is never silently changed. The host cannot atomically clear that old field while disabling its row, so the compatibility setting remains visible for deliberate edits. Captured events write into the session working directory:
   - `<cwd>/.dsh-ops/panel/<sessionId>.json` — the only data source: conversation text, the tool-call/result/milestone trace, usage buckets, and trimmings/limits;
   - `<cwd>/.dsh-ops/panel/panel.html` — a static viewer that reads that JSON in the browser and inlines no data (drag the JSON onto it, or pass `?data=<sessionId>.json` under a static server).
 
@@ -118,52 +180,30 @@ config:
 
 ---
 
-## Strict official-tool hiding (`dsh-ops/hide-official`)
+## Per-tool official replacements (`dsh-ops/hide-official`)
 
-The row is inserted **disabled**; enabling it is an operator decision. It accepts
-exactly `strict`, `scope` and `additionalOfficialTools`, and rejects any other key
-by name.
+The row is **disabled by default** and `replaceTools` defaults to `[]`. Enabling an untouched row hides nothing. Choose any subset of the reviewed official names `read`, `glob`, and `grep`; unselected tools stay visible without warnings. These are deliberate alternative workflows: read the [mapping and coverage differences](component-reference.md#dsh-opshide-official--per-tool-replacements) before selecting them.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `strict` | boolean | `true` | Must be `true`. Disable the row to restore the host tools; there is no `strict: false`. |
-| `scope` | `takeover` \| `extended` \| `off` | `takeover` | How wide the takeover is. `takeover` (default) is the reviewed shell/file/ptc scope and preserves the existing behaviour exactly; `extended` is that scope plus every name in `additionalOfficialTools`; `off` takes over nothing at all (no hiding, no warning, no readiness gate). |
-| `additionalOfficialTools` | string[] | `[]` | Extra official names (for example `custom_delegate`). Inside the scope, a name with no reviewed equivalent fails closed with both ways out. Outside the scope, `takeover` warns about it and ignores it, `extended` promotes it into the scope, and `off` ignores it silently. |
+| `replaceTools` | string[] | `[]` | Official tools to replace. Only `read`, `glob`, `grep` are accepted; duplicates are removed. Unknown keys and unsupported names produce errors naming the key/value. |
 
-The reviewed scope — the default and the previous behaviour, so `scope` can be omitted:
+For example, replace only host read and grep while retaining host glob:
 
 ```yaml
 - name: dsh-ops/hide-official
   config:
-    strict: true
-    scope: takeover          # default; may be omitted
-    additionalOfficialTools: []
+    replaceTools: [read, grep]
 ```
 
-Promote an out-of-scope official tool so `strict` really covers it. Without a
-reviewed equivalent the scope fails closed at assembly and names the fix:
+Set `replaceTools: []` or disable the row to restore every official tool. A selected OPS counterpart must be an exact OPS-owned Native definition registered and visible in each agent scope; a same-name foreign tool or a PTC-only data API does not qualify. If any is missing, that scope restores its masks and refuses prompt assembly and execution with `READINESS_BLOCKED`; healthy scopes remain usable. Restore the counterpart, remove that selection, or disable the row. Unrelated OPS tools are not required.
 
-```yaml
-- name: dsh-ops/hide-official
-  config:
-    strict: true
-    scope: extended
-    additionalOfficialTools: [subagent]
-```
+With the slim Native defaults, configure discovery `alwaysLoaded: [inspect_local_file, grep]` before selecting the example above, or activate those Native capabilities first. `read` still maps to `inspect_local_file`; resident `read_many` does not satisfy that selection. Removing or shadowing an owned counterpart rechecks readiness immediately, even if its schema is byte-identical.
 
-Neutralize the row without deleting it (staged rollouts, profiles shared across machines):
+**Migration from 0.3:** `strict`, `scope`, and `additionalOfficialTools` are accepted only for compatibility and validated with their old types/values. They grant no hiding authority, including `scope: extended` and aliases. An existing row containing only those keys becomes inert. Explicit `replaceTools` is the sole source of selections even if legacy keys remain. No saved profile is rewritten by this component.
 
-```yaml
-- name: dsh-ops/hide-official
-  config:
-    strict: true
-    scope: off
-```
+Cordis validates configuration through `StandardSchemaV1`; detached public settings descriptors expose editable arrays in the built-in Settings/ConfigEditor. Accepted changes persist and reload the row. The custom browser multi-select remains separate UI work.
 
-Which official tools are hidden, which stay visible, and why: the
-[component reference](component-reference.md#dsh-opshide-official--takeover-scope).
-Enabling the row never blocks a session for an out-of-scope tool: those stay
-visible and produce one warning that names them (#207/#238).
 
 ---
 
@@ -178,3 +218,20 @@ Prompts are registered as independent runtime sections, **not written to AGENTS.
 - [Usage](usage.md) — install, update, remove, CLI
 - [Component reference](component-reference.md) — components and tools
 - [Troubleshooting](troubleshooting.md) — errors and diagnosis
+
+## Host settings forms
+
+The enabled shell, discovery and official-replacement rows expose validated fields to the host
+settings service. Saving uses the profile revision the form read; a stale revision or invalid
+selection is rejected before writing. The host persists accepted changes and reloads the affected
+row, so the running configuration follows the saved selection. Ordinary row fields are preserved.
+A disabled row has no editable form; re-enable it with the host's built-in row switch first.
+
+Runtime actions use the host's authenticated gateway and managed subprocess service. Installation,
+removal and upgrade require a preview followed by execution of that current preview; expired,
+changed or reused plans are refused. Only one action runs at a time. Closing/unloading the owning
+shell component cancels outstanding work and waits for settlement; cancellation after launch may
+leave changes and reports an unknown effect. Bash install refuses a store containing unowned
+version directories. The PowerShell action targets the standard WinGet installation and requires
+a DSH restart; an explicit host `pwshPath` remains authoritative. Installer output stays in host
+logs; use the previewed command in a terminal if WinGet needs interactive input.

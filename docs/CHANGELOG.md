@@ -33,6 +33,40 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Type the confined Bash and workspace-preparation boundaries; reject malformed IPC proxy receipts before staging a runtime. 严格类型化受限 Bash 与工作区准备边界；代理收据格式错误时，在暂存运行时前明确拒绝。
 
+- Add optional bilingual browser settings pages for replacement selection, discovery pools and explicit Bash/host PowerShell runtime plans. Preserve the default legacy file row; custom pages require a client carrier and unload when it is disabled.
+- 新增可选双语浏览器设置页面，支持逐工具替换、发现池及显式 Bash/宿主 PowerShell 运行时计划。默认保留旧文件行；自定义页面需要客户端承载行，关闭承载行即卸载页面。
+- Add an opt-in offline settings-carrier migration with exact host composition checks, original-file backups, atomic writes and recovery. The normal upgrade retains legacy file-row names and settings.
+- 新增可选离线设置承载行迁移：精确验证宿主配置合成结果，备份原文件，原子写入并支持恢复。常规升级仍保留旧文件行名称与配置。
+
+- Add discovery as the seventh bundle row; preserve existing named row overrides. Fresh defaults enable shell only on Windows and leave panel/TUI/replacements off. Enabling a fresh panel row starts capture; explicit legacy capture:false stays inert. Provide builtin validated file/PTC/TUI configuration.
+- bundle 新增第七行 discovery，保留已有带名称行覆盖。首次安装仅 Windows 默认启用 shell，panel/TUI/替换默认关闭；启用新 panel 行即采集，旧配置 capture:false 保持不采集。补充文件/PTC/TUI 内置校验配置。
+
+- Stop panel collection and queued filesystem work when its row or capture switch is disabled; wait for issued I/O without scheduling a final fold. Expose validated capture settings through the host editor.
+- 关闭 panel 行或采集开关时停止采集及排队文件操作，等待已开始的 I/O，但不触发最终归并；宿主编辑器提供严格校验的采集设置。
+
+- Preserve raw shell configuration through settings validation so ordinary startup and profile reload do not interpret normalized defaults as explicit inputs.
+- 设置校验保留原始 shell 配置，避免启动和配置重载将规范化默认值误认为显式输入。
+### Connect runtime settings actions to the host gateway (#261)
+
+- Add typed, package-owned gateway descriptors for runtime inventory, Bash selection and explicit install/remove/PowerShell-upgrade previews. Execute only current one-use plans through host subprocess governance; preserve cancellation and partial-effect facts.
+- 通过宿主网关提供运行时清单、Bash 选择和显式安装/删除/PowerShell 升级预览；仅执行有效的一次性计划，并保留取消和部分副作用信息。
+### Validate and persist host settings forms (#261)
+
+- Expose shell executor, discovery pool/always-loaded and per-tool replacement fields through detached settings descriptors and existing validators. Accepted changes persist through the host profile writer and reload the row; stale/invalid writes preserve the profile.
+- 为 shell 执行器、发现允许池/常驻项和逐项替换提供宿主设置描述及既有校验；成功保存后重载对应行，版本过期或无效配置不会改写文件。
+
+- Drain release-gate stdout and stderr concurrently so a full diagnostic pipe cannot deadlock verification; retain both streams and failing exit codes.
+- 发布门禁并行读取 stdout 和 stderr，避免诊断管道写满后验证死锁；保留两路完整输出及失败退出码。
+
+- Require exact OPS-owned Native definitions for selected official replacements, including same-schema ownership changes; preserve fail-closed provider requests while discovery completes startup readiness. Move the replacement boundary and config validator to strict TypeScript.
+- 所选官方替代工具必须是 OPS 拥有的确切 Native 定义，schema 相同的所有权变化也会重新校验；发现组件可完成启动就绪检查，普通提供方请求仍严格拒绝未就绪状态。替代边界和配置校验器迁移为严格 TypeScript。
+
+### Select official read/search replacements individually (#261)
+
+- Replace blanket hiding with `replaceTools: []`: explicitly select reviewed `read`, `glob`, or `grep` alternatives. Unselected tools remain visible without warning lists; only selected counterparts are required for scoped readiness.
+- Legacy `strict`, `scope`, and `additionalOfficialTools` remain validated but inert. Document argument/coverage differences and exclude write/edit because their CAS contracts differ. Cordis validation is implemented; a browser multi-select is separate UI work.
+- 官方工具改为通过 `replaceTools: []` 逐项选择 `read`、`glob`、`grep` 替代流程；未选工具保持可见且无警告列表，只校验所选替代工具的作用域就绪状态。
+- 旧 `strict`、`scope`、`additionalOfficialTools` 仅校验不生效；文档说明参数与覆盖差异，写入/编辑因 CAS 契约不同而不提供替换。已实现 Cordis 校验，浏览器多选界面另行实现。
 ### Leave PowerShell with its host (#261)
 
 - Remove the PowerShell npm payload dependency, shell payload release assembly and automatic
@@ -700,6 +734,9 @@ The capability is taken; the duplicate component is not.
 - Refuse a native worker that exists without its execute bit, naming the path and the mode, instead of failing later as a bare `EACCES` from `spawn`. The resolver's "unavailable" error lists the candidates it tried, a missing or malformed `provenance.json` is named as an incomplete stage, and `node bin/native-runtime.mjs check` on a package missing a declared platform explains both ways forward instead of raising a raw `ENOENT`.
 
 ## [Unreleased]
+
+- Drain release-gate stdout and stderr concurrently so a full diagnostic pipe cannot deadlock verification; retain both streams and failing exit codes.
+- 发布门禁并行读取 stdout 和 stderr，避免诊断管道写满后验证死锁；保留两路完整输出及失败退出码。
 
 ### Read-only sidebar navigation
 
