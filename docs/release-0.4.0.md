@@ -131,3 +131,7 @@ reported explicitly; historical failures alone neither pass nor fail the revised
 
 Use the [manual acceptance checklist](manual-validation.md). This candidate does not merge PRs,
 publish binaries or enable a disabled release workflow.
+
+## Approved-scope result
+
+The integrated implementation passed all five Windows benchmarks under the approved criteria: BM-01 **5,321 / 8,883 bytes, 40.099% reduction** against OPS 0.3.1 (official reader: 5,457 bytes, 2.492% separately); BM-03 **241 file/discovery tokens**, with startup Bash retained and **660 full schema tokens** reported separately. BM-02, BM-04 and BM-05 also passed. The release PR records exact final-candidate provenance and functional CI; the historical table above remains unchanged.

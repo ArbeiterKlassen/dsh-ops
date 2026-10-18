@@ -21,9 +21,9 @@ The manual `Opt-in OPS acceptance benchmarks` workflow runs the same command on 
 
 | Gate | Evidence and criterion |
 | --- | --- |
-| BM-01 | Three files with 70/80/90 TypeScript lines, each requesting its first 50 lines, as declared in the issue prose. Compare one `read_many` call with separately named OPS 0.3.1 and pinned official `read` results. Canonical and emitted text must retain exactly the requested lines before measuring bytes. Report sequential three-round and parallel one-round baseline controls separately; report total provider requests including the final answer. Both 40% comparisons remain individually visible. |
+| BM-01 | Three files with 70/80/90 TypeScript lines, each requesting its first 50 lines, as declared in the issue prose. Compare one `read_many` call with separately named OPS 0.3.1 and pinned official `read` results. Canonical and emitted text must retain exactly the requested lines before measuring bytes. Report sequential three-round and parallel one-round baseline controls separately; report total provider requests including the final answer. The 40% acceptance gate uses OPS 0.3.x, pinned here to 0.3.1. Official-reader savings remain separately visible and do not gate acceptance. |
 | BM-02 | Five distinct edits in one file, one successful submission, then two externally changed stale-CAS cases. Verify exact resulting bytes, all conflicts rejected, and no full-file echo. |
-| BM-03 | Measure actual first provider schemas for the full default Native surface. Windows includes the published Bash contract with the real jobs service; absence blocks the gate. Count compact `name/description/parameters` JSON with exact `js-tiktoken@1.0.21`, `cl100k_base`. Keep whole startup messages separately. The full ≤400 target remains pending; no narrower scope is silently substituted. |
+| BM-03 | Measure actual first provider schemas for the full default Native surface. Windows includes the published Bash contract with the real jobs service; absence blocks the gate. Count compact `name/description/parameters` JSON with exact `js-tiktoken@1.0.21`, `cl100k_base`. Keep whole startup messages separately. The approved ≤400 gate counts only resident file/discovery schemas. Bash stays loaded at startup; its schema and the complete default total remain separately reported. |
 | BM-04 | A real one-page Helvetica/Flate PDF. No PDF schema initially; discovery request one must expose `pdf_read` in provider request two, without sibling visibility; then verify extracted text. Missing integrated PDF capability is blocked. |
 | BM-05 | Real credential-fenced outside reads and workspace-escaping writes must return rejected, preserve files, and reveal no denied parent path or secret body. An ordinary OS-readable outside read is a separately labelled allowed control: the pinned host does not implement a blanket workspace read jail. |
 
@@ -32,6 +32,12 @@ BM-01 also always reports offsets 13/31/51 with 8 lines, plus 1-line, 32-line, 6
 The checkout must contain the pinned 0.3.1 Git history before running the functional provenance test or preparing the benchmark baseline. For a shallow clone, run `git fetch --unshallow` first. The CI full-gate jobs, optional benchmark smoke, release gate and manual benchmark workflow fetch full history; missing baseline objects are a failure, never a skip.
 
 The 0.3.1 baseline is commit `4b51b6333213c376c8b7c173c12f35b408fdec2d`. The preparation script materializes exact Git blobs without checkout newline conversion; provenance rechecks every `lib/` and `native/` blob and records the worker version and SHA-256. Binary reproducibility is not attested. The official comparator uses the installed, pinned host reader separately. The test-only jobs package `@deepseek-ai/dsh-jobs-local@0.2.0-rc.2` was published on 2026-09-29, more than seven days before addition; it is needed to measure the complete Bash schema.
+
+## Confirmed acceptance scopes (2026-10-19)
+
+The user confirmed OPS 0.3.x as BM-01's authoritative comparison and retained the original DSH reader as a separate comparison. BM-03 keeps Bash loaded at startup and applies the unchanged 400-token threshold to file/discovery schemas only. The full default schema total and startup message JSON remain visible. Exact inventory checks still block a missing Bash on Windows, even when the file/discovery subset fits the budget. No tool contracts, defaults, source text, workload or numerical thresholds are removed or relaxed.
+
+The actual file/discovery definitions measure 241 tokens / 1,094 bytes. The previously captured complete Windows provider surface measures 660 tokens / 3,219 bytes; the different fixture order is 661 tokens with identical bytes. The complete surface does not fit 400 and is not described as doing so. A fresh integrated run is required for current acceptance; historical artifacts below keep their original verdicts.
 
 ## Honest limits and retained results
 
@@ -55,7 +61,7 @@ Candidate `02577ed140c16e1739bf2588172ee38d9370ec52` had a clean worktree, host 
 
 The candidate uses one tool-bearing round plus the final response. Sequential comparators use three plus final; parallel comparator controls also use one plus final. The 8-line/1-line/32-line/long-line/Unicode sensitivities save 47.843%/55.768%/40.990%/7.560%/40.358% against 0.3.1; no universal percentage claim follows. A prior fresh-home run without optional Bash reported BM-03 blocked, never passed at 241 tokens.
 
-The retained raw local artifact is `040-benchmark-final-pinned-bash.json` with SHA-256 `cc94fcb4f444a39858795ef9003553de54735eff128191f3037a21666db1de98`; its companion Markdown summarizes all gates. Full acceptance remains false; the baseline and budget-scope decisions remain unresolved.
+The retained raw local artifact is `040-benchmark-final-pinned-bash.json` with SHA-256 `cc94fcb4f444a39858795ef9003553de54735eff128191f3037a21666db1de98`; its companion Markdown summarizes all gates. That historical run remains failed under its original criteria; the later scope decisions above do not rewrite its evidence.
 
 
 ## Reviewed complete rerun
@@ -66,4 +72,10 @@ The corrected Unicode sensitivity is 2,616 candidate / 4,185 OPS 0.3.1 / 2,469 o
 
 ## Integrity checks after review
 
-BM-03 now requires the exact resident file catalogue plus discovery (and the full Bash contract on Windows) before a token score can pass. Missing, duplicate or unexpected tools block the gate with a named reason. BM-05 also requires its ordinary outside-read control to succeed with exact text, and checks `CREDENTIAL_DENIED` / `POLICY_DENIED` with `effectState: none` for the denied probes. Native line checks independently decode the documented escapes, including literal backslashes; they no longer mirror the renderer. These checks change no workload, default, budget or threshold. The result snapshot above remains historical evidence for its named commit; it is not reclassified as passing.
+BM-03 now requires the exact resident file catalogue plus discovery (and the full Bash contract on Windows) before a token score can pass. Missing, duplicate or unexpected tools block the gate with a named reason. BM-05 also requires its ordinary outside-read control to succeed with exact text, and checks `CREDENTIAL_DENIED` / `POLICY_DENIED` with `effectState: none` for the denied probes. Native line checks independently decode the documented escapes, including literal backslashes; they no longer mirror the renderer. These integrity checks change no workload, default or numerical threshold; only the explicitly approved acceptance scopes above determine current verdicts. The result snapshot above remains historical evidence for its named commit; it is not reclassified as passing.
+
+## Approved-scope validation
+
+The clean implementation at `112e34e` passed all five gates on Windows through the real pinned host. BM-01 returned 5,321 bytes versus 8,883 for OPS 0.3.1: **40.099% reduction**, with all requested source intact. The official reader returned 5,457 bytes (2.492% reduction), reported separately. BM-02 retained both stale-CAS rejections; BM-04 and BM-05 retained activation isolation and authority controls.
+
+BM-03 passed at **241 file/discovery tokens / 1,094 bytes**, while Bash remained resident. The full startup schema remained **660 tokens / 3,219 bytes**, reported separately. Removing only the redundant per-file notice label and terminal period saved 27 bytes across the fixed three-file task; revisions, continuation/EOF facts and the aggregate notice remain. Historical results above keep their original verdicts. Final release PR validation records the final candidate revision and evidence artifact.
