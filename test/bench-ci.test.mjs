@@ -6,8 +6,9 @@
  *
  * 1. it hangs off a `workflow_dispatch` **boolean input that defaults to false**, so `push`,
  *    `pull_request` and `merge_group` cannot start it;
- * 2. the aggregate `CI required` job names it in `needs` (it has to account for every job) while the
- *    loop that fails the aggregate deliberately omits it — being in `needs` is not being required;
+ * 2. the aggregate `CI required` job neither names it in `needs` nor judges it in its failure loop:
+ *    waiting on a non-blocking job would keep the required check pending until that job finished, so
+ *    a `continue-on-error` job is not waited on at all (#316);
  * 3. it uploads evidence under the names the repository already uses (`*-report`, `warn` when a run
  *    produced nothing to upload) and asserts no duration anywhere.
  *
@@ -51,14 +52,14 @@ await test('exactly one job is gated on that input, and only workflow_dispatch c
   assert.ok(Number(benchJob['timeout-minutes']) > 0, 'the job bounds its runtime')
 })
 
-await test('"CI required" reports the smoke without letting it block', () => {
+await test('"CI required" neither waits on nor judges the smoke', () => {
   assert.ok(required, 'ci.yml still exposes the aggregate "CI required" check')
   const needs = [].concat(required.needs ?? [])
-  assert.ok(needs.includes(benchId), 'the aggregate accounts for every job, including the smoke')
+  assert.equal(needs.includes(benchId), false, 'being in needs would keep the required check pending until the smoke finished')
   const loop = requiredScript.match(/for job in ([^;]+);/u)
   assert.ok(loop, 'the aggregate still has a blocking-job loop')
   assert.equal(loop[1].split(/\s+/u).includes(benchId), false, 'the smoke is not one of the blocking jobs')
-  assert.match(requiredScript, new RegExp(`echo "${benchId}:`, 'u'), 'the aggregate prints the smoke result')
+  assert.doesNotMatch(requiredScript, new RegExp(`echo "${benchId}:`, 'u'), 'the aggregate has no result to print for a job it does not wait on')
 })
 
 await test('the smoke drives the one CLI entry point with the same binary on both sides', () => {
