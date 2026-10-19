@@ -44,4 +44,48 @@ The complete request remains capped at 2 MiB. Explicit legacy unversioned reques
 for 0.3.x benchmark comparisons, with the same authority checks and bounded default transport budget.
 Any envelope marker selects strict v1 decoding: partial envelopes, unknown fields, invalid IDs,
 unsupported components/versions and unusable budgets are rejected before filesystem effects.
-Request IDs do not change result hashes. Scan/storage/reference budgets are separate later work.
+Request IDs do not change result hashes. Scan and automatic output-spill integration are separate work.
+
+## Session snapshot references (6a/16)
+
+The worker accepts optional trusted envelope metadata `storage: { root, authorityId, allowedTools,
+windowsWriteSid? }`. Tool arguments and the inner request cannot supply it. The host provides an
+existing absolute cache root, a 64-character lowercase SHA-256 authority identity, and the current
+canonical producer-tool allowlist. Its authority identity must bind the live session nonce and
+current policy/credential boundaries; knowing a reference never grants authority. Each access also
+rechecks scope, selected canonical root and directory identity, producer and current credential
+fences. The cache root remains independent of operation-root selections.
+
+With this context, result put returns `ref://<encoded-session>/<tool>/<uuid>` and `reference`
+metadata: refId, createdAt (epoch milliseconds), ttlMs, schemaVersion, producerTool, totalItems,
+totalBytes (physical serialized snapshot bytes), and a preview of at most ten rows/512 characters.
+The default `ttlMs: 0` means session lifetime; explicit positive TTLs are bounded to seven days.
+The host must expire references on session exit and rotate the authority identity when reopening a
+session. The worker caps snapshots at 10 MiB and each session cache at 100 MiB/4096 entries, counting
+crash stages and unknown files. Writers serialize quota/LRU decisions with one shared OS lock.
+Only exact snapshot UUID names are evicted; immutable audit records are never LRU candidates.
+
+Pages return sourceTotal, filtered total, items, nextOffset, omitted and complete; complete means
+all selected stored rows have been displayed, not that the original business traversal was complete.
+The 512..65536-byte page budget includes JSON escaping, handle metadata and the newline. Oversized
+rows require projection or a larger page; reference pages never create another reference. Nested
+reference objects are refused, although ordinary strings containing a URI remain ordinary data.
+Readonly pages acquire an existing shared lock without creating files or changing LRU timestamps.
+Missing, expired, released or evicted snapshots return `REFERENCE_EXPIRED`. Legacy r-/j- access
+retains its existing protocol and durable audit location.
+
+On Windows the host supplies the actual private `--temp` root and `--temp-write-sid` from its
+confined invocation, retaining that location for readonly access. Protected cache DACLs grant only
+the current user and this exact private-temp capability, which must already exist on the held
+parent. Public/logon/workspace capability SIDs are refused. Real readonly and foreign-session tokens
+cannot write these objects. On POSIX, files/directories are current-user-owned and private. Cache
+parents, directories, snapshots and the stable lock reject symlinks/reparse points; files must have
+one hard link. No cache operation changes business-file permissions.
+
+For host lifecycle cleanup, `result { action: "purge" }` with the same trusted storage context
+accepts no other arguments. It removes only validated snapshot/stage names for that scope, retaining
+the lock inode, directories and unknown/audit names. It returns `removed`, `retained`, `complete`
+and `effectState`; partial cleanup failures identify prior effects. Readonly purge is refused.
+The host must first invalidate references logically and await active calls; a denied or interrupted
+purge is deferred cleanup, never a reason to rerun business operations. This worker slice does not
+yet attach host lifecycle hooks or spill ordinary tool output automatically.

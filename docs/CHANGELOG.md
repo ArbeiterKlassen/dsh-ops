@@ -7,6 +7,16 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Add private session snapshot references (#261, 6a/16)
+
+- Add trusted-envelope `ref://session/tool/uuid` storage with 10 MiB snapshot and 100 MiB session
+  quotas, serialized LRU, physical byte accounting, no-follow objects and separate durable audits.
+- Recheck live authority/producer scope on access; default TTL follows session lifetime. Bounded
+  pages never nest references. Readonly reads leave storage unchanged; guarded purge preserves
+  the lock and audit namespace and reports partial cleanup honestly.
+- Preserve Windows private-temp capability isolation; real confined create/reopen/readonly and
+  foreign-session denial assertions cover the protected cache ACL.
+
 ### Read multiple file ranges and apply atomic multi-edits (#261)
 
 - Add read_many with 1-32 independently reported UTF-8 ranges in one worker call, current-session

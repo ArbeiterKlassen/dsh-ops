@@ -40,6 +40,7 @@ struct Envelope {
     component: Component,
     budget: Budget,
     request: Request,
+    storage: Option<crate::storage::StorageContext>,
 }
 
 pub struct Decoded {
@@ -55,8 +56,8 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded> {
     }
     let value: Value = serde_json::from_slice(bytes)?;
     // A malformed or unsupported envelope must not be retried as an unversioned request.
-    if ["version", "requestId", "component", "budget", "request"].iter().any(|key| value.get(key).is_some()) {
-        let envelope: Envelope = serde_json::from_slice(bytes)?;
+    if ["version", "requestId", "component", "budget", "request", "storage"].iter().any(|key| value.get(key).is_some()) {
+        let mut envelope: Envelope = serde_json::from_slice(bytes)?;
         if envelope.version != 1 {
             return Err(Failure::new("PROTOCOL_VERSION", "Supported worker request version is 1"));
         }
@@ -65,6 +66,8 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded> {
         {
             return Err(Failure::new("INVALID_ARGUMENT", "requestId must contain 1..128 ASCII letters, digits, underscores or hyphens"));
         }
+        if let Some(storage) = &envelope.storage { storage.validate()?; }
+        envelope.request.storage = envelope.storage;
         Ok(Decoded { request: envelope.request, budget: envelope.budget.validate()?,
             request_id: Some(envelope.request_id), component: Some(envelope.component) })
     } else {
