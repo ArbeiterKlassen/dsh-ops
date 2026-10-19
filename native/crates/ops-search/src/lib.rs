@@ -1,0 +1,308 @@
+//! File search orchestration over the shared no-follow file primitives.
+#![forbid(unsafe_code)]
+mod scan;
+mod paging;
+mod search;
+use ops_protocol::{Failure, Request, Result};
+use ops_files::{file_path, target, relative_display, read_bytes, result, lock_and_read_for_update, atomic_write, MAX_OUTPUT_BYTES};
+use ops_files as publication;
+use cap_fs_ext::DirExt;
+use regex::RegexBuilder;
+use serde::Deserialize;
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::{fs, path::{Path, PathBuf}};
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt as WindowsMetadataExt;
+const MAX_ENTRIES: usize = 100_000;
+const MAX_DEPTH: usize = 128;
+fn one_hundred() -> usize { 100 }
+fn yes() -> bool { true }
+
+pub fn dispatch(request: &Request) -> Result<Value> {
+    if let Some(raw) = request.args.get("path").and_then(Value::as_str) { request.authorize_path(Path::new(raw))?; }
+    match request.tool.as_str() {
+        "glob" => search::glob(request),
+        "grep" => search::grep(request),
+        "replace" => replace(request),
+        _ => Err(Failure::new("INVALID_ARGUMENT", "Unknown search capability")),
+    }.map_err(|mut error| { error.message = format!("{}: {}", request.tool, error.message); error })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ReplaceArgs {
+    path: String,
+    pattern: String,
+    replacement: String,
+    #[serde(default)]
+    glob: Vec<String>,
+    #[serde(default = "one_hundred")]
+    max_replacements: usize,
+    #[serde(default)]
+    dry_run: bool,
+}
+fn hidden(path: &Path, root: &Path) -> bool {
+    path.strip_prefix(root).ok().into_iter().flat_map(|p| p.components()).any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+}
+fn host_link_or_reparse(path: &Path) -> bool {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else { return true };
+    if metadata.file_type().is_symlink() { return true; }
+    #[cfg(windows)]
+    if metadata.file_attributes() & 0x400 != 0 { return true; }
+    false
+}
+struct WalkResult {
+    files: Vec<PathBuf>,
+    truncated: bool,
+}
+
+fn walk(root: &Path, request: &Request) -> Result<WalkResult> {
+    request.authorize_path(root)?;
+    let target = crate::file_path::checked(root.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?)?;
+    let directory = target.parent.open_dir_nofollow(&target.name)?;
+    let mut files = Vec::new();
+    let mut truncated = false;
+    visit_dir(root, root, directory, 0, request, &mut files, &mut truncated)?;
+    Ok(WalkResult { files, truncated })
+}
+fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: usize, request: &Request, output: &mut Vec<PathBuf>, truncated: &mut bool) -> Result<()> {
+    if depth > MAX_DEPTH || output.len() >= MAX_ENTRIES {
+        *truncated = true;
+        return Ok(());
+    }
+    let mut names = Vec::new();
+    // A directory can change while it is being read. A broken child directory
+    // is skipped, while failure to enumerate the requested root remains visible.
+    let entries = match directory.entries() {
+        Ok(entries) => entries,
+        Err(error) if depth == 0 => return Err(error.into()),
+        Err(_) => return Ok(()),
+    };
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
+        let Ok(name) = entry.file_name().into_string() else { continue };
+        names.push(name);
+    }
+    names.sort();
+    for name in names {
+        if crate::file_path::validate_name(&name).is_err() || name == ".git" { continue; }
+        let metadata = match directory.symlink_metadata(&name) {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+        if crate::file_path::link(&metadata) { continue; }
+        let child = display.join(&name);
+        if host_link_or_reparse(&child) { continue; }
+        // A denied root is skipped by identity, not by name: the host names the
+        // credential locations and the worker stays out of them entirely, so a
+        // traversal cannot even report a private key below one.
+        if request.denies_path(&child) { continue; }
+        if hidden(&child, root) || matches!(name.as_str(), ".git" | ".dsh-ops" | "node_modules" | "target" | ".venv") { continue; }
+        if metadata.is_file() {
+            if output.len() >= MAX_ENTRIES { *truncated = true; return Ok(()); }
+            output.push(child);
+            continue;
+        }
+        if metadata.is_dir() {
+            let Ok(child_dir) = directory.open_dir_nofollow(&name) else { continue };
+            visit_dir(root, &child, child_dir, depth + 1, request, output, truncated)?;
+            if *truncated && output.len() >= MAX_ENTRIES { return Ok(()); }
+        }
+    }
+    Ok(())
+}
+fn positive_patterns(patterns: &[String]) -> impl Iterator<Item = &String> { patterns.iter().filter(|p| !p.starts_with('!')) }
+fn matches_any(root: &Path, file: &Path, patterns: &[String]) -> bool {
+    let name = relative_display(root, file);
+    let positives: Vec<_> = positive_patterns(patterns).collect();
+    let included = positives.is_empty() || positives.iter().any(|p| glob_match(p, &name));
+    let excluded = patterns.iter().filter_map(|p| p.strip_prefix('!')).any(|p| glob_match(p, &name));
+    included && !excluded
+}
+fn files_for(path: &str, patterns: &[String], request: &Request) -> Result<WalkResult> {
+    let root = target(path, false)?;
+    request.authorize_path(&root)?;
+    if root.is_file() {
+        return Ok(WalkResult { files: vec![root.clone()], truncated: false });
+    }
+    let walked = walk(&root, request)?;
+    Ok(WalkResult {
+        files: walked.files.into_iter()
+            .filter(|f| matches_any(&root, f, patterns))
+            .collect(),
+        truncated: walked.truncated,
+    })
+}
+fn glob_match(pattern: &str, value: &str) -> bool {
+    let p: Vec<_> = pattern.trim_start_matches("./").split('/').collect();
+    let v: Vec<_> = value.split('/').collect();
+    glob_segments(&p, &v)
+}
+fn glob_segments(p: &[&str], v: &[&str]) -> bool {
+    if p.is_empty() { return v.is_empty(); }
+    if p[0] == "**" { return glob_segments(&p[1..], v) || (!v.is_empty() && glob_segments(p, &v[1..])); }
+    !v.is_empty() && segment_match(p[0], v[0]) && glob_segments(&p[1..], &v[1..])
+}
+fn segment_match(pattern: &str, value: &str) -> bool {
+    let (mut pi, mut vi, mut star, mut mark) = (0usize, 0usize, None, 0usize);
+    let p = pattern.as_bytes(); let v = value.as_bytes();
+    while vi < v.len() {
+        if pi < p.len() && (p[pi] == b'?' || p[pi].eq_ignore_ascii_case(&v[vi])) { pi += 1; vi += 1; }
+        else if pi < p.len() && p[pi] == b'*' { star = Some(pi); pi += 1; mark = vi; }
+        else if let Some(s) = star { pi = s + 1; mark += 1; vi = mark; }
+        else { return false; }
+    }
+    while pi < p.len() && p[pi] == b'*' { pi += 1; }
+    pi == p.len()
+}
+fn replace(request: &Request) -> Result<Value> {
+    if request.read_only { return Err(Failure::policy("read-only", "replace is unavailable in read-only mode")); }
+    let args: ReplaceArgs = serde_json::from_value(request.args.clone())?;
+    if args.pattern.is_empty() || args.max_replacements == 0 || args.max_replacements > 100_000 { return Err(Failure::new("INVALID_ARGUMENT", "pattern and maxReplacements are required")); }
+    let walked = files_for(&args.path, &args.glob, request)?; let mut plans = Vec::new(); let mut total = 0usize; let mut binary: Vec<PathBuf> = Vec::new();
+    // A directory that holds one binary file (an icon, an archive) is a normal repository, not a
+    // malformed request: the binary is reported as skipped and the text files around it are still
+    // edited. Failing the whole call on the first non-UTF-8 byte made a routine directory edit
+    // impossible, and the error named no file, so the caller could not even narrow the request.
+    let mut update_guards = Vec::new();
+    for file in walked.files {
+        // Serialize observation as well as publication. On APFS an open racing
+        // an unlink/rename can fail ENOENT on the superseded vnode even though
+        // the directory name always has a complete version. Do not retry or
+        // relabel ENOENT: avoid the race between cooperating writers instead.
+        let (guard, bytes) = if args.dry_run { (None, read_bytes(&file)?) }
+            else { let (guard, bytes) = lock_and_read_for_update(&file)?; (Some(guard), bytes) };
+        match String::from_utf8(bytes.clone()) {
+            Ok(text) => {
+                let count = text.match_indices(&args.pattern).count();
+                if count > 0 { total += count; plans.push((file, bytes, text, count)); update_guards.push(guard); }
+            }
+            Err(_) => binary.push(file),
+        }
+    }
+    let skipped = binary.len();
+    let skipped_paths: Vec<Value> = binary.iter().take(8).map(|file| json!(relative_display(&request.root_path(), file))).collect();
+    if total > args.max_replacements { return Err(Failure::new("OUTPUT_LIMIT", format!("{total} matches exceed maxReplacements ({}); no file was changed. maxReplacements is a ceiling, not a truncation: raise it to {total} or more and retry.", args.max_replacements))); }
+    let mut items=Vec::new(); for (file, original, text, count) in plans { let revision=format!("{:x}", Sha256::digest(&original)); let next=text.replace(&args.pattern,&args.replacement); items.push(json!({"path":file,"replacements":count,"revision":revision,"revisionAfter":format!("{:x}", Sha256::digest(next.as_bytes())),"bytesBefore":original.len(),"bytesAfter":next.len(),"lineCountBefore":text.lines().count(),"lineCount":next.lines().count()})); }
+    if serde_json::to_vec(&items)?.len() > MAX_OUTPUT_BYTES / 2 { return Err(Failure::new("OUTPUT_LIMIT", "Replacement receipts exceed the bounded output budget; narrow path/glob. No files changed.")); }
+    if args.dry_run { return Ok(json!({"status":"completed","phase":"observe","changed":0,"matched":total,"skipped":skipped,"failed":0,"complete":true,"omitted":0,"dryRun":true,"items":items,"skippedPaths":skipped_paths})); }
+    for item in &items { publication::authorize_write(request, item["path"].as_str().unwrap_or(""))?; }
+    let mut changed=0usize; for item in &mut items {
+        let applied = (|| -> Result<()> { let file=PathBuf::from(item["path"].as_str().unwrap_or(""));
+        publication::authorize_write(request, file.to_str().unwrap_or(""))?;
+        // Observation guards above remain owned until every publication settles.
+        let bytes = read_bytes(&file)?;
+        // The revision is checked against the bytes the lock returned, so the check
+        // and the write cannot be separated by another open — see the lock for why.
+        let expected=item["revision"].as_str().unwrap_or(""); publication::check_revision(Some(&bytes), expected)?;
+        let text=String::from_utf8(bytes).map_err(|_| Failure::new("ERR_INVALID_ENCODING", "Replace only supports UTF-8 files"))?; let next=text.replace(&args.pattern,&args.replacement);
+        // Report what the replacement kept. The fields are additive, so a caller
+        // that ignores them sees exactly the envelope it saw before.
+        if let Some((metadata,warnings))=atomic_write(&file,next.as_bytes())? { item["metadata"]=metadata; if !warnings.is_empty() { item["metadataWarnings"]=json!(warnings); } }
+        Ok(()) })();
+        if let Err(mut error) = applied {
+            if changed > 0 { error.effect_state = "applied".into(); error.next_action = "Earlier files were already replaced. Inspect postconditions; do not repeat the batch blindly.".into(); }
+            return Err(error);
+        }
+        changed += item["replacements"].as_u64().unwrap_or(0) as usize; }
+    let count = items.len();
+    let mut output = result(request, items, count, 0, 0, total, walked.truncated);
+    output["changed"] = json!(changed); output["skipped"] = json!(skipped);
+    // Do not let optional skipped path names defeat the serialized receipt budget.
+    output["skippedPaths"] = if serde_json::to_vec(&output)?.len() < MAX_OUTPUT_BYTES / 2 { json!(skipped_paths) } else { json!([]) };
+    Ok(output)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    /// One private fixture directory under the canonical ambient temp root.
+    ///
+    /// The no-follow traversal refuses linked ancestry, and `TMPDIR` sits behind
+    /// one on Darwin, so the ambient root is resolved before anything is created —
+    /// the reason `single::tests::copy_changed_source_is_not_published` does the
+    /// same.
+    struct Fixture { root: PathBuf }
+    impl Fixture {
+        fn new(tag: &str) -> Self {
+            let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("dsh-ops-{tag}-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir(&root).unwrap();
+            Self { root }
+        }
+        /// Write one fixture file and stamp it with `modified_ms` since the epoch.
+        fn file(&self, name: &str, bytes: &[u8], modified_ms: u64) -> PathBuf {
+            let path = self.root.join(name);
+            std::fs::write(&path, bytes).unwrap();
+            let stamp = UNIX_EPOCH + Duration::from_millis(modified_ms);
+            std::fs::OpenOptions::new().write(true).open(&path).unwrap()
+                .set_times(fs::FileTimes::new().set_accessed(stamp).set_modified(stamp)).unwrap();
+            path
+        }
+        /// The sidecar `lock_and_read_for_update` creates for `name`.
+        fn sidecar(&self, name: &str) -> PathBuf {
+            self.root.join(format!(".dsh-ops-update-{:x}.lock", Sha256::digest(name.to_lowercase().as_bytes())))
+        }
+
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.root); }
+    }
+
+    /// #236: `modified` was `metadata.len()`, so every `details` item reported
+    /// `modified == bytes` and `sort: "modified"` ordered by size. The fixtures
+    /// are inverted on purpose — the larger file is the older one — so a
+    /// size-based key reverses them.
+    fn listing(fixture: &Fixture, offset: usize, limit: usize) -> Value {
+        let request = serde_json::from_value(json!({"root":fixture.root,"scope":"mtime-test","tool":"glob",
+            "args":{"path":fixture.root,"pattern":["*.txt"],"sort":"modified","outputMode":"details","offset":offset,"limit":limit}})).unwrap();
+        dispatch(&request).unwrap()
+    }
+    #[test]
+    fn modified_is_epoch_milliseconds_and_ordering_ignores_size() {
+        let fixture = Fixture::new("glob-modified");
+        fixture.file("a-old-big.txt", &[b'x'; 8192], 1_600_000_000_000);
+        fixture.file("z-new-small.txt", b"tiny", 1_600_000_120_000);
+        let output = listing(&fixture, 0, 10);
+        let items = output["items"].as_array().unwrap();
+        assert!(items[0]["path"].as_str().unwrap().ends_with("z-new-small.txt"));
+        assert_eq!(items[0]["bytes"], 4); assert_eq!(items[1]["bytes"], 8192);
+        for (item, expected) in items.iter().zip([1_600_000_120_000_i128, 1_600_000_000_000_i128]) {
+            let actual = item["modified"].as_u64().unwrap() as i128;
+            assert!((actual - expected).abs() <= 1_000, "expected epoch milliseconds, got {actual}");
+        }
+    }
+    #[test]
+    fn equal_timestamps_keep_the_candidate_order() {
+        let fixture = Fixture::new("glob-modified-tie");
+        for name in ["c.txt", "a.txt", "b.txt"] { fixture.file(name, name.as_bytes(), 1_600_000_000_000); }
+        for (offset, name) in ["a.txt", "b.txt", "c.txt"].iter().enumerate() {
+            let page = listing(&fixture, offset, 1);
+            assert!(page["items"][0]["path"].as_str().unwrap().ends_with(name));
+        }
+    }
+
+    /// #240 P5, declared behavior: the update lock creates the persistent hidden
+    /// sidecar before the target is read, so a refusal after the lock already
+    /// left it behind; it is one empty file per target name and is reused, never
+    /// accumulated, and a later successful write keeps using the same inode.
+    #[test]
+    fn the_update_lock_sidecar_is_created_once_and_reused() {
+        let fixture = Fixture::new("update-lock");
+        let target = fixture.file("notes.txt", b"one", 1_600_000_000_000);
+        let sidecar = fixture.sidecar("notes.txt");
+        assert!(!sidecar.exists(), "no sidecar before the first update attempt");
+        drop(lock_and_read_for_update(&target).unwrap());
+        assert!(sidecar.is_file(), "the lock is a persistent sibling, not the target");
+        assert_eq!(fs::metadata(&sidecar).unwrap().len(), 0, "the sidecar carries no payload");
+        drop(lock_and_read_for_update(&target).unwrap());
+        // A refused read is the shape #240 reports: the sidecar is already there
+        // when the target itself cannot be read; a stale-revision write refuses the
+        // same way, after the same lock.
+        let missing = fixture.root.join("missing.txt");
+        assert_eq!(lock_and_read_for_update(&missing).unwrap_err().code, "NOT_FOUND");
+        assert!(fixture.sidecar("missing.txt").is_file(), "a refused operation still leaves the declared sidecar");
+        assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), 3, "one target and two sidecars, never more");
+    }
+}

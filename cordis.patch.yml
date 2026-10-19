@@ -1,0 +1,53 @@
+# Seven stable component IDs. Saved profile row overrides take precedence.
+# Fresh shell defaults on Windows only; the Loader evaluates this public expression.
+# File, PTC and discovery start enabled. Panel, TUI and official replacements are opt-in.
+# Keep the legacy file specifier so name-qualified saved overrides still match.
+# The removed background row remains a no-op compatibility export.
+- insert:
+    - id: dsh-ops-shell
+      name: dsh-ops/shell
+      disabled:
+        __jsExpr: "process.platform !== 'win32'"
+      config:
+        promptPolicy: true
+        publishBashTool: true
+        shellPolicy: advise
+        allowSystemShellFallback: false
+    - id: dsh-ops-file
+      name: dsh-ops/file
+      config:
+        promptPolicy: true
+        required: false
+    - id: dsh-ops-ptc
+      name: dsh-ops/ptc
+      config:
+        required: false
+        alwaysLoaded: []
+    - id: dsh-ops-discovery
+      name: dsh-ops/discovery
+      config:
+        enabled: true
+        maxResults: 3
+        alwaysLoaded: []
+        required: false
+        denyCredentialReads: true
+    - id: dsh-ops-panel
+      name: dsh-ops/panel
+      disabled: true
+      config:
+        # Row enablement starts capture; explicit legacy capture:false stays inert.
+        capture: true
+        textLimit: 2000
+        maxSessionBytes: 8388608
+    - id: dsh-ops-tui
+      name: dsh-ops/tui
+      disabled: true
+      config:
+        maxSessions: 32
+        maxActive: 128
+        recentLimit: 8
+    - id: dsh-ops-hide-official
+      name: dsh-ops/hide-official
+      disabled: true
+      config:
+        replaceTools: []
