@@ -28,7 +28,7 @@ interface Entry {
   ready: Promise<void>
   releaseSelection?: () => void
 }
-const DISCOVER = publicToolName('discover')
+const DISCOVER = publicToolName('discover_tools')
 const advanced = DISCOVERABLE_TOOLS.map(publicToolName)
 export const name = 'dsh-ops-discovery'
 

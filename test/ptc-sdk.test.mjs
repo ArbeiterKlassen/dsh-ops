@@ -64,7 +64,7 @@ await test('real host SDK stays lean without Native file row and activates reque
     try {
       fs.writeFileSync(path.join(root, 'note.txt'), 'first\nsecond\n')
       const owner = await agent(), sibling = await agent()
-      assert.deepEqual(visible(ctx, owner), ['ops_inspect_local_file', 'ops_result', 'ops_load_sdk'])
+      assert.deepEqual(visible(ctx, owner), ['ops_inspect_local_file', 'ops_load_sdk', 'ops_result'])
       const before = await ctx.get('systemPrompt').assemble({ scope: owner })
       assert.deepEqual(before.tools.map(tool => tool.name), ['run_code'])
       const sdk = before.sections.find(section => section.name === 'tools:sdk').text
@@ -78,7 +78,7 @@ await test('real host SDK stays lean without Native file row and activates reque
       assert.equal(visible(ctx, owner).includes('ops_stat'), false, 'assembly and registry events cannot activate pending selections')
       await step(ctx, owner)
       assert.equal(visible(ctx, owner).includes('ops_stat'), true)
-      assert.deepEqual(visible(ctx, sibling), ['ops_inspect_local_file', 'ops_result', 'ops_load_sdk'])
+      assert.deepEqual(visible(ctx, sibling), ['ops_inspect_local_file', 'ops_load_sdk', 'ops_result'])
       const nextCall = await code(ctx, owner, `const stat = await tools.ops_stat({path:'note.txt'});
         const batch = await tools.ops_batch({action:'plan',operations:[{op:'copy',path:'note.txt',to:'copy.txt'}]});
         const stored = await tools.ops_result({action:'put',items:[{n:1}]});
@@ -97,7 +97,7 @@ await test('Native/PTC child scopes preserve projections and same-layer file row
     const { ctx, agent, mountFile, component } = await setup(root, { native: true })
     try {
       const parent = await agent(), child = await agent('native', parent), both = await agent('both'), independent = await agent()
-      assert.deepEqual(visible(ctx, parent), ['ops_inspect_local_file', 'ops_result', 'ops_load_sdk'])
+      assert.deepEqual(visible(ctx, parent), ['ops_inspect_local_file', 'ops_load_sdk', 'ops_result'])
       for (const scope of [child, both]) { await waitFor(() => visible(ctx, scope).includes('ops_grep'), { timeoutMs: 5000, what: 'configured Native advanced tools' }); assert.equal(visible(ctx, scope).includes('ops_load_sdk'), false) }
       assert.equal(ctx.get('tools').get('ops_result', child).parameters.properties.action.enum.includes('put'), false)
       const previousNative = ctx.get('tools').get('ops_stat', child)
@@ -147,7 +147,7 @@ await test('Native child restoration honors external ancestor masks and late par
       assert.deepEqual(visible(ctx, child), [])
       const file = await mountFile(parent.ctx)
       await waitFor(() => visible(ctx, child).includes('ops_grep'), { timeoutMs: 5000, what: 'late parent Native provider' })
-      assert.deepEqual(visible(ctx, parent), ['ops_inspect_local_file', 'ops_result', 'ops_load_sdk'])
+      assert.deepEqual(visible(ctx, parent), ['ops_inspect_local_file', 'ops_load_sdk', 'ops_result'])
       await file.dispose()
       await waitFor(() => visible(ctx, child).length === 0, { timeoutMs: 5000, what: 'late provider disposal' })
       await mountFile(ctx)

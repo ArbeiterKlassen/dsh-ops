@@ -65,7 +65,7 @@ await test('mutation receipts and batch plans preserve effects without changing 
   await withTempDir('ptc-write', async root => {
     const file = path.join(root, 'a.txt'), copy = path.join(root, 'copy.txt'), moved = path.join(root, 'moved.txt')
     assert.equal((await call(root, 'write_file', { path: file, content: 'alpha', expectedRevision: 'absent' })).status, 'completed')
-    for (const tool of ['edit_file', 'edit_file']) assert.equal((await call(root, tool, { path: file, expectedRevision: hash('alpha'), edits: [{ oldText: 'alpha', newText: 'beta' }], dryRun: true })).status, 'completed')
+    for (const tool of ['edit_file']) assert.equal((await call(root, tool, { path: file, expectedRevision: hash('alpha'), edits: [{ oldText: 'alpha', newText: 'beta' }], dryRun: true })).status, 'completed')
     assert.equal((await call(root, 'replace', { path: root, pattern: 'alpha', replacement: 'beta', dryRun: true })).status, 'completed')
     assert.equal((await call(root, 'copy', { path: file, to: copy, expectedRevision: hash('alpha') })).status, 'completed')
     assert.equal((await call(root, 'move', { path: copy, to: moved, expectedRevision: hash('alpha') })).status, 'completed')

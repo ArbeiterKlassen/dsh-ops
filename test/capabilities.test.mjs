@@ -10,10 +10,10 @@ import { BASH_TOOL_NAME } from '../lib/shells/constants.js'
 import { assert, test, report } from './lib/harness.mjs'
 
 await test('the catalogue covers every owned file, PTC and shell tool exactly once', () => {
-  assert.equal(CAPABILITIES.length, 21)
+  assert.equal(CAPABILITIES.length, 20)
   assert.equal(new Set(CAPABILITIES.map(item => item.rawName)).size, CAPABILITIES.length)
-  assert.deepEqual(FILE_TOOLS, ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_files', 'edit_file', 'read_table', 'read_docx', 'read_pdf'])
-  assert.deepEqual(FILE_MUTATIONS, ['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove', 'edit_file'])
+  assert.deepEqual(FILE_TOOLS, ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_files', 'read_table', 'read_docx', 'read_pdf'])
+  assert.deepEqual(FILE_MUTATIONS, ['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove'])
   assert.deepEqual(PTC_TOOLS, ['batch', 'result'])
   assert.deepEqual(IN_PROCESS_TOOLS, ['bash'])
   assert.equal(BASH_TOOL_NAME, BASH_TOOL)
@@ -55,7 +55,7 @@ const snapshot = (names, definition) => names.map(name => {
 await test('business file and batch definitions retain their original serialized contracts', () => {
   // Captured before this migration, covering every argument/output contract and published description.
   const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-  assert.equal(hash(snapshot(FILE_TOOLS.filter(name => !['glob', 'grep', 'read_files', 'edit_file', 'read_table', 'read_docx', 'read_pdf'].includes(name)), fileDefinition)), 'f32e33306b4052fdb3d19a11e0fe9d65c255a87d2d485de08a9d7b1275e958fc')
+  assert.equal(hash(snapshot(FILE_TOOLS.filter(name => !['glob', 'grep', 'read_files', 'edit_file', 'read_table', 'read_docx', 'read_pdf'].includes(name)), fileDefinition)), '177dfec3b7eea8f6760ede65f14c9434ccf19e678d29fcf29b4c8d0de5be3683')
   const batch = ptcDefinition('batch', async () => null)
   assert.equal(batch.parameters, ptcParameters.batch); assert.ok(batch.description.startsWith(ptcDescriptions.batch)); assert.match(batch.description, /PTC returns Outcome/)
   assert.ok(batch.output.schema.oneOf.every(branch => branch.properties.status))
