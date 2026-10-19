@@ -1,5 +1,6 @@
 /** File capability data; no host services or registration side effects. */
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
+import { DOCUMENT_PARAMETERS, DOCUMENT_DESCRIPTIONS, documentOutput } from './documents.js'
 import { STORAGE_REFERENCE } from './result.js'
 import type { ParameterSchema } from './types.js'
 
@@ -16,6 +17,7 @@ const existingRevision: JsonSchemaNode = { type: 'string', description: '64 lowe
 const edits = bounded({ path: string, expectedRevision: existingRevision, edits: { type: 'array', description: '1-100 nonoverlapping edits against the same original bytes.', items: bounded({ oldText: { ...string, description: 'Nonempty text that occurs exactly once in the original.' }, newText: string }, ['oldText', 'newText']) }, dryRun: { type: 'boolean' } }, ['path', 'expectedRevision', 'edits'])
 
 export const PARAMETERS = Object.freeze({
+  ...DOCUMENT_PARAMETERS,
   read_many: bounded({ files: { type: 'array', description: '1-32 file ranges.', items: bounded({
     path: string, offset: { type: 'integer', description: 'Line >=1; default 1.' }, limit: range(1, 10000, 'Default 200.'),
   }, ['path']) } }, ['files']),
@@ -105,6 +107,8 @@ export const SEARCH_OUTPUT: JsonSchemaNode = {
 
 /** Every projection declares the same canonical execution shape. */
 export function fileOutput(rawName: keyof typeof PARAMETERS): JsonSchemaNode {
+  const document = documentOutput(rawName)
+  if (document) return document
   if (rawName === 'read_many') return READ_MANY_OUTPUT
   if (rawName === 'glob' || rawName === 'grep') return SEARCH_OUTPUT
   return OUTPUT
@@ -114,6 +118,7 @@ export function fileOutput(rawName: keyof typeof PARAMETERS): JsonSchemaNode {
 const RESULT = ' Failures resolve as {status:"error"|"rejected", error.code}; they are not thrown.'
 const EDIT_DESCRIPTION = 'Precisely patch one UTF-8 file using 1-100 oldText/newText edits against the SAME original bytes. Every nonempty oldText must occur exactly once; overlapping edits reject all. Required expectedRevision from inspect/stat. Atomic CAS; dryRun previews. Darwin nonempty extended ACLs fail closed with METADATA_UNSUPPORTED. Preserve CRLF/BOM explicitly in text. Windows preserves owner/group/ordered DACL and supported basic attributes/timestamps; readonly overwrite is refused and unsupported streams/EA/special storage fail with METADATA_UNSUPPORTED. SACL/audit labels are not preserved.' + RESULT
 export const DESCRIPTIONS = Object.freeze({
+  ...DOCUMENT_DESCRIPTIONS,
   read_many: 'Read UTF-8 ranges relative to session cwd. Check each file complete/error; nextOffset continues lines, nextIndex resumes pending files. Binary needs a binary reader. Failures return status:error|rejected and error.code; never throw.',
   inspect_local_file: 'Read bounded UTF-8 text lines or a hex view from path relative to the DSH session cwd. Directories are rejected; use ops_glob or ops_grep.' + RESULT,
   glob: 'Find regular files below path relative to the current session cwd. pattern is an ARRAY of globs matched against paths relative to path: ["**/*.md","!vendor/**"]; "*.md" matches the top level only, "!" excludes, at least one positive entry. Symlinks, reparse points, hidden files and dependency/build directories are excluded. limit defaults to 100; paging uses 0-based offset/nextOffset. Check scanComplete and pageComplete; matchedTotal exists only after a complete scan. Prefer continuation with unchanged options; SEARCH_STALE means restart. Incomplete scans require a narrower query.' + RESULT,

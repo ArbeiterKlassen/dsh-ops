@@ -18,6 +18,7 @@ cap-fs-ext = "3.4"
 serde_json = "1.0"
 ops-protocol = { path = "crates/ops-protocol" }
 ops-files = { path = "crates/ops-files" }
+ops-documents = { path = "crates/ops-documents" }
 ops-search = { path = "crates/ops-search" }
 ops-results = { path = "crates/ops-results" }
 ops-batch = { path = "crates/ops-batch" }

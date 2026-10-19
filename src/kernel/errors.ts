@@ -22,6 +22,8 @@ export const ERROR_POLICIES: Readonly<Record<string, ErrorPolicy>> = Object.free
   OUTPUT_LIMIT: invalid,
   CROSS_DEVICE: invalid,
   ERR_INVALID_ENCODING: invalid,
+  TABLE_PARSE_ERROR: invalid,
+  FILE_CHANGED: changed,
   REFERENCE_EXPIRED: changed,
   AUTHORITY_CHANGED: changed,
   ACCESS_DENIED: changed,

@@ -7,6 +7,24 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Include each activated document reader in scoped routing guidance; validate real document receipts in the PTC API coverage suite.
+- 在作用域路由中显示已激活的文档读取工具，并用真实文档回执验证 PTC API 覆盖。
+
+- Keep table coverage honest beyond EOF and after metadata changes. Fresh PTC bundle pools follow
+  the implemented catalogue; saved explicit operator pools remain unchanged.
+- 表格超出 EOF 时只统计实际跳过的行，文件变化后不声明页面完整；新 PTC 允许池遵循实现目录，保留已保存的显式选择。
+
+### Add bounded CSV/TSV worker observations (#261, 15a/16)
+
+- Add an ops-documents workspace crate with strict UTF-8/UTF-16 CSV/TSV decoding, positional
+  string cells, physical line ranges, bounded row pages and safe preceding rows on parse failures.
+- Separate complete physical scans from requested pages and reference capture; reuse no-follow,
+  credential, readonly and automatic-spill boundaries without new external dependencies.
+- Expose discoverable-only Native rows and typed PTC cells with full-scan-only continuations; retain
+  safe prefix data beside non-resumable parse/scan gaps and preserve authority and reference metadata.
+- 新增有界 CSV/TSV worker 读取，严格解码、保留原字符串与物理行范围；错误保留此前有效行，
+  并分别报告扫描、分页和引用捕获完整性，不新增外部依赖。通过发现/SDK 按代理在下一步骤启用；解析缺口保留前缀且不伪造续取。
+
 - Add optional bilingual browser settings pages for replacement selection, discovery pools and explicit Bash/host PowerShell runtime plans. Preserve the default legacy file row; custom pages require a client carrier and unload when it is disabled.
 - 新增可选双语浏览器设置页面，支持逐工具替换、发现池及显式 Bash/宿主 PowerShell 运行时计划。默认保留旧文件行；自定义页面需要客户端承载行，关闭承载行即卸载页面。
 - Add an opt-in offline settings-carrier migration with exact host composition checks, original-file backups, atomic writes and recovery. The normal upgrade retains legacy file-row names and settings.
