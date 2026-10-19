@@ -7,6 +7,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Prepare the 0.4.0 candidate version across owned npm/plugin and Rust workspace metadata without dependency changes. Audit paired release, usage, component, SDK, discovery and manual-validation documentation; record the explicitly approved benchmark scope and retain historical failures separately from functional CI. No release/tag is created.
+- 将自有 npm/插件与 Rust workspace 版本统一为 0.4.0 候选，不变更依赖；同步双语发布、使用、组件、SDK、发现和手动验收文档。记录明确批准的基准范围并保留历史失败，不以功能 CI 代替验收，不创建发布或 tag。
 - Apply the confirmed acceptance scopes: BM-01 gates against OPS 0.3.x with official-reader comparisons reported separately; BM-03 gates file/discovery schemas while retaining startup Bash, exact full-inventory readiness and separate full totals. Preserve historical failed evidence.
 - 按已确认的验收范围判定：BM-01 以 OPS 0.3.x 为准，官方读取器比较单列；BM-03 仅约束文件/发现 schema，保留启动 Bash、完整目录就绪校验及单列完整总量。历史失败证据保持不变。
 
@@ -44,6 +46,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Migrate credential fences, trusted path anchors and permission failures to strict TypeScript without changing emitted entrypoints or authority decisions. Preserve worker effect facts during denial normalization and assert typed host modes/unknown-input narrowing.
 - 将凭据围栏、可信路径锚点和权限错误迁移为严格 TypeScript，保持生成入口和权限决策不变；拒绝归一化保留 worker 效果事实，并验证宿主模式及未知输入的类型缩窄。
+
 ### Require benchmark readiness and valid controls (#261, 16/16)
 
 - Block startup scoring when any default Native tool is missing, duplicated or unexpected. Require successful allowed-read controls and exact effect-free denial codes, and independently decode Native source text before comparing bytes. Keep all fixtures, defaults and acceptance thresholds unchanged.
@@ -56,7 +59,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Add opt-in real-host acceptance evidence (#261, 16/16)
 
-- Run BM-01–05 with a scripted provider, exact0.3.1 and pinned official comparators, immutable sensitivity fixtures, visible-content assertions, numerical lossless lower bounds and JSON/Markdown reports. Manual cross-platform CI uploads failed and blocked evidence; no paid model calls or default gate changes.
+- Run BM-01–05 with a scripted provider, exact 0.3.1 and pinned official comparators, immutable sensitivity fixtures, visible-content assertions, numerical lossless lower bounds and JSON/Markdown reports. Manual cross-platform CI uploads failed and blocked evidence; no paid model calls or default gate changes.
 - 新增真实宿主 BM-01–05 按需基准、独立基线及不可变敏感性夹具；保留准确正文断言、无损字节下界和失败/阻塞证据，不调用付费模型，不改变默认门禁。
 
 ### Keep credential denial paths private (#261, BM-05)
@@ -87,10 +90,12 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Preserve raw shell configuration through settings validation so ordinary startup and profile reload do not interpret normalized defaults as explicit inputs.
 - 设置校验保留原始 shell 配置，避免启动和配置重载将规范化默认值误认为显式输入。
+
 ### Connect runtime settings actions to the host gateway (#261)
 
 - Add typed, package-owned gateway descriptors for runtime inventory, Bash selection and explicit install/remove/PowerShell-upgrade previews. Execute only current one-use plans through host subprocess governance; preserve cancellation and partial-effect facts.
 - 通过宿主网关提供运行时清单、Bash 选择和显式安装/删除/PowerShell 升级预览；仅执行有效的一次性计划，并保留取消和部分副作用信息。
+
 ### Validate and persist host settings forms (#261)
 
 - Expose shell executor, discovery pool/always-loaded and per-tool replacement fields through detached settings descriptors and existing validators. Accepted changes persist through the host profile writer and reload the row; stale/invalid writes preserve the profile.
@@ -105,9 +110,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Select official read/search replacements individually (#261)
 
 - Replace blanket hiding with `replaceTools: []`: explicitly select reviewed `read`, `glob`, or `grep` alternatives. Unselected tools remain visible without warning lists; only selected counterparts are required for scoped readiness.
-- Legacy `strict`, `scope`, and `additionalOfficialTools` remain validated but inert. Document argument/coverage differences and exclude write/edit because their CAS contracts differ. Cordis validation is implemented; a browser multi-select is separate UI work.
+- Legacy `strict`, `scope`, and `additionalOfficialTools` remain validated but inert. Document argument/coverage differences and exclude write/edit because their CAS contracts differ. Validated built-in row forms are available; optional browser multi-selects use the explicit client carrier described above.
 - 官方工具改为通过 `replaceTools: []` 逐项选择 `read`、`glob`、`grep` 替代流程；未选工具保持可见且无警告列表，只校验所选替代工具的作用域就绪状态。
-- 旧 `strict`、`scope`、`additionalOfficialTools` 仅校验不生效；文档说明参数与覆盖差异，写入/编辑因 CAS 契约不同而不提供替换。已实现 Cordis 校验，浏览器多选界面另行实现。
+- 旧 `strict`、`scope`、`additionalOfficialTools` 仅校验不生效；文档说明参数与覆盖差异，写入/编辑因 CAS 契约不同而不提供替换。内置行表单已提供严格校验；可选浏览器多选通过上文的显式客户端承载行启用。
+
 ### Leave PowerShell with its host (#261)
 
 - Remove the PowerShell npm payload dependency, shell payload release assembly and automatic
@@ -125,7 +131,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Migrate the new shell executor, host contract, approvals, jobs and session integration to strict
   TypeScript. Validate the published definition against the pinned SDK with type-only imports;
-  retain existing emitted paths and explicit types for the remaining JavaScript adapters.
+  retain existing emitted paths. The remaining adapters are also strict TypeScript in the completed source migration.
+- 将 shell 执行器、宿主契约、审批、jobs 和会话集成迁为严格 TypeScript，以仅类型宿主导入校验公开定义；保持发布路径，剩余适配器也已完成严格迁移。
 
 ### Make Windows Bash an explicit optional runtime (#261)
 
@@ -133,6 +140,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   removes only receipt-marked managed versions, and refuses linked managed directories.
 - Remove the automatic Bash npm payload dependency and release payload assembly. Build, CI and
   release gates explicitly acquire a pinned fixture, or validate an operator-provided offline one.
+- 新增 Bash 状态/安装/删除及 Git/受管理副本选择；删除默认预览，仅移除有收据的非链接目录。移除自动 npm 载荷与发布组装，构建和门禁显式获取固定 fixture 或验证离线提供的副本。
 
 ### Reuse host Bash approvals and background jobs (#261)
 
@@ -142,12 +150,14 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Recheck session authority after approval and confinement; retain absolute executable selection,
   verified Windows IPC compatibility, honest partial enforcement and fail-closed runtime errors.
 - Keep script_path, graceMs and includeDiagnostics as documented OPS compatibility extensions.
+- 必填命令描述，复用宿主前台/后台/提升结果、jobs、单次审批及 subprocess；默认 120 秒、上限 600 秒。审批与约束后重检权限，保留绝对执行器、IPC 兼容校验、如实部分约束及失败拒绝；script_path、graceMs、includeDiagnostics 为明确的 OPS 兼容扩展。
 
 ### Preserve Bash cancellation through pending confinement preparation (#261)
 
 - Bash execution exposes one live handle for observation and settlement. Cancellation settles
   pending sandbox preparation immediately, and a late provider response cannot start a command.
   The first timeout or caller cancellation remains the reported stop cause.
+- Bash 使用同一活动句柄观察和收敛；取消立即终止等待中的准备，迟到响应不能启动命令，保留最先发生的超时或取消原因。
 
 ### Type optional TUI projections and panel rendering (#261, 16/16)
 
@@ -201,10 +211,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Validate a restricted classic-xref PDF grammar, exact object boundaries and bounded
   values/references before extraction; verify actual Flate output, checksum and terminator.
-- Reuse the reviewed exact compression dependency without new packages. Worker text extraction
-  follows separately; this foundation makes no public PDF-tool or complete-text claim.
+- Reuse the reviewed exact compression dependency without new packages. The PDF reader uses
+  this foundation; the container validator alone makes no complete-text claim.
 - 新增有界传统 xref PDF 容器基础，校验对象边界、引用与实际解压；复用已核验压缩依赖，
-  不新增依赖包，工具提取能力由下一切片接入。
+  不新增依赖包，PDF 读取器已接入此基础，容器校验本身不声明文本完整。
 
 ### Add bounded DOCX main-body worker observations (#261, 15b/16)
 
@@ -239,8 +249,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Keep Native startup to the bounded multi-file reader (#261, 9/16)
 
 - Publish `ops_read_many` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
-- Measure compact file/discovery schemas at 241 tokens and the current full surface with Bash at 610 tokens; the full 400-token BM-03 gate remains unresolved pending the redesigned shell contract.
-- Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；完整工具面含 Bash 仍超过 400-token 门禁，保留真实测量而不宣称通过。
+- Measure compact file/discovery schemas at 241 tokens; the integrated full Windows Bash/jobs provider order is 660 tokens (catalogue order 661). The earlier full-surface 400-token requirement failed; the operator subsequently approved a file/discovery-only budget with startup Bash and full totals retained.
+- Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；含 Bash 的完整工具面曾超过原400-token门禁；操作者随后批准仅对文件/发现小计设预算，保留 Bash 启动常驻与完整总数。
+
 ### Publish progressive tools before the next real provider snapshot (#261, 7–8/16)
 
 - Activate pending Native and PTC selections at the owning session’s committed step end, before the pinned host captures the next provider schema. Drain owned publication during ordinary assembly without replacing host methods; mark internal probes to avoid recursive waits.
@@ -285,6 +296,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Add edit_many as a single-file atomic CAS edit operation with short receipts. Bound escaped
   read output using actual metadata bytes; an incomplete line retains its offset and hex guidance.
 - 新增多文件范围读取与单文件原子多段编辑；逐文件报告版本、错误及未读范围，保持权限边界与短回执。
+
 ### Spill oversized canonical output into bounded session snapshots (#261, 6b/16)
 
 - Preserve a useful head and original operation root, execution facts and mutation effects while
@@ -305,14 +317,16 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the lock and audit namespace and reports partial cleanup honestly.
 - Preserve Windows private-temp capability isolation; real confined create/reopen/readonly and
   foreign-session denial assertions cover the protected cache ACL.
+- 新增可信信封内的会话引用，单结果 10 MiB/会话 100 MiB、序列化 LRU、物理字节计量与独立审计。每次检查活动权限/生产工具，默认会话生命周期，不嵌套引用；只读不改存储，清理保留锁与审计并如实报告部分失败，Windows 私有临时目录 ACL 有真实隔离回归。
+
 ### Discover advanced tools in the requesting Native scope (#261, 8/16)
 
 - Add `dsh-ops/discovery` and `ops_discover`: deterministic allowed-pool selection, a 1-5 per-call cap, and always-loaded choices. Publish pending capabilities only at the next model-step boundary, with scope isolation, permission withdrawal and owned cleanup.
 - Coordinate overlapping discovery rows and exact Native ownership with progressive PTC publication. Preserve unrelated external registrations and same-scope file handoff; include current batch reads/edits and the Native reference pager.
 - 协调重叠发现行、Native 精确归属和渐进式 PTC 发布，保留外部注册与同作用域文件交接；纳入现有批量读写及 Native 引用分页器。
-- Add pinned schema token measurement and real Cordis/native-worker lifecycle checks. Discovery alone measures 120 cl100k_base tokens; this is not a whole-OPS or PDF acceptance claim.
+- Add pinned schema token measurement and real Cordis/native-worker lifecycle checks. The current discovery entry alone measures 94 cl100k_base tokens; this is not the full default surface. The real PDF next-request assertion is part of BM-04.
 - 新增按需发现组件与 `ops_discover`：允许池、单次 1-5 项上限和始终加载选择；仅在下一模型步骤挂载，并保证作用域隔离、权限变更撤销及卸载清理。
-- 新增固定分词器的 schema 计量和真实 Cordis/原生 worker 生命周期测试；发现入口为 120 cl100k_base tokens，不代表全体 OPS 或 PDF 验收通过。
+- 新增固定分词器的 schema 计量和真实 Cordis/原生 worker 生命周期测试；当前发现入口为 94 cl100k_base tokens，不代表完整默认面；真实 PDF 下一请求断言由 BM-04 验证。
 
 ### Render Native file results as bounded, readable text (#261)
 
@@ -333,6 +347,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Add typed Outcome, search coverage and result-reference contracts plus explicit error/retry
   policies for subsequent adapter slices. Incomplete searches cannot claim a known total.
 - Pin Node 22 declarations and check valid/invalid contracts in the regular test runner.
+- 统一能力名称、归属、呈现、并发及 schema 目录；策略和文件/PTC 契约迁为 TypeScript，加入 Outcome、搜索覆盖、结果引用及错误/重试类型，固定 Node 22 声明并验证正反类型用例。
 
 ### Report search coverage and validate continuation state (#261)
 
@@ -340,6 +355,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   totals after unreadable, encoding, size or execution-budget gaps. Bounded rescan continuations
   reject changed queries, authority and observed filesystem state; incomplete traversals require
   a narrower fresh query. Search retains physical LF accounting and bounded output prefixes.
+- 搜索区分扫描与分页，统计跳过原因，遇读取/编码/大小/预算缺口不提供全量总数；重扫续取校验查询、权限与文件状态，不完整遍历要求缩小新查询，保留物理 LF 行号和有界前缀。
 
 ### Version the one-shot worker request protocol (#261)
 
@@ -347,6 +363,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   budgets while retaining existing host authority checks and canonical success results. Reject
   malformed envelopes before effects; interrupted or oversized mutation receipts never imply no
   effects. Keep explicit v0 decoding for benchmark compatibility with bounded transport defaults.
+- 单次 worker 请求采用严格 v1、调用 ID、组件来源及执行/输出预算；副作用前拒绝错误信封，修改执行后中断/超限不假装无副作用，保留有界 v0 解码供基准兼容。
 
 ### Split the native kernel into workspace crates (#261)
 
@@ -354,6 +371,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   worker and existing authority, metadata, no-follow, and audit rules. Test the complete Cargo
   workspace and include every path dependency in published source packages.
 - Include workspace crates and platform metadata adapters when checking for stale benchmark workers.
+- 拆分协议、文件、搜索、批处理和引用存储 crate，仍按调用启动并保留权限、元数据、nofollow 与审计；完整 Cargo workspace、发布源包及基准陈旧检查均包含路径依赖和平台元数据适配器。
 
 ### Build plugin source into the existing JavaScript package layout (#261)
 
@@ -363,8 +381,11 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Build before verification and packaging, and document the build step for direct suite runs
   and source installations in both contributor guides. Published packages keep shipping `lib/`
   without `src/`; this toolchain slice does not change tool behaviour.
+- 源码移至 src、构建到既有 lib 路径并复制资源，验证和打包前先构建；发布包保留 lib 不含 src。初期 JavaScript 迁移支持现已在第 16 步移除，全部插件源为严格 TypeScript/TSX。
 
-### File-tool discoverability, honest grep pages and compact inspect rendering
+### Earlier file-tool compatibility repairs retained in 0.4.0
+
+These entries record the earlier eleven-tool baseline; the current catalogue, Native text projection and SDK surface are described above. 以下保留早期十一工具基线修复；当前目录、Native 文本投影与 SDK 以上方 0.4.0 条目为准。
 
 - All eleven file argument schemas render concrete types in the pinned host SDK.
   Bounds unsupported by that SDK are explicit descriptions backed by native validation;
@@ -392,6 +413,8 @@ checklist now labels those file cases explicitly as historical; current inspecti
 is single-path, bounded UTF-8 text or hex. A contract regression checks both tables.
 
 ### The 0.3.2 real-machine findings, fixed (#204, #235, #236, #237, #240)
+
+This is the earlier adapter repair history. In 0.4.0 the public Bash adapter returns schema-valid failure values for invalid arguments; its contract above supersedes the legacy thrown-refusal behavior below. 以下是旧适配器修复历史；0.4.0 公开 Bash 对无效参数返回符合 schema 的失败值，上方契约取代下文旧抛错方式。
 
 Four findings from the 0.3.2 Linux x64 session run in #204. Three are behaviour changes, and
 each one is pinned by a suite that would fail without it.
@@ -1052,7 +1075,7 @@ No new tools, components, configuration keys, or runtime capabilities are includ
 Published to the public npm registry on 2026-10-08 as `dsh-ops@0.2.1` with
 `@dsh-ops/fastctx-win32-x64@0.2.1`, `@dsh-ops/bash-win32-x64@0.2.1` and
 `@dsh-ops/pwsh-win32-x64@0.2.1`. Packed sizes and registry digests:
-[docs/release-0.2.1.md](docs/release-0.2.1.md).
+[docs/release-0.2.1.md](release-0.2.1.md).
 
 - Assemble complete digest-verified PortableGit/bash and PowerShell 7 runtime packages instead of metadata-only pins; inject all three Windows x64 runtime dependencies in the publish artifact.
 - Add explicit-profile install/status/uninstall delegation to the official DSH manager; map tui to dsh-tui and use Desktop's installation-owned CLI.
@@ -1067,7 +1090,6 @@ Published to the public npm registry on 2026-10-08 as `dsh-ops@0.2.1` with
 Issue #9 showed that a host package-manager prune can leave the bash payload declared in the profile lockfile but absent on disk. `ops_bash` now converts a spawn-time `ENOENT` into a concise actionable result instead of exposing a raw process exception. It does not silently fall back to an unapproved system shell.
 
 The Electron `workspace-write` `0xC0000142` ACL-runner failure is a DSH host sandbox issue outside this plugin's subprocess API. This release documents that boundary and does not claim to repair the host's Windows ACL runner.
-
 
 
 ### Changed

@@ -11,7 +11,7 @@ The seven-row bundle enables this component by default and preserves existing na
   config:
     enabled: true
     maxResults: 3
-    allowedTools: [inspect_local_file, edit_many, result, glob, grep, replace, write_file, edit_file, diff, stat, copy, move, remove]
+    allowedTools: [inspect_local_file, edit_many, result, glob, grep, replace, write_file, edit_file, diff, stat, copy, move, remove, table_read, doc_read, pdf_read]
     alwaysLoaded: []
 ```
 
@@ -24,7 +24,7 @@ The seven-row bundle enables this component by default and preserves existing na
 | `binaryPath` / `required` | Automatic / `false` | Worker selection and activation failure behavior, as for native file tools. |
 | `denyCredentialReads` | `true` | Preserve the native file credential fence. |
 
-Configuration arrays are copied and deduplicated; unknown configuration keys are errors naming the key. Search is a deterministic keyword match over reviewed metadata, with stable tie ordering; it does not call a model. `query` is nonempty and at most 512 characters; extra action arguments are rejected. PDF, Word and table readers cannot be discovered until implementations pass their own acceptance review. The current catalogue does not pretend those formats are ready.
+Configuration arrays are copied and deduplicated; unknown configuration keys are errors naming the key. Search is a deterministic keyword match over reviewed metadata, with stable tie ordering; it does not call a model. `query` is nonempty and at most 512 characters; extra action arguments are rejected. The implemented table_read, doc_read and pdf_read capabilities are discoverable with the bounded CSV/TSV, DOCX and restricted PDF contracts in [native-kernel.md](native-kernel.md). Binary DOC, OCR and unsupported PDF encodings are not advertised as usable.
 
 Every activated file tool keeps its declared path base, argument schema, Native rendering, worker permission checks and revision/CAS contract. Read-only scopes cannot activate mutation tools. A sandbox-mode change clears that session's pending requests, cancels its active calls and re-evaluates registrations; other sessions retain their choices. Disposing an agent or unloading the component removes registrations and invalidates cached definitions. Pure PTC scopes do not publish this Native discovery surface; the PTC adapter owns its SDK.
 
@@ -34,12 +34,12 @@ Only this plugin's scoped `ctx.tools.register`, `restrict`, prompt sections and 
 
 The deterministic entry measurement uses `js-tiktoken@1.0.21` with `cl100k_base`, encoding compact JSON of the pinned host `ToolSchema` fields (`name`, `description`, `parameters`). The discovery entry is **94 tokens / 410 UTF-8 bytes**. This is a reproducible schema measurement, not provider billing, and excludes tool-message framing, prompt guidance and other OPS components. The tokenizer is a test-only dependency published on 2025-08-09; its locked `base64-js` dependency is also test-only.
 
-The default file/discovery surface is now `ops_read_many` plus `ops_discover`: **241 tokens / 1094 bytes** in actual host assembly order. The reader accepts multiple file ranges in one startup call; `ops_inspect_local_file` (including hex), search, mutations and Native result paging are discoverable. Routing names only published tools. Adding the current Bash contract gives **610 tokens / 2915 bytes**, so the full default BM-03 gate remains unresolved. These figures preserve numeric bounds, defaults, path bases and error contracts. The redesigned Bash contract must be measured again when integrated; operator always-loaded choices also expand the initial surface.
+The default file/discovery surface is now `ops_read_many` plus `ops_discover`: **241 tokens / 1094 bytes** in actual host assembly order. The reader accepts multiple file ranges in one startup call; `ops_inspect_local_file` (including hex), search, mutations and Native result paging are discoverable. Routing names only published tools. The final Windows provider order with the full Bash/jobs contract measures **660 tokens / 3219 bytes**; catalogue order gives 661 tokens. These full totals remain visible under the explicitly approved BM-03 scope: the ≤400-token gate applies to file/discovery schemas, while Bash remains at startup. Numeric bounds, defaults, path bases and permission contracts remain intact. Operator always-loaded choices expand the initial surface. See [benchmark evidence](benchmark-gates.md).
 
-BM-04 runs through the real Cordis tool/prompt services and native worker: an implemented `stat` capability is absent before discovery, remains absent through current-step assembly, appears in the immediately following real AgentLoop provider request, and executes successfully. PDF is unimplemented, so this is the lifecycle gate, not a claim that PDF acceptance passed.
+BM-04 now runs the implemented PDF reader through the real AgentLoop: its schema is absent initially, remains pending in the current round, appears in the owning next provider request, stays absent for a sibling, and then returns the fixture text. This verifies the supported PDF subset, not general PDF/OCR coverage.
 
-The browser configuration multi-select is separate work: plain configuration validation does not automatically generate a host selector. Its UI must use the pinned host's browser plugin configuration APIs.
+Built-in settings persist validated arrays. Optional browser multi-selects use the pinned host client APIs and need the explicit offline carrier described in [configuration](configuration-reference.md); they are not activated by the default legacy file row.
 
 Overlapping discovery rows use the nearest owning scope; the last row mounted in the same scope wins until it is unloaded. File rows may mount before or after discovery. Only exact OPS-owned Native registrations are yielded or masked; unrelated external registrations remain visible. PTC Native shadows retain their exact origin, and discovered activations cannot be inherited by another agent. Native `result` is page/release only and may be discovered in read-only mode; the worker still rejects forbidden release actions. Resident `read_many` and discoverable `edit_many` retain their existing per-file completeness and CAS contracts.
 
-BM-03 remains a full default Native-surface gate, including Windows Bash when integrated. The entry-only measurement above does not satisfy that gate.
+BM-03 now gates the approved file/discovery subtotal, and separately reports Bash and the full default Native surface. The exact default inventory remains mandatory, including usable Windows Bash and its host jobs contract; absence blocks the measurement rather than earning a smaller score. Scope approval does not change tool defaults, arguments or permission boundaries.

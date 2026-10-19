@@ -21,23 +21,21 @@
 
 # dsh-ops
 
-致力优化dsh插件token效率，提升ai性能，减少token消耗，减少任务总时间的插件，解决 Windows 下 DSH 反复使用 PowerShell 报错造成的 token、时间和模型注意力浪费，会持续更新。
+OPS 为 DSH 增加有界文件与文档工具。Native 模式返回紧凑、带行号的文本；PTC 代码从同一个按调用启动的 Rust worker 获取类型化 Outcome。宿主集成使用严格 TypeScript，编译后保持已有 JavaScript 包路径。
 
-本插件的主要功能：
+> [!IMPORTANT]
+> 本分支是 **0.4.0 发布候选**，尚未发布。已批准的验收范围为：BM-01 相比 OPS 0.3.x 输出减少至少 40%，官方读取另列对照；BM-03 对文件/发现 schema 执行 400 token 上限，同时保留 Bash 启动常驻并单列完整总数。最终实测证据与功能 CI 缺一不可。
+> 详情见[发布状态与限制](docs/0.4.0发布候选.md)。下方 `@latest` 命令安装已发布版本；评估候选版本需自行构建本检出目录并打包。
 
-- 提供一组更高级的tools常驻工具，由rust编写。这些tools工具相对于原版，输入和输出token都更少，运行速度更快，且覆盖面更广，给ai造成的心智负担更低，同时附带简短的哈希校验、行数位置等消息以减少
-- 已在[路线图](docs/roadmap.md)中规划：以渐进式披露的形式补上 doc/pdf 操作、网页搜索、html 转 markdown 类 crawl4ai 工具等日常常用的 tools 工具，让 ai 不必重新编写代码或脚本来实现自己的目标。**当前版本尚未提供这些工具。**
-- 提供关闭原版tools以最大化节省ai心智负担和系统固定提示词的可选项
-- 在windows平台下额外提供tools：ops_bash的支持——ai使用bash远比ai使用pwsh更流畅。可运行 `dsh-ops bash-runtime install` 单独下载经过校验的 Bash，或通过 `bashPath` 选择已有 Git Bash；Bash 不再作为 npm 依赖安装
+- Native 默认提供 `ops_read_many` 与 `ops_discover`；符合条件的 Windows 会话另有 `ops_bash`。高级工具在所属 agent 的下一次供应商请求中激活。
+- PTC SDK 目录包含 19 个 API：16 个文件/文档工具，加批处理、结果引用和加载器。仅暴露配置为常驻或已选择的 API；Native 与 PTC 分别提供自己的输出形式。
+- 可按需发现有界 CSV/TSV、DOCX 主体段落与受限 PDF 文本层读取。尚不支持二进制 DOC、OCR、通用 PDF 渲染、网页搜索或 HTML 抓取；使用前请查看[文档格式限制](docs/原生内核.md)。
+- 七个组件独立启停，保留已有 profile ID 与配置。逐工具官方替换默认关闭。[设置](docs/配置参考.md)提供严格校验的内置表单；可选浏览器页面需显式执行离线承载行迁移。
+- Windows Bash 为可选运行时：通过 `dsh-ops bash-runtime install` 安装已校验的受管理版本，或用 `bashPath` 选择 Git Bash。PowerShell 由宿主管理；升级命令先预览标准安装，仅加 `--yes` 才执行。两个 shell 均不是 npm 载荷依赖。
 
-插件特点：
+OPS 只发布自身作用域内的工具与可选路由提示，不改写共享工具注册表。每次调用均检查权限与取消状态。Windows 受限 Bash 仍存在文档注明的部分约束与运行时兼容性限制。
 
-- 低侵入性，高兼容性，不改运行逻辑，不注入系统提示词，不改系统变量，只提供新的易用高级工具，从而几乎可以和任何插件兼容
-
-> [!NOTE]
-> 关于token节省和性能提升的严谨benchmark与具体测试方案将在下个版本推出，其将会覆盖大多数通用场景。上个版本的97% token减免仅代表 **“提示词全面，明确，具体的单次复杂任务交付”** 这一场景————简短提示词让ai发散性的寻找结论的随机性太大，很难控制变量
-
-> tips：本项目的 ops 是广义 operations （运行操作）的缩写，代指本插件处于dsh和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
+历史 token 节省说法不能证明本候选版本通过发布门禁。ops 指广义 operations（运行操作），并非运维/SRE 产品。
 
 ## 安装、更新、卸载
 
@@ -99,14 +97,14 @@ npx --yes dsh-ops@latest uninstall --profile desktop
 ## 文档
 
 - [使用指南](docs/使用指南.md) · [常见问题](docs/常见问题.md) · [组件参考](docs/组件参考.md) · [配置参考](docs/配置参考.md)
-- [PTC 设计与使用](docs/native-ptc.md) · [手动验证](docs/manual-validation.md)
-- [贡献指南](docs/贡献指南.md) · [路线图](docs/roadmap.md) · [变更日志](docs/CHANGELOG.md) · [溯源记录](docs/PROVENANCE.md)
+- [PTC 设计与使用](docs/native-ptc.md) · [手动验证](docs/手动验收.md)
+- [贡献指南](docs/贡献指南.md) · [路线图](docs/路线图.md) · [变更日志](docs/CHANGELOG.md) · [溯源记录](docs/PROVENANCE.md)
 
 ## 许可证
 
 插件源码分发采用 **`MIT AND Apache-2.0`**：`licenses/fastctx/` 之外为 MIT；FastCtx 为 Apache-2.0。见 [NOTICE](NOTICE)、`licenses/fastctx/LICENSE-APACHE` 与 `licenses/fastctx/NOTICE`。
 
-独立的 Windows 载荷包另按上游组件许可证分发：Git for Windows 包含 GPL 等许可组件，PowerShell 包含 MIT 与第三方组件。其原始许可证、声明及来源记录随载荷保留；插件的 MIT 许可不替代这些许可。详见 [PROVENANCE.md](docs/PROVENANCE.md)。
+Shell 二进制由用户从上游发行方另行获取，并遵守上游许可证：Git for Windows 包含 GPL 等许可组件，PowerShell 包含 MIT 与第三方组件；插件的 MIT 许可不替代这些许可。详见 [PROVENANCE.md](docs/PROVENANCE.md)。
 
 ## 致谢
 

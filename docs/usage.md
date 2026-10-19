@@ -2,13 +2,24 @@
 
 The complete install, update and remove flow, plus every option of the command-line interface.
 
+## 0.4.0 candidate and component defaults
+
+This checkout is an unreleased candidate; acceptance uses the approved OPS 0.3.x BM-01 comparator and file/discovery BM-03 budget, with Bash still resident and the full total reported separately.
+See [candidate status](release-0.4.0.md). The seven rows enable file/PTC/discovery, enable shell only
+on Windows, and leave panel/TUI/replacements off in fresh profiles. Existing explicit switches and
+name-qualified settings survive upgrade. Only read_many/discover are initially resident in Native,
+plus available Windows Bash; documents load on demand. The PTC catalogue has 19 typed APIs, with its
+own configured pool and SDK loader. [Configuration](configuration-reference.md) describes built-in
+forms and the optional browser carrier. Use [manual acceptance](manual-validation.md) for upgrades.
+
+
 ---
 
 ## Prerequisites
 
 | Item | Requirement |
 | --- | --- |
-| OS | Windows x64 or Linux x64 (shell tools: Windows only) |
+| OS | Windows x64, Linux x64 or macOS arm64; optional OPS Bash defaults on only on Windows |
 | Node.js | `^22.19 \|\| >=24` (the `engines` field in `package.json`) |
 | Host | DSH `0.2.0-rc.2` |
 | Target application | Initialized |
@@ -30,6 +41,7 @@ Then point the shell row at a bash the machine already has:
 ```yaml
 - id: dsh-ops-shell
   name: dsh-ops/shell
+  disabled: false
   config:
     bashPath: /opt/homebrew/bin/bash
 ```
@@ -193,7 +205,7 @@ This version starts no long-lived server process: the native file worker is owne
 ## Native file results
 
 Native file tools present readable text: `=== FILE: path (Lines a-b of n) ===`
-followed by `N | text`. Paths, observed revisions and paging notices remain visible.
+followed by `N | text`; fully returned multi-file ranges use compact `N|text` and may share one JSON-quoted parent path. Paths, observed revisions and paging notices remain visible. See [compact ranges](native-ranges.md).
 PTC execution values remain structured objects; inspect `status` and completeness
 before using them. Grep context labels use the physical source line, while glob
 path mode lists one path per line. Stat retains size, revision and metadata facts;

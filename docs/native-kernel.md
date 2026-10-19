@@ -12,7 +12,7 @@ and writes one JSON result. Splitting the kernel does not introduce a persistent
 | `ops-files` | No-follow handles, reads, CAS publication, metadata, tree operations, directory sync | protocol |
 | `ops-search` | Glob, grep and replacement orchestration over guarded file primitives | protocol, files |
 | `ops-results` | Bounded generation store, result pages and immutable job-audit access | protocol, files |
-| `ops-documents` | Strict bounded CSV/TSV Unicode decoding and typed positional rows | protocol, files |
+| `ops-documents` | Bounded CSV/TSV rows, DOCX main-body paragraphs and PDF text observations | protocol, files |
 | `ops-batch` | Plans, write-ahead transitions and conservative recovery | protocol, files, results |
 
 The root crate routes requests and opens audit storage only for batch/result capabilities.
@@ -133,9 +133,9 @@ retain the legacy transport contract; the host supplies recovery guidance when s
 
 The new ops-documents crate handles `table_read` in the same one-shot worker. The capability stays outside
 the default schema: Native uses `ops_discover` and PTC uses `ops_sdk` to activate `table_read`
-for the next agent step. Siblings and descendants require their own selection. It adds no external packages:
-serde/serde_json and sha2 reuse the existing locked workspace dependency graph. PDF/DOC parsing
-requires separate dependency review.
+for the next agent step. Siblings and descendants require their own selection. The table slice adds no external packages:
+serde/serde_json and sha2 reuse the existing locked workspace dependency graph. The completed DOCX and PDF
+slices below record their reviewed dependencies in [document-dependencies.md](document-dependencies.md).
 
 Arguments are `{ path, format?, encoding?, header?, offset?, limit? }`. The host resolves path
 against current cwd before sending an absolute path. Format is csv or tsv, inferred as tsv only
@@ -253,7 +253,7 @@ of the input. No size advertised by a PDF author bypasses these limits.
 
 This slice exposes no tool and makes no text-coverage claim. Page-tree interpretation,
 the supported font/encoding subset, partial results and worker authority checks are
-introduced together in the following PDF extraction slice.
+implemented together in the PDF extraction slice documented below.
 
 ## PDF text worker (15d/16)
 

@@ -60,7 +60,7 @@ export function tryResolveWorker(config: WorkerSelection = {}, options: RuntimeO
 }
 
 export function resolveWorker(config: WorkerSelection = {}, { packageRoot = PACKAGE_ROOT, env = process.env, platform = process.platform, arch = process.arch }: RuntimeOptions = {}): string {
-  if (!PLATFORMS.includes(`${platform}-${arch}`)) throw new Error(`dsh-ops 0.3.1 supports Windows x64, Linux x64 and macOS Apple Silicon (darwin-arm64) only; unsupported runtime target ${platform}-${arch}.`)
+  if (!PLATFORMS.includes(`${platform}-${arch}`)) throw new Error(`dsh-ops supports Windows x64, Linux x64 and macOS Apple Silicon (darwin-arm64) only; unsupported runtime target ${platform}-${arch}.`)
   const explicit = config.binaryPath ?? env.DSH_OPS_WORKER_BIN
   const fromPackage = path.resolve(packageRoot, 'runtime', `${platform}-${arch}`, workerName(platform))
   const fromSourceTree = path.resolve(packageRoot, 'native', 'target', 'release', workerName(platform))

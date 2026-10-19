@@ -7,7 +7,7 @@ What each of the seven components publishes, with parameters and permission requ
 | Row `name` | Description | Default | Published tools |
 | --- | --- | --- | --- |
 | `dsh-ops/shell` | Prefer bash as the terminal, with host PowerShell for operations bash cannot cover | Windows on; Linux/macOS off | `ops_bash`; host `pwsh` keeps its own executor |
-| `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | `ops_read_many`; advanced tools load through discovery |
+| `dsh-ops/file` | Bounded Rust file retrieval and text output for the model | On | `ops_read_many`; advanced tools load through discovery |
 | `dsh-ops/ptc` | Typed file APIs and progressive SDK in PTC sessions | On | `ops_inspect_local_file`, `ops_result`, `ops_sdk`; advanced APIs load through the SDK |
 | `dsh-ops/discovery` | Advanced Native tools on demand | On | `ops_discover` |
 | `dsh-ops/panel` | Data capture, off at the switch: new conversations write `<cwd>/.dsh-ops/panel/<sessionId>.json` plus the viewer `panel.html` | Row off; capture defaults true | None; see the [configuration reference](configuration-reference.md) |
@@ -20,6 +20,8 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 
 ## Tool summary
 
+The shared catalogue has 21 entries. The generated PTC SDK contains 19 APIs: 16 file/document tools plus batch, result and sdk; bash and discover belong to other entry points. Catalogue membership does not mean residency or permission. Fresh PTC pools follow the implemented catalogue; saved explicit pools remain authoritative. Document tools load on demand.
+
 | Tool | Purpose | Full-access requirement |
 | --- | --- | --- |
 | `ops_read_many` | Resident bounded UTF-8 ranges from 1-32 files | No command permission gate¹ |
@@ -27,12 +29,16 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 | `ops_grep` | Rust regex search, multiple file filters, counts/summaries | No command permission gate¹ |
 | `ops_glob` | Multiple path patterns with exclusions | No command permission gate¹ |
 | `ops_replace` | Mechanical cross-file literal replacement; use host edit for precise changes | No command permission gate¹ |
+| `ops_write_file` / `ops_edit_file` / `ops_edit_many` | File writes and atomic edits within one file, retaining revision/CAS | Writes follow current authority¹ |
+| `ops_diff` / `ops_stat` | Compare text and inspect metadata | No command permission gate¹ |
+| `ops_copy` / `ops_move` / `ops_remove` | Fixed file operations | Writes follow current authority¹ |
+| `ops_table_read` / `ops_doc_read` / `ops_pdf_read` | Bounded CSV/TSV, DOCX and restricted PDF readers; see below | No command permission gate¹ |
 | `ops_bash` | Preferred general bash command executor; `command` for short commands, `script_path` for long scripts | Confined in restricted modes; matched Windows x64 private IPC runtime |
 | `ops_batch` | Preflight and execute copy / move / remove with audit and recovery | See the PTC notes |
 | `ops_result` | Bounded result references: put, page, release | See the PTC notes |
 | Host `pwsh` | Windows-native operations using the host-selected PowerShell | Host policy |
 
-¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes; read-only rejects replacement, including its dry run; workspace-write permits writes under the workspace and this session's private temporary directory, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes. That preparation runs the package's own script as the current user before sandbox confinement applies, only in workspace-write, with `-ExecutionPolicy Bypass` (Group Policy still wins).
+¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes subject to the credential fence and current scoped authority; read-only rejects replacement, including its dry run; workspace-write permits writes under the workspace and this session's private temporary directory, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes. That preparation runs the package's own script as the current user before sandbox confinement applies, only in workspace-write, with `-ExecutionPolicy Bypass` (Group Policy still wins).
 
 ---
 
@@ -40,7 +46,7 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 
 Only the bounded multi-file reader `ops_read_many` is resident; `ops_inspect_local_file`, including hex reading, is discoverable. The advanced contracts below are activated through [tool discovery](discovery.md) or explicit always-loaded choices. Routing lists only the tools currently published.
 
-File paths resolve relative to the DSH session cwd. `ops_read_many` takes a `files` array of paths with independent 1-based offsets and limits; single-file operations take `path`. The Native reference pager accepts the original reference `root`. No file tool accepts `workspace`, `cwd` or `file_path` aliases. All are UTF-8 first with bounded output; glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
+File paths resolve relative to the DSH session cwd. `ops_read_many` takes a `files` array of paths with independent 1-based offsets and limits; single-file operations take `path`. The Native reference pager accepts the original reference `root`. No file tool accepts `workspace`, `cwd` or `file_path` aliases. Text tools are UTF-8 first; document tools use their own bounded format/encoding contracts. glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
 
 When the host provides its `fs` service, `ops_inspect_local_file` reads and real `ops_replace` writes are recorded in the host's read-before-edit table (`fs/observed`) exactly like host `read`/`edit`: a file read with ops can be edited with host `edit` directly, and an ops write does not make the host's earlier read look like an external change. `ops_grep`, `ops_glob` and `dryRun` record nothing.
 
@@ -48,7 +54,7 @@ When the host provides its `fs` service, `ops_inspect_local_file` reads and real
 
 Read bounded UTF-8 text lines, or a hex view of one path. Directories are rejected — use `ops_glob` or `ops_grep` instead.
 
-The model rendering shares a homogeneous page's `path` once at the top level; raw execution/PTC results retain per-item paths. All other fields, including revision, paging and in-line truncation markers, are preserved. Worker byte limits and long-single-line continuation are unchanged; rendered bytes are not measured tokens.
+Native emits a file header, numbered escaped source lines and revision/continuation notices. PTC retains canonical typed records. Backslashes, controls and Unicode line separators are reversibly escaped; source text cannot forge extra rows. Worker byte limits and long-line continuation remain explicit. See [Native range rendering](native-ranges.md). Rendered bytes are not measured tokens.
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
@@ -106,10 +112,16 @@ Cooperating writers serialise on a persistent, hidden update-lock sidecar beside
 | `maxReplacements` | integer 1–100000 | Hard replacement limit |
 | `dryRun` | boolean | Never writes |
 
+### Document readers
+
+`ops_table_read` reads CSV/TSV string cells (UTF-8 by default, with explicit UTF-16LE/BE support). `ops_doc_read` reads DOCX main-body paragraphs and table coordinates, not legacy binary DOC. Both default to offset 1 and limit 200 (maximum 1000), with a 32 MiB input bound. `ops_pdf_read` handles only PDF 1.3–1.7 classic xref and standard Type 1 font text, up to 16 MiB/32 pages; offset defaults to 1 and limit to 10 (maximum 32). It excludes OCR, embedded fonts and modern object/xref streams.
+
+Each reader separates scan, page, display and reference-capture completeness. A later error may retain safe preceding complete records, but cannot produce a false full total or revision; an offset cannot bypass a physical scan gap. See [native kernel contracts](native-kernel.md) for all format bounds, encoding rules and recovery guidance.
+
 ### Results and errors
 
-- **File tools, `ops_batch` and `ops_result` never throw.** Failures resolve as values with `status` `"error"` or `"rejected"` (authorization refusal) plus `error.code` / `error.message` / `error.nextAction`; success is `"completed"` (`ops_batch` also reports `planned` and related states). In PTC, a `try/catch` alone misses these failures — check `status`.
-- **`ops_bash`** resolves command results as values: `status` (`completed` only for exit code 0 with no error, permission refusal, signal or timeout; otherwise `failed`), `exitCode`, `stdout` / `stderr`, `error`, `permission`. It throws (a `ToolCallError` in PTC) only for **invalid arguments** or an **unavailable executor**.
+- **File tools, `ops_batch` and `ops_result` return failures as values.** PTC Outcomes use completed or partial data, or rejected/conflict/error/unknown with an error code, effect state and retry policy. Batch plan/run states remain in typed data. A try/catch alone misses returned failures; check status and coverage before data. Native projects the same facts into text.
+- **`ops_bash`** returns host-compatible `foreground`, `background` or `promoted` values. Failures, including invalid arguments and unavailable executors, return values rather than throwing. A foreground failure retains the string `error` plus structured `failure` code, effect state and retry policy. Effects after launch can be unknown; do not replay automatically. Collect background output through host job tools.
 - Host tools (`read` / `write` / `edit` / `pwsh` …) throw `ToolCallError` on failure.
 
 ---
@@ -211,7 +223,7 @@ Only the selected OPS counterparts must be registered and visible as exact OPS-o
 
 The resident `ops_read_many` is not the reviewed replacement for `read`. Before selecting `read`, configure discovery `alwaysLoaded: [inspect_local_file]` or ensure that single-file capability is already active in that Native scope. Apply the same readiness rule to `glob` and `grep`. Internal presentation inspection lets discovery publish these configured tools during startup; ordinary prompt assembly and dispatch remain blocked until they are ready.
 
-The component exports a real `StandardSchemaV1` validator for Cordis. It does not claim a generic schema creates the host UI: the pinned host requires a browser `plugins.row.config` contribution for a selector. See the [configuration reference](configuration-reference.md#per-tool-official-replacements-dsh-opshide-official).
+The component exports StandardSchemaV1 validation together with public JSON schema descriptors for built-in host row forms. Optional browser multiselect pages require the explicit client carrier migration; see [configuration](configuration-reference.md).
 
 
 ---
