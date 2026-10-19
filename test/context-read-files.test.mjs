@@ -6,7 +6,7 @@ import { fixture, text, full, elided } from './lib/context-read.mjs'
 import { publicToolName } from '../lib/policy.js'
 import { observeRead } from '../lib/modes/native/read-observation.js'
 requireWorker('context-read-many')
-const MANY = publicToolName('read_many')
+const MANY = publicToolName('read_files')
 const setup = ({ dir, file, read }) => {
   const second = path.join(dir, 'second.txt')
   fs.copyFileSync(file, second)

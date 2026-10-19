@@ -111,7 +111,7 @@ try {
     }
   }
 
-  await attempt('read_many', { files: [{ path: 'alpha.txt' }, { path: 'beta.txt' }] }, 'alpha line', 'read two real files in one call')
+  await attempt('read_files', { files: [{ path: 'alpha.txt' }, { path: 'beta.txt' }] }, 'alpha line', 'read two real files in one call')
   await attempt('inspect_local_file', { path: 'alpha.txt' }, 'alpha line', 'read a real file')
   await attempt('grep', { pattern: 'gamma', path: '.' }, 'gamma', 'found a match in a nested file')
   await attempt('glob', { pattern: ['*.txt'], path: '.' }, 'alpha.txt', 'listed the top-level glob')

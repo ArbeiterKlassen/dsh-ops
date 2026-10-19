@@ -44,12 +44,12 @@ fn recovery(error: &mut Failure) {
 }
 struct Source { path: PathBuf, file: File, before: Metadata, started: Instant }
 pub fn dispatch(request: &Request) -> Result<Value> {
-    if request.tool == "pdf_read" { return pdf::read(request); }
-    if request.tool == "doc_read" { return docx::read(request); }
-    if request.tool != "table_read" { return Err(Failure::new("INVALID_ARGUMENT", "Unknown document capability")); }
+    if request.tool == "read_pdf" { return pdf::read(request); }
+    if request.tool == "read_docx" { return docx::read(request); }
+    if request.tool != "read_table" { return Err(Failure::new("INVALID_ARGUMENT", "Unknown document capability")); }
     let args: Args = serde_json::from_value(request.args.clone())?;
     if args.offset == 0 || args.offset > MAX_ROWS || args.limit == 0 || args.limit > 1000 {
-        return Err(Failure::new("INVALID_ARGUMENT", "table_read offset is 1-100000 data rows and limit is 1-1000"));
+        return Err(Failure::new("INVALID_ARGUMENT", "read_table offset is 1-100000 data rows and limit is 1-1000"));
     }
     let encoding = Encoding::parse(&args.encoding)?;
     let format = args.format.as_deref().unwrap_or(if Path::new(&args.path).extension().and_then(|name| name.to_str()).is_some_and(|name| name.eq_ignore_ascii_case("tsv")) { "tsv" } else { "csv" });

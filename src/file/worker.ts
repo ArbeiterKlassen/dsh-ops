@@ -17,7 +17,7 @@ import { inside, canonicalAnchor, anchoredPath, sessionAnchors } from '../author
 import { resolveWorker } from '../ptc/runtime.js'
 import { FILE_MUTATIONS } from '../policy.js'
 import { normalizeArguments } from './contract.js'
-import { resolveReadMany } from './read-many.js'
+import { resolveReadFiles } from './read-files.js'
 import { withCallBudget, CallBudgetError } from '../kernel/call-budget.js'
 import { withResultSession } from '../kernel/result-lifecycle.js'
 import { resultStorage } from '../kernel/result-storage.js'
@@ -107,7 +107,7 @@ async function invokeTrusted(ctx: Context, file: string, tool: string, args: unk
   args = normalizeArguments(tool, args)
   if (!record(args)) return failure('INVALID_ARGUMENT', 'Arguments must be an object.')
   const mutates = (FILE_MUTATIONS as readonly string[]).includes(tool)
-  const reads = tool === 'read_many' ? resolveReadMany(args, cwd) : undefined
+  const reads = tool === 'read_files' ? resolveReadFiles(args, cwd) : undefined
   if (reads && 'error' in reads) return failure('INVALID_ARGUMENT', reads.error)
   const operationPath = absoluteTarget(args?.path ?? '.', cwd)
   if (!operationPath) return failure('INVALID_ARGUMENT', 'path must be a non-empty path.')

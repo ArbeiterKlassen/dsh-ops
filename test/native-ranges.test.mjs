@@ -5,8 +5,8 @@ import { callTool, envelopeOf, requireWorker } from './lib/boundary.mjs'
 import { renderNative, NATIVE_OUTPUT_BYTES } from '../lib/modes/native/render.js'
 import { compactRanges } from '../lib/modes/native/ranges.js'
 requireWorker('native-ranges')
-const render = (args, value) => renderNative('read_many', args, value)
-const observed = (root, args) => callTool('read_many', args, { root, readOnly: true }).then(reply => envelopeOf(reply, assert))
+const render = (args, value) => renderNative('read_files', args, value)
+const observed = (root, args) => callTool('read_files', args, { root, readOnly: true }).then(reply => envelopeOf(reply, assert))
 await test('real bounded ranges keep exact body, shared path base, full revisions and per-file continuation', () => withTempDir('compact-ranges', async root => {
   const inputs = ['one\r\ntwo\rthree\nlast\n', '', 'α\u2028β\u0085γ\n😀\nlast']
   const files = inputs.map((body, index) => { const target = path.join(root, `路径 ${index}.txt`); fs.writeFileSync(target, body); return { path: target, offset: 1, limit: 2 } })

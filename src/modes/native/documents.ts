@@ -12,9 +12,9 @@ export function renderDocument(tool: string, args: Row, value: Row): string[] {
   if (Array.isArray(value.columns)) lines.push('Columns: ' + show(value.columns))
   if (object(value.error)) lines.push('Error: ' + facts(value.error, ['code', 'message', 'effectState', 'nextAction']))
   if (value.scanComplete === false || object(value.error)) lines.push('[Notice: This observation is not exhaustive. Only preceding complete records are shown; page offsets do not recover a physical scan gap.]')
-  for (const item of items) lines.push(tool === 'table_read'
+  for (const item of items) lines.push(tool === 'read_table'
     ? 'Row ' + show(item.row) + ' (LF lines ' + show(item.lineStart) + '-' + show(item.lineEnd) + ') | ' + show(item.cells)
-    : tool === 'pdf_read' ? 'Page ' + show(item.page) + ' [runs=' + (Array.isArray(item.runs) ? item.runs.length : 'unknown') + '] | ' + show(item.text)
+    : tool === 'read_pdf' ? 'Page ' + show(item.page) + ' [runs=' + (Array.isArray(item.runs) ? item.runs.length : 'unknown') + '] | ' + show(item.text)
     : 'Paragraph ' + show(item.block) + ' [' + facts(item, ['table', 'row', 'cell']) + '] | ' + show(item.text))
   if (!items.length) lines.push('(no records in this displayed range)')
   lines.push('[Notice: displayedRecords=' + items.length + '. Scan, requested range, and displayed content have separate completeness.]')

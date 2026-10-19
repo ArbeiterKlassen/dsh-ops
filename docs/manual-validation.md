@@ -30,10 +30,10 @@ Apply the explicitly approved criteria: BM-01 requires at least 40% fewer bytes 
 
 ## Tool publication and results
 
-1. Inspect the actual first provider request: Native has read_many/discover and a usable Bash (pinned Windows payload or host Bash);
+1. Inspect the actual first provider request: Native has read_files/discover_tools and a usable Bash (pinned Windows payload or host Bash);
    advanced document schemas are absent. Select one advanced capability and verify it appears only in
    the owning next request, not in current-round diagnostics or a sibling agent.
-2. PTC starts with inspect_local_file/result/sdk. Load permitted advanced APIs through ops_sdk and
+2. PTC starts with inspect_local_file/result/load_sdk. Load permitted advanced APIs through ops_load_sdk and
    check the next SDK snapshot, typed Outcome status and data. Preserve an operator's explicit allowed
    pool; tool listing must not imply filesystem permission.
 3. Read three file ranges once. Reconstruct escaped lines exactly, check per-file errors and both
@@ -43,7 +43,7 @@ Apply the explicitly approved criteria: BM-01 requires at least 40% fewer bytes 
    Safe prefixes may survive, but total/revision require a stable complete scan. Check page versus scan
    versus display/reference-capture completeness and the explicit excluded document scope.
 5. Select an official replacement only when its exact OPS counterpart is ready: read requires
-   inspect_local_file, not read_many. An unrelated same-name tool must not satisfy readiness.
+   inspect_local_file, not read_files. An unrelated same-name tool must not satisfy readiness.
 
 ## Authority, runtime and teardown
 

@@ -10,13 +10,13 @@ import type { CapabilityMetadata, Component, SchemaCapability } from './types.js
 export type FileToolName = keyof typeof fileParameters
 export type PtcToolName = keyof typeof ptcParameters
 // Preserve the published registration order independently of schema object key order.
-const fileOrder = ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_many', 'edit_many', 'table_read', 'doc_read', 'pdf_read'] as const satisfies readonly FileToolName[]
-const fileMutations = new Set<FileToolName>(['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove', 'edit_many'])
+const fileOrder = ['inspect_local_file', 'grep', 'glob', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_files', 'read_table', 'read_docx', 'read_pdf'] as const satisfies readonly FileToolName[]
+const fileMutations = new Set<FileToolName>(['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove'])
 const allPresentations = Object.freeze(['native', 'ptc', 'both'] as const)
 
 export const FILE_CAPABILITIES = Object.freeze(fileOrder.map(rawName => Object.freeze({
   rawName, component: 'file' as const, presentations: allPresentations,
-  availability: rawName === 'read_many' ? 'resident' as const : 'discoverable' as const, mutates: fileMutations.has(rawName),
+  availability: rawName === 'read_files' ? 'resident' as const : 'discoverable' as const, mutates: fileMutations.has(rawName),
   concurrencySafe: !fileMutations.has(rawName),
   parameters: fileParameters[rawName], description: fileDescriptions[rawName], output: fileOutput(rawName),
 } satisfies SchemaCapability)))
@@ -32,7 +32,7 @@ export const SHELL_CAPABILITIES = Object.freeze([Object.freeze({
   availability: 'resident', mutates: true, concurrencySafe: false,
 } as const satisfies CapabilityMetadata)])
 export const DISCOVERY_CAPABILITIES = Object.freeze([Object.freeze({
-  rawName: 'discover', component: 'discovery', presentations: Object.freeze(['native', 'both'] as const),
+  rawName: 'discover_tools', component: 'discovery', presentations: Object.freeze(['native', 'both'] as const),
   availability: 'resident', mutates: false, concurrencySafe: false,
   parameters: DISCOVERY_PARAMETERS, description: DISCOVERY_DESCRIPTION, output: DISCOVERY_OUTPUT,
 } as const satisfies SchemaCapability)])

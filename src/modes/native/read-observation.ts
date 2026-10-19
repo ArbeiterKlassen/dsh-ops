@@ -40,7 +40,7 @@ export function observeRead(tool: ToolDefinition, exec: Readonly<ToolExecution>,
   // Only the unmodified trusted Native renderer is eligible. Post-policy content wins.
   if (exactJson(tool.output.render(exec.arguments, result.value)) !== exactJson(result.content)) return
   let observations: unknown[]
-  if (exec.name === publicToolName('read_many')) {
+  if (exec.name === publicToolName('read_files')) {
     if (!['completed', 'partial'].includes(String(value.status)) || value.pending !== 0 || value.failed !== 0
       || !Array.isArray(value.items) || !value.items.length || value.nextIndex !== value.items.length
       || !record(exec.arguments) || !Array.isArray(exec.arguments.files) || exec.arguments.files.length !== value.items.length) return

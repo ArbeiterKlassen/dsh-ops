@@ -14,7 +14,7 @@ fn fixture(test: impl FnOnce(PathBuf, Request, Args)) {
     let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(fixture_name(unique));
     std::fs::create_dir(&root).unwrap();
     let path = root.join("table.csv"); std::fs::write(&path, "v\nsafe\n").unwrap();
-    let request = serde_json::from_value(json!({"root":root,"scope":"table-unit","tool":"table_read","args":{}})).unwrap();
+    let request = serde_json::from_value(json!({"root":root,"scope":"table-unit","tool":"read_table","args":{}})).unwrap();
     let args = serde_json::from_value(json!({"path":path})).unwrap();
     test(path, request, args);
     std::fs::remove_dir_all(root).unwrap();

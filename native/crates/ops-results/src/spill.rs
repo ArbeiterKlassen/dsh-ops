@@ -19,7 +19,7 @@ fn mark_head(request: &Request, value: &mut Value) {
     let skipped = if request.tool == "replace" { 0 } else { value["skipped"].as_u64().unwrap_or(0) };
     if let Some(total) = value["total"].as_u64() { value["omitted"] = json!(total.saturating_sub(skipped)); }
     if value.get("nextOffset").is_some() {
-        value["nextOffset"] = json!(if matches!(request.tool.as_str(), "table_read" | "doc_read" | "pdf_read") { skipped + 1 } else if request.tool == "inspect_local_file" {
+        value["nextOffset"] = json!(if matches!(request.tool.as_str(), "read_table" | "read_docx" | "read_pdf") { skipped + 1 } else if request.tool == "inspect_local_file" {
             if request.args["view"] == "hex" { skipped / 16 + 1 } else { skipped + 1 }
         } else { skipped });
     }
@@ -73,7 +73,7 @@ pub fn finish(request: &Request, mut value: Value) -> Value {
     }
     let budget = if request.output_budget == 0 { ops_protocol::envelope::MAX_OUTPUT_BYTES } else { request.output_budget };
     let needs_spill = capture.clipped || capture.error.is_some() || clipped(&value) || json_size(&value) + 1 > budget
-        || (request.tool == "read_many" && value["pending"].as_u64().unwrap_or(0) > 0);
+        || (request.tool == "read_files" && value["pending"].as_u64().unwrap_or(0) > 0);
     if !needs_spill { return value; }
     let mut source = value.clone(); source.as_object_mut().unwrap().remove("items");
     // Only presentation fields are restored; post-execution mutation receipts remain authoritative.
@@ -81,7 +81,7 @@ pub fn finish(request: &Request, mut value: Value) -> Value {
         if let Some(field) = capture.source.get(key) { source[key] = field.clone(); }
         else if matches!(key, "continuation" | "nextAction") && capture.source.is_object() { source.as_object_mut().unwrap().remove(key); }
     }
-    if request.tool == "read_many" && capture.source.is_object() {
+    if request.tool == "read_files" && capture.source.is_object() {
         source["status"] = capture.source["status"].clone();
         for key in ["status", "matched", "failed"] { value[key] = source[key].clone(); }
     }
