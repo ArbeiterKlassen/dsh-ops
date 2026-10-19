@@ -7,6 +7,17 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Render Native file results as bounded, readable text (#261)
+
+- Show file headings and physical line numbers, concise mutation receipts, and explicit
+  completion, paging, metadata, effect and retry notices. PTC execution data stays unchanged.
+- Bound Native content blocks to 64 KiB after escaping, with recovery guidance when the
+  display is clipped. Preserve Unicode pairs, grep context line numbers and glob path results.
+- Reject invalid UTF-8/unsupported text encodings with `ERR_INVALID_ENCODING` and binary-reader
+  guidance; verify identical physical-LF counts and unmodified write bytes across projections.
+- Native 文件结果改为带物理行号的有界文本，保留分页、元数据、副作用与重试提示；PTC 数据不变。
+  转义后最多 64 KiB，截断时明确提示；非法编码返回 `ERR_INVALID_ENCODING`，不进行有损替换。
+
 ### Centralize capability metadata and prepare typed kernel contracts (#261)
 
 - Move policy and file/PTC contracts to TypeScript, with one capability catalogue for names,
