@@ -1,6 +1,7 @@
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { SDK_CAPABILITIES } from '../capabilities/sdk.js'
 import { publicToolName } from '../policy.js'
+import { migrateRawNames } from '../compat/alias.js'
 import { toOutcome } from '../modes/ptc/outcome.js'
 import { outcomeSchema } from '../modes/ptc/schema.js'
 import type { ApiName } from './config.js'
@@ -22,6 +23,9 @@ export function requestedApis(args: unknown, allowed: readonly ApiName[]): ApiNa
   const input = args as Record<string, unknown>
   for (const key of Object.keys(input)) if (key !== 'tools') return 'Unknown SDK argument: ' + key
   if (!Array.isArray(input.tools) || input.tools.length < 1 || input.tools.length > 5) return 'tools must contain 1-5 exact raw API names.'
-  for (const name of input.tools) if (typeof name !== 'string' || !allowed.includes(name as ApiName)) return 'API is not in this scope’s allowed pool: ' + String(name)
-  return [...new Set(input.tools as ApiName[])]
+  // A model that learnt the pre-rename vocabulary still names a real API; migrate before
+  // validating so the request loads the renamed tool instead of failing on spelling.
+  const requested = migrateRawNames(input.tools as string[])
+  for (const name of requested) if (typeof name !== 'string' || !allowed.includes(name as ApiName)) return 'API is not in this scope’s allowed pool: ' + String(name)
+  return [...new Set(requested)] as ApiName[]
 }
