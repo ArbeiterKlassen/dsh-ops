@@ -8,14 +8,15 @@
  * the two sides, calls it, and renders what it returned. With no noise floor the
  * report says so and abstains from every cost direction (`noise-floor-unknown`).
  *
- * The report leads with the 结论条 a reviewer reads first (pass rate, paired token Δ,
- * the noise band and whether a direction is readable), then the per-task paired
- * table, the pairs a failed side forced out of the cost statistics, the A/A band,
- * and the diagnostic sections #183 carried — per-task bucket detail, the usage-bucket
- * split and the token attribution — which say *why* the number moved (a bigger
- * per-request prompt is a tool-schema cost, extra steps are a model-behaviour cost,
- * fatter tool results are a context cost; the fixes are opposite, so the report has
- * to say which one it was). None of the diagnostics can change the gate.
+ * The report opens with its fixed title and then the evidence a reviewer works
+ * through — the per-task paired table, the pairs a failed side forced out of the cost
+ * statistics, the A/A band, and the diagnostic sections #183 carried (per-task bucket
+ * detail, the usage-bucket split and the token attribution), which say *why* the
+ * number moved (a bigger per-request prompt is a tool-schema cost, extra steps are a
+ * model-behaviour cost, fatter tool results are a context cost; the fixes are
+ * opposite, so the report has to say which one it was) — and closes with the 结论:
+ * pass rate, paired token Δ, the noise band, whether a direction is readable and the
+ * gate. None of the diagnostics can change the gate.
  *
  * Time is evidence only: the comparison never reads `durationMs`, and nothing here
  * turns a duration into a verdict.
@@ -44,6 +45,11 @@ const SEALED_RUN = 'run.json'
 const LEGACY_SUMMARY = 'summary.json'
 /** The summary document's format tag. */
 const SUMMARY_FORMAT = 'dsh-ops-bench-summary-v1'
+/** The report's fixed title; the two sides are named in 证据, not in the heading. */
+const REPORT_TITLE = '# Benchmark Testing Report for dsh-ops'
+/** The panel's palette: `report.md` and `panel.html` must agree on what green and red mean. */
+const GREEN = '#3fb950'
+const RED = '#f85149'
 
 /**
  * Exit codes, kept in step with `EXIT` in `bench/cli.mjs` (which forwards whatever
@@ -307,6 +313,18 @@ function number(value) {
   return formatNumber(value)
 }
 
+/**
+ * A step or tool-call count: an integer, or one decimal when an even repeat count
+ * halves the median. Rounding 12.5 → 13 would print "13 → 13 (+4.0%)", a cell that
+ * contradicts its own Δ%.
+ * @param {number|null} value - the count.
+ * @returns {string} the display form.
+ */
+function count(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a'
+  return Number.isInteger(value) ? formatNumber(value) : value.toFixed(1)
+}
+
 /** A signed integer delta with grouping, for the diagnostic tables. */
 function signed(value) {
   if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a'
@@ -314,10 +332,56 @@ function signed(value) {
   return `${rounded > 0 ? '+' : rounded < 0 ? MINUS : ''}${Math.abs(rounded).toLocaleString('en-US')}`
 }
 
-/** A signed percent at the module's reporting precision. */
+/**
+ * Paint every percent inside a string the core produced. Gate reasons and warnings are
+ * quoted verbatim — the digits stay the core's, only the colour is added — so they read
+ * in the same two colours as the percents this module formats itself.
+ * @param {string} text - the core's string.
+ * @returns {string} the same text, percents wrapped.
+ */
+function paintPercents(text) {
+  return text.replace(/[+-]?\d+(?:\.\d+)?%/g, (whole) => color(whole, Number.parseFloat(whole)))
+}
+
+/**
+ * A count painted red for a reason that is not a sign: the plugin side reached for a
+ * tool this plugin does not publish.
+ * @param {string} text - the rendered count.
+ * @returns {string} the HTML span.
+ */
+function alarm(text) {
+  return `<span style="color:${RED}">${text}</span>`
+}
+
+/**
+ * Paint one rendered value: a drop (or no change) is green, a rise is red — the same
+ * two colours `panel.html` uses, inline because a markdown file cannot carry a
+ * stylesheet. A value with no number behind it is returned unwrapped.
+ * @param {string} text - the rendered value.
+ * @param {number|null} value - the signed number behind it.
+ * @returns {string} the HTML span, or `text`.
+ */
+function color(text, value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return text
+  return `<span style="color:${value > 0 ? RED : GREEN}">${text}</span>`
+}
+
+/** A signed percent at the module's reporting precision, painted by its sign. */
 function percent(value) {
   if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a'
-  return `${value > 0 ? '+' : value < 0 ? MINUS : ''}${Math.abs(value).toFixed(1)}%`
+  return color(`${value > 0 ? '+' : value < 0 ? MINUS : ''}${Math.abs(value).toFixed(1)}%`, value)
+}
+
+/**
+ * A percent the core stated as a bare number — a band half-width, a tolerance, a share
+ * of the delta. Printed verbatim (no sign is invented) and painted like every other
+ * percent in the report.
+ * @param {number|null} value - the number, with `%` appended as-is.
+ * @returns {string} the painted text.
+ */
+function rawPercent(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a'
+  return color(`${value}%`, value)
 }
 
 /** The short verdict name for one task's cost conclusion. */
@@ -347,50 +411,41 @@ function directionSentence(cost) {
     return `方向:Δ ${percent(cost.pct)},但噪声底未知 ⇒ 弃权,不读方向(noise-floor-unknown);用 --noise-floor-pct N 或 --noise <base> <cand> 提供噪声底`
   }
   if (cost.conclusion === 'within-noise') {
-    return `方向:Δ ${percent(cost.pct)} 落在噪声带 ±${cost.noiseFloorPct}% 内 ⇒ 只报区间,不读方向(within-noise)`
+    return `方向:Δ ${percent(cost.pct)} 落在噪声带 ±${rawPercent(cost.noiseFloorPct)} 内 ⇒ 只报区间,不读方向(within-noise)`
   }
   if (cost.conclusion === 'cheaper' || cost.conclusion === 'costlier') {
     const name = cost.conclusion === 'cheaper' ? '更省(cheaper)' : '更贵(costlier)'
-    return `方向:Δ ${percent(cost.pct)},超过噪声底 ±${cost.noiseFloorPct}% ⇒ 可读方向:${name}`
+    return `方向:Δ ${percent(cost.pct)},超过噪声底 ±${rawPercent(cost.noiseFloorPct)} ⇒ 可读方向:${name}`
   }
   return `方向:Δ ${percent(cost.pct)},无可读方向(${cost.conclusion ?? 'no-change'})`
 }
 
 /**
- * The 结论条: pass rate, paired token Δ, noise floor, direction and gate, in that order.
+ * The 结论 that closes the report: pass rate, paired token Δ, noise floor, direction
+ * and gate, in that order, plus the reasons the gate gave. It ends the document, so a
+ * reviewer meets the verdict after the evidence instead of before it.
  * @param {object} comparison - the comparison structure.
  * @returns {string[]} the section lines.
  */
 function verdictSection(comparison) {
   const { gate, totals, verdict, noiseFloor } = comparison
   const passes = `${totals.basePasses}/${totals.baseRuns} → ${totals.candPasses}/${totals.candRuns}`
-  const passLine = gate.passDropFailed
-    ? `❌ 通过率下降 ${passes}`
-    : totals.candPassRate > totals.basePassRate
-      ? `✅ 通过率上升 ${passes}`
-      : `✅ 通过率持平 ${passes}`
   const pairs = `${gate.usablePairs}/${gate.usablePairs + gate.excludedPairs}`
   const tokenLine = gate.tokensComparable && gate.costComparable
     ? `💰 token(配对 ${pairs}):${number(totals.baseGrandTotal)} → ${number(totals.candGrandTotal)},Δ ${percent(totals.grandTotalPct)}`
     : `💰 token:不可比(${gate.tokensComparable ? `没有两侧都通过的配对,${gate.excludedPairs} 对被排除` : '至少一侧 usage 不完整'})`
-  const noiseLine = noiseFloor.comparable
-    ? `🔬 噪声底(A/A):±${noiseFloor.pct}%(${noiseFloor.method})`
-    : '🔬 噪声底(A/A):未知'
+  const gateLine = gate.fail ? `🚦 失败(${gate.primary})` : '🚦 通过'
   const lines = [
-    `# Benchmark test for dsh-ops`,
-    '',
-    `${passLine} · ${tokenLine} · ${noiseLine} · 🚦 ${gate.fail ? `门禁失败(${gate.primary})` : '门禁通过'}`,
-    '',
     '## 结论',
     '',
     `- 通过率:${passes}${gate.passDropFailed ? '(下降,先于成本裁决)' : totals.candPassRate > totals.basePassRate ? '(上升)' : '(持平)'}`,
     `- ${tokenLine.replace('💰 ', '')}`,
-    `- 噪声底(A/A):${noiseFloor.comparable ? `±${noiseFloor.pct}%,方法 \`${noiseFloor.method}\`` : '未知(noise-floor-unknown)'}`,
+    `- 噪声底(A/A):${noiseFloor.comparable ? `±${rawPercent(noiseFloor.pct)},方法 \`${noiseFloor.method}\`` : '未知(noise-floor-unknown)'}`,
     `- ${directionSentence(verdict.cost)}`,
-    `- 门禁:\`--fail-on ${gate.failOn}\` · 回归口径 \`${gate.regressionScope}\` · 容差 ${gate.tolerancePct}% · 成本基准 \`${gate.costBasis}\``,
+    `- 门禁:${gateLine} · \`--fail-on ${gate.failOn}\` · 回归口径 \`${gate.regressionScope}\` · 容差 ${rawPercent(gate.tolerancePct)} · 成本基准 \`${gate.costBasis}\``,
     `- 口径:${comparison.aggregate} · profile ${comparison.base.profile ?? '?'} → ${comparison.cand.profile ?? '?'} · model ${comparison.base.model ?? '?'} → ${comparison.cand.model ?? '?'}`,
   ]
-  for (const reason of gate.reasons) lines.push(`- 判定理由:${reason}`)
+  for (const reason of gate.reasons) lines.push(`- 判定理由:${paintPercents(reason)}`)
   return lines
 }
 
@@ -466,7 +521,7 @@ function noiseSection(comparison) {
     return lines
   }
   lines.push(
-    `半宽 ±${noise.pct}% · 区间 [${percent(noise.band.low)}, ${percent(noise.band.high)}] · 方法 \`${noise.method}\` · 配对 ${noise.pairs} · 任务样本 ${noise.samples}${noise.medianAbsPct === null ? '' : ` · 中位幅度 ${noise.medianAbsPct}%`}`,
+    `半宽 ±${rawPercent(noise.pct)} · 区间 [${percent(noise.band.low)}, ${percent(noise.band.high)}] · 方法 \`${noise.method}\` · 配对 ${noise.pairs} · 任务样本 ${noise.samples}${noise.medianAbsPct === null ? '' : ` · 中位幅度 ${rawPercent(noise.medianAbsPct)}`}`,
     '',
     'Δ 只有超过这个半宽才读方向;带内一律只报区间。',
   )
@@ -555,7 +610,7 @@ function usageSplitSection(comparison) {
     lines.push('Skipped:至少一侧丢了 `step_end.usage`,per-bucket 的 Δ 会是"下界被当成测量值"。')
     return lines
   }
-  const row = (label, bucket) => `| ${label} | ${number(bucket.base)} | ${number(bucket.cand)} | ${signed(bucket.delta)} (${percent(percentChange(bucket.base, bucket.cand))}) | ${bucket.sharePct === null ? 'n/a' : `${bucket.sharePct}%`} |`
+  const row = (label, bucket) => `| ${label} | ${number(bucket.base)} | ${number(bucket.cand)} | ${signed(bucket.delta)} (${percent(percentChange(bucket.base, bucket.cand))}) | ${rawPercent(bucket.sharePct)} |`
   lines.push(
     '三个 bucket 相加是总数;Δ 落在 cache read 和落在 uncached input 是两张完全不同的账单。本节对配对求和(与每任务表的合计口径不同),判决仍只看配对的 token Δ。',
     '',
@@ -566,6 +621,34 @@ function usageSplitSection(comparison) {
     row('cache read', buckets.cacheRead),
     row('**TOTAL**', buckets.grandTotal),
   )
+  return lines
+}
+
+/**
+ * The behaviour behind the token delta: steps and tool calls, per task and summed.
+ * The extra-steps term in token 归因 is this table's Δ steps at the baseline's prompt
+ * size, so a cost move can be read against the behaviour that produced it. Neither
+ * count can change the gate.
+ * @param {object} comparison - the comparison structure.
+ * @returns {string[]} the section lines.
+ */
+function stepsSection(comparison) {
+  const useMin = comparison.aggregate === 'min'
+  const keys = { steps: useMin ? 'stepsMin' : 'stepsMedian', toolCalls: useMin ? 'toolCallsMin' : 'toolCallsMedian' }
+  const cell = (baseValue, candValue, pct) => `${count(baseValue)} → ${count(candValue)} (${percent(pct)})`
+  const lines = [
+    `## steps 与 tool calls(${comparison.aggregate})`,
+    '',
+    '每格是该侧全部重复的统计量;TOTAL 行是各任务统计量之和。这两个数只解释 token Δ 从哪来,不参与判决。',
+    '',
+    '| task | steps base→cand (Δ%) | tool calls base→cand (Δ%) |',
+    '| --- | --- | --- |',
+  ]
+  for (const task of comparison.tasks) {
+    lines.push(`| ${task.id} | ${cell(task.base[keys.steps], task.cand[keys.steps], task.delta.stepsPct)} | ${cell(task.base[keys.toolCalls], task.cand[keys.toolCalls], task.delta.toolCallsPct)} |`)
+  }
+  const totals = comparison.totals
+  lines.push(`| **TOTAL** | ${cell(totals.baseSteps, totals.candSteps, percentChange(totals.baseSteps, totals.candSteps))} | ${cell(totals.baseToolCalls, totals.candToolCalls, percentChange(totals.baseToolCalls, totals.candToolCalls))} |`)
   return lines
 }
 
@@ -594,8 +677,16 @@ function toolSection(comparison) {
   }
   const own = (name) => name.startsWith('ops')
   const rows = [...totals.entries()].sort((left, right) => (Number(own(right[0])) - Number(own(left[0]))) || (right[1].cand - left[1].cand) || left[0].localeCompare(right[0]))
-  lines.push('| tool | base | cand |', '| --- | --- | --- |')
-  for (const [name, counts] of rows) lines.push(`| ${name} | ${number(counts.base)} | ${number(counts.cand)} |`)
+  lines.push(
+    'cand 列标红的数字:该工具不以 `ops` 开头,候选侧却调用了它 —— 插件没覆盖到的调用。base 列不上色(基线本来就只有内置工具),计数为 0 也不标红(那是没在用,不是还在用)。',
+    '',
+    '| tool | base | cand |',
+    '| --- | --- | --- |',
+  )
+  for (const [name, counts] of rows) {
+    const cell = counts.cand > 0 && !own(name) ? alarm(number(counts.cand)) : number(counts.cand)
+    lines.push(`| ${name} | ${number(counts.base)} | ${cell} |`)
+  }
   return lines
 }
 
@@ -607,7 +698,7 @@ function toolSection(comparison) {
  */
 function warningSection(comparison) {
   if (comparison.warnings.length === 0) return ['## 警告', '', '没有警告。']
-  return ['## 警告', '', ...comparison.warnings.map((warning) => `- ${warning}`)]
+  return ['## 警告', '', ...comparison.warnings.map((warning) => `- ${paintPercents(warning)}`)]
 }
 
 /**
@@ -621,7 +712,7 @@ function warningSection(comparison) {
  */
 export function renderReport(comparison, sources = {}) {
   const lines = [
-    ...verdictSection(comparison),
+    REPORT_TITLE,
     '',
     ...taskSection(comparison),
     '',
@@ -635,6 +726,8 @@ export function renderReport(comparison, sources = {}) {
     '',
     ...usageSplitSection(comparison),
     '',
+    ...stepsSection(comparison),
+    '',
     ...toolSection(comparison),
     '',
     ...warningSection(comparison),
@@ -643,9 +736,11 @@ export function renderReport(comparison, sources = {}) {
     '',
     `- base:${sources.base?.file ?? '?'}(spec \`${sources.base?.spec ?? '?'}\`,${sources.base?.kind ?? '?'})`,
     `- cand:${sources.cand?.file ?? '?'}(spec \`${sources.cand?.spec ?? '?'}\`,${sources.cand?.kind ?? '?'})`,
-    `- 文档:format \`${comparison.format}\` · aggregate \`${comparison.aggregate}\` · 容差 ${comparison.tolerancePct}%`,
+    `- 文档:format \`${comparison.format}\` · aggregate \`${comparison.aggregate}\` · 容差 ${rawPercent(comparison.tolerancePct)}`,
     '',
     `时间字段只作证据:本报告的成本口径是配对的 token,对比不读取时长的判决(${COMPARE_FORMAT} 不含时间统计)。`,
+    '',
+    ...verdictSection(comparison),
   ]
   return lines.join('\n')
 }
