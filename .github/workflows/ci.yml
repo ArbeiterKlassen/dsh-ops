@@ -2,15 +2,15 @@ name: Cross-platform validation
 on:
   # A merge must validate itself. Without this, a branch was only ever checked when someone
   # remembered to dispatch the workflow by hand — which is how a stale number shipped in #134.
-  # `0.3.2` is this cycle's release branch: what lands there is what ships, so it validates on
-  # push exactly like `main`.
+  # Release branches validate on push exactly like `main`; each 0.4.0 slice lands on its
+  # staging branch before the final release PR.
   push:
-    branches: [main, 0.3.2]
+    branches: [main, 0.3.2, release/0.4.0]
   # And a pull request has to show its result before it is merged, not after. GitHub reads this
   # file from the pull request's own head, so listing the release branch here is what makes a
-  # pull request against `0.3.2` run the gate at all.
+  # pull request against a release branch run the gate at all.
   pull_request:
-    branches: [main, 0.3.2]
+    branches: [main, 0.3.2, release/0.4.0]
   # A merge queue builds the queued commits before they reach `main`, and it only accepts a group
   # whose required checks passed there. Without this trigger the workflow simply never runs for a
   # queued group, so enabling a merge queue would silently un-gate every merge.
@@ -79,18 +79,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y acl
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
-      - name: Build and test native worker
-        shell: bash
-        run: |
-          cargo test --locked --manifest-path native/Cargo.toml
-          npm run build:ptc
-      - name: Windows IPC build
-        if: runner.os == 'Windows'
-        run: npm run build:bash-ipc
       # The gate, not `npm run verify`: it runs the same suites with `DSH_OPS_REQUIRE_RUNTIME=1`
       # on POSIX (a runtime-absence skip is a failure, not a pass), refuses any skip outside this
       # platform's known set, fails when a suite file on disk was never collected, and checks the
-      # packed artifact. Build success is not behaviour.
+      # packed artifact. It builds the plugin before its CLI, then builds/tests the worker and
+      # Windows IPC payloads. Build success is not behaviour.
       - name: Functional gate (skips, suite inventory, packed artifact)
         shell: bash
         run: node scripts/verify-gate.mjs --skip-install
@@ -136,6 +129,8 @@ jobs:
           restore-keys: ops-031-${{ runner.os }}-${{ runner.arch }}-
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+      - name: Build the plugin
+        run: npm run build
       - name: Build the native worker
         shell: bash
         run: npm run build:ptc
@@ -186,6 +181,8 @@ jobs:
           restore-keys: ops-031-${{ runner.os }}-${{ runner.arch }}-
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+      - name: Build the plugin
+        run: npm run build
       - name: Build the native worker
         shell: bash
         run: npm run build:ptc
@@ -276,11 +273,6 @@ jobs:
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
-      - name: Build and test native worker
-        shell: bash
-        run: |
-          cargo test --locked --manifest-path native/Cargo.toml
-          npm run build:ptc
       - name: Functional gate (skips, suite inventory, packed artifact)
         shell: bash
         run: node scripts/verify-gate.mjs --skip-install

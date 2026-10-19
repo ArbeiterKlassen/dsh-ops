@@ -16,6 +16,24 @@ const notes = []
 const failures = []
 const check = (ok, message) => (ok ? notes.push(message) : failures.push(message))
 
+// These entry points import generated lib modules. A fresh checkout must build before
+// reaching them; the release gate and verify commands perform that build themselves.
+function checkPluginBuild(file, jobs, ids) {
+  for (const id of ids) {
+    const commands = (jobs[id]?.steps ?? []).flatMap(step => String(step.run ?? '').split(/\r?\n/))
+    let built = false
+    const premature = []
+    for (const command of commands) {
+      if (/^\s*npm run (?:build|verify(?::release)?)(?:\s|$)/.test(command)
+          || /^\s*node scripts\/verify-gate\.mjs(?:\s|$)/.test(command)) built = true
+      const consumesPlugin = /^\s*(?:node (?:bin\/|scripts\/(?:tools-trial|validate-manifest|build-platform-packages)\.mjs|test\/run\.mjs|bench\/cli\.mjs)|npm run (?:build:|stage:|check:ptc-runtime|validate:manifest))/.test(command)
+      if (consumesPlugin && !built) premature.push(command.trim())
+    }
+    check(built, `${file}: job ${id} builds the plugin directly or through verification`)
+    check(premature.length === 0, `${file}: job ${id} builds before lib consumers (${premature.join('; ') || 'ordered'})`)
+  }
+}
+
 const files = (await readdir(dir).catch(() => [])).filter((name) => /\.ya?ml$/.test(name)).sort()
 check(files.length > 0, 'at least one workflow exists')
 
@@ -53,7 +71,11 @@ if (!ci) {
   check(triggers?.push !== undefined, 'ci.yml: runs on push to the protected branch')
   check(triggers?.pull_request !== undefined, 'ci.yml: runs on pull_request before a merge')
   check(triggers?.merge_group !== undefined, 'ci.yml: runs on merge_group, so a merge queue can use it')
+  for (const event of ['push', 'pull_request']) {
+    check(triggers?.[event]?.branches?.includes('release/0.4.0'), `ci.yml: ${event} includes the 0.4.0 staging branch`)
+  }
   const jobs = ci.doc.jobs ?? {}
+  checkPluginBuild('ci.yml', jobs, ['validate', 'node-floor', 'tools-trial', 'bench-smoke'])
   const entry = Object.entries(jobs).find(([, job]) => job?.name === 'CI required')
   check(entry !== undefined, 'ci.yml: exposes one aggregate check named "CI required"')
   if (entry) {
@@ -72,6 +94,7 @@ if (!ci) {
 // pinning the *new* shape is what makes this check harden the moment the rewrite lands.
 const release = workflows.get('release.yml')
 if (release) {
+  checkPluginBuild('release.yml', release.doc.jobs ?? {}, ['native', 'gate'])
   if (release.doc.jobs?.publish) {
     check(!/\$\{\{\s*secrets\./.test(release.text), 'release.yml: the gated publish path consumes no repository secrets')
   } else {

@@ -109,6 +109,11 @@
     "native/bash-ipc"
   ],
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "node scripts/build.mjs",
+    "pretest": "node scripts/build.mjs",
+    "pretest:ptc": "node scripts/build.mjs",
+    "typecheck": "tsc -p . --noEmit",
     "build:bash-ipc": "node bin/build-bash-ipc.mjs",
     "build:ptc": "node bin/dsh-ops.mjs build-ptc",
     "stage:ptc": "node bin/native-runtime.mjs stage",
@@ -118,7 +123,7 @@
     "check:size": "node scripts/check-file-size.mjs",
     "test": "node test/run.mjs",
     "verify:release": "npm run verify && node bin/check-release.mjs",
-    "verify": "node scripts/validate-manifest.mjs && node test/run.mjs",
+    "verify": "node scripts/build.mjs && node scripts/validate-manifest.mjs && node test/run.mjs",
     "bench:cli": "node -e \"const fs=require('node:fs');if(!fs.existsSync('bench/cli.mjs')){console.error('bench/ is repository-only and never shipped in the npm package (bench 只存在于仓库,不随包发布); run npm run bench:* from a dsh-ops checkout');process.exit(2)};process.exit(require('node:child_process').spawnSync(process.execPath,['bench/cli.mjs',...process.argv.slice(1)],{stdio:'inherit'}).status??1)\" --",
     "bench:setup": "node -e \"const fs=require('node:fs');if(!fs.existsSync('bench/cli.mjs')){console.error('bench/ is repository-only and never shipped in the npm package (bench 只存在于仓库,不随包发布); run npm run bench:* from a dsh-ops checkout');process.exit(2)};process.exit(require('node:child_process').spawnSync(process.execPath,['bench/cli.mjs','setup',...process.argv.slice(1)],{stdio:'inherit'}).status??1)\" --",
     "bench:ab": "node -e \"const fs=require('node:fs');if(!fs.existsSync('bench/cli.mjs')){console.error('bench/ is repository-only and never shipped in the npm package (bench 只存在于仓库,不随包发布); run npm run bench:* from a dsh-ops checkout');process.exit(2)};process.exit(require('node:child_process').spawnSync(process.execPath,['bench/cli.mjs','ab',...process.argv.slice(1)],{stdio:'inherit'}).status??1)\" --",
@@ -156,6 +161,7 @@
     "@deepseek-ai/dsh-tool-fs-search": "0.2.0-rc.2",
     "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
     "@dsh-std/manifest": "0.1.1-rc.3",
+    "typescript": "6.0.3",
     "yaml": "^2.9.1"
   },
   "engines": {

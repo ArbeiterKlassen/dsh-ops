@@ -82,12 +82,12 @@ jobs:
         run: rustup target add ${{ matrix.triple }}
 
       - name: Install locked dependencies
-        # Only the Windows job needs node_modules: the IPC proxies link against the
-        # pinned shell payload. The other two targets build from the committed Rust
-        # sources alone, so they skip the install. `--ignore-scripts` keeps an install
-        # hook out of the release path, matching ci.yml.
-        if: matrix.target == 'win32-x64'
+        # Every target builds the host JS consumed by the runtime staging CLI.
+        # Windows also needs the pinned shell payload for its IPC proxies.
         run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+
+      - name: Build the plugin
+        run: npm run build
 
       - name: Build the native worker
         shell: bash

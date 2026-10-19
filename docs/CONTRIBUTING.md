@@ -8,6 +8,7 @@ conventions a pull request is reviewed against. 中文版：[贡献指南.md](�
 - [What dsh-ops is (and is not)](#what-dsh-ops-is-and-is-not)
 - [Workflow: issue first, then PR](#workflow-issue-first-then-pr)
 - [Development environment](#development-environment)
+- [Building the plugin and installing from source](#building-the-plugin-and-installing-from-source)
 - [Building the native worker](#building-the-native-worker)
 - [The verification gate](#the-verification-gate)
 - [Writing tests](#writing-tests)
@@ -49,9 +50,39 @@ conventions a pull request is reviewed against. 中文版：[贡献指南.md](�
 
 ```console
 npm ci --ignore-scripts
+npm run build             # compile src/ to lib/ and copy component assets
 npm run build:ptc         # build and stage the native worker (see below)
 npm run verify
 ```
+
+## Building the plugin and installing from source
+
+Edit the plugin in `src/`. The TypeScript compiler accepts the existing JavaScript during the
+migration and emits JavaScript into `lib/`; `npm run build` recreates that directory and copies
+component manifests, locale files, icons and the panel HTML. `lib/` is ignored by Git and must not
+be edited by hand. Package exports, component entries and tests continue to load `lib/`.
+
+Run `npm run build` after changing source or assets and before invoking a suite directly with
+`node test/run.mjs <filter>`. `npm test`, `npm run test:ptc` and `npm run verify` build first;
+`npm run typecheck` checks the compiler configuration and migrated TypeScript without emitting
+files. JavaScript type checking remains disabled during the migration.
+
+For a local or Git-source installation, build and pack a checkout before installing it into DSH:
+
+```console
+npm ci --ignore-scripts
+npm run build
+npm run build:ptc
+npm pack
+```
+
+On Windows, also run `npm run build:bash-ipc` before packing. Install the resulting
+`dsh-ops-<version>.tgz` with the DSH CLI for your target profile (see the README). `npm pack` runs
+the build through `prepack`, unless lifecycle scripts are disabled. An unbuilt Git checkout has
+no `lib/` and is not ready to load; there is no `prepare` hook. Keep development dependencies
+installed while building, since they include the compiler. The published tarball contains
+compiled `lib/` and its assets, excludes `src/`, and does not require consumers to compile the
+plugin.
 
 ## Building the native worker
 
@@ -77,7 +108,8 @@ What a skip means locally:
 
 ## The verification gate
 
-- `npm run verify` — `scripts/validate-manifest.mjs`, then `test/run.mjs` (every `test/*.test.mjs`
+- `npm run verify` — build `src/` into `lib/`, run `scripts/validate-manifest.mjs`, then
+  `test/run.mjs` (every `test/*.test.mjs`
   in its own process with its own temporary `DSH_HOME`).
 - `node scripts/verify-gate.mjs --skip-install` — **the release gate**, exactly what
   `.github/workflows/ci.yml` runs on Windows x64, Linux x64 and macOS arm64: worker unit tests, build
@@ -112,11 +144,11 @@ CI runs on every pull request and every push to `main`; a PR must be green on al
 - **Doc pairs:** each document in `docs/` exists in English and Chinese, e.g. `docs/usage.md` and
   `docs/使用指南.md`. Update both in the same PR.
 - **File size:** keep new files under about 500 lines. If a file grows past that, split it into
-  modules and group related modules in a folder, following the existing `lib/components/*` and
+  modules and group related modules in a folder, following the existing `src/components/*` and
   `test/lib/` layout.
-- **Tool names** always come from `publicToolName()` in `lib/policy.js`; never hand-write the `ops_`
+- **Tool names** always come from `publicToolName()` in `src/policy.js`; never hand-write the `ops_`
   prefix.
-- **Config validation** lives in `lib/config.js`; an unknown key is an error that names the key.
+- **Config validation** lives in `src/config.js`; an unknown key is an error that names the key.
   Defaults in `cordis.patch.yml` must match the defaults in code.
 - **Parsing and probing** happen synchronously in `apply`; `required: true` must refuse activation
   at load time.

@@ -179,6 +179,8 @@ async function main() {
     process.stdout.write('\n=== install locked dependencies\n(skipped: node_modules is present; pass --skip-install to make this explicit)\n')
   }
 
+  // The native build/staging CLI imports lib, just like the validator and suites.
+  await run('build the plugin', 'npm', ['run', 'build'])
   await run('native worker unit tests', 'cargo', ['test', '--locked', '--manifest-path', 'native/Cargo.toml'])
   await run('build and stage the native worker', 'npm', ['run', 'build:ptc'])
 
