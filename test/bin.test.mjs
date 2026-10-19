@@ -51,6 +51,23 @@ function runCli({ home, user, args, command = 'uninstall', env }) {
   return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
 }
 
+await test('profile dry-run returns nonzero for a missing CLI and leaves the profile untouched', async () => {
+  await withTempDir('profile-cli-missing', root => {
+    const directory = path.join(root, 'profiles', 'desktop')
+    fs.mkdirSync(directory, { recursive: true })
+    const manifest = path.join(directory, 'package.json'), before = '{"dsh":{"profile":{"bundles":[]}}}\n'
+    fs.writeFileSync(manifest, before)
+    const missing = path.join(root, 'missing-cli')
+    const result = runCli({ home: root, user: root, command: 'install',
+      args: ['--profile', 'desktop', '--dry-run', '--dsh-cli', missing] })
+    assert.equal(result.status, 1, `${result.stdout}${result.stderr}`)
+    assert.match(result.stderr, /Official CLI not found or not executable/)
+    assert.ok(result.stderr.includes(missing))
+    assert.equal(fs.readFileSync(manifest, 'utf8'), before)
+    assert.deepEqual(fs.readdirSync(directory), ['package.json'])
+  })
+})
+
 /**
  * Seed one home with the managed runtime an older version provisioned, a sibling
  * directory that must survive, and the leftover FastCtx state directory.
@@ -751,7 +768,7 @@ await test('on POSIX the profile CLI fallback launches dsh, not the Windows cmd 
       cwd: PACKAGE_ROOT, encoding: 'utf8', timeout: 60_000,
       env: { DSH_HOME: home, HOME: user, PATH: bin, DSH_OPS_DSH_CLI: '' },
     })
-    assert.match(run.stdout, /Official CLI: dsh;/, `${run.stdout}${run.stderr}`)
+    assert.ok(run.stdout.includes(`Official CLI: ${cli};`), `${run.stdout}${run.stderr}`)
     assert.equal(fs.existsSync(marker), true, `the POSIX CLI must have been launched: ${run.stdout}${run.stderr}`)
     assert.equal(fs.readFileSync(marker, 'utf8').trim(), `plugin --profile web add dsh-ops@${PACKAGE_VERSION}`)
     assert.equal(run.status, 0, `${run.stdout}${run.stderr}`)
