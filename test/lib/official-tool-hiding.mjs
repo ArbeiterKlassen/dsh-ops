@@ -283,7 +283,7 @@ export async function officialToolHidingMountChecks() {
     const { ctx } = await bootHost()
     try {
       const removeForeign = ctx.tools.register(tool(publicToolName('inspect_local_file')))
-      await replacement(ctx, 'read_many')
+      await replacement(ctx, 'read_files')
       for (const name of ['read', 'foreign']) ctx.tools.register(tool(name))
       await mount(ctx, { replaceTools: ['read'] })
       const agent = await mint(ctx, 'foreign-read-counterpart')

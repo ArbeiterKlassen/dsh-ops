@@ -98,7 +98,7 @@ await test('permission changes cancel the owning Native session while sibling wo
         return { done, collected: { stdout: { readFrom: () => ({ text: '{"status":"completed"}' }) }, stderr: { readFrom: () => ({ text: '' }) } } }
       } }))
       await ctx.plugin(inner => mountResultLifecycle(inner))
-      const work = fileCall(ctx, 'unused', 'edit_many', { path: 'file' }, { agent: { session: one } })
+      const work = fileCall(ctx, 'unused', 'edit_file', { path: 'file' }, { agent: { session: one } })
       const sibling = fileCall(ctx, 'unused', 'stat', { path: 'file' }, { agent: { session: two } })
       await entered.promise
       mode = 'read-only'; ctx.emit('session/event', one, { type: 'sandbox/mode' })

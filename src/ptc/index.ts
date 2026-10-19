@@ -22,7 +22,7 @@ import { monitoredInvoke } from './invoke.js'
 export { resolvePtcConfig } from '../config.js'
 export const name = 'dsh-ops-ptc'
 const apiTools = [...FILE_TOOLS, ...PTC_TOOLS]
-const publishedNames = [...apiTools, 'sdk'].map(publicToolName)
+const publishedNames = [...apiTools, 'load_sdk'].map(publicToolName)
 const ptcDefinitions = new WeakSet<ToolDefinition>()
 interface Entry {
   ctx?: Context; fiber?: Fiber; ready: Promise<void>; disposers: (() => void)[]
@@ -69,14 +69,14 @@ export function apply(root: Context, rawConfig: unknown): void {
       for (const [controller, work] of active) if (work.owner === agent) controller.abort(new Error(reason))
     }
     let ownership: Awaited<ReturnType<typeof ownPtcScopes>> | undefined
-    const execute = (agent: Agent, entry: Entry, tool: ApiName | 'sdk'): ToolDefinition['execute'] => async (args, exec) => {
+    const execute = (agent: Agent, entry: Entry, tool: ApiName | 'load_sdk'): ToolDefinition['execute'] => async (args, exec) => {
       await chain
       const version = epoch
       const available = () => !stopped && entries.get(agent) === entry && ownership?.owns(agent) && exec.agent === agent && entry.ptc && entry.owned.has(publicToolName(tool))
       if (!available() || !await ptcOnly(agent, exec.signal).catch(() => false) || !available() || version !== epoch) {
         return failure('POLICY_DENIED', 'The calling scope must own this API in authoritative PTC-only presentation.')
       }
-      if (tool === 'sdk') {
+      if (tool === 'load_sdk') {
         const requested = requestedApis(args, config.allowedTools)
         if (typeof requested === 'string') return failure('INVALID_ARGUMENT', requested)
         for (const name of requested) entry.pending.add(name)
@@ -112,7 +112,7 @@ export function apply(root: Context, rawConfig: unknown): void {
             try {
               const wanted = new Set([...PTC_RESIDENT_TOOLS, ...config.alwaysLoaded, ...entry.selected])
               const definitions = [...wanted].map(tool => definition(tool, execute(agent, entry, tool)))
-              definitions.push(sdkDefinition(config.allowedTools, execute(agent, entry, 'sdk')))
+              definitions.push(sdkDefinition(config.allowedTools, execute(agent, entry, 'load_sdk')))
               for (const def of definitions) { ptcDefinitions.add(def); entry.disposers.push(entry.ctx.tools.register(def)); entry.owned.set(def.name, def) }
               entry.disposers.push(releaseNative)
             } catch (error) { releaseNative(); throw error }
@@ -217,8 +217,8 @@ export function apply(root: Context, rawConfig: unknown): void {
     })
     ctx.effect(() => prompt.section({ name: ownership.sectionName(PTC_SECTION), order: 3252, interpolate: false, text: context => {
       const entry = entries.get(context.scope as Agent)
-      return entry?.ptc && entry.owned.has(publicToolName('sdk'))
-        ? 'OPS APIs return typed Outcome values. Inspect status before data; preserve partial coverage and continuation. Use ' + publicToolName('sdk') + ' to request advanced APIs by raw name; they become callable on the next model step. Process results locally in run_code and return only needed summaries. References do not grant authority.' : ''
+      return entry?.ptc && entry.owned.has(publicToolName('load_sdk'))
+        ? 'OPS APIs return typed Outcome values. Inspect status before data; preserve partial coverage and continuation. Use ' + publicToolName('load_sdk') + ' to request advanced APIs by raw name; they become callable on the next model step. Process results locally in run_code and return only needed summaries. References do not grant authority.' : ''
     } }), 'dsh-ops: progressive PTC guidance')
     ctx.effect(() => async () => {
       stopped = true; ++epoch; mutating = true

@@ -13,7 +13,7 @@ import { assert, test, report, withTempDir, waitFor } from './lib/harness.mjs'
 import { bootDiscoveryHost, mintDiscoveryAgent, discoveryNextStep } from './lib/discovery.mjs'
 import { shutdown, scopedToolNames, registryNames, callTool } from './lib/host.mjs'
 
-const READ = publicToolName('read_many'), DISCOVER = publicToolName('discover')
+const READ = publicToolName('read_files'), DISCOVER = publicToolName('discover_tools')
 const measure = tools => {
   const wire = JSON.stringify(tools.map(({ name, description, parameters }) => ({ name, description, parameters })))
   return { tokens: getEncoding('cl100k_base').encode(wire).length, bytes: Buffer.byteLength(wire) }
@@ -55,7 +55,7 @@ await test('gate the approved file/discovery budget and separately retain full s
     assert.ok(shell.parameters.properties.run_in_background)
     const withShell = measure([...assembly.tools, shell])
     console.log('  cl100k_base/js-tiktoken1.0.21 compact host-schema JSON:', JSON.stringify({ core, fullFileCatalogue: full, hostBash: measure([shell]), corePlusBash: withShell }))
-    assert.equal(core.tokens, 241, JSON.stringify(core))
+    assert.equal(core.tokens, 242, JSON.stringify(core))
     assert.ok(full.tokens > 400 && full.tokens > core.tokens, 'retain honest full-surface measurement')
     assert.ok(withShell.tokens > 400, 'the complete startup surface remains separately reported')
     const assessed = startupAssessment([...assembly.tools, shell], 'win32')
@@ -64,7 +64,7 @@ await test('gate the approved file/discovery budget and separately retain full s
     assert.equal(assessed.measurement.tokens, withShell.tokens)
     assert.equal(startupAssessment(assembly.tools, 'win32').status, 'blocked', 'missing Bash cannot pass a narrower budget')
     const text = assembly.sections.map(section => section.text).join('\n')
-    for (const raw of FILE_TOOLS.filter(raw => raw !== 'read_many')) assert.equal(text.includes(publicToolName(raw)), false)
+    for (const raw of FILE_TOOLS.filter(raw => raw !== 'read_files')) assert.equal(text.includes(publicToolName(raw)), false)
     assert.ok(text.includes(DISCOVER))
     const selected = await callTool(ctx, DISCOVER, { query: 'select:ops_stat' }, undefined, agent)
     assert.deepEqual(selected.value.activated, [publicToolName('stat')])

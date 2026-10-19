@@ -7,9 +7,9 @@ What each of the seven components publishes, with parameters and permission requ
 | Row `name` | Description | Default | Published tools |
 | --- | --- | --- | --- |
 | `dsh-ops/shell` | Prefer bash as the terminal, with host PowerShell for operations bash cannot cover | On (all platforms) | `ops_bash`; host `pwsh` keeps its own executor |
-| `dsh-ops/file` | Bounded Rust file retrieval and text output for the model | On | `ops_read_many`; advanced tools load through discovery |
-| `dsh-ops/ptc` | Typed file APIs and progressive SDK in PTC sessions | On | `ops_inspect_local_file`, `ops_result`, `ops_sdk`; advanced APIs load through the SDK |
-| `dsh-ops/discovery` | Advanced Native tools on demand | On | `ops_discover` |
+| `dsh-ops/file` | Bounded Rust file retrieval and text output for the model | On | `ops_read_files`; advanced tools load through discovery |
+| `dsh-ops/ptc` | Typed file APIs and progressive SDK in PTC sessions | On | `ops_inspect_local_file`, `ops_result`, `ops_load_sdk`; advanced APIs load through the SDK |
+| `dsh-ops/discovery` | Advanced Native tools on demand | On | `ops_discover_tools` |
 | `dsh-ops/panel` | Data capture, off at the switch: new conversations write `<cwd>/.dsh-ops/panel/<sessionId>.json` plus the viewer `panel.html` | Row off; capture defaults true | None; see the [configuration reference](configuration-reference.md) |
 | `dsh-ops/tui` | Read-only current-session OPS sidebar | Off | None; see [sidebar guide](tui-panel.md) |
 | `dsh-ops/hide-official` | Select read/glob/grep alternatives; unselected official tools remain visible | Off | None |
@@ -20,22 +20,23 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 
 ## Tool summary
 
-The shared catalogue has 21 entries. The generated PTC SDK contains 19 APIs: 16 file/document tools plus batch, result and sdk; bash and discover belong to other entry points. Catalogue membership does not mean residency or permission. Fresh PTC pools follow the implemented catalogue; saved explicit pools remain authoritative. Document tools load on demand.
+The shared catalogue has 20 entries. The generated PTC SDK contains 18 APIs: 15 file/document tools plus batch, result and load_sdk; bash and discover_tools belong to other entry points. Catalogue membership does not mean residency or permission. Fresh PTC pools follow the implemented catalogue; saved explicit pools remain authoritative. Document tools load on demand.
 
 | Tool | Purpose | Full-access requirement |
 | --- | --- | --- |
-| `ops_read_many` | Resident bounded UTF-8 ranges from 1-32 files | No command permission gate¹ |
+| `ops_read_files` | Resident bounded UTF-8 ranges from 1-32 files | No command permission gate¹ |
 | `ops_inspect_local_file` | Bounded UTF-8 text lines and hex | No command permission gate¹ |
 | `ops_grep` | Rust regex search, multiple file filters, counts/summaries | No command permission gate¹ |
 | `ops_glob` | Multiple path patterns with exclusions | No command permission gate¹ |
 | `ops_replace` | Mechanical cross-file literal replacement; use host edit for precise changes | No command permission gate¹ |
-| `ops_write_file` / `ops_edit_file` / `ops_edit_many` | File writes and atomic edits within one file, retaining revision/CAS | Writes follow current authority¹ |
+| `ops_write_file` / `ops_edit_file` | File writes and atomic edits within one file, retaining revision/CAS | Writes follow current authority¹ |
 | `ops_diff` / `ops_stat` | Compare text and inspect metadata | No command permission gate¹ |
 | `ops_copy` / `ops_move` / `ops_remove` | Fixed file operations | Writes follow current authority¹ |
-| `ops_table_read` / `ops_doc_read` / `ops_pdf_read` | Bounded CSV/TSV, DOCX and restricted PDF readers; see below | No command permission gate¹ |
+| `ops_read_table` / `ops_read_docx` / `ops_read_pdf` | Bounded CSV/TSV, DOCX and restricted PDF readers; see below | No command permission gate¹ |
 | `ops_bash` | Preferred general bash command executor; `command` for short commands, `script_path` for long scripts | Confined in restricted modes; matched Windows x64 private IPC runtime |
 | `ops_batch` | Preflight and execute copy / move / remove with audit and recovery | See the PTC notes |
 | `ops_result` | Bounded result references: put, page, release | See the PTC notes |
+| `ops_load_sdk` | Load 1-5 named PTC APIs for the next model step; no file operation runs | PTC-only |
 | Host `pwsh` | Windows-native operations using the host-selected PowerShell | Host policy |
 
 ¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes subject to the credential fence and current scoped authority; read-only rejects replacement, including its dry run; workspace-write permits writes under the workspace and this session's private temporary directory, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes. That preparation runs the package's own script as the current user before sandbox confinement applies, only in workspace-write, with `-ExecutionPolicy Bypass` (Group Policy still wins).
@@ -44,9 +45,9 @@ The shared catalogue has 21 entries. The generated PTC SDK contains 19 APIs: 16 
 
 ## `dsh-ops/file` — file tools
 
-Only the bounded multi-file reader `ops_read_many` is resident; `ops_inspect_local_file`, including hex reading, is discoverable. The advanced contracts below are activated through [tool discovery](discovery.md) or explicit always-loaded choices. Routing lists only the tools currently published.
+Only the bounded multi-file reader `ops_read_files` is resident; `ops_inspect_local_file`, including hex reading, is discoverable. The advanced contracts below are activated through [tool discovery](discovery.md) or explicit always-loaded choices. Routing lists only the tools currently published.
 
-File paths resolve relative to the DSH session cwd. `ops_read_many` takes a `files` array of paths with independent 1-based offsets and limits; single-file operations take `path`. The Native reference pager accepts the original reference `root`. No file tool accepts `workspace`, `cwd` or `file_path` aliases. Text tools are UTF-8 first; document tools use their own bounded format/encoding contracts. glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
+File paths resolve relative to the DSH session cwd. `ops_read_files` takes a `files` array of paths with independent 1-based offsets and limits; single-file operations take `path`. The Native reference pager accepts the original reference `root`. No file tool accepts `workspace`, `cwd` or `file_path` aliases. Text tools are UTF-8 first; document tools use their own bounded format/encoding contracts. glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
 
 When the host provides its `fs` service, `ops_inspect_local_file` reads and real `ops_replace` writes are recorded in the host's read-before-edit table (`fs/observed`) exactly like host `read`/`edit`: a file read with ops can be edited with host `edit` directly, and an ops write does not make the host's earlier read look like an external change. `ops_grep`, `ops_glob` and `dryRun` record nothing.
 
@@ -114,7 +115,7 @@ Cooperating writers serialise on a persistent, hidden update-lock sidecar beside
 
 ### Document readers
 
-`ops_table_read` reads CSV/TSV string cells (UTF-8 by default, with explicit UTF-16LE/BE support). `ops_doc_read` reads DOCX main-body paragraphs and table coordinates, not legacy binary DOC. Both default to offset 1 and limit 200 (maximum 1000), with a 32 MiB input bound. `ops_pdf_read` handles only PDF 1.3–1.7 classic xref and standard Type 1 font text, up to 16 MiB/32 pages; offset defaults to 1 and limit to 10 (maximum 32). It excludes OCR, embedded fonts and modern object/xref streams.
+`ops_read_table` reads CSV/TSV string cells (UTF-8 by default, with explicit UTF-16LE/BE support). `ops_read_docx` reads DOCX main-body paragraphs and table coordinates, not legacy binary DOC. Both default to offset 1 and limit 200 (maximum 1000), with a 32 MiB input bound. `ops_read_pdf` handles only PDF 1.3–1.7 classic xref and standard Type 1 font text, up to 16 MiB/32 pages; offset defaults to 1 and limit to 10 (maximum 32). It excludes OCR, embedded fonts and modern object/xref streams.
 
 Each reader separates scan, page, display and reference-capture completeness. A later error may retain safe preceding complete records, but cannot produce a false full total or revision; an offset cannot bypass a physical scan gap. See [native kernel contracts](native-kernel.md) for all format bounds, encoding rules and recovery guidance.
 
@@ -183,7 +184,7 @@ On Windows x64 the install carries the pinned Bash payload as an optional depend
 
 "Prefer bash as the terminal" means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. OPS never overlays the host PowerShell executor configuration. Use `dsh-ops upgrade-host-pwsh` to preview an explicit standard PowerShell 7 installation; `--yes` executes it. Restart DSH afterwards, and review any custom host `pwshPath` in host settings. Existing running commands and old provisioned copies are not removed.
 
-The routing table the model sees is rendered by the plugin from what it actually published:
+The plugin renders routing guidance from what it actually published. The excerpt below is a synthesised example; in production the model sees the file and shell prompt sections separately, each rendered from its own published tools (including `ops_discover_tools`, `ops_read_files`, the document readers and the other file tools):
 
 ```
 # Shell routing: bash → host PowerShell
@@ -223,7 +224,7 @@ All OPS calls keep their own session-cwd base, permission checks and output cont
 
 Only the selected OPS counterparts must be registered and visible as exact OPS-owned Native definitions. A foreign registration with the same name or identical schema cannot satisfy readiness. Ownership changes are checked even when the schema bytes stay unchanged; Native shadows created by the OPS PTC adapter retain their tracked ownership. PTC data APIs alone cannot replace a Native tool. An unavailable selected counterpart blocks the affected scope with `READINESS_BLOCKED` and lifts that scope's replacement masks; healthy scopes and inherited authority restrictions retain their masks. Removing a selection, unloading, or disabling the component restores the corresponding official tool. Old `strict`/`scope`/`additionalOfficialTools` values are validated but ignored until explicit `replaceTools` selections are supplied.
 
-The resident `ops_read_many` is not the reviewed replacement for `read`. Before selecting `read`, configure discovery `alwaysLoaded: [inspect_local_file]` or ensure that single-file capability is already active in that Native scope. Apply the same readiness rule to `glob` and `grep`. Internal presentation inspection lets discovery publish these configured tools during startup; ordinary prompt assembly and dispatch remain blocked until they are ready.
+The resident `ops_read_files` is not the reviewed replacement for `read`. Before selecting `read`, configure discovery `alwaysLoaded: [inspect_local_file]` or ensure that single-file capability is already active in that Native scope. Apply the same readiness rule to `glob` and `grep`. Internal presentation inspection lets discovery publish these configured tools during startup; ordinary prompt assembly and dispatch remain blocked until they are ready.
 
 The component exports StandardSchemaV1 validation together with public JSON schema descriptors for built-in host row forms. Optional browser multiselect pages require the explicit client carrier migration; see [configuration](configuration-reference.md).
 

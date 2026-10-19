@@ -67,21 +67,21 @@ await test('reference retrieval preserves original root and never resumes the pr
   assert.deepEqual(decodeContinuation(out.continuation), { version: 1, tool: 'result', args: { action: 'page', id: 'ref://s/replace/x', offset: 0, root: '/original' } })
   assert.equal(out.data.storageError.effectState, 'applied'); assert.equal(out.data.changed, 3)
 })
-await test('line and read_many cursors retain unconsumed ranges and reject zero-progress long lines', () => {
+await test('line and read_files cursors retain unconsumed ranges and reject zero-progress long lines', () => {
   const args = { files: [{ path: '/a', offset: 1, limit: 2 }, { path: '/b' }, { path: '/pending' }] }
   const data = { status: 'partial', complete: false, nextIndex: 2, items: [{ complete: false, nextOffset: 3 }, { complete: true }] }
-  assert.deepEqual(decodeContinuation(toOutcome('read_many', args, data).continuation).args, { files: [{ path: '/a', offset: 3, limit: 2 }, { path: '/pending' }] })
+  assert.deepEqual(decodeContinuation(toOutcome('read_files', args, data).continuation).args, { files: [{ path: '/a', offset: 3, limit: 2 }, { path: '/pending' }] })
   const clipped = toOutcome('inspect_local_file', { path: '/a', offset: 1 }, { complete: false, truncated: true, nextOffset: 1, items: [{ truncatedInLine: true }] })
   assert.equal(clipped.status, 'error'); assert.equal('continuation' in clipped, false)
-  assert.equal(toOutcome('read_many', args, { ...data, failed: 1 }).status, 'error')
+  assert.equal(toOutcome('read_files', args, { ...data, failed: 1 }).status, 'error')
   const original = { files: Array.from({ length: 32 }, (_, n) => ({ path: `/${n}` })) }
   const refusedSpill = { status: 'partial', complete: false, nextIndex: 0, pending: 32,
     items: Array.from({ length: 14 }, () => ({ complete: true })), storageError: { code: 'POLICY_DENIED' } }
-  const halted = toOutcome('read_many', original, refusedSpill)
+  const halted = toOutcome('read_files', original, refusedSpill)
   assert.equal(halted.status, 'error'); assert.equal('continuation' in halted, false, 'a bounded head never repeats the same full request')
 })
 await test('bounded continuation decoding never admits mutation or result-release tokens', () => {
-  for (const tool of ['write_file','edit_many','batch','bash']) assert.equal(decodeContinuation('ops-next-v1:' + JSON.stringify({ version: 1, tool, args: {} })), undefined)
+  for (const tool of ['write_file','edit_file','batch','bash']) assert.equal(decodeContinuation('ops-next-v1:' + JSON.stringify({ version: 1, tool, args: {} })), undefined)
   assert.equal(decodeContinuation('ops-next-v1:' + JSON.stringify({ version: 1, tool: 'result', args: { action: 'release' } })), undefined)
   assert.equal(decodeContinuation('garbage'), undefined)
   assert.equal(continuationFor('diff', { content: 'x'.repeat(10000) }, { nextOffset: 2 }), undefined)

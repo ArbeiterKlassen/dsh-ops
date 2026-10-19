@@ -33,11 +33,11 @@ pub fn dispatch(request: Request) -> Result<Value> {
     Ok(ops_results::spill::finish(&request, value))
 }
 fn execute(dir: &Dir, request: &Request) -> Result<Value> {
-    if matches!(request.tool.as_str(), "table_read" | "doc_read" | "pdf_read") { return ops_documents::dispatch(request); }
+    if matches!(request.tool.as_str(), "read_table" | "read_docx" | "read_pdf") { return ops_documents::dispatch(request); }
     // File reads/searches do not create or consult the durable audit store.
     // This is important for read-only sessions and keeps observation separate
     // from mutation audit records.
-    if matches!(request.tool.as_str(), "inspect_local_file" | "read_many" | "glob" | "grep" | "replace" | "write_file" | "edit_file" | "edit_many" | "diff" | "stat" | "copy" | "move" | "remove") {
+    if matches!(request.tool.as_str(), "inspect_local_file" | "read_files" | "glob" | "grep" | "replace" | "write_file" | "edit_file" | "diff" | "stat" | "copy" | "move" | "remove") {
         return if matches!(request.tool.as_str(), "glob" | "grep" | "replace") {
             ops_search::dispatch(&request)
         } else {
