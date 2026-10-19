@@ -83,6 +83,8 @@ An explicit target profile is required. `tui` maps to the **dsh-TUI product's `d
 
 Desktop must use the CLI bundled with the desktop application; the default auto-detected path is `%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`. For another installation location, add `--dsh-cli "<installation>\resources\runtime\cli\bin\dsh.cmd"`. Web/TUI require an available DSH CLI, which can also be specified explicitly.
 
+Add `--dry-run` to an install or uninstall command to preview it. The preview resolves the CLI from its path or `PATH` (`PATHEXT` on Windows), checks the file, POSIX execute permission and any Node CLI entry point, and applies the same Windows command-script path checks as execution. A failed check returns a nonzero exit code. The preview prints the plan without starting the CLI or changing the profile. Success covers these static checks; it does not establish the program's identity, version, profile compatibility or eventual installation result.
+
 You can also use the official commands directly:
 
 ```console
