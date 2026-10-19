@@ -20,8 +20,8 @@ an automatic retry cursor. `unknown` means effects require read-only inspection.
 Do not access `error` on `partial`, or treat every non-error status as complete.
 
 ```ts
-// After ops_read_many has been activated for this agent:
-const result = await tools.ops_read_many({
+// After ops_read_files has been activated for this agent:
+const result = await tools.ops_read_files({
   files: [{ path: "src/a.ts", offset: 1, limit: 20 }]
 });
 if (result.status === "completed") {

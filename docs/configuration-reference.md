@@ -16,7 +16,7 @@ remain a draft until **Save changes** succeeds. A stale or refused save keeps th
 writer and reload the affected row.
 
 - **Replacements:** choose `read`, `glob` and `grep` independently. Selected tools use OPS contracts.
-  Keep each selected counterpart (`inspect_local_file` for `read`, `glob` or `grep`) always loaded in Discovery, or activate it before selecting the replacement. `read_many` does not satisfy the single-file `read` replacement contract.
+  Keep each selected counterpart (`inspect_local_file` for `read`, `glob` or `grep`) always loaded in Discovery, or activate it before selecting the replacement. `read_files` does not satisfy the single-file `read` replacement contract.
 - **Discovery:** choose the allowed pool, its always-loaded subset and a result limit from 1 to 5.
   Removing an allowed capability removes it from the always-loaded subset in the same save.
 - **Shell:** enable Bash, enter an absolute executor override, or select detected managed/Git Bash.
@@ -200,7 +200,7 @@ For example, replace only host read and grep while retaining host glob:
 
 Set `replaceTools: []` or disable the row to restore every official tool. A selected OPS counterpart must be an exact OPS-owned Native definition registered and visible in each agent scope; a same-name foreign tool or a PTC-only data API does not qualify. If any is missing, that scope restores its masks and refuses prompt assembly and execution with `READINESS_BLOCKED`; healthy scopes remain usable. Restore the counterpart, remove that selection, or disable the row. Unrelated OPS tools are not required.
 
-With the slim Native defaults, configure discovery `alwaysLoaded: [inspect_local_file, grep]` before selecting the example above, or activate those Native capabilities first. `read` still maps to `inspect_local_file`; resident `read_many` does not satisfy that selection. Removing or shadowing an owned counterpart rechecks readiness immediately, even if its schema is byte-identical.
+With the slim Native defaults, configure discovery `alwaysLoaded: [inspect_local_file, grep]` before selecting the example above, or activate those Native capabilities first. `read` still maps to `inspect_local_file`; resident `read_files` does not satisfy that selection. Removing or shadowing an owned counterpart rechecks readiness immediately, even if its schema is byte-identical.
 
 **Migration from 0.3:** `strict`, `scope`, and `additionalOfficialTools` are accepted only for compatibility and validated with their old types/values. They grant no hiding authority, including `scope: extended` and aliases. An existing row containing only those keys becomes inert. Explicit `replaceTools` is the sole source of selections even if legacy keys remain. No saved profile is rewritten by this component.
 
@@ -211,7 +211,7 @@ Cordis validates configuration through `StandardSchemaV1`; detached public setti
 
 ## Prompt registration
 
-Prompts are registered as scoped runtime sections, not written to AGENTS.md. Disabling shell withdraws its routing; disabling file withdraws its Native file guidance. Fresh Native file publishes only ops_read_many, discovery publishes ops_discover, and shell scopes on every platform add ops_bash (the pinned Windows payload or the distribution Bash). Advanced Native tools are discovered or explicitly always loaded. PTC owns its separate typed SDK and current permission checks. The approved BM-03 budget measures file/discovery schemas at ≤400 tokens. Bash startup residency is unchanged; its schema and the complete startup total are reported separately, and missing Bash cannot satisfy the Windows readiness check.
+Prompts are registered as scoped runtime sections, not written to AGENTS.md. Disabling shell withdraws its routing; disabling file withdraws its Native file guidance. Fresh Native file publishes only ops_read_files, discovery publishes ops_discover_tools, and shell scopes on every platform add ops_bash (the pinned Windows payload or the distribution Bash). Advanced Native tools are discovered or explicitly always loaded. PTC owns its separate typed SDK and current permission checks. The approved BM-03 budget measures file/discovery schemas at ≤400 tokens. Bash startup residency is unchanged; its schema and the complete startup total are reported separately, and missing Bash cannot satisfy the Windows readiness check.
 
 ---
 

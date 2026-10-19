@@ -6,7 +6,7 @@ import { assert, test, report, withTempDir } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
 import { WORKER, requireWorker } from './lib/boundary.mjs'
 import { invoke } from '../lib/file/worker.js'
-import { resolveReadMany } from '../lib/file/read-many.js'
+import { resolveReadFiles } from '../lib/file/read-files.js'
 import { definition } from '../lib/file/contract.js'
 import { publicToolName } from '../lib/policy.js'
 requireWorker('read-many-host')
@@ -15,14 +15,14 @@ const execution = cwd => ({ agent: { session: { id: 'read-many-host', header: { 
 await test('range normalization preserves caller data, invalid fields and the current cwd', () => {
   const input = { files: [{ path: 'a.txt', offset: null, limit: undefined, unknown: '' }, { path: 'b.txt', offset: 0 }] }
   const snapshot = structuredClone(input)
-  const value = resolveReadMany(input, process.cwd())
+  const value = resolveReadFiles(input, process.cwd())
   assert.deepEqual(input, snapshot)
   assert.equal(value.files[0].path, path.resolve('a.txt'))
   assert.equal(Object.hasOwn(value.files[0], 'offset'), false)
   assert.equal(value.files[0].unknown, '')
   assert.equal(value.files[1].offset, 0, 'invalid bounds must reach authoritative validation')
   for (const files of [[], Array.from({ length: 33 }, () => ({ path: 'a' })), [null], [{ path: '' }], [{ path: 'a\0b' }]]) {
-    assert.equal(typeof resolveReadMany({ files }, process.cwd()).error, 'string')
+    assert.equal(typeof resolveReadFiles({ files }, process.cwd()).error, 'string')
   }
 })
 
@@ -47,7 +47,7 @@ await test('one real spawn reads all ranges, refreshes cwd and observes only ret
       const processService = ctx.get('subprocess'), spawn = processService.spawn.bind(processService)
       processService.spawn = spec => { sent.push(JSON.parse(spec.stdio.stdin.data)); return spawn(spec) }
       const exec = execution(first)
-      const value = await invoke(ctx, WORKER, 'read_many', { files: [{ path: 'a.txt', offset: 2 }, { path: 'binary' }, { path: 'b.txt' }] }, exec, exec.signal)
+      const value = await invoke(ctx, WORKER, 'read_files', { files: [{ path: 'a.txt', offset: 2 }, { path: 'binary' }, { path: 'b.txt' }] }, exec, exec.signal)
       assert.equal(sent.length, 1)
       assert.equal(Object.hasOwn(sent[0].request.args, 'path'), false)
       assert.deepEqual(sent[0].request.args.files.map(file => file.path), ['a.txt', 'binary', 'b.txt'].map(file => path.join(first, file)))
@@ -60,7 +60,7 @@ await test('one real spawn reads all ranges, refreshes cwd and observes only ret
       assert.deepEqual(observed.map(item => item.target), [path.join(first, 'a.txt'), path.join(first, 'b.txt')])
       assert.ok(observed.every(item => item.observation.version.startsWith('before:')))
       exec.agent.session.header.cwd = second
-      const next = await invoke(ctx, WORKER, 'read_many', { files: [{ path: 'a.txt' }] }, exec, exec.signal)
+      const next = await invoke(ctx, WORKER, 'read_files', { files: [{ path: 'a.txt' }] }, exec, exec.signal)
       assert.equal(sent.length, 2)
       assert.equal(next.items[0].items[0].text, 'changed cwd')
       assert.equal(sent[1].request.args.files[0].path, path.join(second, 'a.txt'))
@@ -78,12 +78,12 @@ await test('every credential path and invalid descriptor is rejected before spaw
       await ctx.plugin(inner => inner.provide('sandboxPolicy', { resolve: () => ({ mode: race && ++resolves > 1 ? 'read-only' : 'workspace-write', workspaceRoot: root }) }))
       const exec = execution(root)
       for (const [files, code] of [[[{ path: 'safe' }, { path: '.env' }], 'CREDENTIAL_DENIED'], [[{ path: 'safe' }, { path: '' }], 'INVALID_ARGUMENT'], [[], 'INVALID_ARGUMENT']]) {
-        const value = await invoke(ctx, WORKER, 'read_many', { files }, exec, exec.signal)
+        const value = await invoke(ctx, WORKER, 'read_files', { files }, exec, exec.signal)
         assert.equal(value.error.code, code, JSON.stringify(value))
         assert.equal(value.error.effectState, 'none')
       }
       race = true
-      const changed = await invoke(ctx, WORKER, 'read_many', { files: [{ path: 'safe' }] }, exec, exec.signal)
+      const changed = await invoke(ctx, WORKER, 'read_files', { files: [{ path: 'safe' }] }, exec, exec.signal)
       assert.equal(changed.error.code, 'AUTHORITY_CHANGED')
       assert.equal(spawned, 0)
     } finally { await shutdown(ctx) }
@@ -95,8 +95,8 @@ await test('multi-read rendering separates physical lines, file errors and pendi
     { path: '/a', status: 'completed', complete: false, lineCount: 8, nextOffset: 3, items: [{ path: '/a', line: 2, text: 'second' }] },
     { path: '/b', status: 'error', complete: false, error: { code: 'ERR_INVALID_ENCODING', effectState: 'none', nextAction: 'Use view=hex.', message: 'Invalid UTF-8.' } },
   ] }
-  const tool = definition('read_many', async () => value)
-  assert.equal(tool.name, publicToolName('read_many'))
+  const tool = definition('read_files', async () => value)
+  assert.equal(tool.name, publicToolName('read_files'))
   const before = JSON.stringify(value), view = tool.output.render({}, value)[0].text
   assert.match(view, /FILE: \/a \(Lines 2-2 of 8\)/)
   assert.match(view, /2 \| second/)
@@ -105,6 +105,6 @@ await test('multi-read rendering separates physical lines, file errors and pendi
   assert.match(view, /ERR_INVALID_ENCODING/)
   assert.match(view, /nextIndex=2; pending=1/)
   assert.equal(JSON.stringify(value), before)
-  assert.equal(definition('edit_many', async () => value).isConcurrencySafe, undefined)
+  assert.equal(definition('edit_file', async () => value).isConcurrencySafe, undefined)
 })
 report('read-many-host')

@@ -9,8 +9,8 @@ requireWorker('docx-worker')
 const fileAt = (root, bytes, name = 'document.docx') => { const file = path.join(root, name); fs.writeFileSync(file, bytes); return file }
 async function run(root, args, options = {}) {
   const payload = { version: 1, requestId: 'docx-test', component: 'file', budget: { timeoutMs: 30000, maxBytes: options.maxBytes ?? 131072 },
-    ...(options.cache ? { storage: { root: options.cache, authorityId: 'a'.repeat(64), allowedTools: ['doc_read', 'result'] } } : {}),
-    request: { ...request(options.tool ?? 'doc_read', args, { root, readOnly: options.readOnly, writeRoots: [] }), ...options.authority } }
+    ...(options.cache ? { storage: { root: options.cache, authorityId: 'a'.repeat(64), allowedTools: ['read_docx', 'result'] } } : {}),
+    request: { ...request(options.tool ?? 'read_docx', args, { root, readOnly: options.readOnly, writeRoots: [] }), ...options.authority } }
   const raw = await callWorker(JSON.stringify(payload)); assert.ok(Buffer.byteLength(raw.stdout) <= payload.budget.maxBytes)
   return envelopeOf(raw, assert)
 }

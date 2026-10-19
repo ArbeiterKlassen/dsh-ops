@@ -103,7 +103,7 @@ function failure(value: Row): string[] {
   return output
 }
 
-const mutations = new Set(['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove', 'edit_many'])
+const mutations = new Set(['replace', 'write_file', 'edit_file', 'copy', 'move', 'remove'])
 function receiptItems(value: Row): string[] {
   return rows(value.items).map(item => `${label(item.path ?? '(path unavailable)')}: ${facts(item, [
     'removed', 'changed', 'revision', 'revisionBefore', 'revisionAfter', 'bytes', 'bytesBefore', 'bytesAfter',
@@ -168,7 +168,7 @@ export function renderNative(tool: string, args: unknown, result: unknown): stri
   if (isDocumentTool(tool)) lines = renderDocument(tool, input, result)
   else if (record(result.error) || ['error', 'rejected', 'conflict', 'unknown', 'failed'].includes(String(result.status))) lines = failure(result)
   else if (tool === 'result') return capNativeText(renderResult(input, result), NATIVE_OUTPUT_BYTES, 'Repeat the same offset with smaller limit/maxBytes; do not advance past undisplayed rows.')
-  else if (tool === 'read_many') lines = compactRanges(input, result) ?? readMany(result)
+  else if (tool === 'read_files') lines = compactRanges(input, result) ?? readMany(result)
   else if (tool === 'inspect_local_file') lines = inspect(input, result)
   else if (mutations.has(tool)) lines = receipts(tool, result)
   else if (tool === 'stat') lines = stat(input, result)

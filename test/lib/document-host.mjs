@@ -35,7 +35,7 @@ export const documentStep = (ctx, agent) => ctx.waterfall('agent/pre-step', { ag
 export const documentNames = (ctx, agent) => ctx.get('tools').schemas(agent).map(tool => tool.name)
 export const documentCall = (ctx, agent, name, args) => ctx.get('tools').get(publicToolName(name), agent).execute(args, { agent, signal: new AbortController().signal })
 export async function activateDocument(ctx, agent, name, mode = 'native') {
-  const result = await documentCall(ctx, agent, mode === 'native' ? 'discover' : 'sdk', mode === 'native' ? { query: 'select:' + publicToolName(name) } : { tools: [name] })
+  const result = await documentCall(ctx, agent, mode === 'native' ? 'discover_tools' : 'load_sdk', mode === 'native' ? { query: 'select:' + publicToolName(name) } : { tools: [name] })
   if (mode === 'native') assert.deepEqual(result.activated, [publicToolName(name)])
   else assert.equal(result.status, 'completed', JSON.stringify(result))
   assert.equal(documentNames(ctx, agent).includes(publicToolName(name)), false)

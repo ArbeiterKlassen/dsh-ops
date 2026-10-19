@@ -310,7 +310,7 @@ fn paragraphs(text: &str, started: Instant, page: &mut Page<'_>) -> Result<()> {
 pub fn read(request: &Request) -> Result<Value> {
     let args: Args = serde_json::from_value(request.args.clone())?;
     if args.offset == 0 || args.offset > 100_000 || args.limit == 0 || args.limit > 1000 {
-        return Err(Failure::new("INVALID_ARGUMENT", "doc_read offset is 1-100000 paragraphs and limit is 1-1000"));
+        return Err(Failure::new("INVALID_ARGUMENT", "read_docx offset is 1-100000 paragraphs and limit is 1-1000"));
     }
     request.authorize_path(Path::new(&args.path))?;
     let target = ops_files::file_path::checked(&args.path)?;

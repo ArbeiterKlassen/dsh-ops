@@ -20,7 +20,7 @@ export async function bm01(options) {
       const host = await boot({ ...options, root, projection, worker: projection === 'baseline' ? options.baselineWorker : options.worker })
       try {
         const owner = await host.agent(), ranges = files.map(({ path, offset, limit }) => ({ path, offset, limit }))
-        const requests = projection === 'candidate' ? [[raw(publicToolName('read_many'), { files: ranges })]]
+        const requests = projection === 'candidate' ? [[raw(publicToolName('read_files'), { files: ranges })]]
           : ranges.map(({ path, ...range }) => [raw(projection === 'official' ? 'read' : publicToolName('inspect_local_file'), { [projection === 'official' ? 'file_path' : 'path']: path, ...range })])
         const run = await host.run(owner, [...requests, []]); verifyReads(run, files, projection); verifyEmittedReads(run, files, projection)
         rows[projection] = { ...run, logicalLines: files.reduce((n, file) => n + file.expected.length, 0) }
@@ -43,10 +43,10 @@ export async function bm01(options) {
 
 export async function bm02(options) {
   const root = path.join(options.temporary, 'five-edits'); fs.mkdirSync(root)
-  const fixture = fiveEdits(root), host = await boot({ ...options, root, alwaysLoaded: ['edit_many'] })
+  const fixture = fiveEdits(root), host = await boot({ ...options, root, alwaysLoaded: ['edit_file'] })
   try {
     const owner = await host.agent()
-    const applied = await host.run(owner, [[raw(publicToolName('edit_many'), { path: fixture.path, expectedRevision: fixture.revision, edits: fixture.edits })], []])
+    const applied = await host.run(owner, [[raw(publicToolName('edit_file'), { path: fixture.path, expectedRevision: fixture.revision, edits: fixture.edits })], []])
     assert.equal(calls(applied)[0].isError, false); assert.equal(calls(applied)[0].value.status, 'completed')
     assert.equal(fs.readFileSync(fixture.path, 'utf8'), fixture.expected)
     assert.equal(applied.toolBearingRounds, 1)
@@ -55,7 +55,7 @@ export async function bm02(options) {
     const conflicts = []
     for (const suffix of ['\nexternal change', '\n另一个改动']) {
       const changed = fixture.original + suffix; fs.writeFileSync(fixture.path, changed)
-      const run = await host.run(owner, [[raw(publicToolName('edit_many'), { path: fixture.path, expectedRevision: fixture.revision, edits: fixture.edits })], []])
+      const run = await host.run(owner, [[raw(publicToolName('edit_file'), { path: fixture.path, expectedRevision: fixture.revision, edits: fixture.edits })], []])
       const result = calls(run)[0].value
       assert.equal(result.error?.code, 'REVISION_CONFLICT', JSON.stringify(result))
       assert.equal(fs.readFileSync(fixture.path, 'utf8'), changed)
@@ -90,8 +90,8 @@ export async function bm05(options) {
   const host = await boot({ ...options, root, alwaysLoaded: ['write_file'] })
   try {
     const owner = await host.agent()
-    const read = await host.run(owner, [[raw(publicToolName('read_many'), { files: [{ path: publicPath }] })], []])
-    const denied = await host.run(owner, [[raw(publicToolName('read_many'), { files: [{ path: secretPath }] })], []])
+    const read = await host.run(owner, [[raw(publicToolName('read_files'), { files: [{ path: publicPath }] })], []])
+    const denied = await host.run(owner, [[raw(publicToolName('read_files'), { files: [{ path: secretPath }] })], []])
     const write = await host.run(owner, [[raw(publicToolName('write_file'), { path: target, content: 'MUST_NOT_APPEAR', expectedRevision: 'absent' })], []])
     const values = calls(read)[0].value.items, deniedRead = calls(denied)[0].value, deniedWrite = calls(write)[0].value
     const forbidden = [options.temporary, path.dirname(options.temporary), 'BENCHMARK_SECRET_BODY']
