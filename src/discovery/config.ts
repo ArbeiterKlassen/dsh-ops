@@ -1,5 +1,6 @@
 import { ConfigError } from '../config.js'
 import { DISCOVERY_TERMS } from '../capabilities/discovery.js'
+import { migrateRawNames } from '../compat/alias.js'
 
 export type DiscoverableName = keyof typeof DISCOVERY_TERMS
 export interface DiscoveryConfig {
@@ -28,10 +29,11 @@ export function resolveDiscoveryConfig(raw: unknown = {}): DiscoveryConfig {
   const names = (key: string, fallback: readonly DiscoverableName[]): DiscoverableName[] => {
     const list = input[key] === undefined ? fallback : input[key]
     if (!Array.isArray(list)) throw new ConfigError(`${key} must be an array of implemented capability names`)
-    for (const name of list) if (typeof name !== 'string' || !Object.hasOwn(DISCOVERY_TERMS, name)) {
+    const migrated = migrateRawNames(list as string[])
+    for (const name of migrated) if (typeof name !== 'string' || !Object.hasOwn(DISCOVERY_TERMS, name)) {
       throw new ConfigError(`${key} contains an unavailable capability: ${JSON.stringify(name)}`)
     }
-    return [...new Set(list)] as DiscoverableName[]
+    return [...new Set(migrated)] as DiscoverableName[]
   }
   const maxResults = input.maxResults === undefined ? 3 : input.maxResults
   if (typeof maxResults !== 'number' || !Number.isInteger(maxResults) || maxResults < 1 || maxResults > 5) throw new ConfigError('maxResults must be an integer from 1 to 5')

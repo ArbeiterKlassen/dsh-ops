@@ -8,7 +8,7 @@ import { exactJson, observeRead, unchangedContent } from './read-observation.js'
 import { generation, readRecord, requestProof } from './read-evidence.js'
 import type { EvidenceState, ReadRecord } from './read-evidence.js'
 
-const READS = new Set([publicToolName('inspect_local_file'), publicToolName('read_many')])
+const READS = new Set([publicToolName('inspect_local_file'), publicToolName('read_files')])
 const harmless = new Set(CAPABILITIES.filter(entry => !entry.mutates).map(entry => publicToolName(entry.rawName)))
 const MAX_AGENTS = 16, MAX_RECORDS = 32, MAX_BODY_BYTES = 2 * 1024 * 1024
 

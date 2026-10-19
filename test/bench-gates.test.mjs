@@ -103,8 +103,8 @@ await test('human-readable reports retain failed and blocked gates and the limit
 })
 await test('reports distinguish the approved subset score from complete startup cost', () => {
   const text=formatReport({platform:'win32',arch:'x64',hostVersion:'0.2.0-rc.2',node:'v24',passed:true,fullAcceptance:false,gates:[{
-    id:'BM-03',status:'passed',names:['bash','discover','read'],measurement:{tokens:660,bytes:3219},
-    gatedNames:['discover','read'],gatedMeasurement:{tokens:241,bytes:1094},wholeStartupMessages:{tokens:786,bytes:3293}
+    id:'BM-03',status:'passed',names:['bash','discover_tools','read'],measurement:{tokens:660,bytes:3219},
+    gatedNames:['discover_tools','read'],gatedMeasurement:{tokens:241,bytes:1094},wholeStartupMessages:{tokens:786,bytes:3293}
   }]})
   assert.ok(text.includes('gated file/discovery schema 241 tokens / 1094 bytes'))
   assert.ok(text.includes('full default schema 660 tokens / 3219 bytes'))

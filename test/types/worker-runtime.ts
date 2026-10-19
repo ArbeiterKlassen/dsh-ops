@@ -4,7 +4,7 @@ import { NativeFileTools } from '../../src/file/runtime.js'
 import { resolveWorker, tryResolveWorker } from '../../src/ptc/runtime.js'
 declare const ctx: Context
 const runtime = new NativeFileTools({ ctx, config: { workerPath: '/worker', toolCallTimeoutMs: 30000 } })
-void runtime.definition('table_read')
+void runtime.definition('read_table')
 void runtime.definition('result')
 // @ts-expect-error Native definitions cannot expose batch-only APIs.
 void runtime.definition('batch')

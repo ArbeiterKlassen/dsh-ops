@@ -5,7 +5,7 @@ import { verifyEmittedReads } from '../bench/gates/metrics.mjs'
 import { NATIVE_RESIDENT_FILE_TOOLS } from '../lib/capabilities/registry.js'
 import { publicToolName } from '../lib/policy.js'
 import { assert, report, test } from './lib/harness.mjs'
-const core = [...NATIVE_RESIDENT_FILE_TOOLS, 'discover'].map(raw => ({name:publicToolName(raw)}))
+const core = [...NATIVE_RESIDENT_FILE_TOOLS, 'discover_tools'].map(raw => ({name:publicToolName(raw)}))
 await test('startup needs the exact default Native surface before any token score can pass', () => {
   for(const platform of ['linux','darwin']) {
     assert.equal(startupReadiness(core,platform).ready,true)
