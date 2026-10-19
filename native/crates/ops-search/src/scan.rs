@@ -148,7 +148,7 @@ mod tests {
         assert_eq!(paths.len(), 2); assert_eq!(scan.scanned, 2);
         assert!(!scan.complete()); assert_eq!(scan.stopped, Some(TruncatedBy::ScanBudget));
         let report = super::super::paging::finish(scan, super::super::paging::Cursor::new(&request, 0, None).unwrap(),
-            super::super::paging::Page::new(0, 1), paths.len(), paths.len(), json!({})).unwrap();
+            super::super::paging::Page::new(0, 1, None), paths.len(), paths.len(), json!({})).unwrap();
         assert_eq!(report["scanComplete"], false); assert!(report.get("matchedTotal").is_none());
         assert_eq!(report["truncatedBy"], "scan-budget"); assert!(report.get("continuation").is_none());
         assert!(report["nextAction"].as_str().unwrap().contains("Narrow"));

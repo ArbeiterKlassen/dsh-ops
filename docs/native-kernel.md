@@ -31,20 +31,22 @@ The benchmark preflight checks all workspace inputs while ignoring Cargo target 
 New bridges send `{ version: 1, requestId, component, budget, request }`. `request` retains the
 strict existing capability and host authority fields; `component` is `file` or `ptc` and never
 grants authority. The bridge generates a fresh UUID, supplies the authoritative session/root and
-policy, then rechecks authority immediately before spawning as before. Success JSON is unchanged.
+policy, then rechecks authority immediately before spawning as before. Ordinary success fields
+retain their semantics; optional reference fields are described below.
 
 `budget.timeoutMs` is 1..2147483647 milliseconds, using the existing 300000ms default and existing
 host cancellation. A process-local watchdog also enforces it for direct callers; interruption exits
 124 and bridges report unknown effects. `budget.maxBytes` is 1024..131072, defaults to 131072, and
 counts serialized JSON plus its newline. The minimum leaves room for a structured error. Oversized
-read output returns `OUTPUT_LIMIT` with no effects; a lost mutation receipt reports unknown effects
+read output without trusted storage returns `OUTPUT_LIMIT` with no effects; a lost mutation
+receipt reports unknown effects
 unless an existing failure already carries a more precise effect state. No automatic retry follows.
 
 The complete request remains capped at 2 MiB. Explicit legacy unversioned requests remain accepted
 for 0.3.x benchmark comparisons, with the same authority checks and bounded default transport budget.
 Any envelope marker selects strict v1 decoding: partial envelopes, unknown fields, invalid IDs,
 unsupported components/versions and unusable budgets are rejected before filesystem effects.
-Request IDs do not change result hashes. Scan and automatic output-spill integration are separate work.
+Request IDs do not change result hashes. Automatic output spill is described below.
 
 ## Session snapshot references (6a/16)
 
@@ -54,7 +56,8 @@ existing absolute cache root, a 64-character lowercase SHA-256 authority identit
 canonical producer-tool allowlist. Its authority identity must bind the live session nonce and
 current policy/credential boundaries; knowing a reference never grants authority. Each access also
 rechecks scope, selected canonical root and directory identity, producer and current credential
-fences. The cache root remains independent of operation-root selections.
+fences. The trusted cache root is a cache-only grant independent of operation-root selections and business
+write_roots. It is never added to the business mutation allowlist.
 
 With this context, result put returns `ref://<encoded-session>/<tool>/<uuid>` and `reference`
 metadata: refId, createdAt (epoch milliseconds), ttlMs, schemaVersion, producerTool, totalItems,
@@ -87,5 +90,40 @@ accepts no other arguments. It removes only validated snapshot/stage names for t
 the lock inode, directories and unknown/audit names. It returns `removed`, `retained`, `complete`
 and `effectState`; partial cleanup failures identify prior effects. Readonly purge is refused.
 The host must first invalidate references logically and await active calls; a denied or interrupted
-purge is deferred cleanup, never a reason to rerun business operations. This worker slice does not
-yet attach host lifecycle hooks or spill ordinary tool output automatically.
+purge is deferred cleanup, never a reason to rerun business operations. Host lifecycle hooks are
+attached by the host integration slice.
+
+## Automatic bounded output spill (6b/16)
+
+With trusted storage, ordinary file/search/batch output that exceeds the serialized inline budget
+keeps a bounded head and adds `reference` and `referenceRoot` (the canonical operation root).
+Pass that original root when paging after cwd changes. Display `complete` is false; original
+status, mutation counts/effects and scan coverage remain intact. Small outputs create no cache.
+The worker captures the requested range/page, never silently broadens a query to the whole tree.
+
+Reference pages include `source`: the original non-item execution facts, `root`,
+`itemEncoding: "tagged-json-v1"`, `capturedItems` (logical items) and `captureComplete`.
+Original scanComplete/matchedTotal, revision/range facts and continuation semantics remain there.
+`page.complete` means that stored records have been displayed; it proves neither a complete scan
+nor complete capture. For read_many, one logical item is the whole per-file receipt, including its
+lines, revision, bounds and any failure. Per-file failures remain values.
+
+Small records are `{ kind: "item", index, value }`. Large items become bounded
+`{ kind: "item-json-chunk", index, chunk, byteOffset, text, complete }` records. `index` and
+`chunk` start at zero; byteOffset counts UTF-8 bytes of the serialized logical JSON. Concatenate
+text in chunk order and JSON.parse only after the final complete=true chunk. Verify contiguous
+indices/offsets and final markers. StorageReference.totalItems counts physical records, while
+source.capturedItems counts reconstructed logical items. Chunking occurs before display clipping,
+so an inspected line's Unicode/control characters and suffix remain recoverable.
+
+Capture is bounded below the 10 MiB physical snapshot quota. If one logical item cannot fit, all
+of its chunks are discarded and only preceding whole items are stored; source.captureComplete is
+false and storageError reports QUOTA_EXCEEDED. Narrow the query for the missing range. Capture
+completion is independent of original scan completion. Reference pages never spill another handle.
+
+A cache failure adds bounded `storageError: { code, message, effectState }`; its effectState refers
+only to cache effects, separately from business status/changed/effectState. Readonly observation
+cannot create a reference. Cache refusal retains an incomplete bounded head with range/hex recovery;
+completed mutations must not be repeated. Reference metadata is budget-checked before publication,
+so an unusably small head budget does not create an unreachable blob. Calls without trusted storage
+retain the legacy transport contract; the host supplies recovery guidance when storage is unavailable.

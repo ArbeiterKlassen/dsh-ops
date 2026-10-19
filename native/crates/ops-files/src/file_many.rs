@@ -30,23 +30,47 @@ pub(super) fn read_many(request: &Request) -> Result<Value> {
     let mut failed = 0;
     let mut complete = true;
     let mut truncated = false;
+    let sink = request.output_sink.as_deref();
+    let (mut observed_count, mut source_failed, mut source_complete) = (0, 0, true);
+    let mut inline_closed = false;
     for file in args.files {
-        // Stop before touching another file when no meaningful receipt can fit.
-        if room < 1024 { break; }
+        // Once inline output fills, only a bounded capture may observe further files.
+        if sink.is_some_and(|sink| sink.exhausted()) { break; }
+        if room < 1024 { if sink.is_none() { break; } inline_closed = true; }
         let observed = request.authorize_path(Path::new(&file.path)).and_then(|()| {
-            inspect_args(InspectArgs { path: file.path.clone(), offset: file.offset, limit: file.limit, encoding: utf8(), view: text() }, room.saturating_sub(1), true)
+            inspect_args(InspectArgs { path: file.path.clone(), offset: file.offset, limit: file.limit, encoding: utf8(), view: text() }, room.saturating_sub(1), true, sink.map(|sink| (sink, true)))
         });
         let item = match observed {
             Ok(item) => item,
-            Err(error) => json!({"path":file.path,"status":"error","complete":false,"items":[],"error":error}),
+            Err(error) => {
+                let item = json!({"path":file.path,"status":"error","complete":false,"items":[],"error":error});
+                if let Some(sink) = sink { sink.push(&item); sink.source(item.clone()); }
+                item
+            },
         };
+        observed_count += 1;
+        let facts = sink.map_or_else(|| item.clone(), |sink| sink.last_source());
+        source_failed += usize::from(facts.get("error").is_some()); source_complete &= facts["complete"] == true;
         let size = output::size(&item) + 1;
-        if size > room { break; } // this input remains pending; never discard a receipt silently
+        if inline_closed || size > room {
+            if let Some(sink) = sink { sink.clipped(); inline_closed = true; continue; }
+            break;
+        }
         room -= size;
         if item.get("error").is_some() { failed += 1; }
         complete &= item["complete"] == true;
         truncated |= item["truncated"] == true;
         items.push(item);
+    }
+    if let Some(sink) = sink {
+        let full = source_complete && observed_count == total;
+        let mut source = value.clone();
+        source["status"] = json!(if full { "completed" } else { "partial" });
+        source["complete"] = json!(full); source["truncated"] = json!(!full);
+        source["matched"] = json!(observed_count - source_failed); source["failed"] = json!(source_failed);
+        source["nextIndex"] = json!(observed_count); source["pending"] = json!(total - observed_count);
+        if full { source.as_object_mut().unwrap().remove("nextAction"); }
+        sink.source(source);
     }
     let returned = items.len();
     complete &= returned == total;

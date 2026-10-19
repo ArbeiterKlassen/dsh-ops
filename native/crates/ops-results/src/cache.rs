@@ -23,12 +23,8 @@ impl Cache {
         request.authorize_path(std::path::Path::new(&context.root))?;
         let checked = file_path::checked(&context.root)?;
         let root = checked.parent.open_dir_nofollow(&checked.name)?;
-        if !request.read_only && let Some(roots) = &request.write_roots {
-            let actual = std::fs::canonicalize(&context.root)?;
-            if !roots.iter().any(|root| std::fs::canonicalize(root).is_ok_and(|root| actual.starts_with(root))) {
-                return Err(Failure::policy("write-roots", "Cache root is outside authorized write roots"));
-            }
-        }
+        // Trusted storage.root grants cache-only access independently of business write roots.
+        // Never widen request.write_roots: business publication still checks its own authority.
         let name = format!("s-{:x}", Sha256::digest(request.scope.as_bytes()));
         let dir = cache_io::directory(&root, &name, create && !request.read_only, context.windows_write_sid.as_deref())?;
         let lock = if create { cache_io::lock_file(&dir, !request.read_only, context.windows_write_sid.as_deref())? } else { cache_io::open_file(&dir, "lock", !request.read_only, context.windows_write_sid.as_deref())? }.into_std();

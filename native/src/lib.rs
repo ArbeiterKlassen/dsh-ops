@@ -22,21 +22,27 @@ pub fn dispatch(request: Request) -> Result<Value> {
             .into(),
         ..request
     };
+    let dir = Dir::open_ambient_dir(&root, ambient_authority())?;
+    use cap_fs_ext::MetadataExt;
+    let metadata = dir.dir_metadata()?;
+    request.root_identity = format!("{}:{}", metadata.dev(), metadata.ino());
+    if request.tool != "result" && request.storage.is_some() && !request.read_only {
+        request.output_sink = Some(std::rc::Rc::new(contract::capture::OutputSink::default()));
+    }
+    let value = execute(&dir, &request)?;
+    Ok(ops_results::spill::finish(&request, value))
+}
+fn execute(dir: &Dir, request: &Request) -> Result<Value> {
     // File reads/searches do not create or consult the durable audit store.
     // This is important for read-only sessions and keeps observation separate
     // from mutation audit records.
     if matches!(request.tool.as_str(), "inspect_local_file" | "read_many" | "glob" | "grep" | "replace" | "write_file" | "edit_file" | "edit_many" | "diff" | "stat" | "copy" | "move" | "remove") {
-        request.root_identity = String::new();
         return if matches!(request.tool.as_str(), "glob" | "grep" | "replace") {
             ops_search::dispatch(&request)
         } else {
             ops_files::dispatch(&request)
         };
     }
-    let dir = Dir::open_ambient_dir(root, ambient_authority())?;
-    use cap_fs_ext::MetadataExt;
-    let metadata = dir.dir_metadata()?;
-    request.root_identity = format!("{}:{}", metadata.dev(), metadata.ino());
     if request.tool == "result" && ((request.storage.is_some() && request.args.get("action").and_then(Value::as_str) == Some("put"))
         || request.args.get("action").and_then(Value::as_str) == Some("purge")
         || request.args.get("id").and_then(Value::as_str).is_some_and(|id| id.starts_with("ref://"))) {

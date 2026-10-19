@@ -43,7 +43,7 @@ pub fn glob(request: &Request) -> Result<Value> {
         files.push((file.to_path_buf(), modified, metadata.len())); Ok(())
     })?;
     if args.sort == "modified" { files.sort_by_key(|(_, modified, _)| std::cmp::Reverse(*modified)); }
-    let total = files.len(); let mut page = Page::new(cursor.offset, args.limit);
+    let total = files.len(); let mut page = Page::new(cursor.offset, args.limit, request.output_sink.clone());
     for (ordinal, (file, modified, bytes)) in files.into_iter().enumerate() {
         if page.wants(ordinal) { page.push(if args.output_mode == "details" { json!({"path":file,"bytes":bytes,"modified":modified}) } else { json!(file) }, ordinal)?; }
     }
@@ -72,7 +72,7 @@ pub fn grep(request: &Request) -> Result<Value> {
     let regex = RegexBuilder::new(&args.pattern).case_insensitive(args.case_insensitive).multi_line(args.multiline).build().map_err(|error| Failure::new("INVALID_ARGUMENT", error))?;
     let root = target(&args.path, false)?;
     let cursor = Cursor::new(request, args.offset, args.continuation.as_deref())?;
-    let mut scan = Scan::new(); let mut page = Page::new(cursor.offset, args.limit);
+    let mut scan = Scan::new(); let mut page = Page::new(cursor.offset, args.limit, request.output_sink.clone());
     let mut file_count = 0; let mut match_count = 0;
     let content = matches!(args.output_mode.as_str(), "" | "content");
     scan.walk(&root, &args.glob, request, |file, _, scan| {

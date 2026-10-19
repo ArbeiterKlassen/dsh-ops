@@ -7,6 +7,17 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Spill oversized canonical output into bounded session snapshots (#261, 6b/16)
+
+- Preserve a useful head and original operation root, execution facts and mutation effects while
+  storing requested file/search rows as bounded, losslessly reconstructable tagged JSON records.
+- Keep original scan coverage separate from stored-page and capture completeness; quota rollback
+  never leaves partial logical JSON. Cache errors remain separate from business effects.
+- Authorize trusted cache roots independently of business write roots, preserving no-follow,
+  credential and readonly boundaries; reference pages never create nested references.
+- 大结果保留有界开头与原始根目录，并以可无损重建的分块引用缓存请求范围；区分扫描、捕获和
+  分页完整性，缓存失败不覆盖业务副作用，缓存专用授权不扩大业务写入范围。
+
 ### Add private session snapshot references (#261, 6a/16)
 
 - Add trusted-envelope `ref://session/tool/uuid` storage with 10 MiB snapshot and 100 MiB session
