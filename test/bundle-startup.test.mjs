@@ -33,7 +33,9 @@ for (const mode of ['read-only', 'workspace-write', 'danger-full-access']) {
         for (const row of rows.filter(row => !row.disabled)) {
           const component = row.name.split('/')[1]
           const module = await import(`../lib/components/${component}/index.js`)
-          await ctx.plugin(module, row.config)
+          const config = component === 'shell' && process.env.DSH_OPS_TEST_BASH
+            ? { ...row.config, bashPath: process.env.DSH_OPS_TEST_BASH } : row.config
+          await ctx.plugin(module, config)
         }
         for (const presentation of ['native', 'ptc', 'both']) {
           const agent = { id: `${mode}-${presentation}`, session: { id: `${mode}-${presentation}`, mode, header: { cwd: root } } }
@@ -63,4 +65,28 @@ for (const mode of ['read-only', 'workspace-write', 'danger-full-access']) {
     })
   })
 }
+await test('a missing optional Bash leaves the file bundle available', async () => {
+  await withTempDir('bundle-no-bash', async root => {
+    const { ctx } = await bootHost()
+    try {
+      await ctx.plugin(Subprocess)
+      await ctx.plugin(Sandbox, {})
+      await ctx.plugin(inner => inner.provide('sandboxPolicy', { resolve: ({ session }) => ({ mode: session.mode, workspaceRoot: root, sessionId: session.id }) }))
+      for (const row of rows.filter(row => !row.disabled)) {
+        const component = row.name.split('/')[1]
+        const module = await import('../lib/components/' + component + '/index.js')
+        await ctx.plugin(module, component === 'shell' ? { ...row.config, bashPath: path.join(root, 'absent-bash.exe') } : row.config)
+      }
+      const agent = { id: 'no-bash', session: { id: 'no-bash', mode: 'workspace-write', header: { cwd: root } } }
+      agent.ctx = createScope(ctx, agent).ctx
+      await ctx.serial('agent/created', { agent, source: 'startup' })
+      const names = () => ctx.get('tools').schemas(agent).map(tool => tool.name)
+      await waitFor(() => names().includes('ops_read_many'), { what: 'file publication without optional Bash' })
+      assert.equal(names().includes('ops_bash'), false)
+      const result = await ctx.get('tools').get('ops_read_many', agent).execute({ files: [{ path: path.join(root, 'absent') }] }, { agent, signal: new AbortController().signal })
+      assert.equal(result.items[0].status, 'error', JSON.stringify(result))
+      assert.equal(result.items[0].error.code, 'NOT_FOUND')
+    } finally { await shutdown(ctx) }
+  })
+})
 report('bundle-startup')

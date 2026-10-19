@@ -2,8 +2,8 @@
  * Publishing the tools that run on the plugin's own shells, and the remedies a
  * spawn failure deserves.
  *
- * Contract: {@link publishShellTools} is called inside one `ctx.effect` during
- * mount and returns the disposer for whatever tool registrations it made
+ * Legacy helper for direct callers; component mounts use mountSessionBash and
+ * its scoped host-compatible definition instead. It returns the disposer for registrations
  * (today: the `ops_bash` tool backed by the plugin's own bash). Returning a
  * no-op disposer is valid.
  *

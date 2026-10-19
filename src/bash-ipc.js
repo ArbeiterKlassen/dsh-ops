@@ -25,7 +25,7 @@ export function restrictedRemedy(file, source, why) {
     +'By design, restricted modes run only the pinned MSYS whose DSH IPC compatibility proxies were verified; this is not a user authorization denial. '
     +'A custom bashPath or system Git for Windows works only in danger-full-access. '
     +'Next steps: remove bashPath (and allowSystemShellFallback) so the bundled or provisioned pinned bash is used (`dsh-ops provision-shells --bash` if it is missing), '
-    +'or ask the user to switch the session to danger-full-access. ops_bash has no per-call sandbox_permissions escalation; do not bypass confinement.'
+    +'or ask the user to switch the session to danger-full-access. Approvals never repair an incompatible confined runtime; do not bypass confinement.'
 }
 /** Whether restricted modes can run this bash, without copying or building anything. */
 export function restrictedCompatibility(file, {platform=process.platform}={}) {
@@ -121,6 +121,8 @@ function sourceState(root, dll){
   sourceMemo.set(root,state)
   return state
 }
+/** @param {string} file
+ * @param {{home?: string, platform?: NodeJS.Platform, source?: string}} options */
 export function confinedBash(file, {home=process.env.DSH_HOME ?? path.join(os.homedir(),'.dsh'), platform=process.platform, source}={}) {
   if(platform!=='win32')return {file}
   const root=msysRoot(file)

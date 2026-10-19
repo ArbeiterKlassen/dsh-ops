@@ -94,7 +94,7 @@ export function profileCommand(operation, { profile, dshCli, dryRun = false }) {
   if (result.error) throw result.error
   if (result.status !== 0) return result.status ?? 1
   console.log(operation === 'install'
-    ? 'Installed through the official profile manager. Reload/restart the target application if needed. Binaries are profile dependencies; no postinstall downloads.'
+    ? 'Installed through the official profile manager. Reload/restart the target application if needed. Bash is an explicit optional download: dsh-ops bash-runtime install. No postinstall downloads.'
     : 'Removed through the official profile manager, including its runtime dependency references. Package-manager shared caches are not deleted.')
   return 0
 }

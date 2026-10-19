@@ -88,7 +88,7 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
   if (hasFiles) lines.push('- Follow error.nextAction; authorization denials require the user to change mode, not retries. After applied/unknown effects inspect postconditions; do not switch to a shell workaround.')
   if (names.has(BASH_TOOL)) lines.push('- Prefer bash for command execution. Use PowerShell only when Windows-native functionality is necessary; fix bash errors in bash, do not switch shells or mix their syntax.',
     '- Use command only for short commands and pipelines. For scripts longer than about 1 KB or containing heredocs, quotes, backslashes or non-ASCII text, write the script to a file first and pass script_path.',
-    '- ops_bash resolves with `status` (completed/failed), `exitCode`, stdout/stderr, `error` and `permission`; it throws only for invalid arguments or an unavailable executor.')
+    '- ops_bash requires description and returns kind foreground, background or promoted. Foreground has status (completed/failed), exitCode, stdout/stderr and error; background/promoted has jobId for host job_output/job_kill. Failures, including invalid arguments, return values with failure.code, failure.effectState and failure.retry; inspect unknown effects before repeating.')
   if (extraGuidance.trim()) lines.push('', extraGuidance.trim())
   return lines.join('\n')
 }

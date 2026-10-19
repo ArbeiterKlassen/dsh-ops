@@ -28,7 +28,7 @@
 - 提供一组更高级的tools常驻工具，由rust编写。这些tools工具相对于原版，输入和输出token都更少，运行速度更快，且覆盖面更广，给ai造成的心智负担更低，同时附带简短的哈希校验、行数位置等消息以减少
 - 已在[路线图](docs/roadmap.md)中规划：以渐进式披露的形式补上 doc/pdf 操作、网页搜索、html 转 markdown 类 crawl4ai 工具等日常常用的 tools 工具，让 ai 不必重新编写代码或脚本来实现自己的目标。**当前版本尚未提供这些工具。**
 - 提供关闭原版tools以最大化节省ai心智负担和系统固定提示词的可选项
-- 在windows平台下额外提供tools：ops_bash的支持——ai使用bash远比ai使用pwsh更流畅。可选择使用ops自带的独立 **bash 5.3.15** ，也可以将ops_bash工具指定为git bash
+- 在windows平台下额外提供tools：ops_bash的支持——ai使用bash远比ai使用pwsh更流畅。可运行 `dsh-ops bash-runtime install` 单独下载经过校验的 Bash，或通过 `bashPath` 选择已有 Git Bash；Bash 不再作为 npm 依赖安装
 
 插件特点：
 
@@ -89,7 +89,7 @@ npx --yes dsh-ops@latest status --profile desktop
 npx --yes dsh-ops@latest uninstall --profile desktop
 ```
 
-把 `desktop` 换成 `web` 或 `tui` 即可。也可在市场卸载，或执行官方 `dsh plugin --profile ... remove dsh-ops`。二进制随 profile 的插件依赖管理；卸载移除依赖引用，不误删系统 shell、其它 profile 的副本或包管理器共享缓存。
+把 `desktop` 换成 `web` 或 `tui` 即可。也可在市场卸载，或执行官方 `dsh plugin --profile ... remove dsh-ops`。插件依赖随 profile 管理；单独下载的 Bash 用 `dsh-ops bash-runtime remove --yes` 移除，不误删系统 shell、其它 profile 的副本或包管理器共享缓存。
 
 旧版显式 provision 的 `<DSH_HOME>/dsh-ops/` 文件（provision 的 shell，以及早期版本可 provision 的 FastCtx 运行时）需单独清理：`npx --yes dsh-ops@latest uninstall --yes`。已移除的后台组件留下的 `~/.fastctx/` 状态默认不删；需要时显式加 `--purge-fastctx`。
 

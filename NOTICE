@@ -32,12 +32,12 @@ attached to the GitHub Release for a tag. They are optional in the
 dependency sense, and neither of them is a payload at all: no upstream
 binary travels in this distribution.
 
-  * `@dsh-ops/bash-<platform>-<arch>` — a PIN, not a redistribution.
+  * Bash is an explicit optional download, not an npm dependency or a release payload.
     This distribution does not contain, forward, repackage, or
     redistribute Git for Windows. The pin records the upstream release
     the shell is taken from (`PortableGit-2.56.0.2-64-bit.7z.exe`, Git
     for Windows `v2.56.0.windows.2`), the official URL that publishes it,
-    and its SHA-256; `dsh-ops provision-shells` reads the pin, downloads
+    and its SHA-256; `dsh-ops bash-runtime install` reads the pin, downloads
     that asset on the user's own machine, verifies the digest there, and
     unpacks it there. Git for Windows is distributed under the GNU
     General Public License version 2, so the bytes a user obtains that
@@ -94,3 +94,9 @@ tarballs of earlier versions.
 
 FastCtx is developed and maintained at
 https://github.com/yc-duan/fastctx
+
+
+DeepSeek Harness shell contract, approval and job adapters are adapted from
+@deepseek-ai/dsh-tool-bash 0.2.0-rc.2 (MIT), Copyright (c) 2026 DeepSeek.
+Upstream: https://github.com/deepseek-ai/deepseek-harness
+License: licenses/deepseek-harness/LICENSE

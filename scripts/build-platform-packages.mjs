@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
- * Build and verify the two platform packages this plugin publishes.
+ * Build and verify the remaining PowerShell platform package. Bash is acquired separately.
  *
- * Both packages carry ready-to-run Windows payloads: bash and pwsh are complete,
- * digest-verified upstream runtime trees with their licenses preserved. Both are
- * injected as exact optional deps. Downloads happen during release assembly,
+ * The PowerShell package carries the complete, digest-verified Windows runtime
+ * with its licenses preserved. It is injected as an exact optional dependency. Downloads happen during release assembly,
  * never in an install lifecycle hook.
  *
  * `--verify-upstream` keeps the packages honest: it downloads the pinned assets,
@@ -22,13 +21,13 @@
  *
  * PIPELINE. Each step is re-runnable on its own:
  *
- *   assemble      the two package directories, from the committed skeletons
+ *   assemble      the package directory, from the committed skeletons
  *                 in `packages/<kind>-<platform>-<arch>/` plus the verified
  *                 upstream tree and a per-package `provenance.json`
  *   pack          `npm pack` each directory, then write `SHA256SUMS` and the
  *                 release-wide `provenance.json`
  *   publish-dir   copy the main package into a temporary publish directory,
- *                 inject both platform payload packages and pack it
+ *                 inject the remaining platform payload and pack it
  *   check         verify every artifact without downloading or building
  *   fetch         download the pinned upstream assets and keep them
  *   verify-upstream  download them, verify the digests, delete them again
@@ -65,8 +64,8 @@ import { printArtifactTable, stepPack } from './lib/build/pack.js'
 import { stepPublishDir } from './lib/build/publish-dir.js'
 import { REPO_ROOT, log } from './lib/build/util.js'
 
-/** The two packages one release publishes, in publish order. */
-const KINDS = Object.freeze(['bash', 'pwsh'])
+/** The packages this release publishes, in publish order. */
+const KINDS = Object.freeze(['pwsh'])
 
 // ---------------------------------------------------------------------------
 // Step: fetch and verify-upstream

@@ -7,6 +7,38 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Return host-compatible Bash argument failures as values with stable retry/effect metadata; interrupted or failed running commands require read-only inspection before replay. Bash 参数失败返回结构化值；运行后的未知副作用禁止自动重试。
+
+- Cancel queued job starters when host admission fails after accepting the run hook; never retry that call in the foreground. 宿主接受任务启动回调后若准入失败，取消排队启动且不转为前台重试。
+
+### Type the shell execution and host boundary (#261)
+
+- Migrate the new shell executor, host contract, approvals, jobs and session integration to strict
+  TypeScript. Validate the published definition against the pinned SDK with type-only imports;
+  retain existing emitted paths and explicit types for the remaining JavaScript adapters.
+
+### Make Windows Bash an explicit optional runtime (#261)
+
+- Add Bash status/install/remove and Git/managed selection commands. Removal previews by default,
+  removes only receipt-marked managed versions, and refuses linked managed directories.
+- Remove the automatic Bash npm payload dependency and release payload assembly. Build, CI and
+  release gates explicitly acquire a pinned fixture, or validate an operator-provided offline one.
+
+### Reuse host Bash approvals and background jobs (#261)
+
+- Require command descriptions and return host foreground/background/promoted result kinds, with
+  120-second defaults and 600-second caps. Reuse host jobs for background work and foreground
+  timeout promotion, host per-call approvals for wider access, and host subprocess governance.
+- Recheck session authority after approval and confinement; retain absolute executable selection,
+  verified Windows IPC compatibility, honest partial enforcement and fail-closed runtime errors.
+- Keep script_path, graceMs and includeDiagnostics as documented OPS compatibility extensions.
+
+### Preserve Bash cancellation through pending confinement preparation (#261)
+
+- Bash execution exposes one live handle for observation and settlement. Cancellation settles
+  pending sandbox preparation immediately, and a late provider response cannot start a command.
+  The first timeout or caller cancellation remains the reported stop cause.
+
 ### Deduplicate Native reads with current-context evidence (#261, 10/16)
 
 - Replace repeated line bodies only when the exact successful prior read is present in the latest completed ordinary model request and every file is freshly revalidated. Keep revisions, coverage, paging notices and canonical values. Compaction, redaction, authority changes and uncertain evidence restore full output.
