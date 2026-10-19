@@ -45,6 +45,7 @@ Sync master with main | active
    - **`npm run verify:release`**（`validate-manifest` + 全部仓库测试 + `bin/check-release.mjs`）是硬门禁：三目标缺一、receipt 与字节哈希不符、Windows IPC 二进制/源码哈希不符、`dsh-plugin.json` 与 runtime 白名单不一致，任一都失败。
    - 之后才 `build-platform-packages.mjs --dist`（组装主包与固定的 Windows bash 载荷包并打 tarball，写 `provenance.json` 与 `SHA256SUMS`），再 `... check --dist`（只重读已记录的摘要，不下载不构建）。
    - dist 目录以 `release-dist` 上传，`if-no-files-found: error`。
+   - 同号载荷包的权威字节在 npm registry：Release 里附带的 `dsh-ops-bash-win32-x64-<pin>.tgz` 是本次构建记录（`provenance.json` 带 `builtAt`/`builtFromCommit`），与 registry 上同版本 tarball 不会字节相同；离线校验以 registry 的 `integrity` 为准。
    - 组装当前仍在 Windows gate 执行；`build-platform-packages.mjs` 产出主包与固定的 Windows bash 载荷包（PowerShell 不在其中）。Windows 构建和测试必须使用 `npm ci` 安装的 bash 载荷；缺失即失败（只有显式设置 `DSH_OPS_TEST_BASH` 的离线场景允许替代），并在 CI 中有独立断言。
 3. **`publish`（`ubuntu-24.04`，`needs: gate`，仅 tag）**
    - 唯一持有 `contents: write` 的 job；不用任何 secret，只用 Actions 自带 `github.token`。
