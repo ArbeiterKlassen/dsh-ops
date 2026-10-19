@@ -1,5 +1,5 @@
 /** One catalogue for owned tools. This module never registers tools or imports host values. */
-import { PARAMETERS as fileParameters, DESCRIPTIONS as fileDescriptions, OUTPUT as fileOutput } from './file.js'
+import { PARAMETERS as fileParameters, DESCRIPTIONS as fileDescriptions, OUTPUT as fileOutput, SEARCH_OUTPUT as searchOutput } from './file.js'
 import { PARAMETERS as ptcParameters, DESCRIPTIONS as ptcDescriptions, OUTPUT as ptcOutput } from './ptc.js'
 import type { CapabilityMetadata, Component, SchemaCapability } from './types.js'
 
@@ -14,7 +14,7 @@ export const FILE_CAPABILITIES = Object.freeze(fileOrder.map(rawName => Object.f
   rawName, component: 'file' as const, presentations: allPresentations,
   availability: 'resident' as const, mutates: fileMutations.has(rawName),
   concurrencySafe: !fileMutations.has(rawName),
-  parameters: fileParameters[rawName], description: fileDescriptions[rawName], output: fileOutput,
+  parameters: fileParameters[rawName], description: fileDescriptions[rawName], output: rawName === 'glob' || rawName === 'grep' ? searchOutput : fileOutput,
 } satisfies SchemaCapability)))
 export const PTC_CAPABILITIES = Object.freeze((Object.keys(ptcParameters) as PtcToolName[]).map(rawName => Object.freeze({
   rawName, component: 'ptc' as const, presentations: Object.freeze(['ptc'] as const),

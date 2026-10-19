@@ -15,23 +15,16 @@ path = "src/main.rs"
 [dependencies]
 cap-std = "3.4"
 cap-fs-ext = "3.4"
-fs2 = "0.4.3"
-serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-regex = "1.12"
-rustix = { version = "1.1", features = ["fs", "process"] }
-sha2 = "0.10.9"
-uuid = { version = "1.26", features = ["v4"] }
+ops-protocol = { path = "crates/ops-protocol" }
+ops-files = { path = "crates/ops-files" }
+ops-search = { path = "crates/ops-search" }
+ops-results = { path = "crates/ops-results" }
+ops-batch = { path = "crates/ops-batch" }
 
 [lints.rust]
 unsafe_code = "forbid"
 
-[target.'cfg(windows)'.dependencies.dsh-ops-windows-metadata]
-path = "windows-metadata"
-
-[target.'cfg(target_os = "macos")'.dependencies.dsh-ops-darwin-metadata]
-path = "darwin-metadata"
-
 [workspace]
-members = ["windows-metadata", "darwin-metadata"]
+members = ["windows-metadata", "darwin-metadata", "crates/*"]
 resolver = "3"

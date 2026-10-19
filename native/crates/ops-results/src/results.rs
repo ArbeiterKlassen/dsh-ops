@@ -1,6 +1,5 @@
 //! One bounded result-reference protocol; no second REPL or query language.
 use crate::{
-    batch,
     contract::*,
     store::{Store, now},
 };
@@ -92,7 +91,7 @@ pub fn run(store: &Store, request: &Request) -> Result<Value> {
             Store::validate_id(id)?;
             let (items, expires) = if id.starts_with("j-") {
                 let job: Job = store.read(id)?;
-                batch::authorize(&job, request)?;
+                job.authorize(request)?;
                 if args.action == "release" {
                     return Err(Failure::new("INVALID_ARGUMENT", "Job audits are read-only and cannot be released"));
                 }

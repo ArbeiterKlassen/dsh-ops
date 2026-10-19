@@ -104,6 +104,7 @@
     "native/Cargo.toml",
     "native/Cargo.lock",
     "native/src",
+    "native/crates",
     "native/windows-metadata",
     "native/darwin-metadata",
     "native/bash-ipc"

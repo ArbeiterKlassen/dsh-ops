@@ -255,6 +255,26 @@ await test('the local-build preflight names the one rebuild command and judges w
     assert.match(stale.warnings[0], /native[\\/]src[\\/]lib\.rs/)
     assert.match(stale.warnings[0], /npm run build:ptc/)
 
+    // Workspace crates and platform adapters are equally capable of making a staged worker stale.
+    for (const relative of ['crates/ops-files/src/lib.rs', 'windows-metadata/src/lib.rs', 'darwin-metadata/src/lib.rs']) {
+      const file = path.join(dir, 'native', relative)
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, '// workspace source\n')
+      const future = new Date(Date.now() + 60000)
+      fs.utimesSync(file, future, future)
+      const changed = inspectLocalBuild({ root: dir, platform: 'linux', arch: 'x64' })
+      assert.ok(changed.warnings.some(warning => warning.includes(path.relative(dir, file))))
+      fs.utimesSync(file, past, past)
+    }
+
+    fs.utimesSync(path.join(dir, 'native', 'src', 'lib.rs'), past, past)
+    const cache = path.join(dir, 'native', 'crates', 'ops-files', 'target', 'debug', 'cache')
+    fs.mkdirSync(path.dirname(cache), { recursive: true })
+    fs.writeFileSync(cache, 'build output')
+    const staged = new Date('2020-01-01T00:00:00Z')
+    fs.utimesSync(path.join(dir, 'runtime', 'linux-x64', workerName('linux')), staged, staged)
+    assert.deepEqual(inspectLocalBuild({ root: dir, platform: 'linux', arch: 'x64' }).warnings, [])
+
     // An unsupported target is named as unsupported, not reported as a missing build.
     assert.match(inspectLocalBuild({ root: dir, platform: 'win32', arch: 'arm64' }).problems[0].what, /support matrix/)
 

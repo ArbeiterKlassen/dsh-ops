@@ -172,7 +172,8 @@ await test('one enormous line is materialized once, not once per match', async (
     assert.equal(page.items.length, 1, 'the page is one item wide')
     assert.equal(page.matched, line.length, 'every match is still counted')
     assert.equal(page.total, line.length, 'and the envelope still knows how many items there are')
-    assert.equal(page.omitted, line.length - 1)
+    assert.equal(page.omitted, line.length, 'a partial line remains omitted until its suffix is recovered')
+    assert.equal(page.nextOffset, 0, 'never skip the partially displayed match')
     assert.equal(page.complete, false)
     // The item is the line, cut to the response budget: the host collects 128 KiB of stdout, so the
     // envelope reports how much text the line had rather than pretending it fits.

@@ -16,7 +16,7 @@ a reviewer can trust a green PR without re-running anything by hand.
 
 | Job | Runner | Blocking? | What it proves |
 | --- | --- | --- | --- |
-| `validate` | `windows-latest` (win32-x64), `ubuntu-24.04` (linux-x64), `macos-latest` (darwin-arm64) | **Yes** | `cargo test --locked`, the native worker builds, then `scripts/verify-gate.mjs --skip-install`: no unauthorised skips (`DSH_OPS_REQUIRE_RUNTIME=1` on POSIX turns a missing runtime into a failure), every suite file on disk was collected, and the packed artifact unpacks and passes `native-runtime check` |
+| `validate` | `windows-latest` (win32-x64), `ubuntu-24.04` (linux-x64), `macos-latest` (darwin-arm64) | **Yes** | `cargo test --workspace --locked`, the native worker builds, then `scripts/verify-gate.mjs --skip-install`: no unauthorised skips (`DSH_OPS_REQUIRE_RUNTIME=1` on POSIX turns a missing runtime into a failure), every suite file on disk was collected, and the packed artifact unpacks and passes `native-runtime check` |
 | `node-floor` | `ubuntu-24.04` | **Yes** | `package.json` promises `^22.19 \|\| >=24`; this runs the same gate on the declared **floor** so the promise is exercised rather than asserted |
 | `workflow-lint` | `ubuntu-24.04` | **Yes** | `scripts/check-workflows.mjs`: every workflow parses, declares triggers/jobs/permissions, bounds each job with `timeout-minutes`, avoids `write-all` and `pull_request_target`, and keeps `ci.yml`'s aggregate check wired to every other job |
 | `source-size` | `ubuntu-24.04` | **Yes** | `scripts/check-file-size.mjs`: every tracked code file stays at or under 1000 lines. The file set comes from `git ls-files`, so a new module is in scope the moment it is added |
@@ -32,7 +32,7 @@ keeping three names in sync forever, and losing the gate the day a runner label 
 
 ```bash
 npm ci --ignore-scripts --registry=https://registry.npmjs.org
-cargo test --locked --manifest-path native/Cargo.toml
+cargo test --workspace --locked --manifest-path native/Cargo.toml
 npm run build:ptc
 
 # The gate, exactly as CI runs it (POSIX: a skipped runtime suite is a failure, not a pass)

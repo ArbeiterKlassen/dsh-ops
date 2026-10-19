@@ -35,7 +35,7 @@ There is no exit code for "green with a surprise in it" — that is `1`.
 | --- | --- | --- |
 | versions | `node --version`, `cargo --version` | The toolchain is the pinned one, before anything else can be blamed |
 | install | `npm ci --ignore-scripts --registry=https://registry.npmjs.org` | Locked dependencies, and no install-time script runs (the Windows shell payloads are optional dependencies; `--ignore-scripts` is what keeps a Linux install from pretending to carry them) |
-| worker unit tests | `cargo test --locked --manifest-path native/Cargo.toml` | The Rust worker in isolation |
+| worker unit tests | `cargo test --workspace --locked --manifest-path native/Cargo.toml` | The Rust worker in isolation |
 | stage | `npm run build:ptc` | Builds the worker **and stages it with its provenance receipt** into `runtime/<platform>-<arch>/`. Skipping this is the most common way to get a misleading failure — see the traps below |
 | platform payloads | `npm run build:bash-ipc` (Windows) | The Windows IPC proxies |
 | manifest | `npm run validate:manifest` | The declaration layers agree; asserts a floor of `59` (currently `62`) |

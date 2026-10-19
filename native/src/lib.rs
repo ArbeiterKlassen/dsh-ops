@@ -1,53 +1,8 @@
 #![forbid(unsafe_code)]
-mod batch;
-pub mod contract;
-mod file;
-mod file_path;
-mod paths;
-mod results;
-mod store;
+pub use ops_protocol as contract;
 use cap_std::{ambient_authority, fs::Dir};
 use contract::*;
 use serde_json::Value;
-
-/// Persist a directory's entries after an atomic publish.
-///
-/// cap-std hands out `O_PATH` directory descriptors on Linux and `fsync` on an
-/// `O_PATH` descriptor fails with `EBADF`. Reopening the same directory through
-/// `/proc/self/fd` yields an ordinary descriptor, which is how cap-primitives
-/// itself works around `O_PATH` handles elsewhere.
-#[cfg(unix)]
-pub(crate) fn sync_directory(dir: &Dir) -> Result<()> {
-    let handle = dir.try_clone()?.into_std_file();
-    let first = match handle.sync_all() {
-        Ok(()) => return Ok(()),
-        Err(error) => error,
-    };
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::fd::AsRawFd;
-        if let Ok(reopened) = std::fs::File::open(format!("/proc/self/fd/{}", handle.as_raw_fd())) {
-            return reopened.sync_all().map_err(Into::into);
-        }
-    }
-    Err(first.into())
-}
-
-#[cfg(all(test, unix))]
-mod tests {
-    use super::*;
-
-    /// A crash-safe publish replays the barrier on the directory itself, so the
-    /// barrier has to work on the handle cap-std hands out.
-    #[test]
-    fn directory_sync_succeeds_on_ambient_directories() {
-        let root = std::env::temp_dir().join(format!("dsh-ops-sync-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&root).expect("create temporary directory");
-        let dir = Dir::open_ambient_dir(&root, ambient_authority()).expect("open ambient directory");
-        sync_directory(&dir).expect("directory sync");
-        std::fs::remove_dir(&root).expect("remove temporary directory");
-    }
-}
 
 pub fn dispatch(request: Request) -> Result<Value> {
     if request.scope.is_empty()
@@ -72,7 +27,11 @@ pub fn dispatch(request: Request) -> Result<Value> {
     // from mutation audit records.
     if matches!(request.tool.as_str(), "inspect_local_file" | "glob" | "grep" | "replace" | "write_file" | "edit_file" | "diff" | "stat" | "copy" | "move" | "remove") {
         request.root_identity = String::new();
-        return file::dispatch(&request);
+        return if matches!(request.tool.as_str(), "glob" | "grep" | "replace") {
+            ops_search::dispatch(&request)
+        } else {
+            ops_files::dispatch(&request)
+        };
     }
     let dir = Dir::open_ambient_dir(root, ambient_authority())?;
     use cap_fs_ext::MetadataExt;
@@ -87,10 +46,10 @@ pub fn dispatch(request: Request) -> Result<Value> {
             "Read-only requests cannot mutate audit or result storage",
         ));
     }
-    let store = store::Store::open(&dir, request.read_only)?;
+    let store = ops_results::store::Store::open(&dir, request.read_only)?;
     match request.tool.as_str() {
-        "batch" => batch::run(&dir, &store, &request),
-        "result" => results::run(&store, &request),
+        "batch" => ops_batch::run(&dir, &store, &request),
+        "result" => ops_results::run(&store, &request),
         _ => Err(Failure::new("INVALID_ARGUMENT", "Unknown capability")),
     }
 }

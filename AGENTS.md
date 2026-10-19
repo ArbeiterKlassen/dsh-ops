@@ -52,7 +52,7 @@ capabilities.
 ```console
 npm ci --ignore-scripts                                  # install (locked)
 npm run build                                            # src/ -> lib/ (tsc + assets)
-cargo test --locked --manifest-path native/Cargo.toml    # Rust unit tests
+cargo test --workspace --locked --manifest-path native/Cargo.toml    # Rust unit tests
 npm run build:ptc                                        # build + stage the native worker (needed by most suites)
 npm run build:bash-ipc                                   # Windows only
 npm run verify                                           # build + manifest check + all suites

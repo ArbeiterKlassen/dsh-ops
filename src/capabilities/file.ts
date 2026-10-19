@@ -27,6 +27,7 @@ export const PARAMETERS = Object.freeze({
     sort: { type: 'string', enum: ['path', 'modified'] },
     offset: integer,
     limit: range(1, 10000, 'Default 100.'),
+    continuation: { ...string, description: 'Opaque cursor from a complete scan. Keep query options unchanged; omit offset or use nextOffset. SEARCH_STALE requires a fresh query.' },
   }, ['pattern']),
   grep: bounded({
     path: string,
@@ -40,6 +41,7 @@ export const PARAMETERS = Object.freeze({
     multiline: { type: 'boolean' },
     offset: integer,
     limit: range(1, 10000, 'Default 100.'),
+    continuation: { ...string, description: 'Opaque cursor from a complete scan. Keep query options unchanged; omit offset or use nextOffset. SEARCH_STALE requires a fresh query.' },
   }, ['pattern']),
   stat: bounded({ path: string }, ['path']),
   diff: bounded({ path: string, content: string, offset: integer, limit: range(1, 1000, 'Default 100.') }, ['path', 'content']),
@@ -72,12 +74,24 @@ export const OUTPUT: JsonSchemaNode = {
   },
 }
 
+export const SEARCH_OUTPUT: JsonSchemaNode = {
+  ...OUTPUT, properties: {
+    ...OUTPUT.properties,
+    scanComplete: { type: 'boolean' }, pageComplete: { type: 'boolean' },
+    scannedFiles: { type: 'integer' }, skippedFiles: { type: 'integer' },
+    skipReasons: { type: 'object' }, matchedObserved: { type: 'integer' },
+    matchedTotal: { type: 'integer', description: 'Present only after a complete scan.' },
+    truncatedBy: { type: 'string', enum: ['scan-budget', 'output-budget', 'time', 'row-limit', 'none'] },
+    continuation: string, nextAction: string,
+  },
+}
+
 // Failures are returned values, never thrown: a try/catch alone misses them (#44).
 const RESULT = ' Failures resolve as {status:"error"|"rejected", error.code}; they are not thrown.'
 export const DESCRIPTIONS = Object.freeze({
   inspect_local_file: 'Read bounded UTF-8 text lines or a hex view from path relative to the DSH session cwd. Directories are rejected; use ops_glob or ops_grep.' + RESULT,
-  glob: 'Find regular files below path. pattern is an ARRAY of globs matched against paths relative to path, e.g. ["**/*.md","!vendor/**"]: "*.md" matches the top level only, "!" excludes, at least one positive entry. Symlinks, reparse points, hidden files and .git are not traversed.' + RESULT,
-  grep: 'Search UTF-8 files below path. pattern is ONE Rust regex string; filter files with glob, an ARRAY of the same relative globs ("!" excludes). There is no include field. Use summary for aggregate file/match totals, count for per-file counts, content for matching text (default); limit defaults to 100 items. Paging uses 0-based offset/nextOffset. Follow nextOffset until complete:true, but do not loop blindly on truncated/failed scans. Totals cover scanned readable UTF-8 files within file-size limits; truncated scans are not exhaustive. Each page rescans candidates to count totals while materializing only its requested window. Optional line context.' + RESULT,
+  glob: 'Find regular files below path relative to the current session cwd. pattern is an ARRAY of globs matched against paths relative to path: ["**/*.md","!vendor/**"]; "*.md" matches the top level only, "!" excludes, at least one positive entry. Symlinks, reparse points, hidden files and dependency/build directories are excluded. limit defaults to 100; paging uses 0-based offset/nextOffset. Check scanComplete and pageComplete; matchedTotal exists only after a complete scan. Prefer continuation with unchanged options; SEARCH_STALE means restart. Incomplete scans require a narrower query.' + RESULT,
+  grep: 'Search UTF-8 files below path relative to the current session cwd. pattern is ONE Rust regex string; filter files with glob, an ARRAY of relative globs ("!" excludes). There is no include field. Use summary for aggregate file/match totals, count for per-file counts, files_with_matches for paths, content for text (default); limit defaults to 100 items. Optional line context. Paging uses 0-based offset/nextOffset; prefer continuation with unchanged options. Each page rescans; SEARCH_STALE means restart. Check scanComplete and pageComplete; matchedTotal exists only after a complete scan, matchedObserved is a lower bound otherwise. skipReasons explains gaps. Narrow incomplete scans instead of blindly paging.' + RESULT,
   stat: 'Inspect one regular file: SHA-256 revision, bytes, UTF-8 lineCount (null for binary), timestamps and permissions; no content. Missing paths return exists:false, revision:absent.' + RESULT,
   diff: 'Read-only comparison of one UTF-8 file with content. Returns one prefix/suffix-trimmed replacement hunk (not a minimal diff), paged 0-based offset/limit (default 100). Includes old/new hashes and line counts; no publication.' + RESULT,
   write_file: 'Create or fully overwrite one UTF-8 file; parents must exist. Required expectedRevision is the observed SHA-256, or absent for create-only. Atomic CAS, short receipt with new revision/bytes/lineCount; dryRun only previews. Darwin nonempty extended ACLs fail closed with METADATA_UNSUPPORTED. Read-only denies even dryRun. Windows preserves owner/group/ordered DACL and supported basic attributes/timestamps; readonly overwrite is refused and unsupported streams/EA/special storage fail with METADATA_UNSUPPORTED. SACL/audit labels are not preserved.' + RESULT,

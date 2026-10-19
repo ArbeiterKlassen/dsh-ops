@@ -181,7 +181,7 @@ async function main() {
 
   // The native build/staging CLI imports lib, just like the validator and suites.
   await run('build the plugin', 'npm', ['run', 'build'])
-  await run('native worker unit tests', 'cargo', ['test', '--locked', '--manifest-path', 'native/Cargo.toml'])
+  await run('native worker unit tests', 'cargo', ['test', '--workspace', '--locked', '--manifest-path', 'native/Cargo.toml'])
   await run('build and stage the native worker', 'npm', ['run', 'build:ptc'])
 
   if (TARGET === 'win32-x64') await run('Windows IPC payloads', 'npm', ['run', 'build:bash-ipc'])
