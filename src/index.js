@@ -2,7 +2,7 @@
 import { resolveConfig } from './config.js'
 import { mountConfigUpdates, updatedConfig } from './config-updates.js'
 import { SECTION_ORDERS, TOOLING_SECTION, BASH_TOOL, publicToolName, hostShellRefusal, renderToolingPolicy } from './policy.js'
-import { NATIVE_FILE_TOOLS as FILE_TOOLS } from './capabilities/registry.js'
+import { NATIVE_FILE_TOOLS as FILE_TOOLS, NATIVE_RESIDENT_FILE_TOOLS } from './capabilities/registry.js'
 import { resolveShells } from './shells.js'
 import { mountSessionBash } from './session-shells.js'
 import { mountBundledPwsh } from './session-pwsh.js'
@@ -72,7 +72,7 @@ async function mountNativeFile(ctx, config, file) {
   ctx.effect(() => () => {
     return surface.stop().catch(error => report(ctx, `dsh-ops: native file worker shutdown failed: ${error?.message ?? error}`, 'warn'))
   }, 'dsh-ops: native file worker')
-  const tools = await surface.start()
+  const tools = await surface.start(NATIVE_RESIDENT_FILE_TOOLS)
   if (tools.length) report(ctx, `dsh-ops: native Rust file worker ready; ${tools.length} tools.`, 'info')
 }
 

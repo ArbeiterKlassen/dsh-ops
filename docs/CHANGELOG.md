@@ -7,6 +7,11 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Keep Native startup to the bounded multi-file reader (#261, 9/16)
+
+- Publish `ops_read_many` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
+- Measure compact file/discovery schemas at 241 tokens and the current full surface with Bash at 610 tokens; the full 400-token BM-03 gate remains unresolved pending the redesigned shell contract.
+- Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；完整工具面含 Bash 仍超过 400-token 门禁，保留真实测量而不宣称通过。
 ### Publish progressive tools before the next real provider snapshot (#261, 7–8/16)
 
 - Activate pending Native and PTC selections at the owning session’s committed step end, before the pinned host captures the next provider schema. Drain owned publication during ordinary assembly without replacing host methods; mark internal probes to avoid recursive waits.

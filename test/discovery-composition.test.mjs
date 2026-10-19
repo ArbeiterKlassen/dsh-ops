@@ -45,7 +45,7 @@ for (const discoveryFirst of [true, false]) await test('combined Native/PTC/disc
     fs.writeFileSync(path.join(dir, 'sample.txt'), 'small\n')
     const native = await mint(), code = await mint('ptc'), child = await mint('native', code), sibling = await mint('both')
     const fileRow = await mountFile(native.ctx)
-    await waitFor(() => names(ctx, native).includes('ops_inspect_local_file'))
+    await waitFor(() => names(ctx, native).includes('ops_read_many'))
     for (const scope of [native, child, sibling]) assert.equal(names(ctx, scope).includes('ops_stat'), false)
     const selection = await call(ctx, native, 'ops_discover', { query: 'select:ops_stat' })
     assert.equal(selection.value.status, 'completed', JSON.stringify(selection))
@@ -93,11 +93,11 @@ await test('overlapping discovery rows restore nearest ownership and preserve un
     await first.dispose()
     await waitFor(() => names(ctx, parent).includes('ops_discover') && !names(ctx, parent).includes('ops_grep'))
     const fileRow = await mountFile()
-    await waitFor(() => names(ctx, parent).includes('ops_inspect_local_file'))
-    const restriction = await parent.ctx.plugin({ inject: ['tools'], apply(inner) { inner.tools.restrict({ deny: ['ops_inspect_local_file'] }) } })
-    assert.equal(names(ctx, child).includes('ops_inspect_local_file'), false)
+    await waitFor(() => names(ctx, parent).includes('ops_read_many'))
+    const restriction = await parent.ctx.plugin({ inject: ['tools'], apply(inner) { inner.tools.restrict({ deny: ['ops_read_many'] }) } })
+    assert.equal(names(ctx, child).includes('ops_read_many'), false)
     await ctx.serial('tools/change'); await step(ctx, child)
-    assert.equal(names(ctx, child).includes('ops_inspect_local_file'), false, 'PTC shadow refresh must not bypass an external ancestor mask')
+    assert.equal(names(ctx, child).includes('ops_read_many'), false, 'PTC shadow refresh must not bypass an external ancestor mask')
     await restriction.dispose(); await fileRow.dispose()
   } finally { await shutdown(ctx) }
 }))
@@ -107,7 +107,7 @@ await test('late discovery discovers existing agents and exposes the Native page
   try {
     await mountFile()
     const owner = await mint(), sibling = await mint()
-    assert.ok(names(ctx, owner).includes('ops_stat'))
+    assert.ok(names(ctx, owner).includes('ops_read_many'))
     const row = await mountDiscovery()
     await waitFor(() => names(ctx, owner).includes('ops_discover') && !names(ctx, owner).includes('ops_stat'))
     await codeRow.dispose()
@@ -124,7 +124,7 @@ await test('late discovery discovers existing agents and exposes the Native page
     const invalid = await call(ctx, owner, 'ops_result', { action: 'put', items: [] })
     assert.equal(invalid.value.error.code, 'INVALID_ARGUMENT', 'Native discovery must never expose PTC storage writes')
     await row.dispose()
-    assert.ok(names(ctx, owner).includes('ops_stat'), 'unload restores the file row owned by another component')
+    assert.ok(names(ctx, owner).includes('ops_read_many'), 'unload preserves the resident file row owned by another component')
   } finally { await shutdown(ctx) }
 }))
 

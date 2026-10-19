@@ -45,20 +45,18 @@ for (const mode of ['read-only', 'workspace-write', 'danger-full-access']) {
           await agent.ctx.plugin(SearchTools, { sampleOverCapGlobResults: false })
           await ctx.serial('agent/created', { agent, source: 'startup' })
           const names = () => ctx.get('tools').schemas(agent).map(tool => tool.name)
-          await waitFor(() => names().includes('ops_inspect_local_file') && names().includes('read') && names().includes('grep') &&
+          await waitFor(() => names().includes(presentation === 'ptc' ? 'ops_inspect_local_file' : 'ops_read_many') && names().includes('read') && names().includes('grep') &&
             names().includes('ops_sdk') === (presentation === 'ptc') &&
             names().includes('ops_bash'), { what: `${mode}/${presentation} default publication` })
           const assembled = await ctx.get('systemPrompt').assemble({ scope: agent, signal: new AbortController().signal })
           assert.equal(assembled.tools.some(tool => tool.name === 'run_code'), presentation !== 'native')
           assert.ok(assembled.sections.length > 0)
           assert.ok(names().includes('write'), 'defaults must not mask standard-preset mutation tools')
-          if (presentation === 'ptc') {
-            await ctx.get('tools').get('ops_sdk', agent).execute({ tools: ['stat'] }, { agent, signal: new AbortController().signal })
-            await ctx.waterfall('agent/pre-step', { agent, messages: [], turn: 1, step: 1, signal: new AbortController().signal }, () => Promise.resolve({ kind: 'continue' }))
-          }
-          const result = await ctx.get('tools').get('ops_stat', agent).execute({ path: path.join(root, 'absent') }, { agent, signal: new AbortController().signal })
-          assert.equal(result.status, 'completed', JSON.stringify(result))
-          assert.equal((presentation === 'ptc' ? result.data : result).exists, false)
+          const name = presentation === 'ptc' ? 'ops_inspect_local_file' : 'ops_read_many'
+          const args = presentation === 'ptc' ? { path: path.join(root, 'absent') } : { files: [{ path: path.join(root, 'absent') }] }
+          const result = await ctx.get('tools').get(name, agent).execute(args, { agent, signal: new AbortController().signal })
+          const data = presentation === 'ptc' ? result.data : result
+          assert.equal(presentation === 'ptc' ? result.error.code : data.items[0].error.code, 'NOT_FOUND', JSON.stringify(result))
           console.log(`    startup ${mode}/${presentation}: ${assembled.tools.length} wire tools; official + OPS intact`)
         }
       } finally { await shutdown(ctx) }

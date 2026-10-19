@@ -10,7 +10,9 @@ import { bootHost, mountPlugin, shutdown } from './lib/host.mjs'
 import { WORKER, requireWorker } from './lib/boundary.mjs'
 import { invoke } from '../lib/ptc/worker.js'
 import * as ptc from '../lib/ptc/index.js'
-import { applyComponent } from '../lib/index.js'
+import * as discovery from '../lib/discovery/index.js'
+const hostAgents = new WeakMap()
+import { mountNativeCatalogue } from './lib/native-catalogue.mjs'
 import { resultStorage } from '../lib/kernel/result-storage.js'
 import { resultDefinition } from '../lib/file/result.js'
 import { CAPABILITIES, NATIVE_FILE_TOOLS } from '../lib/capabilities/registry.js'
@@ -21,7 +23,7 @@ async function setup(root) {
   const { ctx } = await bootHost()
   await ctx.plugin(Subprocess); await ctx.plugin(Sandbox)
   await ctx.plugin(inner => inner.provide('sandboxPolicy', { resolve: ({ session }) => ({ mode: session.mode, workspaceRoot: root, sessionId: session.id }) }))
-  const file = await mountPlugin({ ctx, config: { binaryPath: WORKER, required: true }, expectTools: NATIVE_FILE_TOOLS.length })
+  const file = { fiber: await mountNativeCatalogue(ctx, { binaryPath: WORKER, required: true }) }
   return { ctx, file }
 }
 async function agent(ctx, cwd, presentation = 'native', parent) {
@@ -29,6 +31,8 @@ async function agent(ctx, cwd, presentation = 'native', parent) {
   const value = { id, session: { id, mode: 'workspace-write', header: { cwd } } }
   value.ctx = createScope(parent?.ctx ?? ctx, value).ctx
   await value.ctx.plugin({ inject: ['tools'], apply(inner) { value.liftPresentation = inner.tools.presentAs(presentation) } })
+  if (!hostAgents.has(ctx)) { hostAgents.set(ctx, []); ctx.provide('agents', { list: () => hostAgents.get(ctx) }) }
+  hostAgents.get(ctx).push(value)
   await ctx.serial('agent/created', { agent: value })
   return value
 }
@@ -51,7 +55,7 @@ await test('one catalogue entry exposes distinct SDK-valid Native and PTC result
   assert.ok(entry[0].parameters.properties.ttlMs); assert.ok(entry[0].output.properties.reference)
 })
 
-await test('file-only Native SDK execution pages/releases with cwd binding, defaults and no business writes', async () => {
+await test('Native discovery without PTC SDK execution pages/releases with cwd binding, defaults and no business writes', async () => {
   await withTempDir('native-reference', async root => {
     const cwd = path.join(root, 'nested'); fs.mkdirSync(cwd); fs.writeFileSync(path.join(cwd, 'keep'), 'unchanged')
     const { ctx } = await setup(root)
@@ -75,7 +79,7 @@ await test('file-only Native SDK execution pages/releases with cwd binding, defa
   })
 })
 
-await test('file-only Native spill pages reconstruct one large escaped line exactly through the real host', async () => {
+await test('Native discovery without PTC spill pages reconstruct one large escaped line exactly through the real host', async () => {
   await withTempDir('native-spill-roundtrip', async root => {
     const cwd = path.join(root, 'nested'); fs.mkdirSync(cwd)
     const original = '\u0000'.repeat(22000) + '😀end'
@@ -132,9 +136,11 @@ await test('Native pager denies hidden producers, other sessions, narrower autho
       const record = JSON.parse(fs.readFileSync(blob, 'utf8')); record.producerTool = 'grep'; fs.writeFileSync(blob, JSON.stringify(record))
       const grepId = stored.id.replace('/result/', '/grep/')
       assert.equal((await page(ctx, owner, { action: 'page', id: grepId })).value.complete, true)
-      let restore
-      await owner.ctx.plugin({ inject: ['tools'], apply(inner) { restore = inner.tools.restrict({ deny: ['ops_grep'] }) } })
-      assert.equal((await page(ctx, owner, { action: 'page', id: grepId })).value.error.code, 'POLICY_DENIED'); restore()
+      const restricted = await owner.ctx.plugin(discovery, { binaryPath: WORKER, required: true, enabled: false, allowedTools: ['result'], alwaysLoaded: ['result'] })
+      await waitFor(() => ctx.get('tools').get('ops_result', owner) && !ctx.get('tools').get('ops_grep', owner))
+      assert.equal((await page(ctx, owner, { action: 'page', id: grepId })).value.error.code, 'POLICY_DENIED')
+      await restricted.dispose()
+      await waitFor(() => ctx.get('tools').get('ops_result', owner) && ctx.get('tools').get('ops_grep', owner))
       const retained = ctx.get('tools').get('ops_result', owner)
       await file.fiber.dispose()
       assert.equal((await retained.execute({ action: 'page', id: grepId }, { agent: owner })).error.code, 'POLICY_DENIED')
@@ -142,7 +148,7 @@ await test('Native pager denies hidden producers, other sessions, narrower autho
   })
 })
 
-await test('Native children of PTC parents retain page-only projection and file unload preserves PTC put', async () => {
+await test('Native children of PTC parents retain page-only projection and Native component unload preserves PTC put', async () => {
   await withTempDir('native-reference-scopes', async root => {
     const { ctx, file } = await setup(root)
     try {
@@ -181,7 +187,7 @@ await test('agent-scoped file rows isolate sibling pagers and yield only their e
       const component = await ctx.plugin(ptc, { binaryPath: WORKER, required: true })
       const parent = await agent(ctx, root, 'ptc'), left = await agent(ctx, root, 'native', parent), right = await agent(ctx, root, 'native', parent)
       const current = value => ctx.get('tools').get('ops_result', value)
-      const mount = value => value.ctx.plugin({ name: 'scoped-file-' + value.id, apply(inner) { return applyComponent(inner, { binaryPath: WORKER, required: true }, 'file') } })
+      const mount = value => mountNativeCatalogue(value.ctx, { binaryPath: WORKER, required: true })
       const leftFile = await mount(left)
       await waitFor(() => current(left)?.parameters.properties.action.enum.length === 2, { timeoutMs: 5000, what: 'left scoped Native pager' })
       assert.equal(current(right), undefined, 'a sibling cannot borrow the left file executor')
@@ -190,7 +196,7 @@ await test('agent-scoped file rows isolate sibling pagers and yield only their e
       const rightStored = await put(ctx, right, root, [{ right: true }])
       assert.deepEqual((await page(ctx, right, { action: 'page', id: rightStored.id })).value.items, [{ right: true }])
       left.liftPresentation()
-      await left.ctx.plugin({ inject: ['tools'], apply(inner) { inner.tools.presentAs('ptc') } })
+      await left.ctx.plugin({ inject: ['tools'], apply(inner) { left.liftPresentation = inner.tools.presentAs('ptc') } })
       await waitFor(() => current(left)?.parameters.properties.action.enum.includes('put'), { timeoutMs: 5000, what: 'exact-layer PTC takeover' })
       const leftStored = await current(left).execute({ action: 'put', items: [{ left: true }] }, { agent: left, signal: new AbortController().signal })
       assert.equal(leftStored.status, 'completed', JSON.stringify(leftStored))
@@ -200,6 +206,7 @@ await test('agent-scoped file rows isolate sibling pagers and yield only their e
       const lateFile = await mount(late)
       await waitFor(() => !ctx.get('tools').get('ops_grep', late) && current(late)?.parameters.properties.action.enum.includes('put'), { timeoutMs: 5000, what: 'file mounted after PTC' })
       await component.dispose()
+      for (const value of [left, late]) { value.liftPresentation(); await value.ctx.plugin({ inject: ['tools'], apply(inner) { value.liftPresentation = inner.tools.presentAs('native') } }) }
       await waitFor(() => current(left)?.parameters.properties.action.enum.length === 2 && current(late)?.parameters.properties.action.enum.length === 2, { timeoutMs: 5000, what: 'Native peer resumes on PTC unload' })
       await leftFile.dispose(); assert.equal(current(left), undefined)
       assert.equal(current(right).parameters.properties.action.enum.length, 2)
