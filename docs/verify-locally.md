@@ -29,6 +29,22 @@ Exit codes are part of the contract: `0` every step passed, `1` a step failed, `
 host cannot answer this gate (a `--target` that is not the host, a missing toolchain).
 There is no exit code for "green with a surprise in it" — that is `1`.
 
+## The pull request run (CI, not this host)
+
+Every pull request must show one `Cross-platform validation` run triggered by its own
+`pull_request` event, and paste the `CI required` run URL into the PR template. A local
+`verify-gate` run — however green — is not that run: it proves the checkout, not the merge
+request. Confirm it with:
+
+```console
+gh run list --branch <branch> --workflow ci.yml --event pull_request --limit 1
+gh run view <run-id> --json url,event,conclusion --jq '"\(.url) \(.event) \(.conclusion)"'
+```
+
+Fork contributors have two verifiable paths (open the PR upstream, or open a PR inside the
+fork); see [CONTRIBUTING.md](CONTRIBUTING.md#one-ci-run-per-pull-request). A hand-dispatched
+`workflow_dispatch` run, or a `push` run on a release branch, does not count.
+
 ## What each step proves
 
 | Step | Command | What it settles |
