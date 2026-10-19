@@ -40,6 +40,19 @@ void tools.ops_unknown_tool({})
 const completed: Outcome<StorageReference | undefined> = { status: 'completed', data: undefined }
 void [read, metadata, completed]
 
+async function loader() {
+  const selected = await tools.ops_load_sdk({ tools: ['read_files', 'grep'] })
+  if (selected.status !== 'completed') return 'error' in selected ? selected.error.code : 'partial'
+  const names: string[] = selected.data.tools
+  const next: true = selected.data.nextTurn
+  // @ts-expect-error The loader returns its selection receipt, not a file-operation body.
+  void selected.data.items
+  // @ts-expect-error The loader returns no storage reference.
+  void selected.data.reference
+  return { names, next }
+}
+void loader
+
 async function tables() {
   const result = await tools.ops_read_table({ path: 'rows.csv', header: false, encoding: 'utf-16le' })
   if (result.status === 'completed' || result.status === 'partial') {
