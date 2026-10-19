@@ -37,7 +37,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -187,9 +187,13 @@ async function main() {
   const runtimeEnv = {}
   if (TARGET === 'win32-x64') {
     const { pinnedBashExecutable } = await import('../lib/shells/pinned.js')
-    // `npm ci` installs the declared @dsh-ops/bash-win32-x64 payload; the provisioned store
-    // and DSH_OPS_TEST_BASH cover a checkout that has no payload installed.
-    let fixture = process.env.DSH_OPS_TEST_BASH ?? pinnedBashExecutable({ required: false })
+    // `npm ci` installs the declared @dsh-ops/bash-win32-x64 payload, and a missing payload must
+    // fail the gate rather than be papered over by a download: an optionalDependency that npm
+    // silently skipped is exactly the regression this gate exists to catch. DSH_OPS_TEST_BASH is
+    // the explicit offline escape hatch.
+    const declared = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')).optionalDependencies?.['@dsh-ops/bash-win32-x64']
+    let fixture = process.env.DSH_OPS_TEST_BASH
+    if (!fixture && declared) fixture = pinnedBashExecutable()
     if (!fixture) {
       const fixtureEnv = { DSH_HOME: mkdtempSync(path.join(tmpdir(), 'dsh-ops-bash-fixture-')) }
       await run('Acquire optional pinned Bash fixture', 'node', ['bin/dsh-ops.mjs', 'bash-runtime', 'install'], { env: fixtureEnv })

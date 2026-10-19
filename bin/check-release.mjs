@@ -27,6 +27,9 @@ for (const id of ['dsh-ops-file', 'dsh-ops-shell']) {
 const BASH_PAYLOAD = '@dsh-ops/bash-win32-x64'
 const PWSH_PAYLOAD = '@dsh-ops/pwsh-win32-x64'
 if (pkg.optionalDependencies?.[BASH_PAYLOAD] !== '0.2.1') throw Error(`${BASH_PAYLOAD} must remain the pinned Windows-only optional payload`)
+if (pkg.dependencies?.[BASH_PAYLOAD]) throw Error(`${BASH_PAYLOAD} must be optional, never a hard dependency`)
+const shellPins = Object.keys(pkg.optionalDependencies ?? {}).filter((name) => name.startsWith('@dsh-ops/'))
+if (shellPins.length !== 1 || shellPins[0] !== BASH_PAYLOAD) throw Error(`the only @dsh-ops optional payload may be ${BASH_PAYLOAD}`)
 if (pkg.optionalDependencies?.[PWSH_PAYLOAD] || pkg.dependencies?.[PWSH_PAYLOAD]) throw Error(`${PWSH_PAYLOAD} must not be a package dependency; PowerShell is host-managed`)
 if (pkg.scripts?.postinstall) throw Error('Release must not download shell payloads from postinstall')
 const runtimeDir = path.join(root, 'runtime')

@@ -81,6 +81,7 @@ await test('release closure requires the pinned Bash payload and refuses a Power
   const cases = [
     { ...pkg, optionalDependencies: {} },
     { ...pkg, optionalDependencies: { ...pkg.optionalDependencies, '@dsh-ops/bash-win32-x64': '9.9.9' } },
+    { ...pkg, dependencies: { ...pkg.dependencies, '@dsh-ops/bash-win32-x64': '0.2.1' } },
     { ...pkg, optionalDependencies: { ...pkg.optionalDependencies, '@dsh-ops/pwsh-win32-x64': '0.2.1' } },
     { ...pkg, dependencies: { ...pkg.dependencies, '@dsh-ops/pwsh-win32-x64': '0.2.1' } },
   ]
@@ -88,7 +89,7 @@ await test('release closure requires the pinned Bash payload and refuses a Power
     write(changed)
     const result = run(root)
     assert.notEqual(result.status, 0, JSON.stringify(changed.optionalDependencies))
-    assert.match(result.out, /must remain the pinned|must not be a package dependency/)
+    assert.match(result.out, /must remain the pinned|must be optional|must not be a package dependency|only @dsh-ops optional payload/)
   }
 }))
 report('release-scope')

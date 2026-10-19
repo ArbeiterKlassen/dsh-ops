@@ -15,7 +15,7 @@ replacement. Fresh file/PTC/discovery rows are on; shell is on for every support
 panel/TUI/replacement are off. Existing named overrides and explicit switches survive restart. An enabled fresh panel starts
 collection; legacy explicit capture:false remains inert. Turning it off stops queued filesystem work.
 
-Native starts with read_many and discover, plus usable Windows Bash. Advanced tools activate only in
+Native starts with read_many and discover, plus a usable Bash (pinned payload on Windows, host Bash on POSIX). Advanced tools activate only in
 the owning agent's next provider request. The PTC SDK catalogue contains 19 APIs: 16 file/document tools,
 batch, result and sdk. The complete shared catalogue also includes bash and discover (21 entries).
 The SDK and Native projections expose separate typed/text outputs; catalogue membership is not startup
@@ -73,7 +73,7 @@ The detailed limits above and in linked contracts remain part of acceptance.
 | 6 — References/budgets | 10 MiB/result, 100 MiB/session; two active/eight waiting calls and 30-second worker ceiling; audit data separate. | result-references/spill/lifecycle, call-budget, native-result; permission-limited cleanup can leave invalidated temp blobs. |
 | 7 — PTC | 19 typed SDK APIs, three resident entries; allowed pools and next-step loading independent of Native. | ptc-outcome/schema/sdk and progressive-loop; current frozen SDK cannot call queued APIs. |
 | 8 — Discovery | Native allowed pool, always-loaded subset and 1–5 selections; owning agent's next request only. | discovery/composition and real AgentLoop BM-04; no filesystem permission grant. |
-| 9 — Resident surface | read_many plus discover, with eligible Windows Bash; advanced tools absent initially. | Exact provider inventory; approved BM-03 gates the file/discovery subtotal at ≤400 and separately reports the full Bash-inclusive total. |
+| 9 — Resident surface | read_many plus discover, with a usable Bash (pinned payload on Windows, host Bash on POSIX); advanced tools absent initially. | Exact provider inventory; approved BM-03 gates the file/discovery subtotal at ≤400 and separately reports the full Bash-inclusive total. |
 | 10 — Re-read evidence | Exact successful body in the latest completed ordinary provider request plus fresh file checks. | context-read-dedup/many with real replacement/projection; missing evidence restores full output. |
 | 11 — Bash | Host approvals/jobs/subprocess, absolute executor, 120/600-second timing, optional managed/Git Bash. | shells-host/execution/manager; Windows confinement remains partial and runtime compatibility is mandatory. |
 | 12 — PowerShell | No bundled payload or executor overlay; explicit standard host upgrade plan and execution. | Host runtime manager/transport regressions; no real operator installation performed; restart/custom-path review required. |

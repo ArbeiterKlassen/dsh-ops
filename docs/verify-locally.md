@@ -34,7 +34,7 @@ There is no exit code for "green with a surprise in it" — that is `1`.
 | Step | Command | What it settles |
 | --- | --- | --- |
 | versions | `node --version`, `cargo --version` | The toolchain is the pinned one, before anything else can be blamed |
-| install | `npm ci --ignore-scripts --registry=https://registry.npmjs.org` | Locked dependencies, and no install-time script runs (the Windows Bash payload is an optional dependency, so a Windows x64 install carries it; `--ignore-scripts` keeps a Linux install from pretending to) |
+| install | `npm ci --ignore-scripts --registry=https://registry.npmjs.org` | Locked dependencies, and no install-time script runs. The Windows Bash payload is an optional dependency, so a Windows x64 install carries it; a Linux install skips it through npm's `os` filter, and `--ignore-scripts` guarantees no install script tries to fetch it |
 | worker unit tests | `cargo test --workspace --locked --manifest-path native/Cargo.toml` | The Rust worker in isolation |
 | stage | `npm run build:ptc` | Builds the worker **and stages it with its provenance receipt** into `runtime/<platform>-<arch>/`. Skipping this is the most common way to get a misleading failure — see the traps below |
 | Bash fixture | `node bin/dsh-ops.mjs bash-runtime install` (Windows) | Repair path for a missing or incomplete payload; `DSH_OPS_TEST_BASH` can name a verified offline copy |

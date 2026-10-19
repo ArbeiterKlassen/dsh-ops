@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { hostPwshUpgradePlan, upgradeHostPwsh, runUpgradeProcess } from '../lib/shells/pwsh-upgrade.js'
 import { applyComponent } from '../lib/index.js'
@@ -18,6 +19,7 @@ function fixture(root) {
   return { file, platform: 'win32', env: { LOCALAPPDATA: root, PATH: '' } }
 }
 const success = { started: true, exitCode: 0, signal: null }
+const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 
 await test('the upgrade plan uses the standard exact stable package and an absolute WinGet path', async () => {
   await withTempDir('upgrade-plan', root => {
@@ -132,6 +134,37 @@ await test('release plans and the install lock carry the Windows Bash payload an
     assert.match(contents, /@dsh-ops\/bash-win32-x64/)
     assert.doesNotMatch(contents, /@dsh-ops\/pwsh-win32-x64/)
   }
+})
+await test('a payload release records the package at its declared pin, not the main version', async () => {
+  await withTempDir('release-payload', async dist => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8'))
+    const version = manifest.optionalDependencies['@dsh-ops/bash-win32-x64']
+    assert.notEqual(version, manifest.version, 'the payload pin is intentionally independent of the main version')
+    const bytes = Buffer.from('fixture bash entry bytes')
+    const pin = { upstream: 'fixture', releaseTag: 'v1', assetName: 'fixture.7z', assetBytes: bytes.length,
+      assetUrl: 'https://example.invalid/fixture.7z', assetSha256: 'a'.repeat(64),
+      entryPoint: 'bin/bash.exe', entrySha256: hash(bytes), entryBytes: bytes.length,
+      unpackedFiles: 1, unpackedBytes: bytes.length, unpackedBytesSumOfFileSizes: bytes.length,
+      license: 'GPL-2.0-only', copyright: 'fixture', pinSource: 'fixture' }
+    const pkg = { kind: 'bash', name: '@dsh-ops/bash-win32-x64', version, platform: 'win32', arch: 'x64',
+      dist, executable: 'bin/bash.exe', payload: { type: 'archive', pin } }
+    const stage = path.join(dist, 'stage', 'bash-win32-x64')
+    fs.mkdirSync(path.join(stage, 'bin'), { recursive: true })
+    fs.writeFileSync(path.join(stage, 'bin', 'bash.exe'), bytes)
+    const provenance = { version, upstream: { asset: { sha256: pin.assetSha256 } }, payloadSha256: hash(bytes), license: pin.license }
+    fs.writeFileSync(path.join(stage, 'provenance.json'), JSON.stringify(provenance))
+    const tarball = `dsh-ops-bash-win32-x64-${version}.tgz`, tarballBytes = Buffer.from('payload tarball fixture')
+    fs.writeFileSync(path.join(dist, tarball), tarballBytes)
+    const context = { dist, packages: [pkg], tarballs: { bash: { tarball, sha256: hash(tarballBytes), bytes: tarballBytes.length, files: 2, unpackedBytes: bytes.length } } }
+    const publishDir = path.join(dist, 'publish', `${manifest.name}-${manifest.version}`)
+    fs.mkdirSync(publishDir, { recursive: true })
+    fs.writeFileSync(path.join(publishDir, 'package.json'), JSON.stringify({ ...manifest, optionalDependencies: injectedOptionalDependencies(context) }))
+    fs.writeFileSync(path.join(dist, `${manifest.name}-${manifest.version}.tgz`), 'main tarball fixture')
+    await writeReleaseRecords(context, [{ pkg, provenance }])
+    assert.equal(await stepCheck(context), 0, 'a payload pinned at its own version must pass the release gate')
+    fs.writeFileSync(path.join(stage, 'provenance.json'), JSON.stringify({ ...provenance, version: manifest.version }))
+    assert.ok(await stepCheck(context) > 0, 'reporting the main version for the payload must fail')
+  })
 })
 await test('main-only release records validate without shell payloads and reject stale shell archives', async () => {
   await withTempDir('release-main-only', async dist => {
