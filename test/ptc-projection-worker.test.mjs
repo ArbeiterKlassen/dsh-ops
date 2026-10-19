@@ -1,5 +1,6 @@
 /** Validate real canonical worker receipts through the actual PTC output schemas. */
 import fs from 'node:fs'
+import { textPdf, show } from './lib/pdf-fixture.mjs'
 import { docx, paragraph } from './lib/document-fixture.mjs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
@@ -50,6 +51,14 @@ await test('DOCX observations validate actual main-body paragraphs through the P
     const out = await call(root, 'doc_read', { path: file })
     assert.equal(out.status, 'completed'); assert.equal(out.data.items[0].text, 'Exact Unicode 中')
     assert.equal(out.data.scanComplete, true); assert.equal(out.data.scope, 'main-body-paragraphs')
+  })
+})
+await test('PDF observations validate actual text-layer pages through the PTC output schema', async () => {
+  await withTempDir('ptc-pdf', async root => {
+    const file = path.join(root, 'pages.pdf'); fs.writeFileSync(file, textPdf([show('Exact PDF text')]))
+    const out = await call(root, 'pdf_read', { path: file })
+    assert.equal(out.status, 'completed'); assert.equal(out.data.items[0].text, 'Exact PDF text')
+    assert.equal(out.data.scanComplete, true); assert.equal(out.data.scope, 'page-text-layer-content-order')
   })
 })
 await test('mutation receipts and batch plans preserve effects without changing the native kernel', async () => {

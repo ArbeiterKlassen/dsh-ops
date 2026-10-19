@@ -20,6 +20,8 @@ await test('npm pack includes compiled host code and native sources, never host 
     'native/crates/ops-documents/src/tests.rs', 'native/crates/ops-documents/src/archive.rs',
     'native/crates/ops-documents/src/xml.rs', 'native/crates/ops-documents/src/docx.rs',
     'native/crates/ops-documents/src/pdf_syntax.rs',
+    'native/crates/ops-documents/src/pdf.rs', 'native/crates/ops-documents/src/pdf_text.rs',
+    'native/crates/ops-documents/src/pdf_pages.rs',
     'native/crates/ops-documents/src/pdf_container.rs', 'native/crates/ops-documents/src/pdf_container_tests.rs',
     'licenses/documents/THIRD-PARTY-NOTICES.txt']
   for (const name of required) assert.ok(files.includes(name), `missing source-build dependency: ${name}`)

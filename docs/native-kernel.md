@@ -254,3 +254,52 @@ of the input. No size advertised by a PDF author bypasses these limits.
 This slice exposes no tool and makes no text-coverage claim. Page-tree interpretation,
 the supported font/encoding subset, partial results and worker authority checks are
 introduced together in the following PDF extraction slice.
+
+## PDF text worker (15d/16)
+
+The one-shot worker accepts strict pdf_read { path, offset?, limit? }. The host resolves
+path from its current directory. Offset is a 1-based page number (1–32, default 1);
+limit is 1–32 pages (default 10). The capability stays outside the default schema. Native selects it
+through `ops_discover`, PTC through `ops_sdk`; it activates at the owning agent's next step.
+
+Each item is { page, text, runs: string[] }. Runs retain individual PDF text-show
+operations; TJ spacing numbers are not characters. Text joins runs with newlines for
+display. Scope is page-text-layer-content-order, **not rendered reading order**.
+Excluded content is stated in every result: layout, images/OCR, annotations/form fields,
+attachments/metadata, and structure-tree alternate text. A page invoking unsupported
+forms/images, marked content or external graphics state is a gap, even when it also has
+supported text. Blank absent/null/empty/comment-only content yields an empty page;
+nonempty graphics without a supported text layer is explicitly unsupported.
+
+The supported text subset is PDF 1.3–1.7 with the foundation's classic xref container,
+standard Helvetica/Courier/Times Type1 families, built-in StandardEncoding printable
+characters (including its curly quote glyphs), or named WinAnsiEncoding. The WinAnsi
+bullet/space/hyphen aliases are explicit; unknown/control codes are refused without
+replacement. Embedded/custom fonts, ToUnicode/CID maps and encoding differences are
+unsupported. Earlier PDF encodings are declined rather than reinterpreted. The mapping
+and operator semantics follow the [Adobe-hosted ISO 32000-1 reference, sections 9.4/9.6
+and Annex D](https://developer.adobe.com/document-services/docs/assets/35e4369068f86065372c18787171a17e/PDF_ISO_32000-1.pdf).
+
+Physical scanning stops at 32 pages, 30 seconds, 1 MiB decoded content per page, 64
+content streams per page, 1 MiB text/10,000 runs per page, and 16 MiB aggregate decoded
+streams **and** 16 MiB processed stream bytes. Shared streams decode once but every
+reuse counts against processed work. The existing 16 MiB file and per-stream limits
+also apply. Page offsets do not bypass any physical bound.
+
+scanComplete concerns the entire bounded text scope; pageComplete concerns the
+requested page range and becomes false on file changes. pagesObserved and skipped
+count actual observed pages. Only a stable complete scan includes total, omitted
+and a raw-file SHA-256 revision. Unsupported later pages retain only preceding complete
+pages, return an error/nextAction and omit full totals/revision. Rescan pagination must
+compare revisions before combining pages. Inline output is capped; the shared reference
+sink captures whole pages before clipping, and stored pages retain original scope and
+scan/capture completeness. A reference page being complete does not fill a source gap.
+Read-only, credential denial, no-follow opens and no-business-effect failures use the
+same worker authority checks as the other document readers.
+
+Native shows page numbers and escaped text with the explicit text-layer scope and exclusions.
+PTC generated declarations retain page, text and string[] runs; unsupported or malformed observations
+keep canonical prefix data inside failure Outcomes without a looping page continuation. Stable full
+scans alone permit forward rescan pages, with revisions compared before combining results. References
+retain typed original page coverage, decoded/processed work, scope and capture facts. All reads use
+the same live authority, credentials, no-follow, shared budgets and cancellation path as file tools.

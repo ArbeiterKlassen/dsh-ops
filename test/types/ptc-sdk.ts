@@ -70,3 +70,19 @@ async function paragraphs() {
 // @ts-expect-error DOCX decoding comes from the package, not a caller-supplied encoding.
 void tools.ops_doc_read({ path: 'body.docx', encoding: 'utf-8' })
 void paragraphs
+
+async function pdfPages() {
+  const value = await tools.ops_pdf_read({ path: 'text.pdf', offset: 1, limit: 10 })
+  if (value.status === 'completed' || value.status === 'partial') {
+    const runs: string[] | undefined = value.data.items?.[0]?.runs
+    const page: number | undefined = value.data.items?.[0]?.page
+    const processed: number | undefined = value.data.source?.processedBytes
+    // @ts-expect-error PDF pages have no DOCX paragraph block index.
+    void value.data.items?.[0]?.block
+    return { runs, page, processed }
+  }
+  return value.data?.items?.[0]?.text
+}
+// @ts-expect-error PDF encoding derives from supported fonts, not caller selection.
+void tools.ops_pdf_read({ path: 'text.pdf', encoding: 'utf-8' })
+void pdfPages
