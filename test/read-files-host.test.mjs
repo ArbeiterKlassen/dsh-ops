@@ -6,7 +6,7 @@ import { assert, test, report, withTempDir } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
 import { WORKER, requireWorker } from './lib/boundary.mjs'
 import { invoke } from '../lib/file/worker.js'
-import { resolveReadMany } from '../lib/file/read-many.js'
+import { resolveReadFiles } from '../lib/file/read-files.js'
 import { definition } from '../lib/file/contract.js'
 import { publicToolName } from '../lib/policy.js'
 requireWorker('read-many-host')
@@ -15,14 +15,14 @@ const execution = cwd => ({ agent: { session: { id: 'read-many-host', header: { 
 await test('range normalization preserves caller data, invalid fields and the current cwd', () => {
   const input = { files: [{ path: 'a.txt', offset: null, limit: undefined, unknown: '' }, { path: 'b.txt', offset: 0 }] }
   const snapshot = structuredClone(input)
-  const value = resolveReadMany(input, process.cwd())
+  const value = resolveReadFiles(input, process.cwd())
   assert.deepEqual(input, snapshot)
   assert.equal(value.files[0].path, path.resolve('a.txt'))
   assert.equal(Object.hasOwn(value.files[0], 'offset'), false)
   assert.equal(value.files[0].unknown, '')
   assert.equal(value.files[1].offset, 0, 'invalid bounds must reach authoritative validation')
   for (const files of [[], Array.from({ length: 33 }, () => ({ path: 'a' })), [null], [{ path: '' }], [{ path: 'a\0b' }]]) {
-    assert.equal(typeof resolveReadMany({ files }, process.cwd()).error, 'string')
+    assert.equal(typeof resolveReadFiles({ files }, process.cwd()).error, 'string')
   }
 })
 
