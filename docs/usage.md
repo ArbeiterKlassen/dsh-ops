@@ -147,11 +147,35 @@ dsh-ops ladder [--json] [--config <file>]
 dsh-ops upgrade-host-pwsh [--yes] [--dry-run]
 dsh-ops provision-shells [--bash] [--pwsh] [--force] [--dry-run] [--pin <file>]
                                 their digests, and install them under <DSH_HOME>/dsh-ops/shells
+dsh-ops panel [--serve] [dir] [--port <n>]
+                                Serve the panel viewer and capture reports over loopback
 ```
 
 With `--profile`, install/uninstall delegate to the official DSH profile manager.
 Without `--profile`, uninstall only cleans legacy provisioned runtime/shell files.
 `resolve`, `status` (without `--profile`), `build` and `provision` were removed with the FastCtx background component; each now exits with a message naming its replacement.
+
+### Panel viewer
+
+The panel capture row (off by default) writes each new conversation to
+`<cwd>/.dsh-ops/panel/<sessionId>.json` and leaves a static `panel.html` that inlines no data. Open
+those reports without dragging a file or starting a static server:
+
+```console
+dsh-ops panel                  # serves ./.dsh-ops/panel on 127.0.0.1
+dsh-ops panel <capture-dir>    # serves a directory written by another workspace
+dsh-ops panel --port 8123      # fixed loopback port; 0 (default) asks the kernel
+```
+
+The command prints `http://127.0.0.1:<port>/`, preselects the newest valid report and lists the
+other valid reports for switching. `--serve` is accepted as an explicit alias. It binds loopback
+only, reads that one directory, writes nothing, and names malformed reports it skipped. The capture
+row itself still opens no port: only this operator command starts a server. Opening `panel.html`
+directly through `file://` still requires dragging the JSON in, because browsers block
+same-directory `fetch`; under any static server, append `?data=<sessionId>.json`.
+
+Capture writes inside the conversation's own working directory. Add `.dsh-ops/` to that project's
+`.gitignore` before committing: reports contain prompts, conversation text and tool output.
 
 ### Environment variables
 

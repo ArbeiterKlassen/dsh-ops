@@ -20,6 +20,7 @@
   h2 { font-size: 14px; margin: 18px 0 6px; }
   #source { margin: 4px 0 0; font: 12px ui-monospace, Consolas, monospace; }
   #source, #note, #picker p { color: var(--muted); }
+  #sessions-row select { font: inherit; color: inherit; background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
   #picker { margin: 24px auto; max-width: 620px; padding: 26px; border: 1px dashed var(--line); border-radius: 10px; text-align: center; }
   #picker.drop { border-color: currentColor; background: var(--chip); }
   nav { display: flex; gap: 4px; padding: 8px 14px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -47,6 +48,7 @@
 <header>
   <h1>dsh-ops panel</h1>
   <p id="source">数据源:(未加载) — 本页不内联任何数据</p>
+  <p id="sessions-row" hidden><label for="sessions">会话:</label> <select id="sessions"></select> <span class="muted">(同目录下其它采集)</span></p>
   <p id="note">把一个 panel JSON(如 <code>&lt;sessionId&gt;.json</code>)拖到本页,或用下面的文件选择器打开。</p>
 </header>
 <div id="picker"><p>拖拽 / 选择同目录下的 JSON 数据文件</p><input id="file" type="file" accept="application/json,.json"></div>
@@ -253,15 +255,68 @@
   picker.addEventListener('drop', function (event) {
     readFile(event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0])
   })
-  var requested = new URLSearchParams(window.location.search).get('data')
-  if (requested && /^[A-Za-z0-9][A-Za-z0-9._-]*\.json$/.test(requested)) {
-    fetch(requested, { cache: 'no-store' }).then(function (response) {
+  var current = null
+  var pending = null
+  function parseRequested() {
+    var value = new URLSearchParams(window.location.search).get('data')
+    return value && /^[A-Za-z0-9][A-Za-z0-9._-]*\.json$/.test(value) ? value : null
+  }
+  function remember(name) {
+    current = name
+    var select = $('sessions')
+    var found = false
+    for (var i = 0; i < select.options.length; i += 1) {
+      if (select.options[i].value === name) { select.value = name; found = true; break }
+    }
+    if (!found && name) { var option = el('option', name); option.value = name; select.appendChild(option); select.value = name }
+    try {
+      var url = new URL(window.location.href)
+      url.searchParams.set('data', name)
+      history.replaceState(null, '', url.pathname + url.search)
+    } catch (error) { /* file:// has no history state to replace */ }
+  }
+  function load(name) {
+    if (!name) return
+    pending = name
+    fetch(name, { cache: 'no-store' }).then(function (response) {
       if (!response.ok) throw new Error('HTTP ' + response.status)
       return response.text()
-    }).then(function (raw) { accept(raw, requested) }).catch(function (error) {
-      fail('无法 fetch ' + requested + ':' + error.message + '(file:// 下浏览器会拦截,请改用拖拽或文件选择)')
+    }).then(function (raw) { pending = null; remember(name); accept(raw, name) }).catch(function (error) {
+      pending = null
+      fail('无法读取 ' + name + ':' + error.message + '(file:// 下浏览器会拦截,请改用拖拽或文件选择)')
     })
   }
+  function loadSessions() {
+    if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') return
+    fetch('/api/sessions', { cache: 'no-store' }).then(function (response) {
+      if (!response.ok) throw new Error('HTTP ' + response.status)
+      return response.json()
+    }).then(function (index) {
+      var rows = index && Array.isArray(index.sessions) ? index.sessions : []
+      if (rows.length === 0) return
+      var select = $('sessions')
+      clear(select)
+      rows.forEach(function (row) {
+        var option = el('option', text(row.sessionId) + ' · ' + stamp(row.mtimeMs))
+        option.value = row.file
+        select.appendChild(option)
+      })
+      $('sessions-row').hidden = false
+      $('note').textContent = '服务模式:默认显示最新会话;用上方下拉切换同目录其它会话,也可以把 JSON 拖到本页。'
+      var wanted = pending || current || parseRequested()
+      if (wanted) {
+        select.value = wanted
+        if (!pending && !current) load(wanted)
+      } else {
+        select.value = rows[0].file
+        load(rows[0].file)
+      }
+    }).catch(function () { /* a plain static server has no /api/sessions; keep the drag/select flow */ })
+  }
+  $('sessions').addEventListener('change', function (event) { load(event.target.value) })
+  loadSessions()
+  var requested = parseRequested()
+  if (requested) load(requested)
 }())
 </script>
 </body>
