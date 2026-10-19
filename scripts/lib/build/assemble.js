@@ -1,9 +1,9 @@
 /**
  * Step: assemble — what one release builds and the packages it stages.
  *
- * Current releases produce only the main plugin. The historical shell
- * assembly helpers remain for provenance and fixture checks; describePackages
- * no longer schedules shell payloads.
+ * The Windows bash package is assembled from the committed skeleton in
+ * `packages/bash-win32-x64/` plus the verified upstream tree and a per-package
+ * `provenance.json`. PowerShell stays with the host and is never packaged.
  *
  * @module dsh-ops/build/lib/assemble
  */
@@ -11,8 +11,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import * as shellsModule from '../../../lib/shells.js'
+import { resolveShellPin } from './pins.js'
 import {
-  REPO_ROOT, SCRIPT_SHA256, copyEntry, gitRevision, log, readJsonIfExists, run,
+  REPO_ROOT, SCRIPT_SHA256, copyEntry, gitRevision, log, mainManifest, readJsonIfExists, run,
   sha256File, skeletonDigest, treeFiles, writeJson,
 } from './util.js'
 
@@ -37,9 +38,24 @@ export function shellPackageName(kind, platform, arch) {
  * @param {string} dist - the artifact directory.
  * @returns {object[]} one description per package, in publish order.
  */
-export function describePackages(_platform, _arch, _dist) {
-  // Shells are operator-managed, never released as npm payload packages.
-  return []
+export function describePackages(platform, arch, dist) {
+  const name = shellPackageName('bash', platform, arch)
+  // The declared optionalDependency is the single source of truth for the payload version.
+  // Building or injecting any other version would create exactly the silent failure the pin prevents.
+  const version = mainManifest().optionalDependencies?.[name]
+  if (typeof version !== 'string' || version.length === 0) throw new Error(`${name} must be declared in package.json optionalDependencies`)
+  return [
+    {
+      kind: 'bash',
+      name,
+      version,
+      platform,
+      arch,
+      dist,
+      executable: `bin/${PLATFORM_PACKAGES.bash.executable}`,
+      payload: { type: 'archive', pin: resolveShellPin('bash', platform, arch) },
+    },
+  ]
 }
 
 /**

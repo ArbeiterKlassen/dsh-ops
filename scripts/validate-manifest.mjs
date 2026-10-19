@@ -32,7 +32,7 @@ import { resolveTuiConfig } from '../lib/components/tui/index.js'
 import { resolvePanelConfig } from '../lib/components/panel/index.js'
 import { PTC_API_TOOLS, definition } from '../lib/ptc/contract.js'
 import { resolveConfig, resolveDiscoveryConfig } from '../lib/config.js'
-import { COMPONENTS, componentEntry, componentEnabled, SHELL_DISABLED_EXPRESSION } from '../lib/components/defaults.js'
+import { COMPONENTS, componentEntry, componentEnabled } from '../lib/components/defaults.js'
 import { resolveHidingConfig } from '../lib/official-tool-hiding.js'
 
 /** The repository root (`scripts/`'s parent). */
@@ -233,7 +233,7 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
       const row = rows.find(candidate => candidate?.name === componentEntry(component))
       check(row?.id === `${pkg.name}-${component}`, `the ${component} component has a stable row id`)
       if (!row) continue
-      check(component === 'shell' ? row.disabled?.__jsExpr === SHELL_DISABLED_EXPRESSION : (row.disabled === true) === !componentEnabled(component, process.platform), `${component} has its documented enablement default`)
+      check((row.disabled === true) === !componentEnabled(component, process.platform), `${component} has its documented enablement default`)
       const resolve = component === 'discovery' ? resolveDiscoveryConfig : component === 'tui' ? resolveTuiConfig
         : component === 'ptc' ? resolvePtcConfig
           : component === 'hide-official' ? resolveHidingConfig

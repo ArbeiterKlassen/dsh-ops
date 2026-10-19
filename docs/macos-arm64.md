@@ -18,7 +18,7 @@ Use a supported Rust toolchain (release validation pins 1.97.1). A custom `CARGO
 
 ## Shells
 
-Bash and PowerShell npm binary payloads remain **Windows-only optional dependencies**. npm must not install them on a Mac; there is no postinstall downloader. macOS `ops_bash` selects explicit `bashPath`, then PATH and Homebrew/system locations. Example:
+Bash is a **Windows-only optional npm payload** of the main package; PowerShell stays with the host. npm installs no payload on a Mac and there is no postinstall downloader. macOS `ops_bash` is enabled by default and resolves an explicit `bashPath`, then PATH and Homebrew/system locations. Example:
 
 ```yaml
 - id: dsh-ops-shell

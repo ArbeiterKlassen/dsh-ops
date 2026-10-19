@@ -6,7 +6,7 @@ What each of the seven components publishes, with parameters and permission requ
 
 | Row `name` | Description | Default | Published tools |
 | --- | --- | --- | --- |
-| `dsh-ops/shell` | Prefer bash as the terminal, with host PowerShell for operations bash cannot cover | Windows on; Linux/macOS off | `ops_bash`; host `pwsh` keeps its own executor |
+| `dsh-ops/shell` | Prefer bash as the terminal, with host PowerShell for operations bash cannot cover | On (all platforms) | `ops_bash`; host `pwsh` keeps its own executor |
 | `dsh-ops/file` | Bounded Rust file retrieval and text output for the model | On | `ops_read_files`; advanced tools load through discovery |
 | `dsh-ops/ptc` | Typed file APIs and progressive SDK in PTC sessions | On | `ops_inspect_local_file`, `ops_result`, `ops_load_sdk`; advanced APIs load through the SDK |
 | `dsh-ops/discovery` | Advanced Native tools on demand | On | `ops_discover_tools` |
@@ -20,7 +20,7 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 
 ## Tool summary
 
-The shared catalogue has 20 entries. The generated PTC SDK contains 18 APIs: 15 file/document tools plus batch, result and load_sdk; bash and discover_tools belong to other entry points. Catalogue membership does not mean residency or permission. Fresh PTC pools follow the implemented catalogue; saved explicit pools remain authoritative. Document tools load on demand.
+The shared catalogue has 21 entries. The generated PTC SDK contains 19 APIs: 16 file/document tools plus batch, result and sdk; bash and discover belong to other entry points. Catalogue membership does not mean residency or permission. Fresh PTC pools follow the implemented catalogue; saved explicit pools remain authoritative. Document tools load on demand.
 
 | Tool | Purpose | Full-access requirement |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ The shared catalogue has 20 entries. The generated PTC SDK contains 18 APIs: 15 
 | `ops_grep` | Rust regex search, multiple file filters, counts/summaries | No command permission gate¹ |
 | `ops_glob` | Multiple path patterns with exclusions | No command permission gate¹ |
 | `ops_replace` | Mechanical cross-file literal replacement; use host edit for precise changes | No command permission gate¹ |
-| `ops_write_file` / `ops_edit_file` / `ops_edit_file` | File writes and atomic edits within one file, retaining revision/CAS | Writes follow current authority¹ |
+| `ops_write_file` / `ops_edit_file` | File writes and atomic edits within one file, retaining revision/CAS | Writes follow current authority¹ |
 | `ops_diff` / `ops_stat` | Compare text and inspect metadata | No command permission gate¹ |
 | `ops_copy` / `ops_move` / `ops_remove` | Fixed file operations | Writes follow current authority¹ |
 | `ops_read_table` / `ops_read_docx` / `ops_read_pdf` | Bounded CSV/TSV, DOCX and restricted PDF readers; see below | No command permission gate¹ |
@@ -166,6 +166,8 @@ Bounded session-owned result references: PTC can put object rows; Native file to
 ## `dsh-ops/shell` — terminal and shells
 
 Routing: **toolkit → bash → host PowerShell**.
+
+On Windows x64 the install carries the pinned Bash payload as an optional dependency of the main package (`@dsh-ops/bash-win32-x64@0.2.1`, PortableGit `v2.56.0.windows.2`, GNU bash 5.3.15); `bashPath` can select Git Bash instead, and `dsh-ops bash-runtime install` repairs or installs a managed copy when the payload is absent. POSIX hosts use the system Bash and ship no payload. PowerShell stays host-selected.
 
 - `ops_bash`: the preferred general command executor. Use `command` for short commands and `script_path` for long scripts.
   Cancellation also stops pending sandbox preparation; a late preparation result cannot start the command. When cancellation races a timeout, the first cause is reported.

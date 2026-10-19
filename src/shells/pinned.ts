@@ -1,4 +1,4 @@
-/** Build/test input only: find the pinned optional Bash without requiring an npm payload. */
+/** Build/test input only: find the pinned Bash payload and verify its digest. */
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
@@ -13,7 +13,7 @@ export function pinnedBashExecutable(options?: PinnedBashOptions): string
 export function pinnedBashExecutable({ file, env = process.env, bundleRoot = PACKAGE_ROOT, required = true }: PinnedBashOptions = {}): string | undefined {
   let candidate = file ?? provisionedShell({ kind: 'bash', env, platform: 'win32', arch: 'x64' })?.file
   if (!candidate) {
-    // Older checkouts may still have the optional package. It is a fixture, never a new dependency.
+    // The restored optional package is the normal source; a provisioned store copy is preferred above.
     try { candidate = path.join(path.dirname(createRequire(path.join(bundleRoot, 'package.json')).resolve('@dsh-ops/bash-win32-x64/package.json')), 'bin/bash.exe') } catch {}
   }
   if (!candidate) {

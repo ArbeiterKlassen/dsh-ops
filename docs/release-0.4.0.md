@@ -11,13 +11,13 @@ startup and reporting its cost and the full startup total separately. Final meas
 ## Implemented surface
 
 The package declares seven stable rows: shell, file, PTC, discovery, panel, TUI and official-tool
-replacement. Fresh file/PTC/discovery rows are on; shell is on only on Windows; panel/TUI/replacement
-are off. Existing named overrides and explicit switches survive restart. An enabled fresh panel starts
+replacement. Fresh file/PTC/discovery rows are on; shell is on for every supported platform;
+panel/TUI/replacement are off. Existing named overrides and explicit switches survive restart. An enabled fresh panel starts
 collection; legacy explicit capture:false remains inert. Turning it off stops queued filesystem work.
 
-Native starts with read_files and discover_tools, plus usable Windows Bash. Advanced tools activate only in
+Native starts with read_many and discover, plus a usable Bash (pinned payload on Windows, host Bash on POSIX). Advanced tools activate only in
 the owning agent's next provider request. The PTC SDK catalogue contains 19 APIs: 16 file/document tools,
-batch, result and load_sdk. The complete shared catalogue also includes bash and discover_tools (20 entries).
+batch, result and sdk. The complete shared catalogue also includes bash and discover (21 entries).
 The SDK and Native projections expose separate typed/text outputs; catalogue membership is not startup
 residency. Current scopes, allowed pools and permissions still govern publication and every call.
 
@@ -34,9 +34,9 @@ artifacts. Follow [source-build instructions](CONTRIBUTING.md), not an unbuilt G
 
 | Tool | Supported scope | Main bounds and exclusions |
 | --- | --- | --- |
-| read_table | CSV/TSV lexical string cells; strict UTF-8 or BOM-consistent UTF-16LE/BE | 32 MiB input, 100000 data rows, 1 MiB/record, 1024 columns, 30 s. No XLS/XLSX, formula evaluation or type coercion. |
-| read_docx | DOCX main-body paragraphs, including table coordinates | 32 MiB archive, 8 MiB main XML, 1 MiB/paragraph, 100000 paragraphs, 30 s. No binary DOC, macros, encrypted/ZIP64 archives, external fetch or disk extraction. Excludes layout, headers/footers, notes/comments and metadata. |
-| read_pdf | PDF 1.3–1.7 classic-xref text layer; standard Helvetica/Courier/Times Type 1 with Standard/WinAnsi | 16 MiB input, 32 pages, 1 MiB/page/stream, 16 MiB decoded and 16 MiB processed streams, 30 s. No OCR, images, general layout, forms, custom/embedded/CID fonts, ToUnicode, encryption, incremental or object/xref streams. |
+| table_read | CSV/TSV lexical string cells; strict UTF-8 or BOM-consistent UTF-16LE/BE | 32 MiB input, 100000 data rows, 1 MiB/record, 1024 columns, 30 s. No XLS/XLSX, formula evaluation or type coercion. |
+| doc_read | DOCX main-body paragraphs, including table coordinates | 32 MiB archive, 8 MiB main XML, 1 MiB/paragraph, 100000 paragraphs, 30 s. No binary DOC, macros, encrypted/ZIP64 archives, external fetch or disk extraction. Excludes layout, headers/footers, notes/comments and metadata. |
+| pdf_read | PDF 1.3–1.7 classic-xref text layer; standard Helvetica/Courier/Times Type 1 with Standard/WinAnsi | 16 MiB input, 32 pages, 1 MiB/page/stream, 16 MiB decoded and 16 MiB processed streams, 30 s. No OCR, images, general layout, forms, custom/embedded/CID fonts, ToUnicode, encryption, incremental or object/xref streams. |
 
 These are bounded readers, not general office/PDF converters. Unsupported later content retains safe
 preceding complete records with an error and next action. Offsets cannot skip a physical scan gap.
@@ -45,8 +45,9 @@ incomplete source coverage. See [detailed document contracts](native-kernel.md).
 
 ## Operator changes
 
-Bash and PowerShell are not npm payload dependencies. Managed Bash install/removal and Git Bash
-selection are explicit. Windows restricted execution remains partially enforced and requires the
+Bash is a Windows-only optional npm payload of the main package (installed automatically);
+PowerShell stays with the host and is not an npm payload. Managed Bash install/removal and Git Bash
+selection remain explicit repair paths. Windows restricted execution remains partially enforced and requires the
 compatible pinned MSYS runtime; approval does not create missing confinement. Host PowerShell upgrade
 previews the standard installation; execute explicitly, restart DSH, and review any custom pwshPath.
 
@@ -72,7 +73,7 @@ The detailed limits above and in linked contracts remain part of acceptance.
 | 6 — References/budgets | 10 MiB/result, 100 MiB/session; two active/eight waiting calls and 30-second worker ceiling; audit data separate. | result-references/spill/lifecycle, call-budget, native-result; permission-limited cleanup can leave invalidated temp blobs. |
 | 7 — PTC | 19 typed SDK APIs, three resident entries; allowed pools and next-step loading independent of Native. | ptc-outcome/schema/sdk and progressive-loop; current frozen SDK cannot call queued APIs. |
 | 8 — Discovery | Native allowed pool, always-loaded subset and 1–5 selections; owning agent's next request only. | discovery/composition and real AgentLoop BM-04; no filesystem permission grant. |
-| 9 — Resident surface | read_files plus discover, with eligible Windows Bash; advanced tools absent initially. | Exact provider inventory; approved BM-03 gates the file/discovery subtotal at ≤400 and separately reports the full Bash-inclusive total. |
+| 9 — Resident surface | read_many plus discover, with a usable Bash (pinned payload on Windows, host Bash on POSIX); advanced tools absent initially. | Exact provider inventory; approved BM-03 gates the file/discovery subtotal at ≤400 and separately reports the full Bash-inclusive total. |
 | 10 — Re-read evidence | Exact successful body in the latest completed ordinary provider request plus fresh file checks. | context-read-dedup/many with real replacement/projection; missing evidence restores full output. |
 | 11 — Bash | Host approvals/jobs/subprocess, absolute executor, 120/600-second timing, optional managed/Git Bash. | shells-host/execution/manager; Windows confinement remains partial and runtime compatibility is mandatory. |
 | 12 — PowerShell | No bundled payload or executor overlay; explicit standard host upgrade plan and execution. | Host runtime manager/transport regressions; no real operator installation performed; restart/custom-path review required. |

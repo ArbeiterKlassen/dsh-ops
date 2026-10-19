@@ -51,7 +51,9 @@ for (const mode of ['read-only', 'workspace-write', 'danger-full-access']) {
           const names = () => ctx.get('tools').schemas(agent).map(tool => tool.name)
           await waitFor(() => names().includes(presentation === 'ptc' ? 'ops_inspect_local_file' : 'ops_read_files') && names().includes('read') && names().includes('grep') &&
             names().includes('ops_load_sdk') === (presentation === 'ptc') &&
-            names().includes('ops_bash') === (process.platform === 'win32'), { what: `${mode}/${presentation} default publication` })
+            // The shell row is on by default on every supported platform (POSIX resolves the
+            // distribution's own bash); a configured-but-missing bash is covered below.
+            names().includes('ops_bash'), { what: `${mode}/${presentation} default publication` })
           const assembled = await ctx.get('systemPrompt').assemble({ scope: agent, signal: new AbortController().signal })
           assert.equal(assembled.tools.some(tool => tool.name === 'run_code'), presentation !== 'native')
           assert.ok(assembled.sections.length > 0)

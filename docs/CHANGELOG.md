@@ -7,11 +7,13 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-### BREAKING
+- Rename 0.4.0 tools for consistent `verb_noun` naming: `read_many`→`read_files`, `table_read`→`read_table`, `doc_read`→`read_docx`, `pdf_read`→`read_pdf`, `sdk`→`load_sdk`, `discover`→`discover_tools`; merge `edit_many` into `edit_file`. Old raw names in user profiles are silently migrated.
+- 将 0.4.0 工具重命名为一致的 `verb_noun` 形式：`read_many`→`read_files`、`table_read`→`read_table`、`doc_read`→`read_docx`、`pdf_read`→`read_pdf`、`sdk`→`load_sdk`、`discover`→`discover_tools`；`edit_many` 合并入 `edit_file`。用户配置中的旧名会静默迁移。
 
-- Rename seven 0.4.0 tool raw names for consistent `<verb>_<noun>` naming; old names in saved profiles are silently migrated at load time. Public names change: `ops_read_many` → `ops_read_files`, `ops_edit_many` → merged into `ops_edit_file` (duplicate registration removed), `ops_table_read` → `ops_read_table`, `ops_doc_read` → `ops_read_docx`, `ops_pdf_read` → `ops_read_pdf`, `ops_sdk` → `ops_load_sdk`, `ops_discover` → `ops_discover_tools`. Closes #302.
-- 重命名 0.4.0 新增的七个工具 raw name 以统一 `<动词>_<名词>` 命名；已保存 profile 中的旧名在加载时静默迁移。公开名变更：`ops_read_many` → `ops_read_files`、`ops_edit_many` → 合并进 `ops_edit_file`（删除重复注册）、`ops_table_read` → `ops_read_table`、`ops_doc_read` → `ops_read_docx`、`ops_pdf_read` → `ops_read_pdf`、`ops_sdk` → `ops_load_sdk`、`ops_discover` → `ops_discover_tools`。关闭 #302。
-
+- Enable the shell row by default on all three supported platforms: Windows runs the pinned Bash payload declared by the main package, Linux/macOS run the distribution's Bash (overridable with `config.bashPath`), and PowerShell stays host-managed.
+- shell 行恢复为三个受支持平台默认开启：Windows 使用主包声明的固定 bash 载荷，Linux/macOS 使用发行版自带 bash（可用 `config.bashPath` 覆盖），PowerShell 仍由宿主管理。
+- Restore the Windows Bash npm optional payload: the main package declares `@dsh-ops/bash-win32-x64@0.2.1` in `optionalDependencies`, so npm install brings the pinned PortableGit (GNU bash 5.3.15); `bash-runtime`/`provision-shells` and the runtime settings pages remain the selection and repair path. POSIX keeps the system Bash and PowerShell stays host-managed.
+- 恢复 Windows bash 的 npm 可选载荷声明：主包在 `optionalDependencies` 中声明 `@dsh-ops/bash-win32-x64@0.2.1`，npm 安装即带固定版本的 PortableGit（GNU bash 5.3.15）；`bash-runtime`/`provision-shells` 与运行时设置页保留为选择与修复路径。POSIX 继续使用系统 bash，PowerShell 仍由宿主管理。
 - Prepare the 0.4.0 candidate version across owned npm/plugin and Rust workspace metadata without dependency changes. Audit paired release, usage, component, SDK, discovery and manual-validation documentation; record the explicitly approved benchmark scope and retain historical failures separately from functional CI. No release/tag is created.
 - 将自有 npm/插件与 Rust workspace 版本统一为 0.4.0 候选，不变更依赖；同步双语发布、使用、组件、SDK、发现和手动验收文档。记录明确批准的基准范围并保留历史失败，不以功能 CI 代替验收，不创建发布或 tag。
 - Apply the confirmed acceptance scopes: BM-01 gates against OPS 0.3.x with official-reader comparisons reported separately; BM-03 gates file/discovery schemas while retaining startup Bash, exact full-inventory readiness and separate full totals. Preserve historical failed evidence.
@@ -87,8 +89,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Migrate panel collection to strict TypeScript while preserving queued-stop, issued-I/O waiting and explicit sealing. Count malformed persisted fields and mark incomplete capture without corrupting valid text or usage totals.
 - 将面板采集迁移为严格 TypeScript，保留排队停止、等待已发起 I/O 与显式封存；错误的持久化字段计入 malformed 并标记不完整，不破坏有效正文或用量总计。
 
-- Add discovery as the seventh bundle row; preserve existing named row overrides. Fresh defaults enable shell only on Windows and leave panel/TUI/replacements off. Enabling a fresh panel row starts capture; explicit legacy capture:false stays inert. Provide builtin validated file/PTC/TUI configuration.
-- bundle 新增第七行 discovery，保留已有带名称行覆盖。首次安装仅 Windows 默认启用 shell，panel/TUI/替换默认关闭；启用新 panel 行即采集，旧配置 capture:false 保持不采集。补充文件/PTC/TUI 内置校验配置。
+- Add discovery as the seventh bundle row; preserve existing named row overrides. Fresh defaults enable shell on every supported platform and leave panel/TUI/replacements off. Enabling a fresh panel row starts capture; explicit legacy capture:false stays inert. Provide builtin validated file/PTC/TUI configuration.
+- bundle 新增第七行 discovery，保留已有带名称行覆盖。首次安装三个平台默认启用 shell，panel/TUI/替换默认关闭；启用新 panel 行即采集，旧配置 capture:false 保持不采集。补充文件/PTC/TUI 内置校验配置。
 
 - Stop panel collection and queued filesystem work when its row or capture switch is disabled; wait for issued I/O without scheduling a final fold. Expose validated capture settings through the host editor.
 - 关闭 panel 行或采集开关时停止采集及排队文件操作，等待已开始的 I/O，但不触发最终归并；宿主编辑器提供严格校验的采集设置。
@@ -253,7 +255,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Keep Native startup to the bounded multi-file reader (#261, 9/16)
 
-- Publish `ops_read_files` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
+- Publish `ops_read_many` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
 - Measure compact file/discovery schemas at 241 tokens; the integrated full Windows Bash/jobs provider order is 660 tokens (catalogue order 661). The earlier full-surface 400-token requirement failed; the operator subsequently approved a file/discovery-only budget with startup Bash and full totals retained.
 - Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；含 Bash 的完整工具面曾超过原400-token门禁；操作者随后批准仅对文件/发现小计设预算，保留 Bash 启动常驻与完整总数。
 
@@ -296,9 +298,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Read multiple file ranges and apply atomic multi-edits (#261)
 
-- Add read_files with 1-32 independently reported UTF-8 ranges in one worker call, current-session
+- Add read_many with 1-32 independently reported UTF-8 ranges in one worker call, current-session
   paths, credential preflight, per-file revisions/errors and explicit pending-file/line recovery.
-- Add edit_file as a single-file atomic CAS edit operation with short receipts. Bound escaped
+- Add edit_many as a single-file atomic CAS edit operation with short receipts. Bound escaped
   read output using actual metadata bytes; an incomplete line retains its offset and hex guidance.
 - 新增多文件范围读取与单文件原子多段编辑；逐文件报告版本、错误及未读范围，保持权限边界与短回执。
 
@@ -326,11 +328,11 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Discover advanced tools in the requesting Native scope (#261, 8/16)
 
-- Add `dsh-ops/discovery` and `ops_discover_tools`: deterministic allowed-pool selection, a 1-5 per-call cap, and always-loaded choices. Publish pending capabilities only at the next model-step boundary, with scope isolation, permission withdrawal and owned cleanup.
+- Add `dsh-ops/discovery` and `ops_discover`: deterministic allowed-pool selection, a 1-5 per-call cap, and always-loaded choices. Publish pending capabilities only at the next model-step boundary, with scope isolation, permission withdrawal and owned cleanup.
 - Coordinate overlapping discovery rows and exact Native ownership with progressive PTC publication. Preserve unrelated external registrations and same-scope file handoff; include current batch reads/edits and the Native reference pager.
 - 协调重叠发现行、Native 精确归属和渐进式 PTC 发布，保留外部注册与同作用域文件交接；纳入现有批量读写及 Native 引用分页器。
 - Add pinned schema token measurement and real Cordis/native-worker lifecycle checks. The current discovery entry alone measures 94 cl100k_base tokens; this is not the full default surface. The real PDF next-request assertion is part of BM-04.
-- 新增按需发现组件与 `ops_discover_tools`：允许池、单次 1-5 项上限和始终加载选择；仅在下一模型步骤挂载，并保证作用域隔离、权限变更撤销及卸载清理。
+- 新增按需发现组件与 `ops_discover`：允许池、单次 1-5 项上限和始终加载选择；仅在下一模型步骤挂载，并保证作用域隔离、权限变更撤销及卸载清理。
 - 新增固定分词器的 schema 计量和真实 Cordis/原生 worker 生命周期测试；当前发现入口为 94 cl100k_base tokens，不代表完整默认面；真实 PDF 下一请求断言由 BM-04 验证。
 
 ### Render Native file results as bounded, readable text (#261)
