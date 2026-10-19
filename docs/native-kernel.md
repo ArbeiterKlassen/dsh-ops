@@ -34,8 +34,8 @@ grants authority. The bridge generates a fresh UUID, supplies the authoritative 
 policy, then rechecks authority immediately before spawning as before. Ordinary success fields
 retain their semantics; optional reference fields are described below.
 
-`budget.timeoutMs` is 1..2147483647 milliseconds, using the existing 300000ms default and existing
-host cancellation. A process-local watchdog also enforces it for direct callers; interruption exits
+`budget.timeoutMs` accepts 1..2147483647 milliseconds for envelope compatibility. The host
+uses a 30000ms default and caps supplied timeouts at 30000ms, with host cancellation. A process-local watchdog also enforces it for direct callers; interruption exits
 124 and bridges report unknown effects. `budget.maxBytes` is 1024..131072, defaults to 131072, and
 counts serialized JSON plus its newline. The minimum leaves room for a structured error. Oversized
 read output without trusted storage returns `OUTPUT_LIMIT` with no effects; a lost mutation

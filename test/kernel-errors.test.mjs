@@ -7,8 +7,8 @@ await test('permission, input, revision and transient failures have distinct adv
   assert.deepEqual(errorPolicy('REVISION_CONFLICT'), { status: 'conflict', retry: 'after-state-change' })
   for (const code of ['INVALID_ARGUMENT', 'EDIT_CONFLICT', 'OUTPUT_LIMIT', 'ERR_INVALID_ENCODING', 'SEARCH_STALE']) assert.deepEqual(errorPolicy(code), { status: 'error', retry: 'after-input-change' })
   assert.deepEqual(errorPolicy('JOB_BUSY'), { status: 'error', retry: 'bounded-transient' })
-  for (const code of ['ACCESS_DENIED', 'AUTHORITY_CHANGED', 'EXECUTOR_UNAVAILABLE']) assert.deepEqual(errorPolicy(code), { status: 'error', retry: 'after-state-change' })
-  for (const code of ['METADATA_UNSUPPORTED', 'IO_ERROR', 'NEW_CODE', 'toString', '__proto__']) assert.deepEqual(errorPolicy(code), { status: 'error', retry: 'never' })
+  for (const code of ['ACCESS_DENIED', 'AUTHORITY_CHANGED', 'EXECUTOR_UNAVAILABLE', 'CALL_LIMIT']) assert.deepEqual(errorPolicy(code), { status: 'error', retry: 'after-state-change' })
+  for (const code of ['METADATA_UNSUPPORTED', 'IO_ERROR', 'NEW_CODE', 'toString', '__proto__', 'CANCELLED']) assert.deepEqual(errorPolicy(code), { status: 'error', retry: 'never' })
 })
 
 await test('unknown or already-applied effects override every ordinary retry policy', () => {

@@ -10,7 +10,7 @@ export class NativeFileTools {
     this.config = config
     this.report = report ?? (() => {})
     this.file = undefined
-    this.active = new Set()
+    this.active = new Map()
     this.disposers = []
     this.stopped = false
   }
@@ -33,10 +33,11 @@ export class NativeFileTools {
     const abort = () => controller.abort(exec?.signal?.reason)
     if (exec?.signal?.aborted) abort()
     else exec?.signal?.addEventListener?.('abort', abort, { once: true })
-    const timer = setTimeout(() => controller.abort(new Error('Native file call timed out')), this.config.toolCallTimeoutMs ?? WORKER_TIMEOUT_MS)
+    const timer = setTimeout(() => controller.abort(new Error('Native file call timed out')), Math.min(this.config.toolCallTimeoutMs ?? WORKER_TIMEOUT_MS, WORKER_TIMEOUT_MS))
     timer.unref?.()
-    this.active.add(controller)
-    try { return await invoke(this.ctx, this.file, tool, args, exec, controller.signal, this.config) }
+    const work = invoke(this.ctx, this.file, tool, args, exec, controller.signal, this.config)
+    this.active.set(controller, work)
+    try { return await work }
     finally {
       clearTimeout(timer)
       this.active.delete(controller)
@@ -46,8 +47,8 @@ export class NativeFileTools {
 
   async stop() {
     this.stopped = true
-    for (const controller of this.active) controller.abort(new Error('Native file component unloaded'))
-    await Promise.allSettled([...this.active])
+    for (const controller of this.active.keys()) controller.abort(new Error('Native file component unloaded'))
+    await Promise.allSettled(this.active.values())
     // Isolate each teardown: one throwing worker registration must not strand the rest.
     safeDisposeAll(this.disposers.splice(0), (error, where) => {
       this.report(`dsh-ops: ${where} teardown failed: ${error instanceof Error ? error.message : String(error)}`, 'warn')

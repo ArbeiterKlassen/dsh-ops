@@ -18,6 +18,7 @@ await test('bridge budgets keep existing null and fractional timer semantics', (
   assert.equal(workerEnvelope('file', {}, null).budget.timeoutMs, WORKER_TIMEOUT_MS)
   assert.equal(workerEnvelope('file', {}, 0.5).budget.timeoutMs, 1)
   assert.equal(workerEnvelope('ptc', {}, 12.9).budget.timeoutMs, 12)
+  assert.equal(workerEnvelope('file', {}, 60000).budget.timeoutMs, 30000)
   for (const timeout of [0, -1, NaN, Infinity, 2147483648, '100']) {
     assert.throws(() => workerEnvelope('file', {}, timeout), TypeError)
   }
@@ -90,11 +91,12 @@ await test('each bridge emits fresh trusted metadata and collects the advertised
           stdout: { readFrom: () => ({ text: '{"status":"completed"}', lossy: false }) }, stderr: { readFrom: () => ({ text: '', lossy: false }) },
         } }
       } }))
+      const exec = execution(root)
       for (const [call, tool, args, component, timeout] of [
         [fileCall, 'grep', { path: root, pattern: 'x', requestId: 'model-value' }, 'file', 1234],
-        [ptcCall, 'result', { action: 'put', items: [] }, 'ptc', WORKER_TIMEOUT_MS],
+        [ptcCall, 'batch', { action: 'plan', operations: [] }, 'ptc', WORKER_TIMEOUT_MS],
       ]) {
-        const value = await call(ctx, 'worker', tool, args, execution(root), signal(), { toolCallTimeoutMs: timeout })
+        const value = await call(ctx, 'worker', tool, args, exec, signal(), { toolCallTimeoutMs: timeout })
         assert.equal(value.status, 'completed', JSON.stringify(value))
         const spec = calls.at(-1), envelope = JSON.parse(spec.stdio.stdin.data)
         assert.equal(envelope.version, 1); assert.equal(envelope.component, component)

@@ -7,6 +7,20 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Bound shared calls and expire session references (#261)
+
+- Share two active/eight waiting worker slots across Native/PTC, recheck authority after admission,
+  and cap worker execution at 30 seconds. Bind private result storage to the live host session and
+  current permissions; cancel and settle calls before authority-respecting cache cleanup.
+- Native/PTC 共用有界调用队列与 30 秒上限；引用绑定活动会话与当前权限，会话结束后按权限清理缓存并保留审计数据。
+
+### Read multiple file ranges and apply atomic multi-edits (#261)
+
+- Add read_many with 1-32 independently reported UTF-8 ranges in one worker call, current-session
+  paths, credential preflight, per-file revisions/errors and explicit pending-file/line recovery.
+- Add edit_many as a single-file atomic CAS edit operation with short receipts. Bound escaped
+  read output using actual metadata bytes; an incomplete line retains its offset and hex guidance.
+- 新增多文件范围读取与单文件原子多段编辑；逐文件报告版本、错误及未读范围，保持权限边界与短回执。
 ### Spill oversized canonical output into bounded session snapshots (#261, 6b/16)
 
 - Preserve a useful head and original operation root, execution facts and mutation effects while
@@ -27,14 +41,6 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the lock and audit namespace and reports partial cleanup honestly.
 - Preserve Windows private-temp capability isolation; real confined create/reopen/readonly and
   foreign-session denial assertions cover the protected cache ACL.
-
-### Read multiple file ranges and apply atomic multi-edits (#261)
-
-- Add read_many with 1-32 independently reported UTF-8 ranges in one worker call, current-session
-  paths, credential preflight, per-file revisions/errors and explicit pending-file/line recovery.
-- Add edit_many as a single-file atomic CAS edit operation with short receipts. Bound escaped
-  read output using actual metadata bytes; an incomplete line retains its offset and hex guidance.
-- 新增多文件范围读取与单文件原子多段编辑；逐文件报告版本、错误及未读范围，保持权限边界与短回执。
 
 ### Render Native file results as bounded, readable text (#261)
 

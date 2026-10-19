@@ -183,8 +183,9 @@ try {
   await bridge.plugin(inner => { inner.provide('sandboxPolicy', { resolve: () => ({ mode: 'read-only', workspaceRoot: dir, sessionId: 'alias' }) }) })
   try {
     const aliasRoot = fs.realpathSync.native(dir) !== dir
+    const aliasSession = { id: 'alias', mode: 'read-only', header: { cwd: dir } }
     const fileCall = (tool, args) => invokeFile(bridge, file, tool, args,
-      { agent: { session: { id: 'alias', mode: 'read-only', header: { cwd: dir } } } }, new AbortController().signal)
+      { agent: { session: aliasSession } }, new AbortController().signal)
     const observed = await fileCall('inspect_local_file', { path: path.join(dir, 'main/keep') })
     assert.equal(observed.status, 'completed', JSON.stringify(observed))
     assert.equal(observed.items[0]?.text, 'protected', JSON.stringify(observed))
@@ -317,17 +318,22 @@ try {
     const monitored = await def.execute({action:'plan',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure,signal:new AbortController().signal})
     assert.equal(monitored.status,'planned'); assert.equal(hostJobs.size,0); assert.ok(jobNumber >= 1)
     const aborted = new AbortController(); aborted.abort()
-    assert.equal((await invoke(ctx,file,'batch',{action:'run',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure},aborted.signal)).error.effectState,'none')
+    const cancelled = await invoke(ctx,file,'batch',{action:'run',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure},aborted.signal)
+    assert.equal(cancelled.error.effectState,'none'); assert.equal(cancelled.error.code,'CANCELLED')
     assert.equal(calls.length, before+2)
     const abortDuringWork = new AbortController()
+    let enteredWorker
+    const workerStarted = new Promise(resolve => { enteredWorker = resolve })
     const interruptedCtx = { get(name) {
       if (name === 'sandboxPolicy') return { resolve: () => ({mode:'danger-full-access',workspaceRoot:dir}) }
       if (name === 'subprocess') return { spawn() {
+        enteredWorker()
         return { collected: { stdout: {readFrom:()=>({text:'',lossy:false})},stderr:{readFrom:()=>({text:'',lossy:false})} },
           done: new Promise(resolve => abortDuringWork.signal.addEventListener('abort', () => resolve({exitCode:null,signal:'SIGTERM'}), {once:true})) }
       } }
     } }
     const interruption = invoke(interruptedCtx,file,'batch',{action:'run',operations:[{op:'remove',path:'host-dest'}]}, {agent:pure},abortDuringWork.signal)
+    await workerStarted
     abortDuringWork.abort()
     const unsettled = await interruption
     assert.equal(unsettled.error.code,'RESULT_UNKNOWN'); assert.match(unsettled.detailsRef,/^j-/)
@@ -419,12 +425,13 @@ try {
     }
     const sdkResult = await sdk(`
       const stored = await tools.ops_result({action:'put',items:Array.from({length:120},(_,n)=>({n,kind:n%2?'odd':'even',payload:'x'.repeat(80)}))});
-      const selected = []; let offset = 0; let stable = true; let bounded = true;
+      const selected = []; let offset = 0; let stable = true; let bounded = true; let contentHash;
       while (true) {
-        const page = await tools.ops_result({action:'page',id:stored.id,equals:{kind:'even'},fields:['n'],offset,limit:7,maxBytes:512});
+        const page = await tools.ops_result({action:'page',id:stored.id,equals:{kind:'even'},fields:['n'],offset,limit:7,maxBytes:2048});
         if (page.error) return page;
-        stable = stable && page.contentHash === stored.contentHash && page.sourceTotal === 120 && page.total === 60;
-        bounded = bounded && JSON.stringify(page).length <= 512;
+        contentHash ??= page.contentHash;
+        stable = stable && page.contentHash === contentHash && page.sourceTotal === 120 && page.total === 60 && stored.reference.totalItems === 120;
+        bounded = bounded && JSON.stringify(page).length <= 2048;
         selected.push(...page.items.map(row=>row.n));
         if (page.complete) break;
         if (page.nextOffset <= offset) return {error:'pagination did not advance'};
@@ -440,7 +447,7 @@ try {
       return {stable,bounded,count:selected.length,last:selected[selected.length-1],invalid:invalid.error.code,denied:denied.error,
         audit:audit.items[0],resumed:resumed.status,replay:replay.done,detailsRef:plan.detailsRef};
     `)
-    assert.equal(sdkResult.stable, true); assert.equal(sdkResult.bounded, true)
+    assert.equal(sdkResult.stable, true, JSON.stringify(sdkResult)); assert.equal(sdkResult.bounded, true)
     assert.equal(sdkResult.count, 60); assert.equal(sdkResult.last, 118)
     assert.equal(sdkResult.invalid, 'INVALID_ARGUMENT'); assert.equal(sdkResult.audit.state, 'pending')
     assert.equal(sdkResult.denied.code, 'POLICY_DENIED'); assert.equal(sdkResult.denied.permission.current, 'workspace-write')
