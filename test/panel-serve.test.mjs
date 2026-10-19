@@ -283,6 +283,9 @@ await test('the real CLI prints a loopback URL, serves the newest report and rej
     const bad = spawnSync(process.execPath, [CLI, 'panel', dir, '--port', '99999'], { encoding: 'utf8', timeout: 30_000 })
     assert.equal(bad.status, 1)
     assert.match(bad.stderr, /--port must be an integer from 0 to 65535/u)
+    const stray = spawnSync(process.execPath, [CLI, 'install', '--profile', 'web', '--serve'], { encoding: 'utf8', timeout: 30_000 })
+    assert.equal(stray.status, 1)
+    assert.match(stray.stderr, /--serve only applies to the panel command/u)
   })
 })
 

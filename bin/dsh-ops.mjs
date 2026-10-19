@@ -121,6 +121,8 @@ async function main() {
   })
   const command = positionals[0] ?? 'help'
   if (positionals.length > (command === 'bash-runtime' || command === 'panel' ? 2 : 1)) throw new Error('Unexpected positional arguments.')
+  // Declared globally so `panel --serve` parses, but it is meaningful for that command only.
+  if (values.serve === true && command !== 'panel') throw new Error('--serve only applies to the panel command.')
   if (command === 'install' || (['uninstall', 'status'].includes(command) && values.profile !== undefined)) {
     return profileCommand(command, { profile: values.profile, dshCli: values['dsh-cli'], dryRun: values['dry-run'] === true })
   }
