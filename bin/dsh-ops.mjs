@@ -6,8 +6,9 @@
  * commands are not required for a normal install. They exist for what automatic
  * resolution cannot do: install into a DSH profile, build the native worker from
  * source, turn the pinned upstream shell releases into local copies, clean up
- * files older versions left outside the profile, and report what this
- * deployment resolves and which rungs the prompt ladder renders.
+ * files older versions left outside the profile, report what this deployment
+ * resolves and which rungs the prompt ladder renders, and serve captured panel
+ * reports to a browser over loopback.
  *
  * @module dsh-ops/cli
  */
@@ -24,6 +25,7 @@ import { commandUpgradeHostPwsh } from '../lib/cli/pwsh-upgrade.js'
 import { commandBashRuntime } from '../lib/cli/bash-runtime.js'
 import { commandUninstall } from '../lib/cli/uninstall.js'
 import { commandSettingsProfile } from '../lib/cli/settings-profile.js'
+import { commandPanel } from '../lib/cli/panel.js'
 
 /**
  * Print one usage block.
@@ -49,6 +51,9 @@ Usage:
   dsh-ops ladder [--json] [--config <file>]
                                   Report the native worker, both shells, and the rungs the
                                   prompt ladder actually renders; nothing is spawned
+  dsh-ops panel [--serve] [dir] [--port <n>]
+                                  Serve the panel viewer and capture reports over loopback
+                                  (default: ./.dsh-ops/panel, latest session preselected)
   dsh-ops provision-shells [--bash] [--pwsh] [--force] [--dry-run] [--pin <file>]
                                   Download the pinned upstream bash and/or PowerShell 7, verify
                                   their digests, and install them under <DSH_HOME>/dsh-ops/shells
@@ -110,10 +115,14 @@ async function main() {
       bash: { type: 'boolean', default: false },
       pwsh: { type: 'boolean', default: false },
       pin: { type: 'string' },
+      serve: { type: 'boolean', default: false },
+      port: { type: 'string' },
     },
   })
   const command = positionals[0] ?? 'help'
-  if (positionals.length > (command === 'bash-runtime' ? 2 : 1)) throw new Error('Unexpected positional arguments.')
+  if (positionals.length > (command === 'bash-runtime' || command === 'panel' ? 2 : 1)) throw new Error('Unexpected positional arguments.')
+  // Declared globally so `panel --serve` parses, but it is meaningful for that command only.
+  if (values.serve === true && command !== 'panel') throw new Error('--serve only applies to the panel command.')
   if (command === 'install' || (['uninstall', 'status'].includes(command) && values.profile !== undefined)) {
     return profileCommand(command, { profile: values.profile, dshCli: values['dsh-cli'], dryRun: values['dry-run'] === true })
   }
@@ -130,6 +139,11 @@ async function main() {
       return commandBashRuntime(positionals[1], { yes: values.yes, dryRun: values['dry-run'], force: values.force, configFile: values.config })
     case 'ladder':
       return commandLadder({ json: values.json === true, configFile: values.config })
+    case 'panel': {
+      const port = values.port === undefined ? 0 : Number(values.port)
+      if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error(`--port must be an integer from 0 to 65535, got ${JSON.stringify(values.port)}`)
+      return commandPanel({ dir: positionals[1], port })
+    }
     case 'build-ptc': {
       const cargo = findCargo()
       console.log(`toolchain: ${cargo.version}`)
