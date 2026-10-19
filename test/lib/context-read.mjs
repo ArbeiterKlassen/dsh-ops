@@ -49,7 +49,7 @@ export async function fixture(run) {
       }))
       const { fiber: fileFiber } = await mountPlugin({ ctx, config: { required: true } })
       const discoveryFiber = await ctx.plugin(Discovery, { enabled: false, required: true,
-        alwaysLoaded: ['inspect_local_file', 'read_many'].filter(name => DISCOVERABLE_TOOLS.includes(name)) })
+        alwaysLoaded: ['inspect_local_file', 'read_files'].filter(name => DISCOVERABLE_TOOLS.includes(name)) })
       const fiber = { dispose: async () => { await discoveryFiber.dispose(); await fileFiber.dispose() } }
       const admitted = new WeakSet()
       const adapter = new RecordingAdapter()

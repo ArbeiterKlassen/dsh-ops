@@ -17,7 +17,7 @@ await test('real Native loop exposes discovery at startup and activates exactly 
     let diagnostic = false
     host.ctx.on('tools/execute', async (exec, next) => {
       const result = await next()
-      if (exec.name === 'ops_discover') {
+      if (exec.name === 'ops_discover_tools') {
         const assembly = await host.ctx.get('systemPrompt').assemble({ scope: owner })
         assert.equal(assembly.tools.some(tool => tool.name === 'ops_stat'), false, 'current-step diagnostic assembly cannot activate pending tools')
         diagnostic = true
@@ -25,9 +25,9 @@ await test('real Native loop exposes discovery at startup and activates exactly 
       return result
     })
     const run = await host.run(owner, [request => {
-      assert.ok(names(request).includes('ops_discover'), 'discovery must be visible in the first real provider request')
+      assert.ok(names(request).includes('ops_discover_tools'), 'discovery must be visible in the first real provider request')
       assert.equal(names(request).includes('ops_stat'), false)
-      return [{ name: 'ops_discover', args: { query: 'select:ops_stat' } }]
+      return [{ name: 'ops_discover_tools', args: { query: 'select:ops_stat' } }]
     }, request => {
       assert.ok(names(request).includes('ops_stat'), 'the second request must already include the selected schema')
       assert.equal(host.ctx.get('tools').get('ops_stat', sibling), undefined)
@@ -46,7 +46,7 @@ await test('real PTC loop keeps the current run_code snapshot fixed and publishe
     const owner = await host.agent(), sibling = await host.agent()
     const run = await host.run(owner, [request => {
       assert.deepEqual(names(request), ['run_code']); assert.doesNotMatch(text(request), /ops_stat:/)
-      return [sdkCall("const selected = await tools.ops_sdk({tools:['stat']}); let unavailable = false; try { await tools.ops_stat({path:'note'}); } catch { unavailable = true; } return {selected,unavailable};")]
+      return [sdkCall("const selected = await tools.ops_load_sdk({tools:['stat']}); let unavailable = false; try { await tools.ops_stat({path:'note'}); } catch { unavailable = true; } return {selected,unavailable};")]
     }, request => {
       assert.deepEqual(names(request), ['run_code']); assert.match(text(request), /ops_stat:/)
       assert.equal(host.ctx.get('tools').get('ops_stat', sibling), undefined)
@@ -67,15 +67,15 @@ await test('real committed authority changes cancel pending activation while alw
     const owner = await host.agent()
     host.ctx.on('tools/execute', async (exec, next) => {
       const result = await next()
-      if (exec.name === 'ops_discover') setSandboxMode(owner.session, 'read-only')
+      if (exec.name === 'ops_discover_tools') setSandboxMode(owner.session, 'read-only')
       return result
     })
     const run = await host.run(owner, [request => {
       assert.ok(names(request).includes('ops_stat'))
-      assert.equal(names(request).includes('ops_edit_many'), false)
-      return [{ name: 'ops_discover', args: { query: 'select:ops_edit_many' } }]
+      assert.equal(names(request).includes('ops_edit_file'), false)
+      return [{ name: 'ops_discover_tools', args: { query: 'select:ops_edit_file' } }]
     }, request => {
-      assert.equal(names(request).includes('ops_edit_many'), false, 'permission change must discard the pending choice before step/end')
+      assert.equal(names(request).includes('ops_edit_file'), false, 'permission change must discard the pending choice before step/end')
       assert.ok(names(request).includes('ops_stat'))
       return []
     }])

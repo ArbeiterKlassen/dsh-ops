@@ -5,7 +5,7 @@ type ResolvedReads = { files: Descriptor[] } | { error: string }
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 /** Resolve every range against this invocation's cwd; retain unknown fields for kernel validation. */
-export function resolveReadMany(args: unknown, cwd: string): ResolvedReads {
+export function resolveReadFiles(args: unknown, cwd: string): ResolvedReads {
   if (!record(args) || !Array.isArray(args.files) || args.files.length < 1 || args.files.length > 32) {
     return { error: 'files must contain 1-32 file ranges.' }
   }

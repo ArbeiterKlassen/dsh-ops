@@ -14,13 +14,13 @@ struct ReadRange {
 }
 const NEXT_ACTION: &str = "Resume remaining files from nextIndex. Follow each file's nextOffset for more lines; for truncatedInLine use that file's hex inspection guidance.";
 
-pub(super) fn read_many(request: &Request) -> Result<Value> {
+pub(super) fn read_files(request: &Request) -> Result<Value> {
     let args: ReadManyArgs = serde_json::from_value(request.args.clone())?;
     if args.files.is_empty() || args.files.len() > 32 {
-        return Err(Failure::new("INVALID_ARGUMENT", "read_many accepts 1-32 files"));
+        return Err(Failure::new("INVALID_ARGUMENT", "read_files accepts 1-32 files"));
     }
     if args.files.iter().any(|file| file.offset == 0 || file.limit == 0 || file.limit > 10_000) {
-        return Err(Failure::new("INVALID_ARGUMENT", "read_many offset starts at 1 and limit is 1-10000"));
+        return Err(Failure::new("INVALID_ARGUMENT", "read_files offset starts at 1 and limit is 1-10000"));
     }
     let total = args.files.len();
     // Keep the longest possible aggregate fields reserved before reading any file.

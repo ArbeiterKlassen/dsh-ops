@@ -2,7 +2,7 @@
 
 中文：[紧凑文件范围](紧凑文件范围.md).
 
-A fully returned `ops_read_many` range uses one path header, exact numbered text and one revision/continuation notice per file. When all files have exactly the same absolute parent, a JSON-quoted `Base` appears once and each JSON-quoted filename is relative to it. Different parents retain absolute paths.
+A fully returned `ops_read_files` range uses one path header, exact numbered text and one revision/continuation notice per file. When all files have exactly the same absolute parent, a JSON-quoted `Base` appears once and each JSON-quoted filename is relative to it. Different parents retain absolute paths.
 
 ```text
 [Base: "/workspace/src"]

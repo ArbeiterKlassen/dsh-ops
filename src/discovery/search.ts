@@ -1,5 +1,6 @@
 import { DISCOVERY_TERMS } from '../capabilities/discovery.js'
-import { publicToolName } from '../policy.js'
+import { migrateRawName } from '../compat/alias.js'
+import { TOOL_PREFIX, publicToolName } from '../policy.js'
 import type { DiscoverableName } from './config.js'
 
 export interface DiscoveryRequest { query: string, maxResults: number }
@@ -13,7 +14,13 @@ export function parseRequest(raw: unknown): DiscoveryRequest | string {
   return { query: args.query.trim().toLowerCase(), maxResults }
 }
 export function search(query: string, pool: readonly DiscoverableName[], maximum: number): DiscoverableName[] {
-  if (query.startsWith('select:')) return pool.filter(name => query.slice(7).trim() === publicToolName(name)).slice(0, maximum)
+  if (query.startsWith('select:')) {
+    const wanted = query.slice(7).trim()
+    // Saved prompts and long sessions can still spell a pre-rename public name; migrate before
+    // comparing so a selection keeps resolving instead of silently matching nothing.
+    const target = wanted.startsWith(TOOL_PREFIX) ? publicToolName(migrateRawName(wanted.slice(TOOL_PREFIX.length))) : wanted
+    return pool.filter(name => publicToolName(name) === target).slice(0, maximum)
+  }
   const terms = [...new Set(query.match(/[a-z0-9_]+/g) ?? [])]
   return pool.map((name, order) => {
     const words = `${name} ${DISCOVERY_TERMS[name]}`.split(/[\s_]+/)

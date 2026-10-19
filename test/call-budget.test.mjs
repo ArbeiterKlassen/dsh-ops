@@ -55,7 +55,7 @@ await test('Native and PTC bridges share admission and recheck authority after w
       const jobs = [fileCall(ctx, 'unused', 'stat', { path: 'a' }, exec), ptcCall(ctx, 'unused', 'batch', { action: 'plan', operations: [] }, exec)]
       await setImmediate()
       assert.equal(active, 2)
-      const queuedWrite = fileCall(ctx, 'unused', 'edit_many', { path: 'a' }, exec)
+      const queuedWrite = fileCall(ctx, 'unused', 'edit_file', { path: 'a' }, exec)
       const queuedRead = fileCall(ctx, 'unused', 'stat', { path: 'b' }, exec)
       await setImmediate(); assert.equal(active, 2)
       mode = 'read-only'; gate.resolve()
