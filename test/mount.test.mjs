@@ -1,3 +1,4 @@
+import { discoveryMountChecks } from './lib/discovery.mjs'
 /** Real Cordis/tool/prompt composition with the released independent components. */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -29,6 +30,7 @@ try { worker = resolveWorker({}) } catch (error) {
   skipSuite('mount', error.message.split('\n')[0])
 }
 console.log(`  worker: ${worker}`)
+await discoveryMountChecks()
 /** The row configs earlier bundles wrote into every existing profile (`cordis.patch.yml` before update 2). */
 const LEGACY_ROWS = Object.freeze({
   file: { promptPolicy: true, enableShellTools: false, required: false, toolCallTimeoutMs: 300000 },

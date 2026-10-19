@@ -4,6 +4,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
+import { inspectPresentation, isPresentationProbe } from '../presentation.js'
 import { WORKER_TIMEOUT_MS } from '../worker-protocol.js'
 import { FILE_TOOLS, PTC_TOOLS } from '../capabilities/registry.js'
 import { PTC_SECTION, definition } from './contract.js'
@@ -11,7 +12,7 @@ import { publicToolName } from '../policy.js'
 import { resolveWorker, failure } from './worker.js'
 import { mountWorkspacePreparation } from '../workspace-preparation.js'
 import { mountResultLifecycle } from '../kernel/result-lifecycle.js'
-import { nativeProviders, claimPtcSurface } from '../file/result-provider.js'
+import { nativeProviders, claimPtcSurface, trackNativeShadow } from '../file/result-provider.js'
 import { resolvePtcConfig } from '../config.js'
 import { PTC_RESIDENT_TOOLS } from './config.js'
 import type { ApiName } from './config.js'
@@ -22,6 +23,7 @@ export { resolvePtcConfig } from '../config.js'
 export const name = 'dsh-ops-ptc'
 const apiTools = [...FILE_TOOLS, ...PTC_TOOLS]
 const publishedNames = [...apiTools, 'sdk'].map(publicToolName)
+const ptcDefinitions = new WeakSet<ToolDefinition>()
 interface Entry {
   ctx?: Context; fiber?: Fiber; ready: Promise<void>; disposers: (() => void)[]
   selected: Set<ApiName>; pending: Set<ApiName>; owned: Map<string, ToolDefinition>; ptc: boolean
@@ -44,6 +46,12 @@ export function apply(root: Context, rawConfig: unknown): void {
     const entries = new Map<Agent, Entry>()
     const active = new Map<AbortController, { owner: Agent; promise: Promise<unknown> }>()
     let stopped = false, mutating = false, epoch = 0, chain = Promise.resolve(), lastSnapshot = ''
+    let settled = chain
+    const drain = async () => {
+      let current: Promise<void>
+      do { current = chain; await current } while (current !== chain)
+      settled = current
+    }
     const ids = new WeakMap<object, number>(); let sequence = 0
     const snapshot = (): string => JSON.stringify([...entries.keys()].map(agent => tools.schemas(agent).map(schema => {
       const def = tools.get(schema.name, agent)
@@ -56,7 +64,7 @@ export function apply(root: Context, rawConfig: unknown): void {
         try { dispose() } catch (error) { ctx.logger.warn('dsh-ops: PTC teardown failed; continuing:', error) }
       }
     }
-    const ptcOnly = async (agent: Agent, signal?: AbortSignal): Promise<boolean> => Boolean(ctx.get('ptcRuntime')) && isPtc(await prompt.assemble({ scope: agent, signal }))
+    const ptcOnly = async (agent: Agent, signal?: AbortSignal): Promise<boolean> => Boolean(ctx.get('ptcRuntime')) && isPtc(await inspectPresentation(prompt, agent, signal))
     const abortOwner = (agent: Agent, reason: string) => {
       for (const [controller, work] of active) if (work.owner === agent) controller.abort(new Error(reason))
     }
@@ -95,7 +103,7 @@ export function apply(root: Context, rawConfig: unknown): void {
         try {
           for (const entry of entries.values()) clear(entry)
           // Snapshot exact Native visibility only after all our masks/overrides have lifted.
-          const native = new Map([...entries].map(([agent, entry]) => [agent, nativeProviders(entry.ctx ?? ctx, agent)]))
+          const native = new Map([...entries].map(([agent, entry]) => [agent, nativeProviders(entry.ctx ?? ctx, agent, true)]))
           for (const [agent, entry] of entries) {
             if (!entry.ctx || !ownership?.owns(agent)) continue
             entry.ptc = ready.has(agent)
@@ -105,13 +113,14 @@ export function apply(root: Context, rawConfig: unknown): void {
               const wanted = new Set([...PTC_RESIDENT_TOOLS, ...config.alwaysLoaded, ...entry.selected])
               const definitions = [...wanted].map(tool => definition(tool, execute(agent, entry, tool)))
               definitions.push(sdkDefinition(config.allowedTools, execute(agent, entry, 'sdk')))
-              for (const def of definitions) { entry.disposers.push(entry.ctx.tools.register(def)); entry.owned.set(def.name, def) }
+              for (const def of definitions) { ptcDefinitions.add(def); entry.disposers.push(entry.ctx.tools.register(def)); entry.owned.set(def.name, def) }
               entry.disposers.push(releaseNative)
             } catch (error) { releaseNative(); throw error }
           }
           for (const [agent, entry] of entries) {
             if (!entry.ctx || !ownership?.owns(agent)) continue
             if (!entry.ptc) for (const provider of native.get(agent) ?? []) {
+              if (!provider.inheritable && provider.scope !== agent) continue
               const def = provider.definition
               if (provider.scope === agent || tools.get(def.name, agent) === def) continue
               const shadow: ToolDefinition = { ...def, execute: async (args, exec) => {
@@ -120,10 +129,15 @@ export function apply(root: Context, rawConfig: unknown): void {
                   || stopped || !provider.active || version !== epoch) return failure('POLICY_DENIED', 'Native projection or owning scope is unavailable.')
                 return def.execute(args, exec)
               } }
-              entry.disposers.push(entry.ctx.tools.register(shadow)); entry.owned.set(def.name, shadow)
+              entry.disposers.push(entry.ctx.tools.register(shadow), trackNativeShadow(entry.ctx, agent, shadow, provider)); entry.owned.set(def.name, shadow)
             }
             const nativeNames = new Set((native.get(agent) ?? []).map(provider => provider.definition.name))
-            const deny = publishedNames.filter(name => !entry.owned.has(name) && (entry.ptc || !nativeNames.has(name)) && tools.get(name, agent))
+            const ownedNative = new Set(nativeProviders(ctx, agent).map(provider => provider.definition))
+            const deny = publishedNames.filter(name => {
+              const visible = tools.get(name, agent)
+              return visible && !entry.owned.has(name) && (entry.ptc || !nativeNames.has(name))
+                && (ptcDefinitions.has(visible) || entry.ptc && ownedNative.has(visible))
+            })
             if (deny.length) entry.disposers.push(entry.ctx.tools.restrict({ deny }))
           }
           lastSnapshot = snapshot()
@@ -162,6 +176,13 @@ export function apply(root: Context, rawConfig: unknown): void {
     })
     ctx.on('tools/change', () => { if (!ownership?.publishing()) void reconcile(true) })
     ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+      // The pinned host assembles BEFORE agent/pre-step. Wait for publication
+      // queued by the previous committed step, then obtain a fresh public assembly.
+      if (!isPresentationProbe(context)) {
+        const entry = entries.get(context.scope as Agent), before = chain, pending = chain !== settled
+        await entry?.ready; await drain()
+        if (pending || before !== chain) return prompt.assemble(context)
+      }
       const entry = entries.get(context.scope as Agent), heldPtc = Boolean(entry?.ptc && entry.owned.size)
       const result = await next()
       if (!entry || !heldPtc || isPtc(result)) return result
@@ -172,11 +193,29 @@ export function apply(root: Context, rawConfig: unknown): void {
       return prompt.assemble(context)
     })
     ctx.on('session/event', (session, event) => {
+      if (event.type === 'step/end') {
+        let changed = false
+        for (const [agent, entry] of entries) if (agent.session === session && ownership?.owns(agent) && entry.pending.size) {
+          for (const tool of entry.pending) if (entry.ptc) entry.selected.add(tool)
+          entry.pending.clear(); changed = true
+        }
+        if (changed) void reconcile(true)
+        return
+      }
       if (event.type !== 'sandbox/mode') return
       for (const [agent, entry] of entries) if (agent.session === session) { entry.pending.clear(); abortOwner(agent, 'Sandbox authority changed') }
       void reconcile(true)
     })
-    ctx.effect(() => prompt.section({ name: PTC_SECTION, order: 3252, interpolate: false, text: context => {
+    ownership = await ownPtcScopes(ctx, () => {
+      mutating = true
+      try {
+        for (const [agent, entry] of entries) if (!ownership?.owns(agent)) {
+          entry.ptc = false; entry.pending.clear(); abortOwner(agent, 'PTC row ownership changed'); clear(entry)
+        }
+      } finally { mutating = false }
+      void reconcile(true)
+    })
+    ctx.effect(() => prompt.section({ name: ownership.sectionName(PTC_SECTION), order: 3252, interpolate: false, text: context => {
       const entry = entries.get(context.scope as Agent)
       return entry?.ptc && entry.owned.has(publicToolName('sdk'))
         ? 'OPS APIs return typed Outcome values. Inspect status before data; preserve partial coverage and continuation. Use ' + publicToolName('sdk') + ' to request advanced APIs by raw name; they become callable on the next model step. Process results locally in run_code and return only needed summaries. References do not grant authority.' : ''
@@ -189,15 +228,6 @@ export function apply(root: Context, rawConfig: unknown): void {
       await Promise.allSettled([...entries.values()].map(entry => entry.fiber?.dispose()))
       entries.clear(); ownership?.dispose(); await chain
     }, 'dsh-ops: PTC lifecycle')
-    ownership = await ownPtcScopes(ctx, () => {
-      mutating = true
-      try {
-        for (const [agent, entry] of entries) if (!ownership?.owns(agent)) {
-          entry.ptc = false; entry.pending.clear(); abortOwner(agent, 'PTC row ownership changed'); clear(entry)
-        }
-      } finally { mutating = false }
-      void reconcile(true)
-    })
     for (const agent of entries.keys()) ownership.track(agent)
     ownership.refresh()
     for (const agent of new Set([...(ctx.get('agents')?.list() ?? []), ...ownership.agents()])) void attach(agent)
