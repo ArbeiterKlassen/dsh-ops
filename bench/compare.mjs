@@ -377,7 +377,7 @@ function verdictSection(comparison) {
     ? `🔬 噪声底(A/A):±${noiseFloor.pct}%(${noiseFloor.method})`
     : '🔬 噪声底(A/A):未知'
   const lines = [
-    `# bench compare: ${comparison.base.label ?? 'base'} → ${comparison.cand.label ?? 'cand'}`,
+    `# Benchmark test for dsh-ops`,
     '',
     `${passLine} · ${tokenLine} · ${noiseLine} · 🚦 ${gate.fail ? `门禁失败(${gate.primary})` : '门禁通过'}`,
     '',
