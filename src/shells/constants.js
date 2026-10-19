@@ -16,10 +16,10 @@
  * @module dsh-ops/shells/constants
  */
 
-import { publicToolName } from '../policy.js'
+import { BASH_TOOL } from '../policy.js'
 
 /** Model-facing name of the tool this module publishes for the bash rung. */
-export const BASH_TOOL_NAME = publicToolName('bash')
+export const BASH_TOOL_NAME = BASH_TOOL
 
 /** Default foreground deadline for one `ops_bash` command, in milliseconds. */
 export const DEFAULT_BASH_TIMEOUT_MS = 120_000

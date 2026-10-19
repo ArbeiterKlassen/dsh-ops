@@ -6,7 +6,7 @@
     "moduleResolution": "NodeNext",
     "target": "ES2023",
     "lib": ["ES2023"],
-    "types": [],
+    "types": ["node"],
     "allowJs": true,
     "checkJs": false,
     "strict": true,

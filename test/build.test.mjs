@@ -17,8 +17,10 @@ function fixture(root) {
   fs.copyFileSync(path.join(PACKAGE_ROOT, 'scripts/build.mjs'), path.join(root, 'scripts/build.mjs'))
   fs.copyFileSync(path.join(PACKAGE_ROOT, 'tsconfig.json'), path.join(root, 'tsconfig.json'))
   // Copies also work in Windows sandboxes where directory junctions are unavailable.
-  fs.cpSync(path.join(PACKAGE_ROOT, 'node_modules/typescript'),
-    path.join(root, 'node_modules/typescript'), { recursive: true })
+  for (const name of ['typescript', '@types/node', 'undici-types']) {
+    fs.cpSync(path.join(PACKAGE_ROOT, 'node_modules', name),
+      path.join(root, 'node_modules', name), { recursive: true })
+  }
   write(root, 'package.json', JSON.stringify({ name: 'build-fixture', private: true, type: 'module' }))
 }
 

@@ -7,6 +7,15 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Centralize capability metadata and prepare typed kernel contracts (#261)
+
+- Move policy and file/PTC contracts to TypeScript, with one capability catalogue for names,
+  ownership, presentation availability, concurrency and schemas. Existing registrations, tool
+  descriptions and output rendering remain compatible.
+- Add typed Outcome, search coverage and result-reference contracts plus explicit error/retry
+  policies for subsequent adapter slices. Incomplete searches cannot claim a known total.
+- Pin Node 22 declarations and check valid/invalid contracts in the regular test runner.
+
 ### Build plugin source into the existing JavaScript package layout (#261)
 
 - Move plugin source to `src/` and introduce the TypeScript build with JavaScript migration
