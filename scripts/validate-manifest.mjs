@@ -20,18 +20,19 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 import {
-  FILE_TOOLS,
   IN_PROCESS_TOOLS,
   TOOLING_SECTION,
   TOOL_PREFIX,
   publicToolName,
   renderToolingPolicy,
 } from '../lib/policy.js'
+import { NATIVE_FILE_TOOLS } from '../lib/capabilities/registry.js'
 import { resolvePtcConfig } from '../lib/ptc/index.js'
 import { resolveTuiConfig } from '../lib/components/tui/index.js'
 import { resolvePanelConfig } from '../lib/components/panel/index.js'
-import { PTC_TOOLS, definition } from '../lib/ptc/contract.js'
-import { resolveConfig } from '../lib/config.js'
+import { PTC_API_TOOLS, definition } from '../lib/ptc/contract.js'
+import { resolveConfig, resolveDiscoveryConfig } from '../lib/config.js'
+import { COMPONENTS, componentEntry, componentEnabled, SHELL_DISABLED_EXPRESSION } from '../lib/components/defaults.js'
 import { resolveHidingConfig } from '../lib/official-tool-hiding.js'
 
 /** The repository root (`scripts/`'s parent). */
@@ -226,14 +227,14 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
     const rows = Array.isArray(document)
       ? document.flatMap((entry) => (Array.isArray(entry?.insert) ? entry.insert : []))
       : []
-    check(rows.length === 6, 'the bundle declares exactly six components')
+    check(rows.length === 7, 'the bundle declares exactly seven components')
     check(!rows.some(candidate => candidate?.name === `${pkg.name}/background`), 'the bundle no longer inserts the removed background component')
-    for (const component of ['shell', 'file', 'ptc', 'panel', 'tui', 'hide-official']) {
-      const row = rows.find(candidate => candidate?.name === `${pkg.name}/${component}`)
+    for (const component of COMPONENTS) {
+      const row = rows.find(candidate => candidate?.name === componentEntry(component))
       check(row?.id === `${pkg.name}-${component}`, `the ${component} component has a stable row id`)
       if (!row) continue
-      check((row.disabled === true) === ['tui', 'hide-official'].includes(component), `${component} has its documented enablement default`)
-      const resolve = component === 'tui' ? resolveTuiConfig
+      check(component === 'shell' ? row.disabled?.__jsExpr === SHELL_DISABLED_EXPRESSION : (row.disabled === true) === !componentEnabled(component, process.platform), `${component} has its documented enablement default`)
+      const resolve = component === 'discovery' ? resolveDiscoveryConfig : component === 'tui' ? resolveTuiConfig
         : component === 'ptc' ? resolvePtcConfig
           : component === 'hide-official' ? resolveHidingConfig
             : component === 'panel' ? resolvePanelConfig
@@ -256,10 +257,10 @@ if (hostedNamespace === undefined) {
   check(false, 'contributes.x-tool-namespaces declares the hosted tool namespace')
 } else {
   const declared = [...hostedNamespace.tools]
-  const expected = [...FILE_TOOLS]
+  const expected = [...NATIVE_FILE_TOOLS]
   check(
     declared.length === expected.length && expected.every((toolName) => declared.includes(toolName)),
-    'the native file namespace matches lib/file/contract.js',
+    'the native file namespace matches catalogue Native file projections',
     `manifest ${declared.join(',')} vs contract ${expected.join(',')}`,
   )
   check(
@@ -485,12 +486,12 @@ if (display !== undefined) {
 /** Payload the published package must carry, as `files` entries or paths they cover. */
 const ptc = manifestRaw.contributes?.['x-components']?.find(c => c.id === 'dsh-ops-ptc')
 check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === true, 'native PTC enhancement is enabled by default; presentation stays scoped')
-check(JSON.stringify(ptc?.tools) === JSON.stringify(PTC_TOOLS.map(publicToolName)), 'PTC declaration matches the generated tool contract')
-check(PTC_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
+check(JSON.stringify(ptc?.tools) === JSON.stringify([...PTC_API_TOOLS, 'sdk'].map(publicToolName)), 'PTC declaration matches the generated tool contract')
+check(PTC_API_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
 check(JSON.stringify(pkg.os) === '["win32","linux","darwin"]' && JSON.stringify(pkg.cpu) === '["x64","arm64"]' &&
   JSON.stringify(ptc?.platforms) === '["win32","linux","darwin"]' && JSON.stringify(ptc?.architectures) === '["x64","arm64"]' &&
   JSON.stringify(ptc?.targets) === '["win32-x64","linux-x64","darwin-arm64"]',
-  '0.3.1 exact targets are Windows x64, Linux x64 and macOS Apple Silicon; Intel Mac is unsupported')
+  'Supported exact targets are Windows x64, Linux x64 and macOS Apple Silicon; Intel Mac is unsupported')
 /** Every component states the platforms it really serves, so a Linux claim cannot ride along. */
 const platformClaims = id => manifestRaw.contributes?.['x-components']?.find(c => c.id === id)?.platforms
 check(JSON.stringify(platformClaims('dsh-ops-shell')) === '["win32","linux","darwin"]',

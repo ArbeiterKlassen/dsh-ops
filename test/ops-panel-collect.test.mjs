@@ -53,9 +53,9 @@ function panelDir(cwd) {
   return path.join(cwd, '.dsh-ops', 'panel')
 }
 
-await test('the default configuration captures nothing', () => {
+await test('enabled rows capture by default; the bundle row itself is disabled', () => {
   const config = resolvePanelConfig()
-  assert.equal(config.capture, false)
+  assert.equal(config.capture, true)
   assert.equal(config.textLimit, 2_000)
   assert.equal(config.maxSessionBytes, 8 * 1024 * 1024)
   assert.ok(Object.isFrozen(config))
@@ -69,7 +69,6 @@ await test('the default configuration captures nothing', () => {
 await test('capture off registers no listener, no effect, and writes no file', async () => {
   await withTempDir('panel-off', async (cwd) => {
     const ctx = fakeContext()
-    apply(ctx, {})
     apply(ctx, { capture: false, textLimit: 2000, maxSessionBytes: 8388608 })
     assert.deepEqual(ctx.calls.on, [], 'the off row must register no event listener')
     assert.equal(ctx.calls.effect, 0, 'the off row must register no effect')
@@ -80,7 +79,7 @@ await test('capture off registers no listener, no effect, and writes no file', a
 await test('capture on is lazy: listeners register, but no directory exists before an event', async () => {
   await withTempDir('panel-lazy', async (cwd) => {
     const ctx = fakeContext()
-    apply(ctx, { capture: true })
+    apply(ctx, {})
     assert.deepEqual(ctx.calls.on, ['session/event', 'session/disposed'])
     assert.equal(ctx.calls.effect, 1)
     assert.equal(fs.existsSync(path.join(cwd, '.dsh-ops')), false, 'mounting alone must not create files')

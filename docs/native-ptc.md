@@ -1,4 +1,7 @@
-# Native PTC enhancement — 0.3.1 Windows x64, Linux x64, Apple Silicon
+# Native PTC enhancement — Windows x64, Linux x64, Apple Silicon
+
+0.4.0 PTC callers use [Outcome contracts](ptc-outcomes.md) / [PTC 结果契约](PTC结果契约.md).
+The historical worker/recovery details below remain applicable; SDK results now wrap canonical facts in `data`.
 
 Issues: [#3](https://github.com/T-Auto/dsh-ops/issues/3), [#8](https://github.com/T-Auto/dsh-ops/issues/8).
 The file and PTC components use an independent Rust worker. The FastCtx-backed
@@ -51,8 +54,8 @@ Rust >=1.88 is required. Build uses `cargo build --release --locked` against
 session toolchain before building; do not add multi-version toolchains to global PATH.
 
 The `dsh-ops/ptc` bundle row is enabled by default after #170; existing explicit
-profile disablement is preserved. Its only config keys are `required`
-(default false) and an optional absolute `binaryPath`. `DSH_OPS_WORKER_BIN` can
+profile disablement is preserved. Config accepts `required` (default false), an optional
+absolute `binaryPath`, `allowedTools`, and `alwaysLoaded`; see [SDK loading](ptc-sdk-loading.md). `DSH_OPS_WORKER_BIN` can
 select a build; otherwise the component uses `runtime/<platform>-<arch>/dsh-ops-worker[.exe]` before `native/target/release`.
 Published 0.3.1 packages include the runtime bytes
 of every supported platform; source checkouts stage them explicitly with
@@ -63,7 +66,9 @@ The session must already use DSH's **PTC-only** presentation. The component does
 not force presentation, replace the registry, or create a REPL. It recognizes the
 host's public prompt assembly (`tools:ptc-only` section plus the reserved-only wire
 schema), not private `modeFor`, run_code existence alone or a guessed session key.
-Standard/native and hybrid/both scopes expose neither tool nor extra prompt.
+This PTC row publishes its independent SDK only in PTC-only scopes, with inspect/result and the
+loader initially resident. Other APIs require next-step activation or `alwaysLoaded`. It adds
+no bindings or extra prompt in Native/both scopes. The file row independently supplies Native ops_result page/release; see [result budgets](result-budgets.md#native-and-ptc-reference-pages). 文件组件独立提供 Native 引用分页/释放，详见[结果预算](结果预算.md#native-与-ptc-引用分页)。
 The host generates SDK declarations from the same tool schemas; no duplicate guide
 or dynamic plan IDs are added to the system prefix.
 
@@ -128,9 +133,7 @@ is refused before it can become a candidate, so no `ops_glob` item is a link;
 `ops_stat` reports the opened file's time for a path reached through one.
 
 The native schemas deliberately do not expose `root`, `workspace`, `cwd`, or
-`file_path` aliases. `ops_bash` accepts the host-compatible optional
-`description` field but remains foreground-only; it does not accept
-`run_in_background` or create job IDs.
+`file_path` aliases. `ops_bash` requires `description`, uses the host foreground/background/promoted result contract, and exposes `run_in_background` when host jobs are available. See the bilingual shell contract in [component-reference.md](component-reference.md) / [组件参考.md](组件参考.md).
 
 Their important fields are (paths resolve relative to the DSH session cwd):
 
@@ -159,21 +162,27 @@ alone misses these failures. For example:
 
 ```ts
 const result = await tools.ops_grep({ path: "src", pattern: "TODO", outputMode: "summary" });
-if (result.status === "error" || result.status === "rejected") {
-  console.log({ status: result.status, error: result.error });
+if (result.status === "completed") {
+  console.log({ files: result.data.files, matches: result.data.matches });
+} else if (result.status === "partial") {
+  console.log({ coverage: result.coverage, continuation: result.continuation });
 } else {
-  console.log({ files: result.files, matches: result.matches, complete: result.complete });
+  console.log({ status: result.status, error: result.error });
 }
 ```
 
 File parameter bounds are described in the host-compatible SDK schema and enforced
 by the native worker, even for direct PTC calls. Required fields, enums, nested
 edit shapes and strict unknown-field rejection remain discoverable.
-Inspect's model rendering shares a homogeneous page's path once at the top level;
-raw execution/PTC values retain each item's path and all pagination/truncation
-metadata. This reduces rendered bytes, not worker pagination or measured token
-billing. Long single-line text continuation is unchanged; use the hex view to
-read beyond an in-line cut.
+Native file rendering uses `=== FILE: path (Lines a-b of n) ===` and `N | text`,
+with concise mutation receipts and explicit paging/effect/retry notices. PTC wraps the unchanged canonical
+execution data in a typed Outcome envelope. Content blocks are capped at
+64 KiB after JSON escaping; clipped displays instruct the caller to recover
+undisplayed content without blindly advancing a cursor or repeating a write.
+Physical LF defines line counts across projections; bare CR/control separators
+are escaped for display. Invalid text encoding returns `ERR_INVALID_ENCODING`
+with document/binary-reader guidance. Use hex byte rows to read beyond an in-line
+cut. See [usage](usage.md#native-file-results) / [使用指南](使用指南.md#native-文件结果).
 
 ## Plan and execution semantics
 
@@ -182,7 +191,10 @@ no-effect manifest and returns a `detailsRef`/job id. It does **not** convert in
 an executable `run` request. Execute that exact planned manifest with:
 
 ```ts
-await tools.ops_batch({ action: "resume", id: plan.id });
+if (plan.status === "completed") {
+  const execution = await tools.ops_batch({ action: "resume", id: plan.data.id });
+  console.log(execution); // inspect its status before reading execution.data
+}
 ```
 
 `action: "run"` is a separate immediate path and requires the operations again;
@@ -203,8 +215,8 @@ const result = await tools.ops_batch({
     { op: "remove", path: "cache/explicitly-approved-target" }
   ]
 });
-console.log({status: result.status, done: result.done, failed: result.failed,
-  unknown: result.unknown, detailsRef: result.detailsRef});
+console.log({ status: result.status, receipt: result.data,
+  error: result.status === "completed" || result.status === "partial" ? undefined : result.error });
 ```
 
 Workspace authority comes only from `sandboxPolicy.resolve({session})`.
@@ -235,12 +247,16 @@ preflight and current DSH policy checks run again.
 
 ```ts
 // Small data is better processed directly in JavaScript.
-const stored = await tools.ops_result({action: "put", items: operationRows});
-const batch = await tools.ops_batch({action: "run", operationsRef: stored.id});
-const page = await tools.ops_result({action: "page", id: batch.detailsRef,
-  offset: 0, limit: 64, maxBytes: 16384, fields: ["operation", "state", "error"]});
-console.log(page.items.filter(row => row.state !== "completed"));
-await tools.ops_result({action: "release", id: stored.id});
+const stored = await tools.ops_result({ action: "put", items: operationRows });
+if (stored.status !== "completed") return stored;
+const batch = await tools.ops_batch({ action: "run", operationsRef: stored.data.id });
+if (batch.data?.detailsRef) {
+  const page = await tools.ops_result({ action: "page", id: batch.data.detailsRef,
+    offset: 0, limit: 64, maxBytes: 16384, fields: ["operation", "state", "error"] });
+  console.log(page); // partial pages include an explicit continuation
+}
+const released = await tools.ops_result({ action: "release", id: stored.data.id });
+console.log({ batch, released });
 ```
 
 put stores object rows; page supports top-level equality and field selection,
@@ -267,7 +283,7 @@ input is bounded stdin JSON, never a shell command or argv-sized path list. Unlo
 aborts and waits for in-flight work. Authority downgrade aborts active workers.
 If host jobs/controller admission is available, batch foreground work uses that
 registry's owner, cancel and progress surfaces, waits once, then removes its own
-collected terminal record. Otherwise it remains a 5-minute bounded foreground call.
+collected terminal record. Otherwise it remains a bounded foreground call; the shared host ceiling is 30 seconds.
 No second background scheduler, detached-job polling tool or cloned REPL is created.
 Progress is currently preflight/settlement only, not per-file live reporting.
 

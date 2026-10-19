@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
+import { pinnedBashExecutable } from '../lib/shells/pinned.js'
 import { patchMsys, proxyDefinition } from '../lib/bash-pe.js'
 import { confinedBash, restrictedCompatibility } from '../lib/bash-ipc.js'
 import { assert, test, report, withTempDir } from './lib/harness.mjs'
@@ -18,7 +20,7 @@ await test('proxy definitions never intercept file, token, or impersonation APIs
 })
 await test('private runtime accepts only matching original MSYS, and never edits the original', async () => {
   if(process.platform!=='win32')return
-  const source=path.resolve('node_modules/@dsh-ops/bash-win32-x64')
+  const source=path.resolve(path.dirname(pinnedBashExecutable({file:process.env.DSH_OPS_TEST_BASH})),'..')
   const original=fs.readFileSync(path.join(source,'usr/bin/msys-2.0.dll'))
   const hash=b=>createHash('sha256').update(b).digest('hex')
   const patched=patchMsys(original)
@@ -38,7 +40,7 @@ await test('private runtime accepts only matching original MSYS, and never edits
     assert.match(message,/works only in danger-full-access/)
     assert.match(message,/remove bashPath/)
     assert.match(message,/provision-shells --bash/)
-    assert.match(message,/no per-call sandbox_permissions escalation/)
+    assert.match(message,/Approvals never repair an incompatible confined runtime/)
     assert.doesNotMatch(message,/Rebuild the matching proxies/)
     const check=restrictedCompatibility(bash)
     assert.equal(check.compatible,false)
@@ -52,7 +54,7 @@ await test('restricted compatibility accepts the pinned payload and explains a m
   if(process.platform!=='win32')return
   const receipt=path.resolve('runtime/win32-x64/bash-ipc/provenance.json')
   if(fs.existsSync(receipt)) {
-    const pinned=restrictedCompatibility(path.resolve('node_modules/@dsh-ops/bash-win32-x64/bin/bash.exe'))
+    const pinned=restrictedCompatibility(pinnedBashExecutable({file:process.env.DSH_OPS_TEST_BASH}))
     assert.equal(pinned.compatible,true,pinned.reason)
   }
   await withTempDir('no-msys',async root=>{
@@ -66,7 +68,7 @@ await test('a tampered cached generation is rejected, quarantined and rebuilt', 
   if(process.platform!=='win32')return
   const receipt=path.resolve('runtime/win32-x64/bash-ipc/provenance.json')
   if(!fs.existsSync(receipt))return
-  const source=path.resolve('node_modules/@dsh-ops/bash-win32-x64')
+  const source=path.resolve(path.dirname(pinnedBashExecutable({file:process.env.DSH_OPS_TEST_BASH})),'..')
   const bash=path.join(source,'usr/bin/bash.exe')
   if(!fs.existsSync(bash))return
   await withTempDir('bash-ipc-tamper',async home=>{
@@ -108,6 +110,28 @@ await test('a tampered cached generation is rejected, quarantined and rebuilt', 
     // (3) Served from the rebuild, and the quarantine does not accumulate.
     assert.equal(confinedBash(bash,{home}).file,third.file)
     assert.equal(bads()<=2,true)
+  })
+})
+await test('malformed IPC proxy receipts fail before staging a runtime', async () => {
+  await withTempDir('bash-ipc-receipt', async root => {
+    const plugin = path.join(root, 'plugin'), payload = path.join(root, 'payload'), home = path.join(root, 'home')
+    fs.mkdirSync(path.join(plugin, 'lib/shells'), { recursive: true })
+    fs.mkdirSync(path.join(plugin, 'runtime/win32-x64/bash-ipc'), { recursive: true })
+    fs.mkdirSync(path.join(payload, 'usr/bin'), { recursive: true })
+    fs.writeFileSync(path.join(plugin, 'package.json'), JSON.stringify({ type: 'module' }))
+    for (const file of ['bash-ipc.js', 'bash-pe.js', 'shells/types.js']) {
+      fs.copyFileSync(path.resolve('lib', file), path.join(plugin, 'lib', file))
+    }
+    const dll = Buffer.from('receipt validation must precede PE parsing')
+    fs.writeFileSync(path.join(payload, 'usr/bin/msys-2.0.dll'), dll)
+    fs.writeFileSync(path.join(plugin, 'runtime/win32-x64/bash-ipc/provenance.json'), JSON.stringify({
+      platform: 'win32-x64', msysSha256: createHash('sha256').update(dll).digest('hex'), files: null,
+    }))
+    const isolated = await import(pathToFileURL(path.join(plugin, 'lib/bash-ipc.js')).href)
+    assert.throws(() => isolated.confinedBash(path.join(payload, 'usr/bin/bash.exe'), { home, platform: 'win32' }),
+      /^Error: EXECUTOR_UNAVAILABLE: This MSYS version has no verified DSH IPC compatibility build/)
+    assert.equal(fs.existsSync(home), false, 'invalid receipts cannot create a private runtime')
+    assert.deepEqual(fs.readFileSync(path.join(payload, 'usr/bin/msys-2.0.dll')), dll)
   })
 })
 report('bash-ipc')

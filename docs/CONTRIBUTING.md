@@ -8,6 +8,7 @@ conventions a pull request is reviewed against. 中文版：[贡献指南.md](�
 - [What dsh-ops is (and is not)](#what-dsh-ops-is-and-is-not)
 - [Workflow: issue first, then PR](#workflow-issue-first-then-pr)
 - [Development environment](#development-environment)
+- [Building the plugin and installing from source](#building-the-plugin-and-installing-from-source)
 - [Building the native worker](#building-the-native-worker)
 - [The verification gate](#the-verification-gate)
 - [Writing tests](#writing-tests)
@@ -49,16 +50,47 @@ conventions a pull request is reviewed against. 中文版：[贡献指南.md](�
 
 ```console
 npm ci --ignore-scripts
+npm run build             # compile src/ to lib/ and copy component assets
 npm run build:ptc         # build and stage the native worker (see below)
 npm run verify
 ```
+
+## Building the plugin and installing from source
+
+Edit the plugin in `src/` using strict TypeScript or TSX. `npm run build` emits JavaScript into
+`lib/` and copies component manifests, locale files, icons and the panel HTML. `lib/` is ignored by
+Git and must not be edited by hand. Package exports, component entries and tests load `lib/`;
+runtime imports retain their `.js` paths.
+
+Run `npm run build` after changing source or assets and before invoking a suite directly with
+`node test/run.mjs <filter>`. `npm test`, `npm run test:ptc` and `npm run verify` build first;
+`npm run typecheck` checks all plugin source without emitting files. JavaScript source under `src/`
+is rejected by the build, including unimported files that the TypeScript compiler would otherwise
+silently ignore. Repository scripts and tests may continue to use JavaScript.
+
+For a local or Git-source installation, build and pack a checkout before installing it into DSH:
+
+```console
+npm ci --ignore-scripts
+npm run build
+npm run build:ptc
+npm pack
+```
+
+On Windows, first run `node bin/dsh-ops.mjs bash-runtime install`, then `npm run build:bash-ipc` before packing. Bash is not installed by npm. For an offline build, set `DSH_OPS_TEST_BASH` to the absolute pinned `bin/bash.exe`; the build/test helper verifies its digest. The gate acquires its own temporary fixture unless this variable is provided. Install the resulting
+`dsh-ops-<version>.tgz` with the DSH CLI for your target profile (see the README). `npm pack` runs
+the build through `prepack`, unless lifecycle scripts are disabled. An unbuilt Git checkout has
+no `lib/` and is not ready to load; there is no `prepare` hook. Keep development dependencies
+installed while building, since they include the compiler. The published tarball contains
+compiled `lib/` and its assets, excludes `src/`, and does not require consumers to compile the
+plugin.
 
 ## Building the native worker
 
 Most suites drive the real native worker. Without one they cannot answer, and they **skip**:
 
 ```console
-cargo test --locked --manifest-path native/Cargo.toml   # worker unit tests
+cargo test --workspace --locked --manifest-path native/Cargo.toml   # worker unit tests
 npm run build:ptc                                       # build + stage runtime/<platform>-<arch>/
 npm run build:bash-ipc                                  # Windows only: Bash IPC proxies
 ```
@@ -77,7 +109,8 @@ What a skip means locally:
 
 ## The verification gate
 
-- `npm run verify` — `scripts/validate-manifest.mjs`, then `test/run.mjs` (every `test/*.test.mjs`
+- `npm run verify` — build `src/` into `lib/`, run `scripts/validate-manifest.mjs`, then
+  `test/run.mjs` (every `test/*.test.mjs`
   in its own process with its own temporary `DSH_HOME`).
 - `node scripts/verify-gate.mjs --skip-install` — **the release gate**, exactly what
   `.github/workflows/ci.yml` runs on Windows x64, Linux x64 and macOS arm64: worker unit tests, build
@@ -105,6 +138,14 @@ CI runs on every pull request and every push to `main`; a PR must be green on al
 - **No retries to hide flakes.** A concurrency assertion that fails intermittently is a bug in the
   implementation; fix the cause. Retries in the gate (#164) only ever cover suite timeouts.
 
+Capability names, component ownership, presentation modes, mutation/concurrency flags and file/PTC
+schemas live in `src/capabilities/`. Keep new capability metadata there; adapters own registration
+and rendering. `src/kernel/` defines the 0.4 `Outcome<T>`, coverage/search/reference types and
+error-to-retry policies. Their later adapter migrations will change wire results; this foundation
+preserves existing output. `node test/run.mjs capabilities kernel-errors kernel-types` checks the
+catalogue, retry rules and positive/negative TypeScript contracts. Node declarations are pinned to
+`@types/node@22.20.5` (published 2026-10-01) to type the supported Node 22 API without runtime code.
+
 ## Code and documentation conventions
 
 - **Language:** code, comments, CLI output and commit messages are English. User-facing docs are
@@ -112,11 +153,11 @@ CI runs on every pull request and every push to `main`; a PR must be green on al
 - **Doc pairs:** each document in `docs/` exists in English and Chinese, e.g. `docs/usage.md` and
   `docs/使用指南.md`. Update both in the same PR.
 - **File size:** keep new files under about 500 lines. If a file grows past that, split it into
-  modules and group related modules in a folder, following the existing `lib/components/*` and
+  modules and group related modules in a folder, following the existing `src/components/*` and
   `test/lib/` layout.
-- **Tool names** always come from `publicToolName()` in `lib/policy.js`; never hand-write the `ops_`
+- **Tool names** always come from `publicToolName()` in `src/policy.ts`; never hand-write the `ops_`
   prefix.
-- **Config validation** lives in `lib/config.js`; an unknown key is an error that names the key.
+- **Config validation** lives in `src/config.ts`; an unknown key is an error that names the key.
   Defaults in `cordis.patch.yml` must match the defaults in code.
 - **Parsing and probing** happen synchronously in `apply`; `required: true` must refuse activation
   at load time.
@@ -150,3 +191,28 @@ reproduced in `NOTICE` and the READMEs **must stay verbatim** — do not "polish
 
 Native build and acceptance details: [native-ptc.md](native-ptc.md) and
 [manual-validation.md](manual-validation.md).
+
+The credential fence, trusted path anchors and permission helpers are strict TypeScript modules (`src/credential-policy.ts`, `src/authority-paths.ts`, `src/permissions.ts`). Their emitted `.js` imports and wire failures stay stable. Authority policies use type-only host definitions; unknown worker failures must be narrowed before use. `node test/run.mjs kernel-types authority credential-fence credential-denial safety-atomicity permissions` covers the typed boundary and existing authority behavior.
+
+`src/profile-install.ts` and `src/session-temp.ts` are strict TypeScript helpers with unchanged emitted paths. Profile mutations still delegate to the official CLI; manifest data is narrowed before reading it. Private temporary directories retain their session-derived names and refusal of link/file targets. `node test/run.mjs profile-temp kernel-types` checks delegation, dry-run, failures and typed outcomes.
+
+`src/index.ts` types the component entry against the public Cordis `Context` and `Agent` contracts. Raw configuration remains `unknown` until validation; callbacks and tool-denial decisions retain their public host signatures. Runtime imports remain `.js`, and host dependencies remain type-only at module load. `node test/run.mjs kernel-types mount bundle-startup progressive-loop` checks the type boundary, scoped startup/disposal and next-step publication.
+
+The settings integration tests use exact development-only host settings, profile boot and config
+editor packages at `0.2.0-rc.2`, with matching Cordis loader/group/include, CosmoKit and Schemastery
+patch versions. They exercise the real profile writer and component reload instead of substituting
+an in-memory save. These packages are not production dependencies or host runtime imports.
+
+Browser settings are strict TSX. The build uses the existing TypeScript compiler to produce the
+host's lazy `./client` factory, with React supplied by the host. Exact development-only React 18.3.1,
+React type packages, jsdom 26.1.0 and the pinned `0.2.0-rc.2` client contracts support compilation,
+DOM interactions and the real host slot lifecycle tests. No browser bundler or production dependency
+is added. `settings-ui`, `settings-client`, `settings-host` and `settings-runtime` suites cover the
+form-to-profile and reviewed-action boundaries.
+
+The optional carrier regression also uses development-only `@deepseek-ai/dsh-client-modules`
+`0.2.0-rc.2` (published 2026-09-29) to assert actual client registry activation, teardown and
+restart against temporary installed profiles. `settings-carrier` covers exact composition,
+backups and atomic rollback; it never migrates a developer profile.
+
+`src/panel/collect.ts` uses typed filesystem seams and validates persisted event fields before folding. Valid capture documents keep their text, counters and archive behavior. Invalid persisted text/usage/timestamp fields are counted as malformed and mark the result degraded, with incomplete usage totals; they cannot be silently coerced. Stopping still cancels queued work, waits for issued I/O and retains the append log; explicit sealing remains separate. Run `node test/run.mjs ops-panel-collect panel-records panel-stop kernel-types` for recovery, bounded data, physical-stop and type checks.

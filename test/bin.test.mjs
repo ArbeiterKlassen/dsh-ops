@@ -23,12 +23,13 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { resolveConfig } from '../lib/config.js'
-import { renderToolingPolicy } from '../lib/policy.js'
+import { FILE_TOOLS, renderToolingPolicy, publicToolName } from '../lib/policy.js'
 import { resolveShells } from '../lib/shells.js'
 import { PACKAGE_ROOT, TEST_HOME, assert, report, test, withTempDir } from './lib/harness.mjs'
 
 /** The CLI under test. */
 const CLI = path.join(PACKAGE_ROOT, 'bin', 'dsh-ops.mjs')
+const PACKAGE_VERSION = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')).version
 
 /**
  * Run the CLI with one throwaway home and one redirected user home.
@@ -272,7 +273,7 @@ function assertLadder(report_) {
   const { levels, rungs } = report_
   assert.deepEqual(rungs, [], 'the retired numbered ladder is empty')
   const published = [
-    ...(levels.files ? ['glob', 'grep', 'inspect_local_file', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove'].map(name => `ops_${name}`) : []),
+    ...(levels.files ? FILE_TOOLS.map(publicToolName) : []),
     ...(levels.bash ? ['ops_bash'] : []),
     ...(levels.pwsh ? ['pwsh'] : []),
   ]
@@ -555,7 +556,7 @@ await test('provision-shells --dry-run downloads nothing and writes nothing', as
     assert.ok(run.stdout.includes(pin.url), 'the report names the URL it would fetch')
     assert.ok(run.stdout.includes(pin.sha256), 'the report names the digest it would check')
     assert.match(run.stdout, /\(1\.2 kB\)/u, 'the report names the size it would download')
-    assert.match(run.stdout, new RegExp(home.replace(/\\/g, '\\\\'), 'u'), 'the report names the store it would write')
+    assert.ok(run.stdout.includes(home), 'the report names the literal store it would write')
     // Neither the store nor a scratch download exists: a dry run is a report.
     assert.equal(fs.existsSync(path.join(home, 'dsh-ops')), false)
     assert.deepEqual(fs.readdirSync(home), [])
@@ -654,8 +655,8 @@ await test('provision-shells installs a pinned zip, prunes the old version, and 
   })
 })
 
-await test('ladder reports the provisioned pwsh rung the store feeds', async () => {
-  if (skipUnpinnedHost('ladder reports the provisioned pwsh rung the store feeds')) return
+await test('ladder leaves PowerShell resolution to the host and preserves legacy copies', async () => {
+  if (skipUnpinnedHost('ladder leaves PowerShell resolution to the host and preserves legacy copies')) return
   await withTempDir('provision-ladder', (dir) => {
     const home = path.join(dir, 'home')
     const user = path.join(dir, 'user')
@@ -670,14 +671,12 @@ await test('ladder reports the provisioned pwsh rung the store feeds', async () 
     })
     assert.equal(run.status, 0, run.stderr)
     const parsed = JSON.parse(run.stdout)
-    assert.deepEqual(parsed.shells.pwsh, {
-      available: true,
-      executable,
-      source: 'provisioned',
-      detail: 'the PowerShell 7 this deployment provisioned from upstream (version 7.6.6), '
-        + 'which the pwsh-sandbox override points at',
-    })
-    assert.equal(parsed.levels.pwsh, true)
+    assert.equal(parsed.shells.pwsh.available, false)
+    assert.equal(parsed.shells.pwsh.source, 'host')
+    assert.equal(parsed.shells.pwsh.executable, null)
+    assert.match(parsed.shells.pwsh.detail, /managed by the host/)
+    assert.equal(fs.existsSync(executable), true)
+    assert.equal(parsed.levels.pwsh, false)
   })
 })
 
@@ -754,7 +753,7 @@ await test('on POSIX the profile CLI fallback launches dsh, not the Windows cmd 
     })
     assert.match(run.stdout, /Official CLI: dsh;/, `${run.stdout}${run.stderr}`)
     assert.equal(fs.existsSync(marker), true, `the POSIX CLI must have been launched: ${run.stdout}${run.stderr}`)
-    assert.equal(fs.readFileSync(marker, 'utf8').trim(), 'plugin --profile web add dsh-ops@0.3.1')
+    assert.equal(fs.readFileSync(marker, 'utf8').trim(), `plugin --profile web add dsh-ops@${PACKAGE_VERSION}`)
     assert.equal(run.status, 0, `${run.stdout}${run.stderr}`)
   })
 })

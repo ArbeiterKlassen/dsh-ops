@@ -54,9 +54,9 @@ When the bundled bash payload remains declared in the profile lockfile but its p
 
 Long scripts, heredocs and multi-layer quotes and backslashes make the model escape JSON repeatedly. Write the script with the host file tools first and pass it through `script_path` instead of putting it in `command`. See the [usage guide](usage.md).
 
-### Passing `run_in_background` to `ops_bash` is rejected
+### Background Bash requires host jobs
 
-**`ops_bash` has no `run_in_background` and returns no job id**; every command runs in the foreground. The host `bash` and `pwsh` tools accept the parameter, which is why a model tries it here. For a long-running process, use the host `pwsh` tool's `run_in_background`, or detach inside the command (for example `nohup ... & disown`). Otherwise the call occupies the whole `timeoutMs` (up to about 24.9 days).
+`run_in_background` is available only while the host jobs service is mounted. It returns a host job ID; use `job_output` / `job_kill`. Without that service, remove the background argument and run a bounded foreground command. The default timeout is 120 seconds, capped at 600 seconds. With jobs, foreground expiry promotes the same job; otherwise it stops the command.
 
 ### An argument is rejected as unknown
 
@@ -74,9 +74,9 @@ What to do:
 - Or switch the session to `danger-full-access`, where `bashPath` runs directly.
 - Check with the profile's own copy: `node "<profile>\node_modules\dsh-ops\bin\dsh-ops.mjs" ladder --config <file>` reports `restricted: yes/no` for the resolved bash.
 
-### `ops_bash` rejects `sandbox_permissions` / `justification`
+### Bash approval is rejected or unavailable
 
-The host `bash` tool accepts per-call escalation; `ops_bash` does not, and says so in the error. Ask the user to change the session permission mode instead of retrying the call.
+`ops_bash` uses host approval for a strictly wider `sandbox_permissions` mode. Supply a non-empty `justification` for that exact command. A rejection or missing approval service prevents execution; do not retry through another shell. Approval does not repair an incompatible restricted Bash runtime.
 ### Empty placeholder arguments on file tools
 
 Strict tool-call adapters that fill every schema field send `""`, `null` or `[]` for unused optional fields of `ops_inspect_local_file`, `ops_grep`, `ops_glob` and `ops_replace`. The plugin drops those placeholders for optional fields before the native worker runs, so they no longer trip `path`/`encoding`/`view` validation. Required fields, `replacement: ""`, `false` and `0` are forwarded unchanged, so genuinely invalid values still error.
@@ -127,7 +127,7 @@ lets a later writer believe it is alone.
 
 ### Where did the background tools go?
 
-The `dsh-ops/background` component and its FastCtx-backed tools (`ops_run`, `ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) were removed. A profile row that still names `dsh-ops/background` loads as a no-op and logs `the dsh-ops/background component (FastCtx background jobs) was removed in this version; it publishes no tools`; delete the row to silence it. For a long-running process, use the host `pwsh` tool's `run_in_background`, or detach inside an `ops_bash` command (for example `nohup ... & disown`).
+The `dsh-ops/background` component and its FastCtx-backed tools (`ops_run`, `ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) were removed. A profile row that still names `dsh-ops/background` loads as a no-op and logs `the dsh-ops/background component (FastCtx background jobs) was removed in this version; it publishes no tools`; delete the row to silence it. For a long-running process, use `ops_bash` with `run_in_background` when host jobs are available, then collect it with the host `job_output` tool.
 
 ### `DSH workspace preparation failed`
 

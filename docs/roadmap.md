@@ -1,5 +1,7 @@
 # Roadmap
 
+中文：[路线图](路线图.md)。
+
 > Directional, not a schedule or a commitment. Priorities can change with
 > upstream DSH releases and community feedback. Shipped work is recorded in
 > [CHANGELOG.md](CHANGELOG.md).
@@ -11,7 +13,11 @@
   (`darwin-arm64`). See [linux-build.md](linux-build.md) and
   [macos-arm64.md](macos-arm64.md).
 
-## Next
+## 0.4.0 candidate
+
+Separate Native/PTC projections, scoped discovery, bounded CSV/TSV, DOCX and restricted PDF readers, runtime/settings changes and strict TypeScript source are implemented. This is not a release announcement: final evidence must satisfy the approved OPS 0.3.x BM-01 threshold and file/discovery BM-03 budget, while separately reporting the official comparison and full Bash-inclusive startup total. See [candidate status and format limits](release-0.4.0.md).
+
+## Later
 
 ### Platform coverage
 
@@ -20,8 +26,7 @@
 
 ### Tool surface (progressive disclosure)
 
-- Lightweight DOCX and PDF tools, shipped as opt-in Rust tools that do not
-  occupy the system prompt when disabled.
+- Broader document-format coverage beyond the bounded 0.4.0 DOCX/PDF subsets.
 - Web search and crawl4ai-style HTML-to-Markdown tools.
 - More PTC tools and bounded result projections.
 

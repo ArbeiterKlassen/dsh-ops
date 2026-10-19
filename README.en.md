@@ -21,23 +21,38 @@
 
 # dsh-ops
 
-A plugin dedicated to improving the token efficiency of DSH plugins, boosting AI performance, reducing token consumption, and cutting total task time. It removes the token, time, and model-attention waste caused by DSH repeatedly hitting PowerShell errors on Windows, and will keep being updated.
+OPS adds bounded file and document tools to DSH. Native mode returns compact, line-numbered text;
+PTC code receives typed Outcome values from the same one-shot Rust worker. Host integration is
+strict TypeScript, compiled to the existing JavaScript package paths.
 
-Main features of this plugin:
+> [!IMPORTANT]
+> This branch is the **0.4.0 release candidate**, not a published release. Approved acceptance requires
+> at least 40% less BM-01 output than OPS 0.3.x; the official reader is a separate comparison.
+> BM-03 limits file/discovery schemas to 400 tokens while keeping Bash at startup and reporting the
+> full total separately. Final measured evidence and functional CI are both required.
+> See [release status and limitations](docs/release-0.4.0.md). Commands using `@latest` below select
+> the published package; build and pack this checkout to evaluate the candidate.
 
-- A set of more advanced always-on tools written in Rust. Compared with the built-ins, these tools use fewer input and output tokens, run faster, cover more ground, and impose less mental load on the AI; they also carry brief hash checks, line/position info, and similar messages to reduce token overhead.
-- Planned on the [roadmap](docs/roadmap.md): everyday tools such as DOC/PDF operations, web search, and crawl4ai-style HTML-to-Markdown tools, added through progressive disclosure so the AI avoids writing one-off code or scripts to reach its goal. **The current release does not ship them yet.**
-- Provides an option to disable the built-in tools, to maximize savings on the AI's mental load and the fixed system prompt.
-- On Windows it additionally provides the `ops_bash` tool — the AI is far more fluent with bash than with pwsh. You can use the independent **bash 5.3.15** bundled with ops, or point the `ops_bash` tool at Git Bash.
+- Native starts with `ops_read_many` and `ops_discover`; eligible Windows sessions also receive
+  `ops_bash`. Advanced tools activate in the owning agent's next provider request.
+- The PTC SDK catalogue has 19 APIs: 16 file/document tools, batch, result references and its loader.
+  Only the configured resident or selected APIs are exposed. Native and PTC use separate outputs.
+- Discover bounded CSV/TSV, DOCX main-body paragraphs and a restricted PDF text layer. Binary DOC,
+  OCR, general PDF rendering, web search and HTML crawling are not implemented. Read the
+  [document-format limits](docs/native-kernel.md) before choosing a reader.
+- Seven independently toggled rows preserve saved profile IDs and settings. Per-tool official
+  replacements are off by default. [Settings](docs/configuration-reference.md) include validated
+  built-in forms and optional browser pages with an explicit offline carrier migration.
+- Windows Bash is optional: install a verified managed copy with `dsh-ops bash-runtime install`
+  or choose Git Bash through `bashPath`. PowerShell stays host-managed; its upgrade command previews
+  the standard installation and requires `--yes` to execute. Neither shell is an npm payload.
 
-Plugin traits:
+OPS publishes its own scoped tools and optional routing guidance; it does not rewrite the shared
+tool registry. Permissions and cancellation are checked per call. Windows restricted Bash retains
+its documented partial enforcement and runtime-compatibility limits.
 
-- Low intrusion and high compatibility: it does not change runtime logic, inject into the system prompt or modify system variables — it only adds new, easy-to-use high-level tools, so it stays compatible with almost any plugin.
-
-> [!NOTE]
-> A rigorous benchmark and a concrete test plan for token savings and performance gains will ship in the next version, covering most common scenarios. The 97% token reduction reported for the previous version only describes the **"single, complex task delivered from a complete, explicit and specific prompt"** scenario — with short prompts the model's search for a conclusion is too random to control the variables.
-
-> tips: "ops" here is short for the broad sense of operations (running operations), indicating that this plugin sits in the base-tool position between DSH and system/code/file operations. This is not an operations (ops/SRE) plugin.
+Historical token-saving claims are not evidence that this candidate meets its release gates.
+The name “ops” means general operations, not an operations/SRE product.
 
 ## Install, update and uninstall
 
@@ -84,7 +99,7 @@ npx --yes dsh-ops@latest status --profile desktop
 npx --yes dsh-ops@latest uninstall --profile desktop
 ```
 
-Replace `desktop` with `web` or `tui` as needed. You can also uninstall from the marketplace, or run the official `dsh plugin --profile ... remove dsh-ops`. Binaries are managed as part of the profile's plugin dependencies; uninstalling removes the dependency reference without deleting the system shell, copies in other profiles, or the package manager's shared cache.
+Replace `desktop` with `web` or `tui` as needed. You can also uninstall from the marketplace, or run the official `dsh plugin --profile ... remove dsh-ops`. Profile uninstall removes plugin dependency references. Remove separately downloaded Bash with `dsh-ops bash-runtime remove --yes`; this does not delete the system shell, copies in other profiles, or the package manager's shared cache.
 
 Old files explicitly provisioned by earlier versions under `<DSH_HOME>/dsh-ops/` (provisioned shells, and the FastCtx runtime earlier versions could provision) need separate cleanup: `npx --yes dsh-ops@latest uninstall --yes`. The `~/.fastctx/` state left by the removed background component is not deleted by default; add `--purge-fastctx` when needed.
 
@@ -104,7 +119,7 @@ Enable the `dsh-ops/tui` row in dsh-TUI and restart to add the OPS sidebar witho
 
 Plugin source is distributed under **`MIT AND Apache-2.0`**: everything outside `licenses/fastctx/` is MIT; FastCtx is Apache-2.0. See [NOTICE](NOTICE), `licenses/fastctx/LICENSE-APACHE`, and `licenses/fastctx/NOTICE`.
 
-The separate Windows payload packages are distributed under their upstream components' licenses: Git for Windows includes GPL and other licensed components, and PowerShell includes MIT and third-party components. Their original licenses, notices, and provenance records are kept with the payloads; the plugin's MIT license does not replace those. See [PROVENANCE.md](docs/PROVENANCE.md).
+Shell binaries are obtained separately from their upstream distributors, under their upstream licenses. Git for Windows includes GPL and other licensed components, and PowerShell includes MIT and third-party components. The plugin's MIT license does not replace those licenses. See [PROVENANCE.md](docs/PROVENANCE.md).
 
 ## Acknowledgements
 

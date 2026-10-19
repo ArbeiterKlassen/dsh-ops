@@ -10,7 +10,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  FILE_TOOLS,
   HOST_SHELL_SECTION,
   IN_PROCESS_TOOLS,
   TOOLING_SECTION,
@@ -18,6 +17,7 @@ import {
   publicToolName,
   renderToolingPolicy,
 } from '../lib/policy.js'
+import { NATIVE_FILE_TOOLS } from '../lib/capabilities/registry.js'
 import { assert, PACKAGE_ROOT, report, test } from './lib/harness.mjs'
 
 const manifestFile = path.join(PACKAGE_ROOT, 'dsh-plugin.json')
@@ -64,8 +64,8 @@ await test('every declared tool is one the policy actually names', () => {
   const hosted = namespaces[0]
   assert.deepEqual(
     [...hosted.tools].sort(),
-    [...FILE_TOOLS].sort(),
-    'the native namespace declares exactly the four file tools',
+    [...NATIVE_FILE_TOOLS].sort(),
+    'the native namespace declares the owned file tools and Native result projection',
   )
   assert.equal(hosted.transport, 'in-process')
   for (const tool of hosted.tools) {
@@ -133,7 +133,7 @@ await test('the bundle patch inserts no background row and writes no removed Fas
   const { LEGACY_FASTCTX_KEYS } = await import('../lib/config.js')
   const patch = parse(fs.readFileSync(path.join(PACKAGE_ROOT, pkg.dsh.bundle.patch), 'utf8'))
   const rows = patch.flatMap((entry) => entry.insert ?? [])
-  assert.deepEqual(rows.map((row) => row.name), ['dsh-ops/shell', 'dsh-ops/file', 'dsh-ops/ptc', 'dsh-ops/panel', 'dsh-ops/tui', 'dsh-ops/hide-official'])
+  assert.deepEqual(rows.map((row) => row.name), ['dsh-ops/shell', 'dsh-ops/file', 'dsh-ops/ptc', 'dsh-ops/discovery', 'dsh-ops/panel', 'dsh-ops/tui', 'dsh-ops/hide-official'])
   for (const row of rows) {
     for (const key of LEGACY_FASTCTX_KEYS) assert.equal(Object.hasOwn(row.config ?? {}, key), false, `${row.name} still writes ${key}`)
   }
@@ -171,7 +171,7 @@ await test('the card icon is a self-contained PNG with bounded dimensions', () =
 
 await test('the icon and all component entries are shipped in the package whitelist', () => {
   assert.ok(pkg.files.includes('docs/assets/icon.png'))
-  for (const component of ['shell', 'file', 'background', 'ptc', 'panel', 'tui', 'hide-official']) {
+  for (const component of ['shell', 'file', 'background', 'ptc', 'discovery', 'panel', 'tui', 'hide-official']) {
     const directory = path.join(PACKAGE_ROOT, 'lib', 'components', component)
     assert.ok(fs.existsSync(path.join(directory, 'index.js')))
     assert.ok(pkg.exports[`./${component}`])
@@ -184,9 +184,9 @@ await test('the icon and all component entries are shipped in the package whitel
   }
 })
 
-await test('strict hiding and TUI are opt-in while native file/PTC/panel rows default enabled', () => {
+await test('hiding, panel and TUI are opt-in while file/PTC/discovery rows default enabled', () => {
   const components = raw.contributes['x-components']
-  for (const [id, enabled] of [['file', true], ['ptc', true], ['panel', true], ['tui', false], ['hide-official', false]]) {
+  for (const [id, enabled] of [['file', true], ['ptc', true], ['discovery', true], ['panel', false], ['tui', false], ['hide-official', false]]) {
     assert.equal(components.find(component => component.id === `dsh-ops-${id}`).defaultEnabled, enabled)
   }
 })

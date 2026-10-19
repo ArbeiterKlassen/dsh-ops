@@ -1,0 +1,7 @@
+{
+  "name": "dsh-ops-client-profile",
+  "private": true,
+  "type": "module",
+  "description": "Optional seven-row OPS bundle with a browser settings carrier; select instead of the default bundle.",
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

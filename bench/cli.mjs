@@ -26,6 +26,7 @@ export const EXIT = { ok: 0, failure: 1, usage: 2, pending: 3 }
 
 /** The subcommands, in help order, each with the slice that implements it. */
 export const COMMANDS = [
+  { name: 'gates', slice: '[16/16]', target: 'bench/gates/index.mjs', summary: 'scripted real-host BM-01 through BM-05 acceptance evidence' },
   { name: 'setup', slice: 'P9/P10', target: 'bench/setup.mjs', summary: 'prepare both profiles once, idempotently' },
   { name: 'ab', slice: 'P1 (plan) + P7/P8 + P11 (run)', target: 'bench/run.mjs', summary: 'baseline then candidate then compare, one group folder' },
   { name: 'report', slice: 'P11', target: 'bench/compare.mjs', summary: 'render report.md from a sealed run.json' },

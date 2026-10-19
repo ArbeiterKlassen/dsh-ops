@@ -17,11 +17,12 @@ import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { assert, report, scenarioDir, skipSuite, test, waitFor, withTempDir } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
-import { resolveShells, withBashStatus } from '../lib/shells.js'
+import { resolveShells } from '../lib/shells.js'
+import { hostForeground } from '../lib/shells/host-contract.js'
 import { BASH_ARGUMENT_ERROR_CODE } from '../lib/shells/argument-error.js'
 import { bashRefusalValue, mountSessionBash } from '../lib/session-shells.js'
 
-const bash = resolveShells({}).bash
+const bash = resolveShells(process.env.DSH_OPS_TEST_BASH ? { bashPath: process.env.DSH_OPS_TEST_BASH } : {}).bash
 if (!bash.available) {
   skipSuite('shells-session', 'this suite needs a real bash to run a command through the session layer: ' + bash.detail)
 }
@@ -44,7 +45,9 @@ async function publishOpsBash(ctx, id, workspace) {
   await ctx.plugin({ inject: ['tools'], apply(inner) { mountSessionBash(inner, { publishBashTool: true }, { bash }) } })
   await ctx.serial('agent/created', { agent, source: 'startup' })
   await waitFor(() => ctx.get('tools').get('ops_bash', agent) !== undefined, { what: 'ops_bash publication to the session' })
-  return { agent, scope, tool: ctx.get('tools').get('ops_bash', agent) }
+  const tool = ctx.get('tools').get('ops_bash', agent)
+  assert.deepEqual(tool.parameters.required, ['description'], 'the real session publishes the host projection, not the legacy helper')
+  return { agent, scope, tool }
 }
 
 /** The real-shell check for #237; registered on POSIX only, for the reason at its registration. */
@@ -78,7 +81,7 @@ async function relativeWorkdirRunsInTheSession() {
               ['retest-dir/../retest-dir', child],
               [child, child],
             ]) {
-              const value = await tool.execute({ command: 'pwd -P', workdir }, { agent, signal: signal() })
+              const value = await tool.execute({ command: 'pwd -P', description: 'Check session working directory', workdir }, { agent, signal: signal() })
               assert.equal(value.status, 'completed', JSON.stringify(value))
               assert.equal(value.stdout.text.trim(), expected, 'workdir=' + JSON.stringify(workdir))
             }
@@ -112,21 +115,20 @@ await test('a wrong argument reaches the caller as itself, not as invalid output
           [{ command: 'echo hi', script_path: 'x.sh' }, /exactly one of command or script_path/, 'script_path'],
           [{ command: 'echo hi', workdir: path.join(workspace, 'missing') }, /invalid workdir: must be an existing directory/, 'workdir'],
         ]) {
-          // The session layer rethrows a caller's refusal instead of folding it into a value.
-          await assert.rejects(() => tool.execute(args, { agent, signal: signal() }), error => {
-            assert.equal(error.code, BASH_ARGUMENT_ERROR_CODE, error?.message)
-            assert.equal(error.argument, argument, error?.message)
-            assert.match(error.message, pattern)
-            return true
-          })
+          const input = { ...args, description: 'Report the precise invalid argument' }
+          const value = await tool.execute(input, { agent, signal: signal() })
+          assert.equal(value.status, 'failed'); assert.equal(value.failure.code, BASH_ARGUMENT_ERROR_CODE)
+          assert.equal(value.failure.effectState, 'none'); assert.equal(value.failure.retry, 'after-input-change')
+          assert.match(value.error, pattern); assert.ok(value.error.includes(argument))
           // Through the real registry the caller reads the refusal itself; the pre-fix path ended
           // in "returned invalid output" and the argument was never named.
           const result = await ctx.get('tools').execute({
-            name: 'ops_bash', callId: 'shells-session-args-' + call++, agent, signal: signal(), arguments: args,
+            name: 'ops_bash', callId: 'shells-session-args-' + call++, agent, signal: signal(), arguments: input,
           })
-          assert.equal(result.isError, true, JSON.stringify(result))
-          assert.match(result.error.message, pattern)
-          assert.doesNotMatch(result.error.message, /invalid output/)
+          assert.equal(result.isError, false, JSON.stringify(result))
+          assert.equal(result.value.status, 'failed')
+          assert.match(result.value.error, pattern)
+          assert.doesNotMatch(result.value.error, /invalid output/)
         }
       } finally { await scope.dispose() }
     })
@@ -140,18 +142,19 @@ await test('a vanished session workspace is named as the missing directory (#180
       const { agent, scope, tool } = await publishOpsBash(ctx, 'shells-session-gone', workspace)
       try {
         fs.rmSync(workspace, { recursive: true, force: true })
-        await assert.rejects(() => tool.execute({ command: 'echo hi' }, { agent, signal: signal() }), error => {
-          assert.equal(error.code, BASH_ARGUMENT_ERROR_CODE, error?.message)
-          assert.match(error.message, /invalid workdir: must be an existing directory/)
-          assert.ok(error.message.includes(workspace), error.message)
-          assert.doesNotMatch(error.message, /bash executable|provision-shells/)
-          return true
-        })
+        const input = { command: 'echo hi', description: 'Report the missing session workspace' }
+        const value = await tool.execute(input, { agent, signal: signal() })
+        assert.equal(value.failure.code, BASH_ARGUMENT_ERROR_CODE)
+        assert.equal(value.failure.effectState, 'none')
+        assert.match(value.error, /invalid workdir: must be an existing directory/)
+        assert.ok(value.error.includes(workspace), value.error)
+        assert.doesNotMatch(value.error, /bash executable|provision-shells/)
         const result = await ctx.get('tools').execute({
-          name: 'ops_bash', callId: 'shells-session-gone', agent, signal: signal(), arguments: { command: 'echo hi' },
+          name: 'ops_bash', callId: 'shells-session-gone', agent, signal: signal(), arguments: input,
         })
-        assert.equal(result.isError, true, JSON.stringify(result))
-        assert.ok(result.error.message.includes(workspace), result.error.message)
+        assert.equal(result.isError, false, JSON.stringify(result))
+        assert.equal(result.value.status, 'failed')
+        assert.ok(result.value.error.includes(workspace), result.value.error)
       } finally { await scope.dispose() }
     })
   } finally { await shutdown(ctx) }
@@ -165,14 +168,32 @@ await test('every value the session layer settles on satisfies its registered sc
       const { agent, scope, tool } = await publishOpsBash(ctx, 'shells-session-schema', workspace)
       try {
         for (const command of ['printf ok', 'exit 7']) {
-          const value = await tool.execute({ command }, { agent, signal: signal() })
+          const value = await tool.execute({ command, description: 'Check the registered result schema' }, { agent, signal: signal() })
           assert.deepEqual(validateJsonSchemaValue(tool.output.schema, value, 'value'), [], JSON.stringify(value))
         }
         // The refusal shape the session layer folds a runtime failure into: this is the value that
         // must not fail the host's own validation.
-        const folded = withBashStatus(bashRefusalValue(new Error('EXECUTOR_UNAVAILABLE: probe')))
+        const folded = hostForeground(bashRefusalValue(new Error('EXECUTOR_UNAVAILABLE: probe')))
         assert.deepEqual(validateJsonSchemaValue(tool.output.schema, folded, 'value'), [])
         assert.equal(folded.status, 'failed')
+      } finally { await scope.dispose() }
+    })
+  } finally { await shutdown(ctx) }
+})
+
+
+await test('host jobs mount and teardown update the scoped background schema', async () => {
+  const { ctx } = await bootHost()
+  try {
+    await withTempDir('shells-session-jobs', async workspace => {
+      const { agent, scope } = await publishOpsBash(ctx, 'shells-session-jobs', workspace)
+      try {
+        const current = () => ctx.get('tools').get('ops_bash', agent)
+        assert.equal(current().parameters.properties.run_in_background, undefined)
+        const jobs = await ctx.plugin(inner => inner.provide('jobs', {}))
+        await waitFor(() => current()?.parameters.properties.run_in_background !== undefined, { what: 'background Bash schema publication' })
+        await jobs.dispose()
+        await waitFor(() => current()?.parameters.properties.run_in_background === undefined, { what: 'background Bash schema removal' })
       } finally { await scope.dispose() }
     })
   } finally { await shutdown(ctx) }

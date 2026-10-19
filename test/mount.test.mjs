@@ -1,8 +1,11 @@
+import { discoveryMountChecks } from './lib/discovery.mjs'
 /** Real Cordis/tool/prompt composition with the released independent components. */
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { BASH_TOOL, FILE_TOOLS, TOOLING_SECTION, publicToolName } from '../lib/policy.js'
+import { NATIVE_RESIDENT_FILE_TOOLS } from '../lib/capabilities/registry.js'
+import * as discovery from '../lib/components/discovery/index.js'
 import { applyComponent } from '../lib/index.js'
 import * as ptc from '../lib/ptc/index.js'
 import { resolveWorker } from '../lib/ptc/runtime.js'
@@ -16,7 +19,7 @@ import { officialToolHidingMountChecks } from './lib/official-tool-hiding.mjs'
 
 // Component 4 has no native runtime dependency; always exercise its real mounts.
 await officialToolHidingMountChecks()
-const EXPECTED = FILE_TOOLS.map(publicToolName).sort()
+const EXPECTED = NATIVE_RESIDENT_FILE_TOOLS.map(publicToolName).sort()
 const FILE_SECTION = `${TOOLING_SECTION}:file`
 const SHELL_SECTION = `${TOOLING_SECTION}:shell`
 const BG_SECTION = `${TOOLING_SECTION}:background`
@@ -28,6 +31,7 @@ try { worker = resolveWorker({}) } catch (error) {
   skipSuite('mount', error.message.split('\n')[0])
 }
 console.log(`  worker: ${worker}`)
+await discoveryMountChecks()
 /** The row configs earlier bundles wrote into every existing profile (`cordis.patch.yml` before update 2). */
 const LEGACY_ROWS = Object.freeze({
   file: { promptPolicy: true, enableShellTools: false, required: false, toolCallTimeoutMs: 300000 },
@@ -49,7 +53,11 @@ async function agentForCall(ctx, cwd, mode = 'danger-full-access') {
   const result = { id: 'file-call', session: { id: 'file-call', mode, header: { cwd } } }
   const { createScope } = await import('@deepseek-ai/dsh-scope')
   result.ctx = createScope(ctx, result).ctx
+  await ctx.serial('agent/created', { agent: result, source: 'startup' })
   return result
+}
+async function advancedMount(ctx, names) {
+  return ctx.plugin(discovery, { required: true, enabled: false, allowedTools: names, alwaysLoaded: names })
 }
 async function component(ctx, name, config = {}) {
   return ctx.plugin({ name: `fixture-${name}`, apply(inner) { return applyComponent(inner, { ...config }, name) } })
@@ -116,7 +124,7 @@ await test('PTC batch/result mount only in pure PTC scopes and withdraw on prese
   try {
     await executor(ctx)
     await ctx.plugin(inner => inner.provide('ptcRuntime', { language: 'typescript' }))
-    const component = await ctx.plugin(ptc, { binaryPath: resolveWorker(), required: true })
+    const component = await ctx.plugin(ptc, { binaryPath: resolveWorker(), required: true, alwaysLoaded: ['batch'] })
     const native = await agent(ctx, 'ptc-native')
     const pure = await agent(ctx, 'ptc-only')
     let lift
@@ -128,6 +136,7 @@ await test('PTC batch/result mount only in pure PTC scopes and withdraw on prese
     }
     const stale = ctx.get('tools').get('ops_result', pure)
     lift()
+    await ctx.get('systemPrompt').assemble({ scope: pure })
     assert.equal(scopedToolNames(ctx, pure).includes('ops_result'), false)
     assert.equal((await stale.execute({ action: 'page', id: 'unused' }, { agent: pure, signal: new AbortController().signal })).error.code, 'POLICY_DENIED')
     await component.dispose()
@@ -139,6 +148,7 @@ await test('real native file calls return data and propagate errors promptly', a
   const { ctx } = await bootHost()
   try {
     await fileMount(ctx)
+    await advancedMount(ctx, ['inspect_local_file', 'write_file', 'stat', 'glob'])
     await withTempDir('glob', async dir => {
       fs.writeFileSync(path.join(dir, 'alpha.txt'), 'alpha\n')
       const agent = await agentForCall(ctx, dir)
@@ -158,6 +168,7 @@ await test('native file paths resolve from session cwd and enforce workspace-wri
   const { ctx } = await bootHost()
   try {
     await fileMount(ctx)
+    await advancedMount(ctx, ['inspect_local_file', 'glob', 'replace'])
     await withTempDir('native-paths', async dir => {
       fs.writeFileSync(path.join(dir, 'cwd.txt'), 'cwd\n')
       const workspace = await agentForCall(ctx, dir, 'workspace-write')
@@ -169,7 +180,8 @@ await test('native file paths resolve from session cwd and enforce workspace-wri
       try {
         const read = await callTool(ctx, publicToolName('inspect_local_file'), { path: outside }, undefined, workspace)
         assert.equal(read.value.status, 'completed')
-        const readonly = await agentForCall(ctx, dir, 'read-only')
+        workspace.session.mode = 'read-only'
+        const readonly = workspace
         const denied = await callTool(ctx, publicToolName('replace'), { path: outside, pattern: 'outside', replacement: 'changed' }, undefined, readonly)
         assert.equal(denied.value.error.code, 'POLICY_DENIED')
         assert.match(denied.value.error.message, /User authorization/)
@@ -228,12 +240,12 @@ await test('bash is scoped to authorized sessions, responds to mode changes, and
     await ctx.serial('session/event', full.session, { type: 'sandbox/mode' })
     await visible(ctx, full, [BASH_TOOL])
     if (process.platform === 'win32') {
-      const restrictedResult = await definition.execute({ command: 'echo no' }, { agent: full, signal: new AbortController().signal })
+      const restrictedResult = await definition.execute({ command: 'echo no', description: 'Verify the current scoped shell authority' }, { agent: full, signal: new AbortController().signal })
       assert.equal(restrictedResult.status, 'failed')
       assert.match(restrictedResult.error, /EXECUTOR_UNAVAILABLE/)
       assert.equal(restrictedResult.permission, undefined)
     } else {
-      const value = await definition.execute({ command: 'echo no' }, { agent: full, signal: new AbortController().signal })
+      const value = await definition.execute({ command: 'echo no', description: 'Verify the current scoped shell authority' }, { agent: full, signal: new AbortController().signal })
       assert.equal(value.sandbox.mode, 'read-only')
       assert.match(value.error, /fixture does not execute/)
     }
@@ -330,33 +342,20 @@ await test('an old background row loads as a no-op: no tools, no section, one wa
 await test('the host half refuses to mount a background component itself', () => {
   assert.throws(() => applyComponent({}, {}, 'background'), /unknown component "background"/)
 })
-await test('real file replacement surface hides duplicates, keeps the PTC transport visible, and never publishes unready processes', async () => {
+await test('selected replacements fail closed when the file row publishes only its resident core', async () => {
   const { ctx } = await bootHost()
   try {
     await fileMount(ctx)
-    for (const name of ['read', 'glob', 'grep', process.platform === 'win32' ? 'pwsh' : 'bash']) ctx.tools.register(foreignTool(name))
+    for (const name of ['read', 'glob', 'grep']) ctx.tools.register(foreignTool(name))
     const { apply: hideOfficial } = await import('../lib/official-tool-hiding.js')
-    const hiding = await ctx.plugin({ name: 'real-file-takeover', apply: hideOfficial }, {})
-    await new Promise(resolve => setImmediate(resolve))
-    const current = await agent(ctx, 'real-file-takeover')
-    const assembly = await ctx.get('systemPrompt').assemble({ scope: current })
-    const names = assembly.tools.map(tool => tool.name)
-    for (const name of ['read', 'glob', 'grep']) assert.equal(names.includes(name), false)
-    for (const name of EXPECTED) assert.ok(names.includes(name))
-    assert.equal(new Set(names).size, names.length)
-    assert.equal(names.some(name => name.startsWith('ops_process_')), false)
-    ctx.provide('ptcRuntime', { language: 'typescript' })
-    const restore = current.ctx.tools.presentAs('both')
-    // run_code is inside the PTC face with no reviewed replacement, so strict
-    // keeps it visible and warns instead of failing the session (#238).
-    const withTransport = await ctx.get('systemPrompt').assemble({ scope: current })
-    const transported = withTransport.tools.map(tool => tool.name)
-    assert.ok(transported.includes('run_code'))
-    assert.equal(transported.includes('read'), false)
-    restore()
-    await ctx.get('systemPrompt').assemble({ scope: current })
+    const hiding = await ctx.plugin({ name: 'selected-file-takeover', apply: hideOfficial }, { replaceTools: ['read', 'glob', 'grep'] })
+    const current = await agent(ctx, 'selected-file-takeover')
+    await assert.rejects(() => ctx.get('systemPrompt').assemble({ scope: current }), /READINESS_BLOCKED/)
+    for (const name of ['read', 'glob', 'grep']) assert.ok(ctx.tools.schemas(current).some(tool => tool.name === name))
     await hiding.dispose()
-    assert.ok(scopedToolNames(ctx, current).includes('read'))
+    const assembly = await ctx.get('systemPrompt').assemble({ scope: current })
+    for (const name of ['read', 'glob', 'grep', ...EXPECTED]) assert.ok(assembly.tools.some(tool => tool.name === name))
+    assert.equal(assembly.tools.some(tool => tool.name.startsWith('ops_process_')), false)
   } finally { await shutdown(ctx) }
 })
 report('mount')

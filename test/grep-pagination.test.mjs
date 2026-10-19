@@ -72,7 +72,7 @@ await test('content pages inside and across files do not build or return the ski
   })
 })
 
-await test('oversized grep files are size exclusions, not read failures', async () => {
+await test('oversized grep files leave explicit coverage gaps without read failures', async () => {
   await withTempDir('grep-oversized', async root => {
     fs.writeFileSync(path.join(root, 'small.txt'), 'hit\nhit\n')
     const fd = fs.openSync(path.join(root, 'oversized.txt'), 'w')
@@ -82,11 +82,14 @@ await test('oversized grep files are size exclusions, not read failures', async 
       assert.equal(page.skippedFiles, 1)
       assert.equal(page.failed, 0)
       assert.equal(page.matched, 2)
-      assert.equal(page.complete, true)
-      assert.equal(page.truncated, false)
+      assert.equal(page.complete, false)
+      assert.equal(page.scanComplete, false)
+      assert.equal(page.truncated, true)
+      assert.equal(page.matchedTotal, undefined)
+      assert.equal(page.skipReasons.oversized, 1)
       if (outputMode === 'summary') assert.equal(page.files, 1)
       else {
-        assert.equal(page.total, 1)
+        assert.equal(page.total, undefined)
         assert.equal(page.items.length, 1)
         assert.equal(page.items[0].count, 2)
       }

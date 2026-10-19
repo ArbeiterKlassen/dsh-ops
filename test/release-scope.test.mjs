@@ -71,4 +71,15 @@ await test('manifest exact targets, npm platform filters and shell pins must agr
   manifest.contributes['x-components'].find(c=>c.id==='dsh-ops-ptc').targets.push('darwin-x64')
   fs.writeFileSync(file,JSON.stringify(manifest)); assert.match(run(root).out,/disagree/)
 }))
+await test('release closure refuses either shell payload as a direct or optional dependency', async () => withTempDir('release-shell-dep', root => {
+  fixture(root)
+  const file = path.join(root, 'package.json'), pkg = JSON.parse(fs.readFileSync(file, 'utf8'))
+  for (const group of ['dependencies', 'optionalDependencies']) for (const kind of ['bash', 'pwsh']) {
+    const changed = { ...pkg, [group]: { ...pkg[group], ['@dsh-ops/' + kind + '-win32-x64']: '0.2.1' } }
+    fs.writeFileSync(file, JSON.stringify(changed))
+    const result = run(root)
+    assert.notEqual(result.status, 0)
+    assert.match(result.out, /must not be a package dependency/)
+  }
+}))
 report('release-scope')

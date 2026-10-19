@@ -3,6 +3,36 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
+## Unreleased: optional shells and host PowerShell
+
+The npm package and release assembly no longer depend on or publish shell payload packages.
+Bash is an explicit pinned upstream download. PowerShell is selected entirely by the host;
+OPS no longer changes its `pwshPath` or activates legacy provisioned copies. The exported strict
+TypeScript manager previews a standard Windows installation and executes WinGet only on request.
+It follows [Microsoft's installation guidance](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows)
+and preserves installer prompts. WinGet's `0x8A15002B` is reported only as no applicable update;
+cancellation after launch has unknown effects. No system installer was run during validation:
+fixture runners cover argv, exits, cancellation and preservation, while a real child tests spawn reporting.
+
+npm 包与发布组装不再依赖或发布 shell 载荷包；Bash 采用显式固定版本下载。
+PowerShell 完全由宿主选择，OPS 不再修改 `pwshPath` 或启用旧托管副本。
+严格 TypeScript 管理器默认预览，显式请求才通过 WinGet 安装标准 PowerShell，保留安装提示。
+验证未运行系统安装器：fixture 覆盖参数、退出码、取消及保留行为，真实子进程验证启动反馈。
+下文旧版本的载荷与覆盖机制仅是历史记录，不描述当前行为。
+
+## Unreleased: host Bash contract
+
+The shell contract, approval and job adapters in `src/shells/` adapt
+`@deepseek-ai/dsh-tool-bash` 0.2.0-rc.2 (MIT, Copyright (c) 2026 DeepSeek).
+The executor was checked against `@deepseek-ai/dsh-bash-local` at the same version.
+OPS selects an absolute executable, preserves its argument and Windows IPC validation,
+and borrows host services without replacing them. The upstream MIT license is retained
+in `licenses/deepseek-harness/LICENSE`; the package adds no host value imports.
+
+Shell 契约、审批与 jobs 适配改写自同版本宿主工具（MIT，2026 DeepSeek），
+执行器参照同版本 bash-local 核验。OPS 保留绝对执行路径、参数及 Windows IPC 校验，
+只借用宿主服务，不替换服务，也不增加宿主值导入。上游许可证保留于上述路径。
+
 ## Unreleased: FastCtx removed
 
 The FastCtx-backed `dsh-ops/background` component was removed together with the

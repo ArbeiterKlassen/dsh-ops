@@ -7,7 +7,385 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-### File-tool discoverability, honest grep pages and compact inspect rendering
+- Prepare the 0.4.0 candidate version across owned npm/plugin and Rust workspace metadata without dependency changes. Audit paired release, usage, component, SDK, discovery and manual-validation documentation; record the explicitly approved benchmark scope and retain historical failures separately from functional CI. No release/tag is created.
+- 将自有 npm/插件与 Rust workspace 版本统一为 0.4.0 候选，不变更依赖；同步双语发布、使用、组件、SDK、发现和手动验收文档。记录明确批准的基准范围并保留历史失败，不以功能 CI 代替验收，不创建发布或 tag。
+- Apply the confirmed acceptance scopes: BM-01 gates against OPS 0.3.x with official-reader comparisons reported separately; BM-03 gates file/discovery schemas while retaining startup Bash, exact full-inventory readiness and separate full totals. Preserve historical failed evidence.
+- 按已确认的验收范围判定：BM-01 以 OPS 0.3.x 为准，官方读取器比较单列；BM-03 仅约束文件/发现 schema，保留启动 Bash、完整目录就绪校验及单列完整总量。历史失败证据保持不变。
+
+- Compact each fully returned Native range's metadata receipt by removing its repeated notice label; keep exact source text, full revisions, continuation/EOF facts and the aggregate notice.
+- 删除 Native 完整返回范围的逐文件元数据回执中重复的提示标签；保留精确正文、完整版本标识、续读/文件结束事实及汇总提示。
+
+- Fetch baseline Git history in full CI gates, optional benchmark smoke and the release gate so exact 0.3.1 provenance checks work on fresh checkouts.
+- 完整 CI 门禁、可选基准冒烟与发布门禁获取基线 Git 历史，确保全新检出能校验 0.3.1 的精确来源。
+
+- Include each activated document reader in scoped routing guidance; validate real document receipts in the PTC API coverage suite.
+- 在作用域路由中显示已激活的文档读取工具，并用真实文档回执验证 PTC API 覆盖。
+
+- Keep table coverage honest beyond EOF and after metadata changes. Fresh PTC bundle pools follow
+  the implemented catalogue; saved explicit operator pools remain unchanged.
+- 表格超出 EOF 时只统计实际跳过的行，文件变化后不声明页面完整；新 PTC 允许池遵循实现目录，保留已保存的显式选择。
+
+- Complete the strict TypeScript source migration and disable JavaScript compilation. Reject unimported JavaScript source during packaging while preserving published `.js` paths.
+- 完成严格 TypeScript 源码迁移并关闭 JavaScript 编译；打包时拒绝未导入的 JavaScript 源码，保持发布的 `.js` 路径不变。
+
+- Type central configuration validation, deferred profile migrations, and the remaining TUI/background entries strictly; retain their emitted paths, defaults, validation errors and lifecycle behavior.
+- 将中央配置校验、延迟 profile 迁移及剩余 TUI/background 入口迁为严格 TypeScript；保留产物路径、默认值、校验错误及生命周期行为。
+
+### Type the component host entry (#261, 16/16)
+
+- Migrate the root component entry to strict TypeScript using public Cordis and Agent types; preserve configuration validation, scoped registration, shell denial and teardown behavior.
+- 将根组件入口迁移为严格 TypeScript，使用公开 Cordis 与 Agent 类型；保留配置验证、作用域注册、Shell 拒绝与卸载行为。
+
+### Type profile delegation and session temporary directories (#261, 16/16)
+
+- Migrate profile commands and private temporary-directory helpers to strict TypeScript, preserving official CLI delegation and per-session path behavior; narrow malformed manifest data before use.
+- 将配置档委托命令与会话临时目录辅助函数迁移为严格 TypeScript，保留官方 CLI 委托及会话路径行为，并在使用前验证 manifest 数据。
+
+
+### Strict authority types ([16/16])
+
+- Migrate credential fences, trusted path anchors and permission failures to strict TypeScript without changing emitted entrypoints or authority decisions. Preserve worker effect facts during denial normalization and assert typed host modes/unknown-input narrowing.
+- 将凭据围栏、可信路径锚点和权限错误迁移为严格 TypeScript，保持生成入口和权限决策不变；拒绝归一化保留 worker 效果事实，并验证宿主模式及未知输入的类型缩窄。
+
+### Require benchmark readiness and valid controls (#261, 16/16)
+
+- Block startup scoring when any default Native tool is missing, duplicated or unexpected. Require successful allowed-read controls and exact effect-free denial codes, and independently decode Native source text before comparing bytes. Keep all fixtures, defaults and acceptance thresholds unchanged.
+- 默认 Native 工具缺失、重复或多出时阻塞启动评分；要求允许读取对照成功、拒绝代码与无副作用事实正确，并独立解码 Native 正文后再比较字节。不改变夹具、默认值及验收阈值。
+
+### Preserve literal backslashes in Native source lines (#261)
+
+- Share a reversible source-line encoder across compact and general Native output so literal backslash sequences cannot be confused with tabs, control characters or Unicode separators. Canonical data and ordinary ASCII line output remain unchanged.
+- 紧凑与通用 Native 正文共用可逆行编码，区分字面反斜杠序列、制表符、控制字符和 Unicode 分隔符；规范数据和普通 ASCII 行输出不变。
+
+### Add opt-in real-host acceptance evidence (#261, 16/16)
+
+- Run BM-01–05 with a scripted provider, exact 0.3.1 and pinned official comparators, immutable sensitivity fixtures, visible-content assertions, numerical lossless lower bounds and JSON/Markdown reports. Manual cross-platform CI uploads failed and blocked evidence; no paid model calls or default gate changes.
+- 新增真实宿主 BM-01–05 按需基准、独立基线及不可变敏感性夹具；保留准确正文断言、无损字节下界和失败/阻塞证据，不调用付费模型，不改变默认门禁。
+
+### Keep credential denial paths private (#261, BM-05)
+
+- Omit denied paths and matching policy roots from shared preflight refusal messages while retaining rejection codes, effect state and no-retry guidance for Native and PTC.
+- 凭据预检拒绝不再返回被拒路径与匹配规则；保留 Native/PTC 的拒绝代码、无副作用状态及禁止重试指引，权限边界不变。
+
+
+- Check collected subprocess readers explicitly; absent output after execution remains unknown and retains PTC audit identity. 显式检查子进程输出读取器；运行后缺失输出时保留未知副作用及 PTC 审计标识。
+
+- Type the confined Bash and workspace-preparation boundaries; reject malformed IPC proxy receipts before staging a runtime. 严格类型化受限 Bash 与工作区准备边界；代理收据格式错误时，在暂存运行时前明确拒绝。
+
+- Add optional bilingual browser settings pages for replacement selection, discovery pools and explicit Bash/host PowerShell runtime plans. Preserve the default legacy file row; custom pages require a client carrier and unload when it is disabled.
+- 新增可选双语浏览器设置页面，支持逐工具替换、发现池及显式 Bash/宿主 PowerShell 运行时计划。默认保留旧文件行；自定义页面需要客户端承载行，关闭承载行即卸载页面。
+- Add an opt-in offline settings-carrier migration with exact host composition checks, original-file backups, atomic writes and recovery. The normal upgrade retains legacy file-row names and settings.
+- 新增可选离线设置承载行迁移：精确验证宿主配置合成结果，备份原文件，原子写入并支持恢复。常规升级仍保留旧文件行名称与配置。
+
+### Type panel capture and persisted records (#261, 16/16)
+
+- Migrate panel collection to strict TypeScript while preserving queued-stop, issued-I/O waiting and explicit sealing. Count malformed persisted fields and mark incomplete capture without corrupting valid text or usage totals.
+- 将面板采集迁移为严格 TypeScript，保留排队停止、等待已发起 I/O 与显式封存；错误的持久化字段计入 malformed 并标记不完整，不破坏有效正文或用量总计。
+
+- Add discovery as the seventh bundle row; preserve existing named row overrides. Fresh defaults enable shell only on Windows and leave panel/TUI/replacements off. Enabling a fresh panel row starts capture; explicit legacy capture:false stays inert. Provide builtin validated file/PTC/TUI configuration.
+- bundle 新增第七行 discovery，保留已有带名称行覆盖。首次安装仅 Windows 默认启用 shell，panel/TUI/替换默认关闭；启用新 panel 行即采集，旧配置 capture:false 保持不采集。补充文件/PTC/TUI 内置校验配置。
+
+- Stop panel collection and queued filesystem work when its row or capture switch is disabled; wait for issued I/O without scheduling a final fold. Expose validated capture settings through the host editor.
+- 关闭 panel 行或采集开关时停止采集及排队文件操作，等待已开始的 I/O，但不触发最终归并；宿主编辑器提供严格校验的采集设置。
+
+- Preserve raw shell configuration through settings validation so ordinary startup and profile reload do not interpret normalized defaults as explicit inputs.
+- 设置校验保留原始 shell 配置，避免启动和配置重载将规范化默认值误认为显式输入。
+
+### Connect runtime settings actions to the host gateway (#261)
+
+- Add typed, package-owned gateway descriptors for runtime inventory, Bash selection and explicit install/remove/PowerShell-upgrade previews. Execute only current one-use plans through host subprocess governance; preserve cancellation and partial-effect facts.
+- 通过宿主网关提供运行时清单、Bash 选择和显式安装/删除/PowerShell 升级预览；仅执行有效的一次性计划，并保留取消和部分副作用信息。
+
+### Validate and persist host settings forms (#261)
+
+- Expose shell executor, discovery pool/always-loaded and per-tool replacement fields through detached settings descriptors and existing validators. Accepted changes persist through the host profile writer and reload the row; stale/invalid writes preserve the profile.
+- 为 shell 执行器、发现允许池/常驻项和逐项替换提供宿主设置描述及既有校验；成功保存后重载对应行，版本过期或无效配置不会改写文件。
+
+- Drain release-gate stdout and stderr concurrently so a full diagnostic pipe cannot deadlock verification; retain both streams and failing exit codes.
+- 发布门禁并行读取 stdout 和 stderr，避免诊断管道写满后验证死锁；保留两路完整输出及失败退出码。
+
+- Require exact OPS-owned Native definitions for selected official replacements, including same-schema ownership changes; preserve fail-closed provider requests while discovery completes startup readiness. Move the replacement boundary and config validator to strict TypeScript.
+- 所选官方替代工具必须是 OPS 拥有的确切 Native 定义，schema 相同的所有权变化也会重新校验；发现组件可完成启动就绪检查，普通提供方请求仍严格拒绝未就绪状态。替代边界和配置校验器迁移为严格 TypeScript。
+
+### Select official read/search replacements individually (#261)
+
+- Replace blanket hiding with `replaceTools: []`: explicitly select reviewed `read`, `glob`, or `grep` alternatives. Unselected tools remain visible without warning lists; only selected counterparts are required for scoped readiness.
+- Legacy `strict`, `scope`, and `additionalOfficialTools` remain validated but inert. Document argument/coverage differences and exclude write/edit because their CAS contracts differ. Validated built-in row forms are available; optional browser multi-selects use the explicit client carrier described above.
+- 官方工具改为通过 `replaceTools: []` 逐项选择 `read`、`glob`、`grep` 替代流程；未选工具保持可见且无警告列表，只校验所选替代工具的作用域就绪状态。
+- 旧 `strict`、`scope`、`additionalOfficialTools` 仅校验不生效；文档说明参数与覆盖差异，写入/编辑因 CAS 契约不同而不提供替换。内置行表单已提供严格校验；可选浏览器多选通过上文的显式客户端承载行启用。
+
+### Leave PowerShell with its host (#261)
+
+- Remove the PowerShell npm payload dependency, shell payload release assembly and automatic
+  host executor overlay. Existing host settings, Windows PowerShell 5.1 and legacy copies stay intact.
+- Add a strict TypeScript manager and `upgrade-host-pwsh` CLI with preview by default,
+  explicit WinGet execution, honest exit/cancellation effects and restart/custom-path guidance.
+- 移除 PowerShell 载荷依赖和宿主执行器覆盖；新增默认预览、显式执行的宿主升级命令，
+  保留已有设置及旧副本，并说明取消后的未知副作用、重启与自定义路径要求。
+
+- Return host-compatible Bash argument failures as values with stable retry/effect metadata; interrupted or failed running commands require read-only inspection before replay. Bash 参数失败返回结构化值；运行后的未知副作用禁止自动重试。
+
+- Cancel queued job starters when host admission fails after accepting the run hook; never retry that call in the foreground. 宿主接受任务启动回调后若准入失败，取消排队启动且不转为前台重试。
+
+### Type the shell execution and host boundary (#261)
+
+- Migrate the new shell executor, host contract, approvals, jobs and session integration to strict
+  TypeScript. Validate the published definition against the pinned SDK with type-only imports;
+  retain existing emitted paths. The remaining adapters are also strict TypeScript in the completed source migration.
+- 将 shell 执行器、宿主契约、审批、jobs 和会话集成迁为严格 TypeScript，以仅类型宿主导入校验公开定义；保持发布路径，剩余适配器也已完成严格迁移。
+
+### Make Windows Bash an explicit optional runtime (#261)
+
+- Add Bash status/install/remove and Git/managed selection commands. Removal previews by default,
+  removes only receipt-marked managed versions, and refuses linked managed directories.
+- Remove the automatic Bash npm payload dependency and release payload assembly. Build, CI and
+  release gates explicitly acquire a pinned fixture, or validate an operator-provided offline one.
+- 新增 Bash 状态/安装/删除及 Git/受管理副本选择；删除默认预览，仅移除有收据的非链接目录。移除自动 npm 载荷与发布组装，构建和门禁显式获取固定 fixture 或验证离线提供的副本。
+
+### Reuse host Bash approvals and background jobs (#261)
+
+- Require command descriptions and return host foreground/background/promoted result kinds, with
+  120-second defaults and 600-second caps. Reuse host jobs for background work and foreground
+  timeout promotion, host per-call approvals for wider access, and host subprocess governance.
+- Recheck session authority after approval and confinement; retain absolute executable selection,
+  verified Windows IPC compatibility, honest partial enforcement and fail-closed runtime errors.
+- Keep script_path, graceMs and includeDiagnostics as documented OPS compatibility extensions.
+- 必填命令描述，复用宿主前台/后台/提升结果、jobs、单次审批及 subprocess；默认 120 秒、上限 600 秒。审批与约束后重检权限，保留绝对执行器、IPC 兼容校验、如实部分约束及失败拒绝；script_path、graceMs、includeDiagnostics 为明确的 OPS 兼容扩展。
+
+### Preserve Bash cancellation through pending confinement preparation (#261)
+
+- Bash execution exposes one live handle for observation and settlement. Cancellation settles
+  pending sandbox preparation immediately, and a late provider response cannot start a command.
+  The first timeout or caller cancellation remains the reported stop cause.
+- Bash 使用同一活动句柄观察和收敛；取消立即终止等待中的准备，迟到响应不能启动命令，保留最先发生的超时或取消原因。
+
+### Type optional TUI projections and panel rendering (#261, 16/16)
+
+- Compile bounded activity, attention, diagnostics and injected rendering under strict TypeScript;
+  preserve readonly metadata, separate running/settled facts and packaged viewer paths without UI dependencies.
+- TUI 与面板辅助模块严格类型化，保留只读元数据、运行/完成状态区别与资源路径，不新增 UI 依赖。
+
+### Type Rust toolchain discovery and source builds (#261, 16/16)
+
+- Compile Cargo discovery and explicit locked build helpers under strict TypeScript with checked
+  toolchain inputs, output callbacks and numeric completion codes; retain the shipped CLI paths.
+- Rust 工具链解析与显式锁定构建改为严格类型，检查输入、文本回调及退出码，发布 CLI 路径不变。
+
+### Type the confined PTC worker boundary (#261, 16/16)
+
+- Compile PTC policy, confinement, runner diagnostics and receipts under strict TypeScript; retain
+  per-call authorization and unknown effects with audit identity when worker output is invalid.
+- PTC 桥使用严格权限、限制执行与诊断类型；非法 worker 输出保留未知副作用及审计标识。
+
+### Type the trusted Native worker boundary (#261, 16/16)
+
+- Compile host policy, observations and Native worker invocation under strict TypeScript; reject
+  non-object arguments before spawn and retain unknown effects for malformed process results.
+- Native 桥使用严格宿主类型；非对象参数在启动前拒绝，非法进程结果保留未知副作用且不误记成功读取。
+
+### Type worker resolution and Native runtime ownership (#261, 16/16)
+
+- Compile worker discovery and Native lifecycle as strict TypeScript; preserve runtime .js paths,
+  provenance checks and scoped teardown, and reject calls before runtime initialization.
+- worker 解析与 Native 生命周期改为严格 TypeScript，保留发布路径和权限边界，未初始化调用返回明确失败值。
+
+
+### Expose scoped DOCX paragraphs (#261, 15b/16)
+
+- Add discoverable Native main-body paragraphs and typed PTC outcomes with explicit excluded content,
+  safe prefixes on unsupported content, stable-scan-only continuation and scoped reference recovery.
+- DOCX 的 Native/PTC 按需启用，明确正文范围与排除内容；缺口保留安全前缀且不伪造续取。
+
+### Read bounded PDF text pages with honest coverage (#261, 15d/16)
+
+- Read a documented classic-xref/standard-font PDF subset into page text and individual runs,
+  with explicit exclusions, per-stream/page/aggregate limits and no OCR or layout claims.
+- Preserve preceding complete pages on unsupported content, keep totals/revision conditional
+  on stable full scans, and capture full pages before bounded reference spill.
+- Publish discoverable-only Native PDF text and typed PTC page/run outcomes, retaining source scope,
+  safe failed prefixes, forward stable-scan continuations and reference recovery metadata.
+- 新增受限 PDF 文本页及 run 读取，明确排除内容和累计预算；保留此前完整页，
+  仅完整稳定扫描提供总数/修订，复用只读权限与无损引用，不声称 OCR 或阅读布局。Native/PTC 按代理按需启用，保留正文缺口与类型化页数据。
+
+### Add bounded PDF container foundation (#261, 15c/16)
+
+- Validate a restricted classic-xref PDF grammar, exact object boundaries and bounded
+  values/references before extraction; verify actual Flate output, checksum and terminator.
+- Reuse the reviewed exact compression dependency without new packages. The PDF reader uses
+  this foundation; the container validator alone makes no complete-text claim.
+- 新增有界传统 xref PDF 容器基础，校验对象边界、引用与实际解压；复用已核验压缩依赖，
+  不新增依赖包，PDF 读取器已接入此基础，容器校验本身不声明文本完整。
+
+### Add bounded DOCX main-body worker observations (#261, 15b/16)
+
+- Read strict DOCX main-body paragraphs and table coordinates with explicit excluded-content
+  scope, bounded ZIP/XML processing, honest partial results and lossless reference spill.
+- Pin ZIP/XML dependencies with defaults disabled; preserve their original license notices and
+  exact release-date review. Legacy DOC, unsupported content and external resolution are refused.
+- 新增有界 DOCX 正文段落/表格坐标读取，明确排除内容及部分扫描；固定经日期核验的 ZIP/XML
+  依赖并保留许可，拒绝旧版 DOC 与不支持内容，复用权限、nofollow 和无损引用恢复。
+
+### Add bounded CSV/TSV worker observations (#261, 15a/16)
+
+- Add an ops-documents workspace crate with strict UTF-8/UTF-16 CSV/TSV decoding, positional
+  string cells, physical line ranges, bounded row pages and safe preceding rows on parse failures.
+- Separate complete physical scans from requested pages and reference capture; reuse no-follow,
+  credential, readonly and automatic-spill boundaries without new external dependencies.
+- Expose discoverable-only Native rows and typed PTC cells with full-scan-only continuations; retain
+  safe prefix data beside non-resumable parse/scan gaps and preserve authority and reference metadata.
+- 新增有界 CSV/TSV worker 读取，严格解码、保留原字符串与物理行范围；错误保留此前有效行，
+  并分别报告扫描、分页和引用捕获完整性，不新增外部依赖。通过发现/SDK 按代理在下一步骤启用；解析缺口保留前缀且不伪造续取。
+
+### Compact fully returned Native file ranges (#261, BM-01)
+
+- Use exact numbered multi-file bodies, quoted shared parent paths and one full-revision/continuation receipt per file. Preserve canonical metadata and diagnostic output for clipped, failed or uncertain ranges; update current-context repeat suppression for compact line labels.
+- 多文件范围以紧凑行号、带引号的共享父目录及完整版本/续读提示展示；规范数据不变，截断、失败及不确定覆盖保留诊断信息，当前上下文去重同步支持新行号格式。
+
+### Deduplicate Native reads with current-context evidence (#261, 10/16)
+
+- Replace repeated line bodies only when the exact successful prior read is present in the latest completed ordinary model request and every file is freshly revalidated. Keep revisions, coverage, paging notices and canonical values. Compaction, redaction, authority changes and uncertain evidence restore full output.
+- Native 单文件和多文件重读仅在当前模型请求包含此前准确正文且每个文件重新验证后省略重复行；保留版本、覆盖范围、续页提示和规范数据，压缩、脱敏、权限变化或证据不足时恢复全文。
+
+### Keep Native startup to the bounded multi-file reader (#261, 9/16)
+
+- Publish `ops_read_many` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
+- Measure compact file/discovery schemas at 241 tokens; the integrated full Windows Bash/jobs provider order is 660 tokens (catalogue order 661). The earlier full-surface 400-token requirement failed; the operator subsequently approved a file/discovery-only budget with startup Bash and full totals retained.
+- Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；含 Bash 的完整工具面曾超过原400-token门禁；操作者随后批准仅对文件/发现小计设预算，保留 Bash 启动常驻与完整总数。
+
+### Publish progressive tools before the next real provider snapshot (#261, 7–8/16)
+
+- Activate pending Native and PTC selections at the owning session’s committed step end, before the pinned host captures the next provider schema. Drain owned publication during ordinary assembly without replacing host methods; mark internal probes to avoid recursive waits.
+- Verify Native startup, immediately following discovery, same-call SDK isolation and next-request PTC loading through the real AgentLoop with a scripted provider. The exact test-only loop dependency `0.2.0-rc.2` was published 2026-09-29.
+- 修复真实宿主先组装后 pre-step 导致多延迟一轮的问题；会话提交步骤结束后发布，在下一供应商请求前完成本插件队列，保持当前 SDK 快照与作用域隔离。
+
+### Expose canonical PTC outcomes and generated declarations (#261, 7/16)
+
+- Wrap PTC canonical data in discriminated completed/partial/failure outcomes with stable effects
+  and retry guidance. Safe continuations describe read-only retrieval without replaying mutations.
+- Generate and ship type-only `dsh-ops/ptc-sdk` declarations from the same catalogue/output schemas;
+  verify status narrowing, argument shapes and real worker receipts with the pinned host validator.
+- PTC 返回可收窄的规范结果信封；安全续取只描述只读操作，绝不重放修改。构建并发布同源类型声明，
+  保留参数、覆盖范围、副作用和重试约束。
+
+### Load scoped PTC SDKs progressively (#261, 7/16)
+
+- PTC owns typed file, batch and result APIs independently of the Native file row. Start with the reader, result storage/pager and SDK loader; requested advanced APIs publish only at the next agent step.
+- Keep per-agent allowed pools and always-loaded selections, Native/both isolation, owned registration handoff and structured Outcome failures.
+- PTC 独立提供类型化文件、批处理与引用 API；高级 SDK 按代理在下一步骤加载，支持允许池和始终加载配置，并保持 Native 隔离及结构化失败。
+
+### Page stored references from Native file tools (#261, 6d/16)
+
+- Add a Native page/release projection of the shared ops_result capability, independently owned by
+  the file row. PTC retains put and typed data; Native descendants of PTC agents keep page-only schemas.
+- Bind paging to current session cwd (or explicit original root), authority and visible producer.
+  Preserve source/capture facts and tagged JSON chunks; bounded display never advances past omitted rows.
+- 新增文件组件独立提供的 Native 引用分页/释放能力；PTC 保留 put。分别报告页面、原始操作与捕获完整性，
+  保持会话、权限与生产工具可见性检查，显示截断时要求原偏移重试。
+
+### Bound shared calls and expire session references (#261)
+
+- Share two active/eight waiting worker slots across Native/PTC, recheck authority after admission,
+  and cap worker execution at 30 seconds. Bind private result storage to the live host session and
+  current permissions; cancel and settle calls before authority-respecting cache cleanup.
+- Native/PTC 共用有界调用队列与 30 秒上限；引用绑定活动会话与当前权限，会话结束后按权限清理缓存并保留审计数据。
+
+### Read multiple file ranges and apply atomic multi-edits (#261)
+
+- Add read_many with 1-32 independently reported UTF-8 ranges in one worker call, current-session
+  paths, credential preflight, per-file revisions/errors and explicit pending-file/line recovery.
+- Add edit_many as a single-file atomic CAS edit operation with short receipts. Bound escaped
+  read output using actual metadata bytes; an incomplete line retains its offset and hex guidance.
+- 新增多文件范围读取与单文件原子多段编辑；逐文件报告版本、错误及未读范围，保持权限边界与短回执。
+
+### Spill oversized canonical output into bounded session snapshots (#261, 6b/16)
+
+- Preserve a useful head and original operation root, execution facts and mutation effects while
+  storing requested file/search rows as bounded, losslessly reconstructable tagged JSON records.
+- Keep original scan coverage separate from stored-page and capture completeness; quota rollback
+  never leaves partial logical JSON. Cache errors remain separate from business effects.
+- Authorize trusted cache roots independently of business write roots, preserving no-follow,
+  credential and readonly boundaries; reference pages never create nested references.
+- 大结果保留有界开头与原始根目录，并以可无损重建的分块引用缓存请求范围；区分扫描、捕获和
+  分页完整性，缓存失败不覆盖业务副作用，缓存专用授权不扩大业务写入范围。
+
+### Add private session snapshot references (#261, 6a/16)
+
+- Add trusted-envelope `ref://session/tool/uuid` storage with 10 MiB snapshot and 100 MiB session
+  quotas, serialized LRU, physical byte accounting, no-follow objects and separate durable audits.
+- Recheck live authority/producer scope on access; default TTL follows session lifetime. Bounded
+  pages never nest references. Readonly reads leave storage unchanged; guarded purge preserves
+  the lock and audit namespace and reports partial cleanup honestly.
+- Preserve Windows private-temp capability isolation; real confined create/reopen/readonly and
+  foreign-session denial assertions cover the protected cache ACL.
+- 新增可信信封内的会话引用，单结果 10 MiB/会话 100 MiB、序列化 LRU、物理字节计量与独立审计。每次检查活动权限/生产工具，默认会话生命周期，不嵌套引用；只读不改存储，清理保留锁与审计并如实报告部分失败，Windows 私有临时目录 ACL 有真实隔离回归。
+
+### Discover advanced tools in the requesting Native scope (#261, 8/16)
+
+- Add `dsh-ops/discovery` and `ops_discover`: deterministic allowed-pool selection, a 1-5 per-call cap, and always-loaded choices. Publish pending capabilities only at the next model-step boundary, with scope isolation, permission withdrawal and owned cleanup.
+- Coordinate overlapping discovery rows and exact Native ownership with progressive PTC publication. Preserve unrelated external registrations and same-scope file handoff; include current batch reads/edits and the Native reference pager.
+- 协调重叠发现行、Native 精确归属和渐进式 PTC 发布，保留外部注册与同作用域文件交接；纳入现有批量读写及 Native 引用分页器。
+- Add pinned schema token measurement and real Cordis/native-worker lifecycle checks. The current discovery entry alone measures 94 cl100k_base tokens; this is not the full default surface. The real PDF next-request assertion is part of BM-04.
+- 新增按需发现组件与 `ops_discover`：允许池、单次 1-5 项上限和始终加载选择；仅在下一模型步骤挂载，并保证作用域隔离、权限变更撤销及卸载清理。
+- 新增固定分词器的 schema 计量和真实 Cordis/原生 worker 生命周期测试；当前发现入口为 94 cl100k_base tokens，不代表完整默认面；真实 PDF 下一请求断言由 BM-04 验证。
+
+### Render Native file results as bounded, readable text (#261)
+
+- Show file headings and physical line numbers, concise mutation receipts, and explicit
+  completion, paging, metadata, effect and retry notices. PTC execution data stays unchanged.
+- Bound Native content blocks to 64 KiB after escaping, with recovery guidance when the
+  display is clipped. Preserve Unicode pairs, grep context line numbers and glob path results.
+- Reject invalid UTF-8/unsupported text encodings with `ERR_INVALID_ENCODING` and binary-reader
+  guidance; verify identical physical-LF counts and unmodified write bytes across projections.
+- Native 文件结果改为带物理行号的有界文本，保留分页、元数据、副作用与重试提示；PTC 数据不变。
+  转义后最多 64 KiB，截断时明确提示；非法编码返回 `ERR_INVALID_ENCODING`，不进行有损替换。
+
+### Centralize capability metadata and prepare typed kernel contracts (#261)
+
+- Move policy and file/PTC contracts to TypeScript, with one capability catalogue for names,
+  ownership, presentation availability, concurrency and schemas. Existing registrations, tool
+  descriptions and output rendering remain compatible.
+- Add typed Outcome, search coverage and result-reference contracts plus explicit error/retry
+  policies for subsequent adapter slices. Incomplete searches cannot claim a known total.
+- Pin Node 22 declarations and check valid/invalid contracts in the regular test runner.
+- 统一能力名称、归属、呈现、并发及 schema 目录；策略和文件/PTC 契约迁为 TypeScript，加入 Outcome、搜索覆盖、结果引用及错误/重试类型，固定 Node 22 声明并验证正反类型用例。
+
+### Report search coverage and validate continuation state (#261)
+
+- Search reports distinguish scan coverage from page delivery, count skip reasons, and omit full
+  totals after unreadable, encoding, size or execution-budget gaps. Bounded rescan continuations
+  reject changed queries, authority and observed filesystem state; incomplete traversals require
+  a narrower fresh query. Search retains physical LF accounting and bounded output prefixes.
+- 搜索区分扫描与分页，统计跳过原因，遇读取/编码/大小/预算缺口不提供全量总数；重扫续取校验查询、权限与文件状态，不完整遍历要求缩小新查询，保留物理 LF 行号和有界前缀。
+
+### Version the one-shot worker request protocol (#261)
+
+- Send strict v1 requests with per-call IDs, component provenance, and enforced deadline/output
+  budgets while retaining existing host authority checks and canonical success results. Reject
+  malformed envelopes before effects; interrupted or oversized mutation receipts never imply no
+  effects. Keep explicit v0 decoding for benchmark compatibility with bounded transport defaults.
+- 单次 worker 请求采用严格 v1、调用 ID、组件来源及执行/输出预算；副作用前拒绝错误信封，修改执行后中断/超限不假装无副作用，保留有界 v0 解码供基准兼容。
+
+### Split the native kernel into workspace crates (#261)
+
+- Extract protocol, file, search, batch, and result-storage crates while retaining the one-shot
+  worker and existing authority, metadata, no-follow, and audit rules. Test the complete Cargo
+  workspace and include every path dependency in published source packages.
+- Include workspace crates and platform metadata adapters when checking for stale benchmark workers.
+- 拆分协议、文件、搜索、批处理和引用存储 crate，仍按调用启动并保留权限、元数据、nofollow 与审计；完整 Cargo workspace、发布源包及基准陈旧检查均包含路径依赖和平台元数据适配器。
+
+### Build plugin source into the existing JavaScript package layout (#261)
+
+- Move plugin source to `src/` and introduce the TypeScript build with JavaScript migration
+  support. `lib/` becomes generated output; package exports and component entry paths stay the
+  same. Component assets are copied alongside the emitted JavaScript.
+- Build before verification and packaging, and document the build step for direct suite runs
+  and source installations in both contributor guides. Published packages keep shipping `lib/`
+  without `src/`; this toolchain slice does not change tool behaviour.
+- 源码移至 src、构建到既有 lib 路径并复制资源，验证和打包前先构建；发布包保留 lib 不含 src。初期 JavaScript 迁移支持现已在第 16 步移除，全部插件源为严格 TypeScript/TSX。
+
+### Earlier file-tool compatibility repairs retained in 0.4.0
+
+These entries record the earlier eleven-tool baseline; the current catalogue, Native text projection and SDK surface are described above. 以下保留早期十一工具基线修复；当前目录、Native 文本投影与 SDK 以上方 0.4.0 条目为准。
 
 - All eleven file argument schemas render concrete types in the pinned host SDK.
   Bounds unsupported by that SDK are explicit descriptions backed by native validation;
@@ -35,6 +413,8 @@ checklist now labels those file cases explicitly as historical; current inspecti
 is single-path, bounded UTF-8 text or hex. A contract regression checks both tables.
 
 ### The 0.3.2 real-machine findings, fixed (#204, #235, #236, #237, #240)
+
+This is the earlier adapter repair history. In 0.4.0 the public Bash adapter returns schema-valid failure values for invalid arguments; its contract above supersedes the legacy thrown-refusal behavior below. 以下是旧适配器修复历史；0.4.0 公开 Bash 对无效参数返回符合 schema 的失败值，上方契约取代下文旧抛错方式。
 
 Four findings from the 0.3.2 Linux x64 session run in #204. Three are behaviour changes, and
 each one is pinned by a suite that would fail without it.
@@ -423,6 +803,9 @@ The capability is taken; the duplicate component is not.
 
 ## [Unreleased]
 
+- Drain release-gate stdout and stderr concurrently so a full diagnostic pipe cannot deadlock verification; retain both streams and failing exit codes.
+- 发布门禁并行读取 stdout 和 stderr，避免诊断管道写满后验证死锁；保留两路完整输出及失败退出码。
+
 ### Read-only sidebar navigation
 
 - Add focused all/running/anomaly filters and local retained-metadata pages. Preserve unfiltered session totals, continue long diagnostics, clamp pages on resize/live settlement and release key handlers on unmount. No tools, result-page fetches, history reads or persistent preferences are added.
@@ -692,7 +1075,7 @@ No new tools, components, configuration keys, or runtime capabilities are includ
 Published to the public npm registry on 2026-10-08 as `dsh-ops@0.2.1` with
 `@dsh-ops/fastctx-win32-x64@0.2.1`, `@dsh-ops/bash-win32-x64@0.2.1` and
 `@dsh-ops/pwsh-win32-x64@0.2.1`. Packed sizes and registry digests:
-[docs/release-0.2.1.md](docs/release-0.2.1.md).
+[docs/release-0.2.1.md](release-0.2.1.md).
 
 - Assemble complete digest-verified PortableGit/bash and PowerShell 7 runtime packages instead of metadata-only pins; inject all three Windows x64 runtime dependencies in the publish artifact.
 - Add explicit-profile install/status/uninstall delegation to the official DSH manager; map tui to dsh-tui and use Desktop's installation-owned CLI.
@@ -707,7 +1090,6 @@ Published to the public npm registry on 2026-10-08 as `dsh-ops@0.2.1` with
 Issue #9 showed that a host package-manager prune can leave the bash payload declared in the profile lockfile but absent on disk. `ops_bash` now converts a spawn-time `ENOENT` into a concise actionable result instead of exposing a raw process exception. It does not silently fall back to an unapproved system shell.
 
 The Electron `workspace-write` `0xC0000142` ACL-runner failure is a DSH host sandbox issue outside this plugin's subprocess API. This release documents that boundary and does not claim to repair the host's Windows ACL runner.
-
 
 
 ### Changed

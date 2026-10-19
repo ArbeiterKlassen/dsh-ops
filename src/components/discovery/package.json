@@ -1,0 +1,6 @@
+{
+  "name": "dsh-ops-discovery",
+  "description": "Scope-owned progressive discovery of reviewed advanced OPS tools.",
+  "icon": "./icon.png",
+  "type": "module"
+}

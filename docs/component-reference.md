@@ -1,17 +1,18 @@
 # Component reference
-What each of the six components publishes, with parameters and permission requirements.
+What each of the seven components publishes, with parameters and permission requirements.
 ---
 
 ## Components at a glance
 
 | Row `name` | Description | Default | Published tools |
 | --- | --- | --- | --- |
-| `dsh-ops/shell` | Prefer bash as the terminal, with PowerShell 7 for operations bash cannot cover | On | `ops_bash`; host `pwsh` uses bundled PowerShell 7 |
-| `dsh-ops/file` | Faster, higher-performance Rust file retrieval with more concise, token-efficient output | On | Four file tools |
-| `dsh-ops/ptc` | Independent Rust safe batches and bounded result references, only in pure PTC sessions | Off | `ops_batch`, `ops_result` |
-| `dsh-ops/panel` | Data capture, off at the switch: new conversations write `<cwd>/.dsh-ops/panel/<sessionId>.json` plus the viewer `panel.html` | Row on, `capture: false` | None; see the [configuration reference](configuration-reference.md) |
+| `dsh-ops/shell` | Prefer bash as the terminal, with host PowerShell for operations bash cannot cover | Windows on; Linux/macOS off | `ops_bash`; host `pwsh` keeps its own executor |
+| `dsh-ops/file` | Bounded Rust file retrieval and text output for the model | On | `ops_read_many`; advanced tools load through discovery |
+| `dsh-ops/ptc` | Typed file APIs and progressive SDK in PTC sessions | On | `ops_inspect_local_file`, `ops_result`, `ops_sdk`; advanced APIs load through the SDK |
+| `dsh-ops/discovery` | Advanced Native tools on demand | On | `ops_discover` |
+| `dsh-ops/panel` | Data capture, off at the switch: new conversations write `<cwd>/.dsh-ops/panel/<sessionId>.json` plus the viewer `panel.html` | Row off; capture defaults true | None; see the [configuration reference](configuration-reference.md) |
 | `dsh-ops/tui` | Read-only current-session OPS sidebar | Off | None; see [sidebar guide](tui-panel.md) |
-| `dsh-ops/hide-official` | Hides the reviewed shell/file/ptc official tools; every other official tool stays visible with a warning | Off | None |
+| `dsh-ops/hide-official` | Select read/glob/grep alternatives; unselected official tools remain visible | Off | None |
 
 The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `ops_run_background`, `ops_job_output`, `ops_job_list`, `ops_job_kill`) has been removed. A profile row that still names it loads as a no-op: it accepts any config, publishes nothing, and logs one warning that the row can be deleted.
 
@@ -19,24 +20,33 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 
 ## Tool summary
 
+The shared catalogue has 21 entries. The generated PTC SDK contains 19 APIs: 16 file/document tools plus batch, result and sdk; bash and discover belong to other entry points. Catalogue membership does not mean residency or permission. Fresh PTC pools follow the implemented catalogue; saved explicit pools remain authoritative. Document tools load on demand.
+
 | Tool | Purpose | Full-access requirement |
 | --- | --- | --- |
+| `ops_read_many` | Resident bounded UTF-8 ranges from 1-32 files | No command permission gate¹ |
 | `ops_inspect_local_file` | Bounded UTF-8 text lines and hex | No command permission gate¹ |
 | `ops_grep` | Rust regex search, multiple file filters, counts/summaries | No command permission gate¹ |
 | `ops_glob` | Multiple path patterns with exclusions | No command permission gate¹ |
 | `ops_replace` | Mechanical cross-file literal replacement; use host edit for precise changes | No command permission gate¹ |
+| `ops_write_file` / `ops_edit_file` / `ops_edit_many` | File writes and atomic edits within one file, retaining revision/CAS | Writes follow current authority¹ |
+| `ops_diff` / `ops_stat` | Compare text and inspect metadata | No command permission gate¹ |
+| `ops_copy` / `ops_move` / `ops_remove` | Fixed file operations | Writes follow current authority¹ |
+| `ops_table_read` / `ops_doc_read` / `ops_pdf_read` | Bounded CSV/TSV, DOCX and restricted PDF readers; see below | No command permission gate¹ |
 | `ops_bash` | Preferred general bash command executor; `command` for short commands, `script_path` for long scripts | Confined in restricted modes; matched Windows x64 private IPC runtime |
 | `ops_batch` | Preflight and execute copy / move / remove with audit and recovery | See the PTC notes |
 | `ops_result` | Bounded result references: put, page, release | See the PTC notes |
-| Host `pwsh` | Windows-native operations using bundled PowerShell 7 | Host policy |
+| Host `pwsh` | Windows-native operations using the host-selected PowerShell | Host policy |
 
-¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes; read-only rejects replacement, including its dry run; workspace-write permits writes under the workspace and this session's private temporary directory, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes. That preparation runs the package's own script as the current user before sandbox confinement applies, only in workspace-write, with `-ExecutionPolicy Bypass` (Group Policy still wins).
+¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes subject to the credential fence and current scoped authority; read-only rejects replacement, including its dry run; workspace-write permits writes under the workspace and this session's private temporary directory, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes. That preparation runs the package's own script as the current user before sandbox confinement applies, only in workspace-write, with `-ExecutionPolicy Bypass` (Group Policy still wins).
 
 ---
 
 ## `dsh-ops/file` — file tools
 
-All file tools resolve relative paths against the DSH session cwd, accept a single `path`, and expose no `root`, `workspace`, `cwd` or `file_path` alias. All are UTF-8 first with bounded output; glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
+Only the bounded multi-file reader `ops_read_many` is resident; `ops_inspect_local_file`, including hex reading, is discoverable. The advanced contracts below are activated through [tool discovery](discovery.md) or explicit always-loaded choices. Routing lists only the tools currently published.
+
+File paths resolve relative to the DSH session cwd. `ops_read_many` takes a `files` array of paths with independent 1-based offsets and limits; single-file operations take `path`. The Native reference pager accepts the original reference `root`. No file tool accepts `workspace`, `cwd` or `file_path` aliases. Text tools are UTF-8 first; document tools use their own bounded format/encoding contracts. glob and grep do not traverse symlinks, junctions, reparse points, hidden files or `.git`.
 
 When the host provides its `fs` service, `ops_inspect_local_file` reads and real `ops_replace` writes are recorded in the host's read-before-edit table (`fs/observed`) exactly like host `read`/`edit`: a file read with ops can be edited with host `edit` directly, and an ops write does not make the host's earlier read look like an external change. `ops_grep`, `ops_glob` and `dryRun` record nothing.
 
@@ -44,7 +54,7 @@ When the host provides its `fs` service, `ops_inspect_local_file` reads and real
 
 Read bounded UTF-8 text lines, or a hex view of one path. Directories are rejected — use `ops_glob` or `ops_grep` instead.
 
-The model rendering shares a homogeneous page's `path` once at the top level; raw execution/PTC results retain per-item paths. All other fields, including revision, paging and in-line truncation markers, are preserved. Worker byte limits and long-single-line continuation are unchanged; rendered bytes are not measured tokens.
+Native emits a file header, numbered escaped source lines and revision/continuation notices. PTC retains canonical typed records. Backslashes, controls and Unicode line separators are reversibly escaped; source text cannot forge extra rows. Worker byte limits and long-line continuation remain explicit. See [Native range rendering](native-ranges.md). Rendered bytes are not measured tokens.
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
@@ -102,10 +112,16 @@ Cooperating writers serialise on a persistent, hidden update-lock sidecar beside
 | `maxReplacements` | integer 1–100000 | Hard replacement limit |
 | `dryRun` | boolean | Never writes |
 
+### Document readers
+
+`ops_table_read` reads CSV/TSV string cells (UTF-8 by default, with explicit UTF-16LE/BE support). `ops_doc_read` reads DOCX main-body paragraphs and table coordinates, not legacy binary DOC. Both default to offset 1 and limit 200 (maximum 1000), with a 32 MiB input bound. `ops_pdf_read` handles only PDF 1.3–1.7 classic xref and standard Type 1 font text, up to 16 MiB/32 pages; offset defaults to 1 and limit to 10 (maximum 32). It excludes OCR, embedded fonts and modern object/xref streams.
+
+Each reader separates scan, page, display and reference-capture completeness. A later error may retain safe preceding complete records, but cannot produce a false full total or revision; an offset cannot bypass a physical scan gap. See [native kernel contracts](native-kernel.md) for all format bounds, encoding rules and recovery guidance.
+
 ### Results and errors
 
-- **File tools, `ops_batch` and `ops_result` never throw.** Failures resolve as values with `status` `"error"` or `"rejected"` (authorization refusal) plus `error.code` / `error.message` / `error.nextAction`; success is `"completed"` (`ops_batch` also reports `planned` and related states). In PTC, a `try/catch` alone misses these failures — check `status`.
-- **`ops_bash`** resolves command results as values: `status` (`completed` only for exit code 0 with no error, permission refusal, signal or timeout; otherwise `failed`), `exitCode`, `stdout` / `stderr`, `error`, `permission`. It throws (a `ToolCallError` in PTC) only for **invalid arguments** or an **unavailable executor**.
+- **File tools, `ops_batch` and `ops_result` return failures as values.** PTC Outcomes use completed or partial data, or rejected/conflict/error/unknown with an error code, effect state and retry policy. Batch plan/run states remain in typed data. A try/catch alone misses returned failures; check status and coverage before data. Native projects the same facts into text.
+- **`ops_bash`** returns host-compatible `foreground`, `background` or `promoted` values. Failures, including invalid arguments and unavailable executors, return values rather than throwing. A foreground failure retains the string `error` plus structured `failure` code, effect state and retry policy. Effects after launch can be unknown; do not replay automatically. Collect background output through host job tools.
 - Host tools (`read` / `write` / `edit` / `pwsh` …) throw `ToolCallError` on failure.
 
 ---
@@ -131,12 +147,13 @@ Preflight and verify copy / move / remove.
 
 ### `ops_result`
 
-Bounded session-owned result references: put object rows, page with top-level `equals`/`fields` and quantity/byte budgets, release results. 24h expiry. Job audits are read-only. References are observations, never authority.
+Bounded session-owned result references: PTC can put object rows; Native file tools expose page/release only for ref:// handles. Page uses top-level equals/fields and quantity/byte budgets. New references default to session lifetime (ttlMs=0), optionally up to seven days; only legacy r- snapshots use 24h expiry. Job audits are read-only and remain PTC-only. References are observations, never authority. Native root defaults to current session cwd; PTC defaults to the workspace root. See [paging and capture completeness](result-budgets.md#native-and-ptc-reference-pages).
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
 | `action` | `put` \| `page` \| `release` (required) | Action |
-| `items` | object array, ≤10000 items | Rows for `put` |
+| `items` | object array, ≤10000 items | PTC put; whole request ≤2 MiB, snapshot ≤10 MiB |
+| `ttlMs` | integer 0–604800000 | PTC put; default 0 means session lifetime |
 | `root` / `id` | string | Operation root and result id |
 | `offset` | integer ≥ 0 | Paging start |
 | `limit` | integer 1–512 | Rows per page |
@@ -148,19 +165,26 @@ Bounded session-owned result references: put object rows, page with top-level `e
 
 ## `dsh-ops/shell` — terminal and shells
 
-Routing: **toolkit → bash → PowerShell 7**.
+Routing: **toolkit → bash → host PowerShell**.
 
 - `ops_bash`: the preferred general command executor. Use `command` for short commands and `script_path` for long scripts.
+  Cancellation also stops pending sandbox preparation; a late preparation result cannot start the command. When cancellation races a timeout, the first cause is reported.
   Relative `workdir` paths (including `.`) resolve against the calling session's workspace, not the host process directory. Omitting `workdir` or passing a blank string uses that workspace; absolute paths remain absolute. Missing or non-directory targets are rejected before execution, with the resolved path in the error.
   On Windows, `\child` uses the session's drive; a drive-relative path such as `C:child` on a different drive must be written as an absolute path.
-- Host `pwsh`: Windows-native operations, using bundled PowerShell 7.
+- Host `pwsh`: Windows-native operations, using the host-selected PowerShell.
 
-"Prefer bash as the terminal" means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. When the shell component is on, the official configuration lifecycle temporarily sets the PowerShell 7 path for `pwsh-sandbox`; when off, it restores the executor's latest original configuration without writing profile configuration. Switching executor configuration does not cancel already-running host commands.
+`ops_bash` requires a non-empty `description` and keeps the host Bash fields and result kinds: `foreground`, `background`, or `promoted`. Its default timeout is 120 seconds and the cap is 600 seconds. When the host jobs service is available, `run_in_background: true` returns a job ID immediately; a foreground timeout promotes the same running job. Use the host `job_output` and `job_kill` tools to collect or stop it. Without host jobs, the background parameter is absent and a foreground timeout stops the command. Unknown arguments return a failed foreground value before execution. The compatible string `error` remains; `failure` adds stable code, effect state and retry guidance. Invalid arguments have no command effects and require input changes. After execution begins, timeouts, cancellation and nonzero exits report unknown effects and prohibit automatic replay until read-only inspection. If job admission fails after accepting its run hook, the queued starter is cancelled and no foreground retry occurs.
+
+`sandbox_permissions` plus `justification` can request a strictly wider mode through the host approval service. An allowed-once grant applies to that command only; rejection never executes it or changes the session mode. Authority is checked again after approval and sandbox preparation. Windows confinement reports the host provider’s actual enforcement (including `partial`); incompatible Bash runtimes fail closed.
+
+`script_path` (instead of `command`), `graceMs`, and `includeDiagnostics` remain explicit OPS compatibility extensions. They do not change the host command contract or its timeout limits.
+
+"Prefer bash as the terminal" means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. OPS never overlays the host PowerShell executor configuration. Use `dsh-ops upgrade-host-pwsh` to preview an explicit standard PowerShell 7 installation; `--yes` executes it. Restart DSH afterwards, and review any custom host `pwshPath` in host settings. Existing running commands and old provisioned copies are not removed.
 
 The routing table the model sees is rendered by the plugin from what it actually published:
 
 ```
-# Shell routing: bash → PowerShell 7
+# Shell routing: bash → host PowerShell
 
 | Task | Tool |
 | --- | --- |
@@ -170,112 +194,37 @@ The routing table the model sees is rendered by the plugin from what it actually
 | Find paths | ops_glob |
 | Batch replacement; use host edit for precise edits | ops_replace |
 | General commands / builds / git / pipelines / scripts — preferred command executor | ops_bash |
-| Windows-native cmdlets / registry / services only | pwsh (bundled PowerShell 7 via host) |
+| Windows-native cmdlets / registry / services only | pwsh (host PowerShell) |
 ```
 
 ---
 
-## `dsh-ops/hide-official` — takeover scope
+## `dsh-ops/hide-official` — per-tool replacements
 
-Opt-in and **disabled by default**. `strict` means "inside the faces dsh-ops takes
-over, hide only what has a reviewed replacement" — it is not "no official tool may
-survive". The takeover is exactly three faces: **shell / file / ptc**.
-
-`Face` is `shell`, `file` or `ptc` (inside the takeover) or `outside` (a pinned
-official tool this component deliberately does not take over); `prefix` marks a
-dynamic official prefix. `—` in the equivalent column means no reviewed OPS
-equivalent is claimed. The table is generated from `TAKEOVER_MANIFEST` in
-`lib/official-tool-hiding.js`, and a test fails if the two drift apart.
+Disabled by default, with `replaceTools: []`. Explicit selections switch the model to these reviewed read/search workflows. Their names, arguments and results differ from the host tools; calls are never translated or forwarded under an official name.
 
 <!-- hide-official-scope:start -->
-| Official tool | Face | OPS equivalent | Why |
-| --- | --- | --- | --- |
-| `bash` | `shell` | — | Host command runner; `ops_bash` is the OPS executor |
-| `pwsh` | `shell` | — | Platform-retained host shell; never hidden |
-| `bash_persistent` | `shell` | — | Persistent host shell; `ops_bash` is stateless |
-| `pwsh_persistent` | `shell` | — | Persistent host shell; `ops_bash` is stateless |
-| `read` | `file` | `ops_inspect_local_file` | Reviewed OPS equivalent is registered |
-| `glob` | `file` | `ops_glob` | Reviewed OPS equivalent is registered |
-| `grep` | `file` | `ops_grep` | Reviewed OPS equivalent is registered |
-| `write` | `file` | — | No reviewed OPS equivalent claims the same semantics |
-| `edit` | `file` | — | No reviewed OPS equivalent claims the same semantics |
-| `str_replace_editor` | `file` | — | No reviewed OPS equivalent claims the same semantics |
-| `run_code` | `ptc` | — | PTC transport; never replaced |
-| `list_subagent_models` | `outside` | — | Host delegation, teams and messaging |
-| `subagent` | `outside` | — | Host delegation, teams and messaging |
-| `subagent_fork` | `outside` | — | Host delegation, teams and messaging |
-| `interrupt_agent` | `outside` | — | Host delegation, teams and messaging |
-| `list_agents` | `outside` | — | Host delegation, teams and messaging |
-| `send_message` | `outside` | — | Host delegation, teams and messaging |
-| `spawn_teammate` | `outside` | — | Host delegation, teams and messaging |
-| `wait_agent` | `outside` | — | Host delegation, teams and messaging |
-| `team_task_create` | `outside` | — | Host delegation, teams and messaging |
-| `team_task_get` | `outside` | — | Host delegation, teams and messaging |
-| `team_task_list` | `outside` | — | Host delegation, teams and messaging |
-| `team_task_update` | `outside` | — | Host delegation, teams and messaging |
-| `job_kill` | `outside` | — | Host background jobs; OPS never controls host job state |
-| `job_list` | `outside` | — | Host background jobs; OPS never controls host job state |
-| `job_output` | `outside` | — | Host background jobs; OPS never controls host job state |
-| `session_search` | `outside` | — | Host session history; observation only |
-| `session_trace` | `outside` | — | Host session history; observation only |
-| `session_event_read` | `outside` | — | Host session history; observation only |
-| `session_event_search` | `outside` | — | Host session history; observation only |
-| `session_event_trace` | `outside` | — | Host session history; observation only |
-| `list_mcp_resources` | `outside` | — | Host MCP resource layer |
-| `list_mcp_resource_templates` | `outside` | — | Host MCP resource layer |
-| `read_mcp_resource` | `outside` | — | Host MCP resource layer |
-| `terminal_open` | `outside` | — | Host terminal sessions; use `ops_bash` for commands |
-| `terminal_close` | `outside` | — | Host terminal sessions; use `ops_bash` for commands |
-| `terminal_list` | `outside` | — | Host terminal sessions; use `ops_bash` for commands |
-| `terminal_read` | `outside` | — | Host terminal sessions; use `ops_bash` for commands |
-| `terminal_send` | `outside` | — | Host terminal sessions; use `ops_bash` for commands |
-| `terminal_signal` | `outside` | — | Host terminal sessions; use `ops_bash` for commands |
-| `plan` | `outside` | — | Interactive host planning/approval surface |
-| `exit_plan_mode` | `outside` | — | Interactive host planning/approval surface |
-| `ask_user_question` | `outside` | — | Interactive host planning/approval surface |
-| `todo_write` | `outside` | — | Interactive host planning/approval surface |
-| `schedule_create` | `outside` | — | Host scheduling and goal bookkeeping |
-| `schedule_delete` | `outside` | — | Host scheduling and goal bookkeeping |
-| `schedule_list` | `outside` | — | Host scheduling and goal bookkeeping |
-| `schedule_update` | `outside` | — | Host scheduling and goal bookkeeping |
-| `create_goal` | `outside` | — | Host scheduling and goal bookkeeping |
-| `get_goal` | `outside` | — | Host scheduling and goal bookkeeping |
-| `update_goal` | `outside` | — | Host scheduling and goal bookkeeping |
-| `present` | `outside` | — | Host media read/present surface |
-| `read_image` | `outside` | — | Host media read/present surface |
-| `web_search` | `outside` | — | Host web access |
-| `web_fetch` | `outside` | — | Host web access |
-| `skill` | `outside` | — | Host skills, workflows and autonomous loops |
-| `workflow` | `outside` | — | Host skills, workflows and autonomous loops |
-| `ralph` | `outside` | — | Host skills, workflows and autonomous loops |
-| `plugin_manager` | `outside` | — | Host/plugin introspection and workspace dependencies |
-| `cordis_inspect_list` | `outside` | — | Host/plugin introspection and workspace dependencies |
-| `cordis_inspect_query` | `outside` | — | Host/plugin introspection and workspace dependencies |
-| `lsp` | `outside` | — | Host/plugin introspection and workspace dependencies |
-| `load_workspace_dependencies` | `outside` | — | Host/plugin introspection and workspace dependencies |
-| `stagehand_*` | `prefix` | — | Dynamic third-party/driver prefix |
-| `cua_driver_native__*` | `prefix` | — | Dynamic third-party/driver prefix |
+| Official tool | OPS alternative | Reviewed purpose |
+| --- | --- | --- |
+| `read` | `ops_inspect_local_file` | Bounded local UTF-8 text reading; optional hex view |
+| `glob` | `ops_glob` | Bounded regular-file path search |
+| `grep` | `ops_grep` | Bounded UTF-8 content search |
 <!-- hide-official-scope:end -->
 
-What the table means in practice:
+- **read:** both use 1-based line offsets and bounded limits. OPS additionally offers hex viewing, returns revision and paging information, and uses its local-file permission and credential fences. This selection does not replace `read_image`, attachments, directories, or non-local filesystem providers.
+- **glob:** the host accepts one pattern string and matches a bare basename at any depth, including hidden and ignored files. OPS accepts an array of globs relative to `path`; `*.ts` matches only the top level, so use `**/*.ts` for recursion. OPS supports exclusions and paging, and does not traverse symlinks, reparse points, hidden files or `.git`. The search coverage and ordering are not identical.
+- **grep:** the host accepts a single glob filter and ripgrep regular expressions. OPS uses Rust regex, an array of relative globs, optional context and output modes, plus bounded paged coverage. Read its completion/truncation fields; a partial scan is not an exhaustive negative result. Host overflow artifacts and OPS paging are different workflows.
 
-- **Only rows with a reviewed equivalent are hidden at all**: `read` → `ops_inspect_local_file`, `glob` → `ops_glob`, `grep` → `ops_grep`.
-- **The platform-retained host shell is never hidden**: `pwsh` on Windows, `bash` elsewhere, even though it sits inside the shell face.
-- **Inside the taken-over faces but kept visible**: `write`, `edit`, `str_replace_editor`, `run_code` and the shell names other than the retained one. They are named in the warning and dispatch still works — hiding them without a replacement would create a mixed official/OPS surface.
-- **Outside the takeover**: every `outside` row and both dynamic prefixes. They stay visible and are listed in the same warning, which says they are outside `shell/file/ptc`. This is why a stock desktop profile can enable the row without a `READINESS_BLOCKED` failure (#207/#238).
-- **The one fail-closed case**: `additionalOfficialTools` names an in-scope tool that has no equivalent. `READINESS_BLOCKED (HIDING_REQUEST_UNSATISFIABLE)` names the tool and both ways out (remove the name, or disable the row).
+All OPS calls keep their own session-cwd base, permission checks and output contracts. Selecting an alternative does not broaden authority. Choose only the workflows that fit the task; leave a tool unselected when its host-specific coverage is needed.
 
-`scope` selects how wide the takeover is; the default `takeover` is the table above
-and keeps an existing row's behaviour unchanged:
+`write`, `edit`, and `str_replace_editor` are deliberately unavailable as selections. OPS write/edit require an observed `expectedRevision` and CAS publication; host write and replace-all edit do not share that contract. A similarly named registration is not evidence of compatibility. Shells, `run_code`, delegation, jobs, media and third-party tools also remain visible without a warning list.
 
-| `scope` | Hidden | `additionalOfficialTools` naming an `outside` tool | Warning |
-| --- | --- | --- | --- |
-| `takeover` (default) | rows with a reviewed equivalent | warned about and ignored | one aggregated warning |
-| `extended` | same | promoted into the takeover scope; with no equivalent the scope fails closed with the way out | one aggregated warning for the rest |
-| `off` | nothing | ignored silently | none, and no readiness gate either |
+Only the selected OPS counterparts must be registered and visible as exact OPS-owned Native definitions. A foreign registration with the same name or identical schema cannot satisfy readiness. Ownership changes are checked even when the schema bytes stay unchanged; Native shadows created by the OPS PTC adapter retain their tracked ownership. PTC data APIs alone cannot replace a Native tool. An unavailable selected counterpart blocks the affected scope with `READINESS_BLOCKED` and lifts that scope's replacement masks; healthy scopes and inherited authority restrictions retain their masks. Removing a selection, unloading, or disabling the component restores the corresponding official tool. Old `strict`/`scope`/`additionalOfficialTools` values are validated but ignored until explicit `replaceTools` selections are supplied.
 
-Copy-paste rows for each mode are in the
-[configuration reference](configuration-reference.md#strict-official-tool-hiding-dsh-opshide-official).
+The resident `ops_read_many` is not the reviewed replacement for `read`. Before selecting `read`, configure discovery `alwaysLoaded: [inspect_local_file]` or ensure that single-file capability is already active in that Native scope. Apply the same readiness rule to `glob` and `grep`. Internal presentation inspection lets discovery publish these configured tools during startup; ordinary prompt assembly and dispatch remain blocked until they are ready.
+
+The component exports StandardSchemaV1 validation together with public JSON schema descriptors for built-in host row forms. Optional browser multiselect pages require the explicit client carrier migration; see [configuration](configuration-reference.md).
+
 
 ---
 
