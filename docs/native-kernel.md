@@ -233,3 +233,24 @@ gaps never get a looping continuation. Stable full scans with remaining paragrap
 read-only pages; compare revisions across calls. Skipped paragraphs never exceed observed blocks,
 and FILE_CHANGED always invalidates requested-page completeness. Generated source metadata on
 reference pages retains the declared main-body scope independently of stored-row completeness.
+
+## PDF parser foundation (15c/16)
+
+The internal PDF container parser accepts a restricted PDF 1.0-1.7 subset: one classic
+xref table, an exact final startxref/EOF footer, unique dictionary keys and object
+identities, and directly declared stream lengths. Every active xref offset must point
+exactly at its object header. Objects cannot overlap; gaps must contain only whitespace
+or comments. This deliberately rejects incremental updates, encryption, object/xref
+streams, recovery scans and ambiguous duplicate data, including decoded forbidden names.
+
+Bounds are checked before indexed allocation: 16 MiB per input, 10,000 xref entries,
+100,000 metadata values, depth 64, 4,096 keys per dictionary, 256 bytes per name/token,
+and 1 MiB per string or encoded/decoded stream. Reference chains have cycle detection
+and a depth bound. Streams support no filter or one FlateDecode only; external streams,
+filter chains and DecodeParms are declined. Actual decompression stops at the decoded
+limit plus one byte and requires a valid checksum, zlib terminator and exact consumption
+of the input. No size advertised by a PDF author bypasses these limits.
+
+This slice exposes no tool and makes no text-coverage claim. Page-tree interpretation,
+the supported font/encoding subset, partial results and worker authority checks are
+introduced together in the following PDF extraction slice.

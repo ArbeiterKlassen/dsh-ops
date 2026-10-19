@@ -20,6 +20,15 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   safe prefixes on unsupported content, stable-scan-only continuation and scoped reference recovery.
 - DOCX 的 Native/PTC 按需启用，明确正文范围与排除内容；缺口保留安全前缀且不伪造续取。
 
+### Add bounded PDF container foundation (#261, 15c/16)
+
+- Validate a restricted classic-xref PDF grammar, exact object boundaries and bounded
+  values/references before extraction; verify actual Flate output, checksum and terminator.
+- Reuse the reviewed exact compression dependency without new packages. Worker text extraction
+  follows separately; this foundation makes no public PDF-tool or complete-text claim.
+- 新增有界传统 xref PDF 容器基础，校验对象边界、引用与实际解压；复用已核验压缩依赖，
+  不新增依赖包，工具提取能力由下一切片接入。
+
 ### Add bounded DOCX main-body worker observations (#261, 15b/16)
 
 - Read strict DOCX main-body paragraphs and table coordinates with explicit excluded-content
