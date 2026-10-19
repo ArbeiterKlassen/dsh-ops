@@ -1,5 +1,6 @@
 /** File capability data; no host services or registration side effects. */
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
+import { STORAGE_REFERENCE } from './result.js'
 import type { ParameterSchema } from './types.js'
 
 const string: JsonSchemaNode = { type: 'string' }
@@ -69,6 +70,7 @@ export const PARAMETERS = Object.freeze({
 export const OUTPUT: JsonSchemaNode = {
   type: 'object',
   properties: {
+    reference: STORAGE_REFERENCE, referenceRoot: string, root: string, source: { type: 'object' }, storageError: { type: 'object' }, nextAction: string,
     revision: string, bytes: { type: 'integer' }, lineCount: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
     status: { type: 'string' }, phase: { type: 'string' }, changed: { type: 'integer' },
     matched: { type: 'integer' }, skipped: { type: 'integer' }, failed: { type: 'integer' },
@@ -82,6 +84,7 @@ export const OUTPUT: JsonSchemaNode = {
 
 export const READ_MANY_OUTPUT: JsonSchemaNode = {
   type: 'object', properties: {
+    reference: STORAGE_REFERENCE, referenceRoot: string, root: string, source: { type: 'object' }, storageError: { type: 'object' }, nextAction: string,
     status: string, complete: { type: 'boolean' }, nextIndex: { type: 'integer' }, pending: { type: 'integer' },
     total: { type: 'integer' }, failed: { type: 'integer' }, truncated: { type: 'boolean' }, effectState: string,
     items: { type: 'array', items: { ...OUTPUT, properties: { ...OUTPUT.properties, path: string } } }, error: { type: 'object' },

@@ -7,6 +7,7 @@ import { publicToolName } from '../policy.js'
 import { invoke, resolveWorker, failure } from './worker.js'
 import { mountWorkspacePreparation } from '../workspace-preparation.js'
 import { mountResultLifecycle } from '../kernel/result-lifecycle.js'
+import { nativeResultProvider, claimPtcResult } from '../file/result-provider.js'
 export const name = 'dsh-ops-ptc'
 export function resolvePtcConfig(raw = {}) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('PTC config must be an object')
@@ -71,26 +72,49 @@ export function apply(root, rawConfig) {
         mutating = true
         try {
           for (const [agent, entry] of ready) {
-            for (const tool of PTC_TOOLS) entry.disposers.push(entry.ctx.tools.register(definition(tool, async (args, exec) => {
-              const callEpoch = epoch
-              if (stopped || entries.get(agent) !== entry || exec?.agent !== agent || !await ptcOnly(ctx, agent, exec.signal).catch(() => false)) {
-                return failure('POLICY_DENIED', 'The calling scope must be in authoritative PTC-only presentation.')
-              }
-              if (stopped || callEpoch !== epoch || entries.get(agent) !== entry) return failure('POLICY_DENIED', 'PTC presentation, component or owning scope changed during preparation.')
-              const controller = new AbortController()
-              const abort = () => controller.abort(exec.signal?.reason)
-              if (exec.signal?.aborted) abort(); else exec.signal?.addEventListener('abort', abort, { once: true })
-              const timer = setTimeout(() => controller.abort(new Error('Worker deadline exceeded')), WORKER_TIMEOUT_MS); timer.unref?.()
-              const work = monitoredInvoke(ctx, file, tool, args, exec, controller, config)
-              active.set(controller, { owner: agent, promise: work })
-              try { return await work }
-              finally { clearTimeout(timer); active.delete(controller); exec.signal?.removeEventListener('abort', abort) }
-            })))
+            for (const tool of PTC_TOOLS) {
+              const releaseNative = tool === 'result' ? claimPtcResult(entry.ctx, agent) : undefined
+              try {
+                const dispose = entry.ctx.tools.register(definition(tool, async (args, exec) => {
+                  const callEpoch = epoch
+                  if (stopped || entries.get(agent) !== entry || exec?.agent !== agent || !await ptcOnly(ctx, agent, exec.signal).catch(() => false)) {
+                    return failure('POLICY_DENIED', 'The calling scope must be in authoritative PTC-only presentation.')
+                  }
+                  if (stopped || callEpoch !== epoch || entries.get(agent) !== entry) return failure('POLICY_DENIED', 'PTC presentation, component or owning scope changed during preparation.')
+                  const controller = new AbortController()
+                  const abort = () => controller.abort(exec.signal?.reason)
+                  if (exec.signal?.aborted) abort(); else exec.signal?.addEventListener('abort', abort, { once: true })
+                  const timer = setTimeout(() => controller.abort(new Error('Worker deadline exceeded')), WORKER_TIMEOUT_MS); timer.unref?.()
+                  const work = monitoredInvoke(ctx, file, tool, args, exec, controller, config)
+                  active.set(controller, { owner: agent, promise: work })
+                  try { return await work }
+                  finally { clearTimeout(timer); active.delete(controller); exec.signal?.removeEventListener('abort', abort) }
+                }))
+                entry.disposers.push(dispose)
+                if (releaseNative) entry.disposers.push(releaseNative)
+              } catch (error) { releaseNative?.(); throw error }
+            }
           }
           // Native/both child scopes must not inherit PTC-only capabilities from ancestors.
           for (const [agent, entry] of entries) if (entry.ctx && !ready.some(([a]) => a === agent)) {
             const names = ctx.get('tools').schemas(agent).map(s => s.name)
-            const deny = PTC_TOOLS.map(publicToolName).filter(n => names.includes(n))
+            // A Native child must shadow a PTC parent's richer result definition with the
+            // file row's own page/release projection. The optional provider never gates PTC.
+            const provider = nativeResultProvider(entry.ctx, agent)
+            const nativeResult = provider?.active ? provider.definition : undefined
+            if (nativeResult && provider.scope !== agent) entry.disposers.push(entry.ctx.tools.register({ ...nativeResult, execute: async (args, exec) => {
+              const callEpoch = epoch
+              if (stopped || !provider.active || entries.get(agent) !== entry || exec?.agent !== agent
+                || await ptcOnly(ctx, agent, exec.signal).catch(() => true)) {
+                return failure('POLICY_DENIED', 'Native result projection or owning scope is unavailable.')
+              }
+              if (stopped || !provider.active || callEpoch !== epoch || entries.get(agent) !== entry) {
+                return failure('POLICY_DENIED', 'Native result presentation changed during preparation.')
+              }
+              return nativeResult.execute(args, exec)
+            } }))
+            const deny = PTC_TOOLS.filter(tool => tool !== 'result' || !nativeResult)
+              .map(publicToolName).filter(n => names.includes(n))
             if (deny.length) entry.disposers.push(entry.ctx.tools.restrict({ deny }))
           }
         } finally { mutating = false }

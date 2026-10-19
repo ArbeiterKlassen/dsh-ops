@@ -2,7 +2,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { BASH_TOOL, FILE_TOOLS, TOOLING_SECTION, publicToolName } from '../lib/policy.js'
+import { NATIVE_FILE_TOOLS } from '../lib/capabilities/registry.js'
+import { BASH_TOOL, TOOLING_SECTION, publicToolName } from '../lib/policy.js'
 import { applyComponent } from '../lib/index.js'
 import * as ptc from '../lib/ptc/index.js'
 import { resolveWorker } from '../lib/ptc/runtime.js'
@@ -16,7 +17,7 @@ import { officialToolHidingMountChecks } from './lib/official-tool-hiding.mjs'
 
 // Component 4 has no native runtime dependency; always exercise its real mounts.
 await officialToolHidingMountChecks()
-const EXPECTED = FILE_TOOLS.map(publicToolName).sort()
+const EXPECTED = NATIVE_FILE_TOOLS.map(publicToolName).sort()
 const FILE_SECTION = `${TOOLING_SECTION}:file`
 const SHELL_SECTION = `${TOOLING_SECTION}:shell`
 const BG_SECTION = `${TOOLING_SECTION}:background`

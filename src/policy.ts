@@ -1,4 +1,4 @@
-import { FILE_TOOLS, IN_PROCESS_TOOLS } from './capabilities/registry.js'
+import { FILE_TOOLS, NATIVE_FILE_TOOLS, IN_PROCESS_TOOLS } from './capabilities/registry.js'
 export { FILE_TOOLS, FILE_MUTATIONS, IN_PROCESS_TOOLS } from './capabilities/registry.js'
 
 /** Model-facing routing, kept in one section. No shared registry mutation. */
@@ -15,7 +15,7 @@ export const BASH_TOOL = publicToolName(IN_PROCESS_TOOLS[0])
 export function ladderLevels({ published, pwsh = false }: { published: Iterable<string>, pwsh?: boolean }) {
   const names = new Set(published)
   return {
-    files: FILE_TOOLS.some(name => names.has(publicToolName(name))),
+    files: NATIVE_FILE_TOOLS.some(name => names.has(publicToolName(name))),
     bash: names.has(BASH_TOOL),
     pwsh: pwsh === true && names.has('pwsh'),
   }
@@ -33,10 +33,10 @@ interface ToolingPolicyOptions {
 /** A single compact table; absent tools never get advertised. */
 export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false, shellComponent = true, extraGuidance = '' }: ToolingPolicyOptions) {
   const names = new Set(published ?? (mounted || levels?.files
-    ? [...FILE_TOOLS, ...(levels?.bash ? IN_PROCESS_TOOLS : [])].map(publicToolName) : []))
+    ? [...NATIVE_FILE_TOOLS, ...(levels?.bash ? IN_PROCESS_TOOLS : [])].map(publicToolName) : []))
   if (levels?.pwsh) names.add('pwsh')
   if (!shellComponent) names.delete('pwsh')
-  const hasFiles = FILE_TOOLS.some(name => names.has(publicToolName(name)))
+  const hasFiles = NATIVE_FILE_TOOLS.some(name => names.has(publicToolName(name)))
   const hasBash = names.has(BASH_TOOL)
   const hasPwsh = shellComponent && names.has('pwsh')
   if (!hasFiles && !hasBash && !hasPwsh) return ''
@@ -60,15 +60,18 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
   row('copy', 'Copy one regular file, no clobber')
   row('move', 'Move one regular file, same filesystem')
   row('remove', 'Remove one regular file (CAS)')
+  row('result', 'Page / release owned result references')
   row('bash', 'General commands / builds / git / pipelines / scripts — preferred command executor')
   if (names.has('pwsh')) lines.push(`| Windows-native cmdlets / registry / services only | pwsh (${pwsh7 || levels?.pwsh ? 'bundled PowerShell 7 via host' : 'host PowerShell'}) |`)
   lines.push('', '- ops_* arguments are strict: pass only declared fields.')
   if (hasFiles) lines.push('- Use file tools for file operations and batch independent requests.')
   if (names.has(publicToolName('grep'))) lines.push('- ops_grep: summary for aggregate file/match totals; count for per-file counts; content for matching text. Follow nextOffset for remaining pages, but do not loop blindly on truncated/failed scans: they are not exhaustive.')
   if (hasFiles) lines.push(
-    '- Every file tool has one `path`, resolved relative to the current DSH session cwd. `to` on copy/move uses the same base. Use `/` separators; do not pass root, workspace, cwd, or file_path aliases.',
+    '- Single-file tools use `path`, resolved relative to the current DSH session cwd. `to` on copy/move uses the same base. Use `/` separators; do not pass workspace, cwd, or file_path aliases.',
     '- Native file tools are UTF-8 first and bounded. glob and grep do not traverse symlinks, junctions, reparse points, hidden files, or `.git`.',
   )
+  if (names.has(publicToolName('result'))) lines.push(`- ${publicToolName('result')} accepts the original reference root; page completeness describes stored rows only.`)
+  if (names.has(publicToolName('read_many'))) lines.push(`- ${publicToolName('read_many')} takes files with independent ranges and per-file recovery.`)
   const globbing = ['glob', 'grep', 'replace'].filter(raw => names.has(publicToolName(raw)))
   if (globbing.length) {
     const arrays = [names.has(publicToolName('glob')) && 'ops_glob `pattern`', (names.has(publicToolName('grep')) || names.has(publicToolName('replace'))) && 'the `glob` filters'].filter(Boolean).join(' and ')

@@ -21,4 +21,5 @@ export interface SchemaCapability extends CapabilityMetadata {
   readonly parameters: ParameterSchema
   readonly description: string
   readonly output: JsonSchemaNode
+  readonly nativeProjection?: { readonly component: 'file'; readonly parameters: ParameterSchema; readonly description: string }
 }

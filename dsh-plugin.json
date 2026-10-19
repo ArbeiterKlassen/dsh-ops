@@ -84,7 +84,8 @@
           "move",
           "remove",
           "read_many",
-          "edit_many"
+          "edit_many",
+          "result"
         ],
         "shellPermission": "Per-call DSH sandbox policy and native subprocess"
       },

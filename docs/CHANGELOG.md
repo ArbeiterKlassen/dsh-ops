@@ -7,6 +7,15 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Page stored references from Native file tools (#261, 6d/16)
+
+- Add a Native page/release projection of the shared ops_result capability, independently owned by
+  the file row. PTC retains put and typed data; Native descendants of PTC agents keep page-only schemas.
+- Bind paging to current session cwd (or explicit original root), authority and visible producer.
+  Preserve source/capture facts and tagged JSON chunks; bounded display never advances past omitted rows.
+- 新增文件组件独立提供的 Native 引用分页/释放能力；PTC 保留 put。分别报告页面、原始操作与捕获完整性，
+  保持会话、权限与生产工具可见性检查，显示截断时要求原偏移重试。
+
 ### Bound shared calls and expire session references (#261)
 
 - Share two active/eight waiting worker slots across Native/PTC, recheck authority after admission,

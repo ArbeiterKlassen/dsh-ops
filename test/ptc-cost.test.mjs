@@ -50,7 +50,7 @@ await test('measure PTC enhancement separately from the existing file/shell decl
     for (const [, agent] of agents) await ctx.serial('agent/created', { agent })
     const pure = agents.find(([mode]) => mode === 'ptc')[1]
     const deadline = Date.now() + 5000
-    while (!ctx.get('tools').get('ops_result', pure)) {
+    while (!ctx.get('tools').get('ops_batch', pure) || !ctx.get('tools').get('ops_result', pure)?.parameters.properties.action.enum.includes('put')) {
       if (Date.now() > deadline) throw new Error('PTC declarations did not become available')
       await new Promise(resolve => setTimeout(resolve, 10))
     }

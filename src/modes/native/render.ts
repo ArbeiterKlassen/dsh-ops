@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import { renderResult } from './result.js'
 import { errorPolicy } from '../../kernel/errors.js'
 import type { EffectState } from '../../kernel/outcome.js'
 
@@ -161,12 +162,17 @@ export function renderNative(tool: string, args: unknown, result: unknown): stri
   const input = record(args) ? args : {}
   let lines: string[]
   if (record(result.error) || ['error', 'rejected', 'conflict', 'unknown', 'failed'].includes(String(result.status))) lines = failure(result)
+  else if (tool === 'result') return capNativeText(renderResult(input, result), NATIVE_OUTPUT_BYTES, 'Repeat the same offset with smaller limit/maxBytes; do not advance past undisplayed rows.')
   else if (tool === 'read_many') lines = readMany(result)
   else if (tool === 'inspect_local_file') lines = inspect(input, result)
   else if (mutations.has(tool)) lines = receipts(tool, result)
   else if (tool === 'stat') lines = stat(input, result)
   else if (tool === 'diff') lines = diff(input, result)
   else lines = listing(tool, input, result)
+  // Keep the locator ahead of potentially clipped model text so its omitted suffix stays recoverable.
+  if (record(result.reference)) lines.unshift('[Stored reference: ' + facts(result.reference, ['refId', 'producerTool', 'totalItems', 'totalBytes'])
+    + '; referenceRoot=' + field(result.referenceRoot) + '. Page with ops_result; inspect source capture/coverage facts before claiming completeness.]')
+  if (record(result.storageError)) lines.unshift('[Storage: ' + facts(result.storageError, ['code', 'message', 'effectState']) + '. Cache effects are separate from business effects.]')
   return capNativeText(lines.join('\n'), NATIVE_OUTPUT_BYTES, mutations.has(tool)
     ? 'Inspect current state before another mutation; do not repeat the write to recover undisplayed receipts.'
     : undefined)
