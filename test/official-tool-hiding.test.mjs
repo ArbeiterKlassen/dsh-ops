@@ -59,7 +59,7 @@ await test('the disabled component patch also defaults to an empty selection', (
   assert.deepEqual(hiding.config, { replaceTools: [] })
   assert.deepEqual(resolveHidingConfig(hiding.config), { replaceTools: [] })
   for (const platform of ['win32', 'linux', 'darwin']) {
-    assert.deepEqual(platformSurface(platform), { retainedCommand: platform === 'win32' ? 'pwsh' : 'bash', shellDefaultEnabled: platform === 'win32' })
+    assert.deepEqual(platformSurface(platform), { retainedCommand: platform === 'win32' ? 'pwsh' : 'bash', shellDefaultEnabled: true })
   }
 })
 await test('only reviewed read workflows have mappings; mutation and transport tools do not', () => {

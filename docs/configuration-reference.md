@@ -69,7 +69,7 @@ In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/
 The bundle declares seven independently toggled components. Fresh defaults follow the table. Saved profile switches and raw configuration override bundle defaults; adding discovery does not rewrite them. Profiles without explicit switch overrides inherit updated defaults.
 | Row `name` | Component | Default |
 | --- | --- | --- |
-| `dsh-ops/shell` | Terminal and shell | Windows on; Linux/macOS off |
+| `dsh-ops/shell` | Terminal and shell | On (all platforms) |
 | `dsh-ops/file` (`dsh-ops-file`) | Rust file tools | On |
 | `dsh-ops/ptc` | Native PTC batches | On |
 | `dsh-ops/discovery` | Advanced Native tool discovery | On |
@@ -165,7 +165,7 @@ config:
 - `shellPolicy`: defaults to `advise`; `deny-host-shell` rejects host shells in `deniedHostTools` (default `[pwsh, bash, pwsh_persistent]`). This also disables third-layer pwsh; enable cautiously.
 - `allowSystemShellFallback`: defaults to `false`. Without a bundled/provisioned bash, do not discover system PATH or well-known installations (**on a POSIX host this key has no effect**: the shell component already resolves the host bash and there is no pinned payload to fall back from). Explicit `true` opts into an unpinned system bash that the operator must trust and maintain. Explicit `bashPath` is a separate operator selection, not an automatic fallback. See the update configuration modification area in the [usage guide](usage.md) for the first-start migration.
 - `shellPolicy` is independent: `deny-host-shell` masks/refuses host tools; disabling fallback constrains the plugin's bash resolver, not the host's own `pwsh`, and is not a filesystem sandbox.
-- `binaryPath` (the native worker executable) / `bashPath`: optional explicit absolute paths; unavailable paths cause an error rather than silently switching executors. Use `dsh-ops bash-runtime git` or `managed` to print a Bash selection.
+- `binaryPath` (the native worker executable) / `bashPath`: optional explicit absolute paths; unavailable paths cause an error rather than silently switching executors. On Windows the pinned Bash payload is an optional npm dependency of the main package and arrives with the install, so normally no configuration is needed; use `dsh-ops bash-runtime install` if it is missing or incomplete, or `dsh-ops bash-runtime git` / `managed` to print a Bash selection.
 - **On a POSIX host `ops_bash` already runs the distribution's own bash**: `bashPath` → `PATH` → `/bin/bash`, `/usr/bin/bash`, `/usr/local/bin/bash`, with no second shell shipped, so there is no payload to "fall back" from and `allowSystemShellFallback` does not affect it. In a confined mode (`workspace-write` / `read-only`) `bashPath` still takes effect, with the constraint enforced by a host sandbox (bwrap / Landlock); when no sandbox can confine the call it is **refused** rather than run unrestricted.
 - `bashPath` **(Windows) must match the pinned MSYS for restricted execution.** In read-only and workspace-write, `ops_bash` runs only the pinned MSYS whose IPC compatibility proxies were verified (`dsh-ops bash-runtime install`, or a compatible existing copy); any other `msys-2.0.dll`, including your own Git for Windows, returns `EXECUTOR_UNAVAILABLE` by design and is never run unconfined. Do not point `bashPath` at your own Git Bash to work around a restricted-mode problem. Check a selection with `dsh-ops ladder --config <file>`, which reports `restricted: yes/no` for the resolved bash. See [Troubleshooting](troubleshooting.md#ops_bash-cannot-run-a-custom-bashpath-or-git-for-windows-in-restricted-modes).
 - `deniedHostTools`: the host tool names refused by the `deny-host-shell` policy.
@@ -211,7 +211,7 @@ Cordis validates configuration through `StandardSchemaV1`; detached public setti
 
 ## Prompt registration
 
-Prompts are registered as scoped runtime sections, not written to AGENTS.md. Disabling shell withdraws its routing; disabling file withdraws its Native file guidance. Fresh Native file publishes only ops_read_many, discovery publishes ops_discover, and eligible Windows shell scopes add ops_bash. Advanced Native tools are discovered or explicitly always loaded. PTC owns its separate typed SDK and current permission checks. The approved BM-03 budget measures file/discovery schemas at ≤400 tokens. Bash startup residency is unchanged; its schema and the complete startup total are reported separately, and missing Bash cannot satisfy the Windows readiness check.
+Prompts are registered as scoped runtime sections, not written to AGENTS.md. Disabling shell withdraws its routing; disabling file withdraws its Native file guidance. Fresh Native file publishes only ops_read_many, discovery publishes ops_discover, and shell scopes on every platform add ops_bash (the pinned Windows payload or the distribution Bash). Advanced Native tools are discovered or explicitly always loaded. PTC owns its separate typed SDK and current permission checks. The approved BM-03 budget measures file/discovery schemas at ≤400 tokens. Bash startup residency is unchanged; its schema and the complete startup total are reported separately, and missing Bash cannot satisfy the Windows readiness check.
 
 ---
 

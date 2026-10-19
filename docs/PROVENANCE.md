@@ -3,10 +3,9 @@
 What this repository is, where its parts came from, what was verified, and what
 was not.
 
-## Unreleased: optional shells and host PowerShell
+## Unreleased: optional Windows Bash payload and host PowerShell
 
-The npm package and release assembly no longer depend on or publish shell payload packages.
-Bash is an explicit pinned upstream download. PowerShell is selected entirely by the host;
+The npm package and release assembly declare this distribution's own Windows Bash platform package as an OPTIONAL dependency: `@dsh-ops/bash-win32-x64@0.2.1`, published from the pinned upstream PortableGit release (`v2.56.0.windows.2`, GNU bash 5.3.15), so npm fetches it automatically on Windows x64. POSIX keeps using the host Bash and adds no payload; optional-dependency resolution is silent on failure, so `dsh-ops bash-runtime install` (with the 0.4.0 runtime settings pages) stays the selection and repair path. PowerShell is selected entirely by the host;
 OPS no longer changes its `pwshPath` or activates legacy provisioned copies. The exported strict
 TypeScript manager previews a standard Windows installation and executes WinGet only on request.
 It follows [Microsoft's installation guidance](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows)
@@ -14,7 +13,7 @@ and preserves installer prompts. WinGet's `0x8A15002B` is reported only as no ap
 cancellation after launch has unknown effects. No system installer was run during validation:
 fixture runners cover argv, exits, cancellation and preservation, while a real child tests spawn reporting.
 
-npm 包与发布组装不再依赖或发布 shell 载荷包；Bash 采用显式固定版本下载。
+npm 包与发布组装重新声明本发行自己的 Windows bash 载荷包为可选依赖：`@dsh-ops/bash-win32-x64@0.2.1`，由固定的上游 PortableGit 版本（`v2.56.0.windows.2`，GNU bash 5.3.15）发布，Windows x64 上由 npm 自动拉取。POSIX 继续使用宿主 bash，不新增载荷；optional 依赖解析失败是静默的，因此 `dsh-ops bash-runtime install`（以及 0.4.0 的运行时设置页）仍是选择与修复路径。
 PowerShell 完全由宿主选择，OPS 不再修改 `pwshPath` 或启用旧托管副本。
 严格 TypeScript 管理器默认预览，显式请求才通过 WinGet 安装标准 PowerShell，保留安装提示。
 验证未运行系统安装器：fixture 覆盖参数、退出码、取消及保留行为，真实子进程验证启动反馈。

@@ -119,7 +119,7 @@
       {
         "id": "dsh-ops-shell",
         "entry": "dsh-ops/shell",
-        "defaultEnabled": { "win32": true, "linux": false, "darwin": false },
+        "defaultEnabled": true,
         "platforms": ["win32", "linux", "darwin"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"]
       },
