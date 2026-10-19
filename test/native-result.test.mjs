@@ -198,7 +198,7 @@ await test('agent-scoped file rows isolate sibling pagers and yield only their e
       const late = await agent(ctx, root, 'ptc')
       await waitFor(() => current(late)?.parameters.properties.action.enum.includes('put'), { timeoutMs: 5000, what: 'PTC before file mount' })
       const lateFile = await mount(late)
-      await waitFor(() => ctx.get('tools').get('ops_grep', late) && current(late)?.parameters.properties.action.enum.includes('put'), { timeoutMs: 5000, what: 'file mounted after PTC' })
+      await waitFor(() => !ctx.get('tools').get('ops_grep', late) && current(late)?.parameters.properties.action.enum.includes('put'), { timeoutMs: 5000, what: 'file mounted after PTC' })
       await component.dispose()
       await waitFor(() => current(left)?.parameters.properties.action.enum.length === 2 && current(late)?.parameters.properties.action.enum.length === 2, { timeoutMs: 5000, what: 'Native peer resumes on PTC unload' })
       await leftFile.dispose(); assert.equal(current(left), undefined)

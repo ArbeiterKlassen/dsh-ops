@@ -117,7 +117,7 @@ await test('PTC batch/result mount only in pure PTC scopes and withdraw on prese
   try {
     await executor(ctx)
     await ctx.plugin(inner => inner.provide('ptcRuntime', { language: 'typescript' }))
-    const component = await ctx.plugin(ptc, { binaryPath: resolveWorker(), required: true })
+    const component = await ctx.plugin(ptc, { binaryPath: resolveWorker(), required: true, alwaysLoaded: ['batch'] })
     const native = await agent(ctx, 'ptc-native')
     const pure = await agent(ctx, 'ptc-only')
     let lift
@@ -129,6 +129,7 @@ await test('PTC batch/result mount only in pure PTC scopes and withdraw on prese
     }
     const stale = ctx.get('tools').get('ops_result', pure)
     lift()
+    await ctx.get('systemPrompt').assemble({ scope: pure })
     assert.equal(scopedToolNames(ctx, pure).includes('ops_result'), false)
     assert.equal((await stale.execute({ action: 'page', id: 'unused' }, { agent: pure, signal: new AbortController().signal })).error.code, 'POLICY_DENIED')
     await component.dispose()

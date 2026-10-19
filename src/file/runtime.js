@@ -3,7 +3,7 @@ import { publicToolName } from '../policy.js'
 import { definition } from './contract.js'
 import { NATIVE_FILE_TOOLS } from '../capabilities/registry.js'
 import { resultDefinition, invokeResult } from './result.js'
-import { registerResultProvider } from './result-provider.js'
+import { registerNativeProvider } from './result-provider.js'
 import { safeDisposeAll } from '../teardown.js'
 import { invoke, failure } from './worker.js'
 
@@ -24,16 +24,11 @@ export class NativeFileTools {
       if (this.config.required) throw new Error('Native file worker path is unavailable.')
       return []
     }
-    const probes = []
-    let pager
-    for (const rawName of NATIVE_FILE_TOOLS) {
+    const definitions = NATIVE_FILE_TOOLS.map(rawName => {
       const execute = (args, exec) => this.call(rawName, args, exec)
-      const tool = rawName === 'result' ? resultDefinition(execute) : definition(rawName, execute)
-      if (rawName === 'result') pager = tool
-      else probes.push(tool)
-      if (rawName !== 'result') this.disposers.push(this.ctx.tools.register(tool))
-    }
-    if (pager) this.unregisterProvider = await registerResultProvider(this.ctx, pager, probes, () => this.ctx.tools.register(pager))
+      return rawName === 'result' ? resultDefinition(execute) : definition(rawName, execute)
+    })
+    this.unregisterProvider = await registerNativeProvider(this.ctx, definitions, tool => this.ctx.tools.register(tool))
     return NATIVE_FILE_TOOLS.map(publicToolName)
   }
 

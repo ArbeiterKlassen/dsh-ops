@@ -10,7 +10,7 @@ await test('npm pack includes compiled host code and native sources, never host 
     { cwd: PACKAGE_ROOT, encoding: 'utf8', timeout: 30000 })
   assert.equal(result.status, 0, result.stderr)
   const files = JSON.parse(result.stdout)[0].files.map(file => file.path)
-  const required = ['lib/index.js', 'lib/policy.js', 'lib/components/panel/index.js',
+  const required = ['lib/ptc/sdk.d.ts', 'lib/index.js', 'lib/policy.js', 'lib/components/panel/index.js',
     'lib/components/panel/package.json', 'lib/components/panel/icon.png', 'lib/panel/panel.html',
     'lib/components/tui/dsh-plugin.json', 'native/Cargo.toml', 'native/Cargo.lock', 'native/src/lib.rs',
     'native/windows-metadata/Cargo.toml', 'native/windows-metadata/src/lib.rs',

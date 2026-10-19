@@ -1,6 +1,8 @@
 /** One catalogue for owned tools. This module never registers tools or imports host values. */
 import { PARAMETERS as fileParameters, DESCRIPTIONS as fileDescriptions, fileOutput } from './file.js'
 import { PARAMETERS as ptcParameters, DESCRIPTIONS as ptcDescriptions, OUTPUT as ptcOutput } from './ptc.js'
+import { SDK_CAPABILITIES } from './sdk.js'
+export { SDK_CAPABILITIES, SDK_OUTPUT } from './sdk.js'
 import { NATIVE_RESULT_PARAMETERS, NATIVE_RESULT_DESCRIPTION } from './result.js'
 import type { CapabilityMetadata, Component, SchemaCapability } from './types.js'
 
@@ -28,7 +30,7 @@ export const SHELL_CAPABILITIES = Object.freeze([Object.freeze({
   rawName: 'bash', component: 'shell', presentations: allPresentations,
   availability: 'resident', mutates: true, concurrencySafe: false,
 } as const satisfies CapabilityMetadata)])
-export const CAPABILITIES = Object.freeze([...FILE_CAPABILITIES, ...PTC_CAPABILITIES, ...SHELL_CAPABILITIES])
+export const CAPABILITIES = Object.freeze([...FILE_CAPABILITIES, ...PTC_CAPABILITIES, ...SDK_CAPABILITIES, ...SHELL_CAPABILITIES])
 export type Capability = typeof CAPABILITIES[number]
 export type ToolName = Capability['rawName']
 const byName = new Map<string, Capability>(CAPABILITIES.map(capability => [capability.rawName, capability]))
