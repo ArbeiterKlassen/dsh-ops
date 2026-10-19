@@ -86,7 +86,7 @@ jobs:
       # on POSIX (a runtime-absence skip is a failure, not a pass), refuses any skip outside this
       # platform's known set, fails when a suite file on disk was never collected, and checks the
       # packed artifact. It builds the plugin before its CLI, then builds/tests the worker and
-      # Windows IPC proxies using an explicitly downloaded pinned Bash fixture (or DSH_OPS_TEST_BASH). Build success is not behaviour.
+      # Windows IPC proxies using the pinned Bash payload installed by npm ci (or DSH_OPS_TEST_BASH). Build success is not behaviour.
       - name: Functional gate (skips, suite inventory, packed artifact)
         shell: bash
         run: node scripts/verify-gate.mjs --skip-install

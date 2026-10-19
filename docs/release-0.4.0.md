@@ -11,8 +11,8 @@ startup and reporting its cost and the full startup total separately. Final meas
 ## Implemented surface
 
 The package declares seven stable rows: shell, file, PTC, discovery, panel, TUI and official-tool
-replacement. Fresh file/PTC/discovery rows are on; shell is on only on Windows; panel/TUI/replacement
-are off. Existing named overrides and explicit switches survive restart. An enabled fresh panel starts
+replacement. Fresh file/PTC/discovery rows are on; shell is on for every supported platform;
+panel/TUI/replacement are off. Existing named overrides and explicit switches survive restart. An enabled fresh panel starts
 collection; legacy explicit capture:false remains inert. Turning it off stops queued filesystem work.
 
 Native starts with read_many and discover, plus usable Windows Bash. Advanced tools activate only in
@@ -45,8 +45,9 @@ incomplete source coverage. See [detailed document contracts](native-kernel.md).
 
 ## Operator changes
 
-Bash and PowerShell are not npm payload dependencies. Managed Bash install/removal and Git Bash
-selection are explicit. Windows restricted execution remains partially enforced and requires the
+Bash is a Windows-only optional npm payload of the main package (installed automatically);
+PowerShell stays with the host and is not an npm payload. Managed Bash install/removal and Git Bash
+selection remain explicit repair paths. Windows restricted execution remains partially enforced and requires the
 compatible pinned MSYS runtime; approval does not create missing confinement. Host PowerShell upgrade
 previews the standard installation; execute explicitly, restart DSH, and review any custom pwshPath.
 

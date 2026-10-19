@@ -187,7 +187,9 @@ async function main() {
   const runtimeEnv = {}
   if (TARGET === 'win32-x64') {
     const { pinnedBashExecutable } = await import('../lib/shells/pinned.js')
-    let fixture = process.env.DSH_OPS_TEST_BASH
+    // `npm ci` installs the declared @dsh-ops/bash-win32-x64 payload; the provisioned store
+    // and DSH_OPS_TEST_BASH cover a checkout that has no payload installed.
+    let fixture = process.env.DSH_OPS_TEST_BASH ?? pinnedBashExecutable({ required: false })
     if (!fixture) {
       const fixtureEnv = { DSH_HOME: mkdtempSync(path.join(tmpdir(), 'dsh-ops-bash-fixture-')) }
       await run('Acquire optional pinned Bash fixture', 'node', ['bin/dsh-ops.mjs', 'bash-runtime', 'install'], { env: fixtureEnv })

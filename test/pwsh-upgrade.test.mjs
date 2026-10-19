@@ -123,12 +123,14 @@ await test('shell mount preserves live host configuration and legacy provisioned
     assert.equal(fs.readFileSync(legacy, 'utf8'), 'legacy unchanged')
   } finally { await shutdown(ctx) }
 })
-await test('new release plans and the install lock carry no Bash or PowerShell payload packages', () => {
-  assert.deepEqual(describePackages('win32', 'x64', TEST_HOME), [])
-  assert.deepEqual(injectedOptionalDependencies({ packages: [] }), {})
+await test('release plans and the install lock carry the Windows Bash payload and never PowerShell', () => {
+  const packages = describePackages('win32', 'x64', TEST_HOME)
+  assert.deepEqual(packages.map(pkg => pkg.kind), ['bash'])
+  assert.deepEqual(injectedOptionalDependencies({ packages }), { '@dsh-ops/bash-win32-x64': '0.2.1' })
   for (const name of ['package.json', 'package-lock.json']) {
     const contents = fs.readFileSync(path.join(PACKAGE_ROOT, name), 'utf8')
-    assert.doesNotMatch(contents, /@dsh-ops\/(?:pwsh|bash)-win32-x64/)
+    assert.match(contents, /@dsh-ops\/bash-win32-x64/)
+    assert.doesNotMatch(contents, /@dsh-ops\/pwsh-win32-x64/)
   }
 })
 await test('main-only release records validate without shell payloads and reject stale shell archives', async () => {
@@ -140,7 +142,8 @@ await test('main-only release records validate without shell payloads and reject
     fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify(manifest))
     const tarball = manifest.name + '-' + manifest.version + '.tgz'
     fs.writeFileSync(path.join(dist, tarball), 'fixture archive bytes checked by SHA-256')
-    const context = { dist, packages: describePackages('win32', 'x64', dist), tarballs: {} }
+    // A main-only record: the payload package itself is covered by the assemble/closure suites.
+    const context = { dist, packages: [], tarballs: {} }
     await writeReleaseRecords(context, [])
     const record = JSON.parse(fs.readFileSync(path.join(dist, 'provenance.json'), 'utf8'))
     assert.deepEqual(record.packages, []); assert.deepEqual(record.tarballs, [tarball])

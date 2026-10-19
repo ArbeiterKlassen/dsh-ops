@@ -25,24 +25,29 @@ because it contains two bodies of work under two licenses:
    `vendor/fastctx/UPSTREAM.md` and `vendor/fastctx/FORK.md` in the
    repository history and in the published tarballs of earlier versions.
 
-The published package and GitHub release no longer carry shell payload
-packages or declare them as npm dependencies. Shell binaries are obtained
-separately from their upstream distributors, only on operator request.
+The published package declares this distribution's own Windows Bash
+platform package as an OPTIONAL dependency, and the same package — this
+distribution's own tarball, carrying the pinned upstream runtime
+unchanged — is attached to the GitHub Release for a tag. It is optional
+in the dependency sense: npm fetches it automatically on Windows x64 and
+skips it on platforms it does not cover.
 
-  * Bash is an explicit optional download, not an npm dependency or a release payload.
-    This distribution does not contain, forward, repackage, or
-    redistribute Git for Windows. The pin records the upstream release
-    the shell is taken from (`PortableGit-2.56.0.2-64-bit.7z.exe`, Git
-    for Windows `v2.56.0.windows.2`), the official URL that publishes it,
-    and its SHA-256; `dsh-ops bash-runtime install` reads the pin, downloads
-    that asset on the user's own machine, verifies the digest there, and
-    unpacks it there. Git for Windows is distributed under the GNU
-    General Public License version 2, so the bytes a user obtains that
-    way are GPL-2.0 and are used under that licence; its terms, its
-    copyright, and the corresponding source belong to the Git for
-    Windows project (https://github.com/git-for-windows/git) and to the
-    Git project (https://github.com/git/git). No GPL-2.0-covered
-    component is part of this distribution.
+  * `@dsh-ops/bash-win32-x64` — a declared optional dependency.
+    This distribution carries the pinned upstream release unchanged: Git
+    for Windows' `PortableGit-2.56.0.2-64-bit.7z.exe` (Git for Windows
+    `v2.56.0.windows.2`, GNU bash 5.3.15). The pin records that upstream
+    release, the official URL that publishes it, and its SHA-256; the
+    assembly verifies the archive and the executable against the pin
+    before publishing it. When the optional install is absent or
+    incomplete, `dsh-ops bash-runtime install` reads the same pin,
+    downloads that asset on the user's own machine, verifies the digest
+    there, and unpacks it there. Git for Windows is distributed under the
+    GNU General Public License version 2, so its bytes are GPL-2.0 and
+    are used under that licence; its terms, its copyright, and the
+    corresponding source belong to the Git for Windows project
+    (https://github.com/git-for-windows/git) and to the Git project
+    (https://github.com/git/git). Its original licences and notices are
+    kept with the payload.
 
   * PowerShell remains managed by the host. `dsh-ops upgrade-host-pwsh`
     previews a standard Windows installation and `--yes` executes WinGet.

@@ -17,8 +17,8 @@ Apply the explicitly approved criteria: BM-01 requires at least 40% fewer bytes 
 1. Start a saved six-row profile with explicit name-qualified overrides, mixed on/off switches and
    unrelated plugin settings. Upgrade and restart twice. Verify seven unique OPS IDs, the unchanged
    legacy file name/configuration, preserved switches and the added discovery row.
-2. In a fresh profile, verify file/PTC/discovery on, shell on only on Windows, and panel/TUI/replacements
-   off. Enable a fresh panel row and observe new events; disable it and verify queued collection stops
+2. In a fresh profile, verify file/PTC/discovery on, shell on for all three platforms, and
+   panel/TUI/replacements off. Enable a fresh panel row and observe new events; disable it and verify queued collection stops
    with no final fold. An explicit legacy capture:false must stay inert until changed by the operator.
 3. Save valid built-in row settings and restart. Reject an unknown key or wrong type without changing
    saved values. A stale revision must not overwrite a newer edit. Null legacy file/root/shell settings

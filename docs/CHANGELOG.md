@@ -7,6 +7,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Enable the shell row by default on all three supported platforms: Windows runs the pinned Bash payload declared by the main package, Linux/macOS run the distribution's Bash (overridable with `config.bashPath`), and PowerShell stays host-managed.
+- shell 行恢复为三个受支持平台默认开启：Windows 使用主包声明的固定 bash 载荷，Linux/macOS 使用发行版自带 bash（可用 `config.bashPath` 覆盖），PowerShell 仍由宿主管理。
+- Restore the Windows Bash npm optional payload: the main package declares `@dsh-ops/bash-win32-x64@0.2.1` in `optionalDependencies`, so npm install brings the pinned PortableGit (GNU bash 5.3.15); `bash-runtime`/`provision-shells` and the runtime settings pages remain the selection and repair path. POSIX keeps the system Bash, PowerShell stays host-managed, and the rest of the 0.4.0 structure is unchanged.
+- 恢复 Windows bash 的 npm 可选载荷声明：主包在 `optionalDependencies` 中声明 `@dsh-ops/bash-win32-x64@0.2.1`，npm 安装即带固定版本的 PortableGit（GNU bash 5.3.15）；`bash-runtime`/`provision-shells` 与运行时设置页保留为选择与修复路径。POSIX 继续使用系统 bash，PowerShell 仍由宿主管理，0.4.0 的其余结构不变。
 - Prepare the 0.4.0 candidate version across owned npm/plugin and Rust workspace metadata without dependency changes. Audit paired release, usage, component, SDK, discovery and manual-validation documentation; record the explicitly approved benchmark scope and retain historical failures separately from functional CI. No release/tag is created.
 - 将自有 npm/插件与 Rust workspace 版本统一为 0.4.0 候选，不变更依赖；同步双语发布、使用、组件、SDK、发现和手动验收文档。记录明确批准的基准范围并保留历史失败，不以功能 CI 代替验收，不创建发布或 tag。
 - Apply the confirmed acceptance scopes: BM-01 gates against OPS 0.3.x with official-reader comparisons reported separately; BM-03 gates file/discovery schemas while retaining startup Bash, exact full-inventory readiness and separate full totals. Preserve historical failed evidence.
@@ -82,8 +86,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Migrate panel collection to strict TypeScript while preserving queued-stop, issued-I/O waiting and explicit sealing. Count malformed persisted fields and mark incomplete capture without corrupting valid text or usage totals.
 - 将面板采集迁移为严格 TypeScript，保留排队停止、等待已发起 I/O 与显式封存；错误的持久化字段计入 malformed 并标记不完整，不破坏有效正文或用量总计。
 
-- Add discovery as the seventh bundle row; preserve existing named row overrides. Fresh defaults enable shell only on Windows and leave panel/TUI/replacements off. Enabling a fresh panel row starts capture; explicit legacy capture:false stays inert. Provide builtin validated file/PTC/TUI configuration.
-- bundle 新增第七行 discovery，保留已有带名称行覆盖。首次安装仅 Windows 默认启用 shell，panel/TUI/替换默认关闭；启用新 panel 行即采集，旧配置 capture:false 保持不采集。补充文件/PTC/TUI 内置校验配置。
+- Add discovery as the seventh bundle row; preserve existing named row overrides. Fresh defaults enable shell on every supported platform and leave panel/TUI/replacements off. Enabling a fresh panel row starts capture; explicit legacy capture:false stays inert. Provide builtin validated file/PTC/TUI configuration.
+- bundle 新增第七行 discovery，保留已有带名称行覆盖。首次安装三个平台默认启用 shell，panel/TUI/替换默认关闭；启用新 panel 行即采集，旧配置 capture:false 保持不采集。补充文件/PTC/TUI 内置校验配置。
 
 - Stop panel collection and queued filesystem work when its row or capture switch is disabled; wait for issued I/O without scheduling a final fold. Expose validated capture settings through the host editor.
 - 关闭 panel 行或采集开关时停止采集及排队文件操作，等待已开始的 I/O，但不触发最终归并；宿主编辑器提供严格校验的采集设置。

@@ -191,7 +191,7 @@ jobs:
         run: npm run verify:release
 
       - name: Assemble and pack the publish directory
-        # Packs the main plugin without shell payload dependencies and writes
+        # Packs the main plugin and the pinned Windows bash payload package, and writes
         # provenance.json + SHA256SUMS under
         # $env:DIST. A non-zero exit fails the run; nothing is published from here.
         run: node scripts/build-platform-packages.mjs --dist "$env:DIST"

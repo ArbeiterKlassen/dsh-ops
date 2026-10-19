@@ -82,13 +82,18 @@ await test('the real CLI previews removal and applies it only with yes', async (
   })
 })
 
-await test('published dependency and release package plans do not acquire Bash automatically', async () => {
+await test('the Windows Bash payload is a declared, locked and assembled optional dependency', async () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8'))
   const lock = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package-lock.json'), 'utf8'))
-  assert.equal(manifest.optionalDependencies?.['@dsh-ops/bash-win32-x64'], undefined)
-  assert.equal(lock.packages['node_modules/@dsh-ops/bash-win32-x64'], undefined)
+  assert.equal(manifest.optionalDependencies?.['@dsh-ops/bash-win32-x64'], '0.2.1')
+  assert.equal(lock.packages['']?.optionalDependencies?.['@dsh-ops/bash-win32-x64'], '0.2.1')
+  assert.equal(lock.packages['node_modules/@dsh-ops/bash-win32-x64']?.version, '0.2.1')
   const { describePackages } = await import('../scripts/lib/build/assemble.js')
-  assert.equal(describePackages('win32', 'x64', 'unused').some(item => item.kind === 'bash'), false)
+  const packages = describePackages('win32', 'x64', 'unused')
+  assert.equal(packages.length, 1)
+  assert.equal(packages[0].name, '@dsh-ops/bash-win32-x64')
+  assert.equal(packages[0].kind, 'bash')
+  assert.equal(packages[0].version, '0.2.1', 'the payload version comes from the committed pin, never the main version')
 })
 
 report('shells-manager')
