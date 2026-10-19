@@ -101,3 +101,9 @@ DeepSeek Harness shell contract, approval and job adapters are adapted from
 @deepseek-ai/dsh-tool-bash 0.2.0-rc.2 (MIT), Copyright (c) 2026 DeepSeek.
 Upstream: https://github.com/deepseek-ai/deepseek-harness
 License: licenses/deepseek-harness/LICENSE
+
+The native worker's DOCX reader uses pinned third-party Rust ZIP/XML libraries.
+Their exact versions and dependency rationale are recorded in docs/document-dependencies.md;
+original license notices (MIT choices for dual-licensed packages, plus zlib-rs's Zlib license)
+are reproduced in licenses/documents/THIRD-PARTY-NOTICES.txt. Existing upstream notices above
+remain unchanged. No third-party code is relicensed by the plugin's own MIT grant.
