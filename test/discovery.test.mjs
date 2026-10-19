@@ -26,10 +26,10 @@ await test('discovery arguments enforce max_results 1-5 and reject hidden action
   for (const raw of [null, {}, { query: '' }, { query: 'a'.repeat(513) }, { query: 'stat', path: 'file' }, ...[0, 6, 1.5, null, '3'].map(max_results => ({ query: 'stat', max_results }))]) assert.equal(typeof parseRequest(raw), 'string')
   assert.deepEqual(search('select:ops_stat', DISCOVERABLE_TOOLS, 5), ['stat'])
   assert.deepEqual(search('metadata revision hash', DISCOVERABLE_TOOLS, 1), ['stat'])
-  assert.deepEqual(search('select:ops_pdf_read', DISCOVERABLE_TOOLS, 5), ['pdf_read'])
+  assert.deepEqual(search('select:ops_read_pdf', DISCOVERABLE_TOOLS, 5), ['read_pdf'])
 })
 await test('discovery-entry schema has a reproducible pinned token measurement, separate from the full BM-03 gate', () => {
-  const wire = JSON.stringify([{ name: publicToolName('discover'), description: DISCOVERY_DESCRIPTION, parameters: DISCOVERY_PARAMETERS }])
+  const wire = JSON.stringify([{ name: publicToolName('discover_tools'), description: DISCOVERY_DESCRIPTION, parameters: DISCOVERY_PARAMETERS }])
   const tokens = getEncoding('cl100k_base').encode(wire).length
   console.log(`  discovery schema: ${tokens} cl100k_base tokens, ${Buffer.byteLength(wire)} UTF-8 bytes; js-tiktoken 1.0.21; compact JSON name/description/parameters; not provider billing or the whole OPS surface`)
   assert.equal(tokens, 94)

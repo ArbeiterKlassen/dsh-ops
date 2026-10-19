@@ -33,7 +33,7 @@ strict TypeScript, compiled to the existing JavaScript package paths.
 > See [release status and limitations](docs/release-0.4.0.md). Commands using `@latest` below select
 > the published package; build and pack this checkout to evaluate the candidate.
 
-- Native starts with `ops_read_many` and `ops_discover`; eligible Windows sessions also receive
+- Native starts with `ops_read_files` and `ops_discover_tools`; eligible Windows sessions also receive
   `ops_bash`. Advanced tools activate in the owning agent's next provider request.
 - The PTC SDK catalogue has 19 APIs: 16 file/document tools, batch, result references and its loader.
   Only the configured resident or selected APIs are exposed. Native and PTC use separate outputs.

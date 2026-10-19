@@ -18,8 +18,8 @@ English: [PTC result contracts](ptc-outcomes.md).
 状态当成完整结果。
 
 ```ts
-// 当前 agent 已激活 ops_read_many 后：
-const result = await tools.ops_read_many({
+// 当前 agent 已激活 ops_read_files 后：
+const result = await tools.ops_read_files({
   files: [{ path: "src/a.ts", offset: 1, limit: 20 }]
 });
 if (result.status === "completed") {

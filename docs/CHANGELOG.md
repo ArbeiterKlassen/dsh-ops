@@ -7,6 +7,11 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### BREAKING
+
+- Rename seven 0.4.0 tool raw names for consistent `<verb>_<noun>` naming; old names in saved profiles are silently migrated at load time. Public names change: `ops_read_many` → `ops_read_files`, `ops_edit_many` → merged into `ops_edit_file` (duplicate registration removed), `ops_table_read` → `ops_read_table`, `ops_doc_read` → `ops_read_docx`, `ops_pdf_read` → `ops_read_pdf`, `ops_sdk` → `ops_load_sdk`, `ops_discover` → `ops_discover_tools`. Closes #302.
+- 重命名 0.4.0 新增的七个工具 raw name 以统一 `<动词>_<名词>` 命名；已保存 profile 中的旧名在加载时静默迁移。公开名变更：`ops_read_many` → `ops_read_files`、`ops_edit_many` → 合并进 `ops_edit_file`（删除重复注册）、`ops_table_read` → `ops_read_table`、`ops_doc_read` → `ops_read_docx`、`ops_pdf_read` → `ops_read_pdf`、`ops_sdk` → `ops_load_sdk`、`ops_discover` → `ops_discover_tools`。关闭 #302。
+
 - Prepare the 0.4.0 candidate version across owned npm/plugin and Rust workspace metadata without dependency changes. Audit paired release, usage, component, SDK, discovery and manual-validation documentation; record the explicitly approved benchmark scope and retain historical failures separately from functional CI. No release/tag is created.
 - 将自有 npm/插件与 Rust workspace 版本统一为 0.4.0 候选，不变更依赖；同步双语发布、使用、组件、SDK、发现和手动验收文档。记录明确批准的基准范围并保留历史失败，不以功能 CI 代替验收，不创建发布或 tag。
 - Apply the confirmed acceptance scopes: BM-01 gates against OPS 0.3.x with official-reader comparisons reported separately; BM-03 gates file/discovery schemas while retaining startup Bash, exact full-inventory readiness and separate full totals. Preserve historical failed evidence.
@@ -248,7 +253,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Keep Native startup to the bounded multi-file reader (#261, 9/16)
 
-- Publish `ops_read_many` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
+- Publish `ops_read_files` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
 - Measure compact file/discovery schemas at 241 tokens; the integrated full Windows Bash/jobs provider order is 660 tokens (catalogue order 661). The earlier full-surface 400-token requirement failed; the operator subsequently approved a file/discovery-only budget with startup Bash and full totals retained.
 - Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；含 Bash 的完整工具面曾超过原400-token门禁；操作者随后批准仅对文件/发现小计设预算，保留 Bash 启动常驻与完整总数。
 
@@ -291,9 +296,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Read multiple file ranges and apply atomic multi-edits (#261)
 
-- Add read_many with 1-32 independently reported UTF-8 ranges in one worker call, current-session
+- Add read_files with 1-32 independently reported UTF-8 ranges in one worker call, current-session
   paths, credential preflight, per-file revisions/errors and explicit pending-file/line recovery.
-- Add edit_many as a single-file atomic CAS edit operation with short receipts. Bound escaped
+- Add edit_file as a single-file atomic CAS edit operation with short receipts. Bound escaped
   read output using actual metadata bytes; an incomplete line retains its offset and hex guidance.
 - 新增多文件范围读取与单文件原子多段编辑；逐文件报告版本、错误及未读范围，保持权限边界与短回执。
 
@@ -321,11 +326,11 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Discover advanced tools in the requesting Native scope (#261, 8/16)
 
-- Add `dsh-ops/discovery` and `ops_discover`: deterministic allowed-pool selection, a 1-5 per-call cap, and always-loaded choices. Publish pending capabilities only at the next model-step boundary, with scope isolation, permission withdrawal and owned cleanup.
+- Add `dsh-ops/discovery` and `ops_discover_tools`: deterministic allowed-pool selection, a 1-5 per-call cap, and always-loaded choices. Publish pending capabilities only at the next model-step boundary, with scope isolation, permission withdrawal and owned cleanup.
 - Coordinate overlapping discovery rows and exact Native ownership with progressive PTC publication. Preserve unrelated external registrations and same-scope file handoff; include current batch reads/edits and the Native reference pager.
 - 协调重叠发现行、Native 精确归属和渐进式 PTC 发布，保留外部注册与同作用域文件交接；纳入现有批量读写及 Native 引用分页器。
 - Add pinned schema token measurement and real Cordis/native-worker lifecycle checks. The current discovery entry alone measures 94 cl100k_base tokens; this is not the full default surface. The real PDF next-request assertion is part of BM-04.
-- 新增按需发现组件与 `ops_discover`：允许池、单次 1-5 项上限和始终加载选择；仅在下一模型步骤挂载，并保证作用域隔离、权限变更撤销及卸载清理。
+- 新增按需发现组件与 `ops_discover_tools`：允许池、单次 1-5 项上限和始终加载选择；仅在下一模型步骤挂载，并保证作用域隔离、权限变更撤销及卸载清理。
 - 新增固定分词器的 schema 计量和真实 Cordis/原生 worker 生命周期测试；当前发现入口为 94 cl100k_base tokens，不代表完整默认面；真实 PDF 下一请求断言由 BM-04 验证。
 
 ### Render Native file results as bounded, readable text (#261)

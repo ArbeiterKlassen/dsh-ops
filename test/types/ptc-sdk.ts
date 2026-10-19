@@ -2,7 +2,7 @@ import type { OpsSdk, Outcome, StorageReference } from 'dsh-ops/ptc-sdk'
 
 declare const tools: OpsSdk
 async function read() {
-  const result = await tools.ops_read_many({ files: [{ path: 'a.ts', offset: 1, limit: 20 }] })
+  const result = await tools.ops_read_files({ files: [{ path: 'a.ts', offset: 1, limit: 20 }] })
   // @ts-expect-error A result must be narrowed before accessing failure details.
   void result.error
   if (result.status === 'completed') {
@@ -32,16 +32,16 @@ void tools.ops_inspect_local_file({ path: 'a.ts', view: 'hex' })
 // @ts-expect-error Tool arguments preserve the original enum contract.
 void tools.ops_inspect_local_file({ path: 'a.ts', view: 'pdf' })
 // @ts-expect-error Multi-read requires a list of file ranges.
-void tools.ops_read_many({ path: 'a.ts' })
+void tools.ops_read_files({ path: 'a.ts' })
 // @ts-expect-error Editing requires the observed revision.
-void tools.ops_edit_many({ path: 'a.ts', edits: [{ oldText: 'a', newText: 'b' }] })
+void tools.ops_edit_file({ path: 'a.ts', edits: [{ oldText: 'a', newText: 'b' }] })
 // @ts-expect-error Tool names are a finite catalogue, not an open arbitrary dictionary.
 void tools.ops_unknown_tool({})
 const completed: Outcome<StorageReference | undefined> = { status: 'completed', data: undefined }
 void [read, metadata, completed]
 
 async function tables() {
-  const result = await tools.ops_table_read({ path: 'rows.csv', header: false, encoding: 'utf-16le' })
+  const result = await tools.ops_read_table({ path: 'rows.csv', header: false, encoding: 'utf-16le' })
   if (result.status === 'completed' || result.status === 'partial') {
     const cells: string[] | undefined = result.data.items?.[0]?.cells
     const rows: number | undefined = result.data.source?.rowsObserved
@@ -52,11 +52,11 @@ async function tables() {
   return result.data?.items?.[0]?.cells
 }
 // @ts-expect-error Encoding is a finite strict-decoding contract.
-void tools.ops_table_read({ path: 'rows.csv', encoding: 'latin1' })
+void tools.ops_read_table({ path: 'rows.csv', encoding: 'latin1' })
 void tables
 
 async function paragraphs() {
-  const value = await tools.ops_doc_read({ path: 'body.docx', offset: 1, limit: 10 })
+  const value = await tools.ops_read_docx({ path: 'body.docx', offset: 1, limit: 10 })
   if (value.status === 'completed' || value.status === 'partial') {
     const text: string | undefined = value.data.items?.[0]?.text
     const kind: 'paragraph' | undefined = value.data.items?.[0]?.type
@@ -68,11 +68,11 @@ async function paragraphs() {
   return value.data?.items?.[0]?.text
 }
 // @ts-expect-error DOCX decoding comes from the package, not a caller-supplied encoding.
-void tools.ops_doc_read({ path: 'body.docx', encoding: 'utf-8' })
+void tools.ops_read_docx({ path: 'body.docx', encoding: 'utf-8' })
 void paragraphs
 
 async function pdfPages() {
-  const value = await tools.ops_pdf_read({ path: 'text.pdf', offset: 1, limit: 10 })
+  const value = await tools.ops_read_pdf({ path: 'text.pdf', offset: 1, limit: 10 })
   if (value.status === 'completed' || value.status === 'partial') {
     const runs: string[] | undefined = value.data.items?.[0]?.runs
     const page: number | undefined = value.data.items?.[0]?.page
@@ -84,5 +84,5 @@ async function pdfPages() {
   return value.data?.items?.[0]?.text
 }
 // @ts-expect-error PDF encoding derives from supported fonts, not caller selection.
-void tools.ops_pdf_read({ path: 'text.pdf', encoding: 'utf-8' })
+void tools.ops_read_pdf({ path: 'text.pdf', encoding: 'utf-8' })
 void pdfPages

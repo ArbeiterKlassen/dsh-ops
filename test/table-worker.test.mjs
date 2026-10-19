@@ -10,8 +10,8 @@ const snapshot = root => fs.readdirSync(root, { recursive: true }).sort()
 const quoted = text => `"${text.replaceAll('"', '""')}"`
 const payload = (root, args, options = {}) => ({ version: 1, requestId: 'table-test', component: 'file',
   budget: { timeoutMs: 30000, maxBytes: options.maxBytes ?? 131072 },
-  ...(options.cache ? { storage: { root: options.cache, authorityId: 'a'.repeat(64), allowedTools: ['table_read', 'result'] } } : {}),
-  request: { ...request(options.tool ?? 'table_read', args, { root, readOnly: options.readOnly, writeRoots: [] }), ...options.authority } })
+  ...(options.cache ? { storage: { root: options.cache, authorityId: 'a'.repeat(64), allowedTools: ['read_table', 'result'] } } : {}),
+  request: { ...request(options.tool ?? 'read_table', args, { root, readOnly: options.readOnly, writeRoots: [] }), ...options.authority } })
 async function send(value) {
   const raw = await callWorker(JSON.stringify(value)); const output = envelopeOf(raw, assert)
   assert.ok(Buffer.byteLength(raw.stdout) <= value.budget.maxBytes); return output
@@ -176,7 +176,7 @@ await test('large table cells spill before clipping and recover as exact typed r
     assert.equal(readonly.reference, undefined); assert.equal(readonly.storageError.code, 'POLICY_DENIED'); assert.deepEqual(fs.readdirSync(empty), [])
   })
 })
-await test('table_read transport overflow remains a read-only operation in writable sessions', async () => {
+await test('read_table transport overflow remains a read-only operation in writable sessions', async () => {
   await withTempDir('table-transport', async root => {
     const file = fileAt(root, 'large.csv', 'v\n' + 'x'.repeat(40000)); const before = snapshot(root)
     const body = await run(root, { path: file }, { maxBytes: 1024 })

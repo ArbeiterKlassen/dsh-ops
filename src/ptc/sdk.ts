@@ -12,7 +12,7 @@ export function sdkDefinition(allowed: readonly ApiName[], execute: ToolDefiniti
       let value: unknown
       try { value = await execute(args, exec) }
       catch { value = { status: 'error', error: { code: 'EXECUTOR_UNAVAILABLE', effectState: 'none', message: 'SDK selection is unavailable; no file operation ran.' } } }
-      const outcome = toOutcome('sdk', args, value)
+      const outcome = toOutcome('load_sdk', args, value)
       // Loader rejections have no execution data: keep its successful receipt schema exact.
       return 'error' in outcome ? { status: outcome.status, error: outcome.error } : outcome
     } }

@@ -11,7 +11,7 @@ import { publicToolName } from '../../lib/policy.js'
 import { assert, test, waitFor, withTempDir } from './harness.mjs'
 import { bootHost, registryHasOwnRegister, scopedToolNames, shutdown } from './host.mjs'
 
-const DISCOVER = publicToolName('discover')
+const DISCOVER = publicToolName('discover_tools')
 async function boot(config = {}) {
   const { ctx } = await bootHost()
   await ctx.plugin(Subprocess)
@@ -45,7 +45,7 @@ export async function discoveryMountChecks() {
       assert.deepEqual(first.tools.map(tool => tool.name), [DISCOVER])
       assert.equal(registryHasOwnRegister(ctx), false)
       assert.deepEqual(ctx.get('tools').schemas(), [])
-      const found = await call(ctx, agent, 'discover', { query: 'select:ops_stat' })
+      const found = await call(ctx, agent, 'discover_tools', { query: 'select:ops_stat' })
       assert.equal(found.isError, false)
       assert.deepEqual(found.value.activated, [publicToolName('stat')])
       assert.equal(scopedToolNames(ctx, agent).includes(publicToolName('stat')), false)
@@ -67,7 +67,7 @@ export async function discoveryMountChecks() {
       const parent = await mint(ctx, 'discovery-parent', dir)
       const sibling = await mint(ctx, 'discovery-sibling', dir)
       const child = await mint(ctx, 'discovery-child', dir, parent)
-      await call(ctx, parent, 'discover', { query: 'select:ops_stat' })
+      await call(ctx, parent, 'discover_tools', { query: 'select:ops_stat' })
       await nextStep(ctx, parent)
       for (const other of [sibling, child]) {
         assert.equal(scopedToolNames(ctx, other).includes(publicToolName('stat')), false)
@@ -76,7 +76,7 @@ export async function discoveryMountChecks() {
       const cached = ctx.get('tools').get(publicToolName('stat'), parent)
       const foreign = await cached.execute({ path: 'any' }, { agent: child, signal: new AbortController().signal })
       assert.equal(foreign.status, 'rejected')
-      await call(ctx, child, 'discover', { query: 'select:ops_diff' })
+      await call(ctx, child, 'discover_tools', { query: 'select:ops_diff' })
       await nextStep(ctx, child)
       assert.equal(scopedToolNames(ctx, parent).includes(publicToolName('diff')), false)
       assert.equal(scopedToolNames(ctx, child).includes(publicToolName('diff')), true)
@@ -86,11 +86,11 @@ export async function discoveryMountChecks() {
     const { ctx } = await boot({ allowedTools: ['stat', 'diff', 'copy'], maxResults: 1 })
     try {
       const agent = await mint(ctx, 'discovery-pool', dir)
-      for (const query of ['select:ops_pdf_read', 'select:ops_remove', 'nonsense']) {
-        const result = await call(ctx, agent, 'discover', { query })
+      for (const query of ['select:ops_read_pdf', 'select:ops_remove', 'nonsense']) {
+        const result = await call(ctx, agent, 'discover_tools', { query })
         assert.deepEqual(result.value.activated, [])
       }
-      const result = await call(ctx, agent, 'discover', { query: 'file content metadata', max_results: 5 })
+      const result = await call(ctx, agent, 'discover_tools', { query: 'file content metadata', max_results: 5 })
       assert.equal(result.value.activated.length, 1)
       await nextStep(ctx, agent)
       assert.equal(scopedToolNames(ctx, agent).length, 2)
@@ -113,9 +113,9 @@ export async function discoveryMountChecks() {
     try {
       const readOnly = await mint(ctx, 'discovery-read-only', dir, undefined, 'read-only')
       const writer = await mint(ctx, 'discovery-writer', dir)
-      assert.deepEqual((await call(ctx, readOnly, 'discover', { query: 'select:ops_write_file' })).value.activated, [])
-      await call(ctx, readOnly, 'discover', { query: 'select:ops_stat' })
-      await call(ctx, writer, 'discover', { query: 'select:ops_write_file' })
+      assert.deepEqual((await call(ctx, readOnly, 'discover_tools', { query: 'select:ops_write_file' })).value.activated, [])
+      await call(ctx, readOnly, 'discover_tools', { query: 'select:ops_stat' })
+      await call(ctx, writer, 'discover_tools', { query: 'select:ops_write_file' })
       await nextStep(ctx, writer)
       const stale = ctx.get('tools').get(publicToolName('write_file'), writer)
       assert.ok(stale)
@@ -135,9 +135,9 @@ export async function discoveryMountChecks() {
     const { ctx } = await boot()
     try {
       const agent = await mint(ctx, 'discovery-disposed', dir)
-      await call(ctx, agent, 'discover', { query: 'select:ops_stat' })
+      await call(ctx, agent, 'discover_tools', { query: 'select:ops_stat' })
       await nextStep(ctx, agent)
-      await call(ctx, agent, 'discover', { query: 'select:ops_diff' })
+      await call(ctx, agent, 'discover_tools', { query: 'select:ops_diff' })
       await ctx.serial('agent/disposed', { agent })
       assert.deepEqual(scopedToolNames(ctx, agent), [])
     } finally { await shutdown(ctx) }
@@ -150,10 +150,10 @@ export async function discoveryMountChecks() {
       const native = await mint(ctx, 'discovery-coexist-native', dir)
       const code = await mint(ctx, 'discovery-coexist-ptc', dir)
       const lift = code.ctx.tools.presentAs('ptc')
-      await waitFor(() => scopedToolNames(ctx, code).includes(publicToolName('sdk')) && scopedToolNames(ctx, native).includes(DISCOVER))
-      await call(ctx, native, 'discover', { query: 'select:ops_stat' })
+      await waitFor(() => scopedToolNames(ctx, code).includes(publicToolName('load_sdk')) && scopedToolNames(ctx, native).includes(DISCOVER))
+      await call(ctx, native, 'discover_tools', { query: 'select:ops_stat' })
       await nextStep(ctx, native)
-      await waitFor(() => scopedToolNames(ctx, code).includes(publicToolName('sdk')))
+      await waitFor(() => scopedToolNames(ctx, code).includes(publicToolName('load_sdk')))
       const stable = ctx.get('tools').get(DISCOVER, native)
       for (let i = 0; i < 3; i++) await assemble(ctx, code)
       assert.equal(ctx.get('tools').get(DISCOVER, native), stable)
@@ -176,7 +176,7 @@ export async function discoveryMountChecks() {
       assert.ok(assembly.sections.some(section => section.text.includes(publicToolName('stat'))))
       assert.equal(scopedToolNames(ctx, code).includes(DISCOVER), false)
       assert.ok(scopedToolNames(ctx, native).includes(DISCOVER))
-      await call(ctx, native, 'discover', { query: 'select:ops_stat' })
+      await call(ctx, native, 'discover_tools', { query: 'select:ops_stat' })
       await nextStep(ctx, native)
       assert.equal(ctx.get('tools').get(publicToolName('stat'), code), adapter)
       dispose()
@@ -186,7 +186,7 @@ export async function discoveryMountChecks() {
     const { ctx } = await boot()
     try {
       const agent = await mint(ctx, 'discovery-mode', dir)
-      await call(ctx, agent, 'discover', { query: 'select:ops_stat' })
+      await call(ctx, agent, 'discover_tools', { query: 'select:ops_stat' })
       await nextStep(ctx, agent)
       ctx.provide('ptcRuntime', { language: 'typescript' })
       const cached = ctx.get('tools').get(publicToolName('stat'), agent)

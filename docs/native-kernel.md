@@ -106,7 +106,7 @@ Reference pages include `source`: the original non-item execution facts, `root`,
 `itemEncoding: "tagged-json-v1"`, `capturedItems` (logical items) and `captureComplete`.
 Original scanComplete/matchedTotal, revision/range facts and continuation semantics remain there.
 `page.complete` means that stored records have been displayed; it proves neither a complete scan
-nor complete capture. For read_many, one logical item is the whole per-file receipt, including its
+nor complete capture. For read_files, one logical item is the whole per-file receipt, including its
 lines, revision, bounds and any failure. Per-file failures remain values.
 
 Small records are `{ kind: "item", index, value }`. Large items become bounded
@@ -131,8 +131,8 @@ retain the legacy transport contract; the host supplies recovery guidance when s
 
 ## CSV/TSV worker observations (15a/16)
 
-The new ops-documents crate handles `table_read` in the same one-shot worker. The capability stays outside
-the default schema: Native uses `ops_discover` and PTC uses `ops_sdk` to activate `table_read`
+The new ops-documents crate handles `read_table` in the same one-shot worker. The capability stays outside
+the default schema: Native uses `ops_discover_tools` and PTC uses `ops_load_sdk` to activate `read_table`
 for the next agent step. Siblings and descendants require their own selection. The table slice adds no external packages:
 serde/serde_json and sha2 reuse the existing locked workspace dependency graph. The completed DOCX and PDF
 slices below record their reviewed dependencies in [document-dependencies.md](document-dependencies.md).
@@ -173,7 +173,7 @@ Credential and no-follow checks reuse ops-files. Readonly observations create no
 objects. Oversized requested rows use the existing bounded spill sink before display clipping:
 references contain exact typed row JSON, source retains table/coverage facts, and captureComplete
 is independent of scanComplete. Page with the original referenceRoot. Cache effects never imply
-business writes; table_read is classified as read-only even in a writable session.
+business writes; read_table is classified as read-only even in a writable session.
 
 Native renders positional JSON cells with physical LF ranges and explicit non-exhaustive gap notices.
 PTC exposes lexical `string[]` cells through generated declarations. Stable complete scans with
@@ -189,8 +189,8 @@ until requested through the owning scope.
 
 ## Bounded DOCX main-body observations (15b/16)
 
-`doc_read` is discoverable-only: Native selects it through `ops_discover`, PTC through
-`ops_sdk`; activation starts at the owning agent's next step. Arguments are `{path, offset?, limit?}`: path must be absolute after host resolution
+`read_docx` is discoverable-only: Native selects it through `ops_discover_tools`, PTC through
+`ops_load_sdk`; activation starts at the owning agent's next step. Arguments are `{path, offset?, limit?}`: path must be absolute after host resolution
 against current session cwd; offset is a 1-based paragraph index (1-100000, default 1), limit is
 1-1000 (default 200). Each item is `{block,type:"paragraph",text}`; table paragraphs additionally
 carry 1-based table/row/cell coordinates. Empty paragraphs are retained. Tabs, line breaks,
@@ -257,10 +257,10 @@ implemented together in the PDF extraction slice documented below.
 
 ## PDF text worker (15d/16)
 
-The one-shot worker accepts strict pdf_read { path, offset?, limit? }. The host resolves
+The one-shot worker accepts strict read_pdf { path, offset?, limit? }. The host resolves
 path from its current directory. Offset is a 1-based page number (1–32, default 1);
 limit is 1–32 pages (default 10). The capability stays outside the default schema. Native selects it
-through `ops_discover`, PTC through `ops_sdk`; it activates at the owning agent's next step.
+through `ops_discover_tools`, PTC through `ops_load_sdk`; it activates at the owning agent's next step.
 
 Each item is { page, text, runs: string[] }. Runs retain individual PDF text-show
 operations; TJ spacing numbers are not characters. Text joins runs with newlines for

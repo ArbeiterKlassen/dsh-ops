@@ -4,7 +4,7 @@ import path from 'node:path'
 import { assert, test, report, withTempDir } from './lib/harness.mjs'
 import { callWorker, request, envelopeOf, requireWorker } from './lib/boundary.mjs'
 requireWorker('result-spill')
-const tools = ['inspect_local_file', 'read_many', 'grep', 'glob', 'diff', 'replace', 'result']
+const tools = ['inspect_local_file', 'read_files', 'grep', 'glob', 'diff', 'replace', 'result']
 const fixture = body => withTempDir('spill', async root => {
   const cache = path.join(root, 'cache'); const work = path.join(root, 'work')
   fs.mkdirSync(cache, { mode: 0o700 }); fs.mkdirSync(work); await body(work, cache)
@@ -65,11 +65,11 @@ await test('oversized escaped UTF-8 lines recover every byte after inline clippi
     assert.equal((await send(narrowed)).error.code, 'POLICY_DENIED')
   })
 })
-await test('read_many captures all canonical files and failures beyond the inline prefix', async () => {
+await test('read_files captures all canonical files and failures beyond the inline prefix', async () => {
   await fixture(async (root, cache) => {
     const contents = ['huge'.repeat(40000), 'one\r\ntwo\nthree', '', null]
     const files = contents.map((text, index) => { const file = path.join(root, `${index}.txt`); if (text !== null) fs.writeFileSync(file, text); return { path: file, ...(index === 1 ? { offset: 2, limit: 1 } : {}) } })
-    const head = await call(root, cache, 'read_many', { files }); const page = await collect(root, cache, head)
+    const head = await call(root, cache, 'read_files', { files }); const page = await collect(root, cache, head)
     assert.equal(head.failed, 1); assert.equal(head.matched, 3)
     assert.equal(page.items.length, 4); assert.equal(page.source.failed, 1); assert.equal(page.source.pending, 0)
     assert.equal(page.source.status, 'partial'); assert.equal(page.source.complete, false); assert.equal(page.source.captureComplete, true)

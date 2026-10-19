@@ -30,7 +30,7 @@ pub fn read(request: &Request) -> Result<Value> {
     if args.offset == 0 || args.offset > MAX_PAGES || args.limit == 0 || args.limit > MAX_PAGES {
         return Err(Failure::new(
             "INVALID_ARGUMENT",
-            "pdf_read offset and limit are 1-32 pages (defaults 1 and 10)",
+            "read_pdf offset and limit are 1-32 pages (defaults 1 and 10)",
         ));
     }
     request.authorize_path(Path::new(&args.path))?;

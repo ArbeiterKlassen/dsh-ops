@@ -34,7 +34,7 @@ for (const platform of ['win32', 'linux', 'darwin']) await test(`real Loader app
     assert.equal(entries().find(entry => entry.options.id === 'dsh-ops-panel').options.config.capture, true)
     const ptc = entries().find(entry => entry.options.id === 'dsh-ops-ptc')
     assert.deepEqual(ptc.fiber.config.allowedTools, PTC_LOADABLE_TOOLS, 'fresh PTC pool follows the implemented catalogue')
-    assert.ok(ptc.fiber.config.allowedTools.includes('table_read'))
+    assert.ok(ptc.fiber.config.allowedTools.includes('read_table'))
     assert.equal(fs.readFileSync(fixture.profile.patchPath, 'utf8'), '[]', 'startup does not write a composed tree')
   } finally { await shutdown(ctx) }
 })

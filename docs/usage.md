@@ -7,7 +7,7 @@ The complete install, update and remove flow, plus every option of the command-l
 This checkout is an unreleased candidate; acceptance uses the approved OPS 0.3.x BM-01 comparator and file/discovery BM-03 budget, with Bash still resident and the full total reported separately.
 See [candidate status](release-0.4.0.md). The seven rows enable file/PTC/discovery, enable shell only
 on Windows, and leave panel/TUI/replacements off in fresh profiles. Existing explicit switches and
-name-qualified settings survive upgrade. Only read_many/discover are initially resident in Native,
+name-qualified settings survive upgrade. Only read_files/discover_tools are initially resident in Native,
 plus available Windows Bash; documents load on demand. The PTC catalogue has 19 typed APIs, with its
 own configured pool and SDK loader. [Configuration](configuration-reference.md) describes built-in
 forms and the optional browser carrier. Use [manual acceptance](manual-validation.md) for upgrades.
