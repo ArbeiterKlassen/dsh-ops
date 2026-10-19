@@ -7,6 +7,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Fix the generated `ops_load_sdk` declaration (the builder still keyed on the pre-rename `sdk` name), cover the rename alias plus the `select:` and SDK request paths with tests, and align the catalogue facts in the current docs (20/18/15, 242 tokens/1101 bytes) with a docs guard (#302).
+- 修复生成的 `ops_load_sdk` 声明（构建脚本仍按改名前的 `sdk` 判定）、为改名别名与 `select:`/SDK 请求路径补测试，并把当前文档的目录事实（20/18/15、242 tokens/1101 bytes）对齐并加守护（#302）。
 - Require one CI run per pull request: the PR template now asks for the URL of the `CI required` aggregate run triggered by the pull request's own `pull_request` event, and the contributing guides document how to confirm it (`gh run list --branch <branch> --event pull_request`, the PR checks tab), the fork path from #150, the `action_required` approval for first-time fork runs, and the admin-only repository setting that makes `CI required` a required check (#303). Documentation and process only; no workflow or runtime behavior changes.
 - 每个 PR 必须有一次 CI 运行：PR 模板改为要求贴出由 PR 自身 `pull_request` 事件触发的 `CI required` 聚合 run URL；贡献指南说明如何确认（`gh run list --branch <branch> --event pull_request`、PR checks 页）、#150 的 fork 路径、首次 fork 运行的 `action_required` 批准，以及把 `CI required` 设为必需检查的 admin 仓库设置（#303）。仅文档与流程变更，不改工作流与运行时行为。
 - Rename 0.4.0 tools for consistent `verb_noun` naming: `read_many`→`read_files`, `table_read`→`read_table`, `doc_read`→`read_docx`, `pdf_read`→`read_pdf`, `sdk`→`load_sdk`, `discover`→`discover_tools`; merge `edit_many` into `edit_file`. Old raw names in user profiles are silently migrated.
@@ -256,7 +258,7 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Keep Native startup to the bounded multi-file reader (#261, 9/16)
 
-- Publish `ops_read_many` from startup (raw name then `read_many`, later renamed `read_files`); make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
+- Publish `ops_read_many` from startup (raw name `read_many`, later renamed `read_files`); make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
 - Measure compact file/discovery schemas at 242 tokens; the integrated full Windows Bash/jobs provider order is 660 tokens (catalogue order 661). The earlier full-surface 400-token requirement failed; the operator subsequently approved a file/discovery-only budget with startup Bash and full totals retained.
 - Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；含 Bash 的完整工具面曾超过原400-token门禁；操作者随后批准仅对文件/发现小计设预算，保留 Bash 启动常驻与完整总数。
 

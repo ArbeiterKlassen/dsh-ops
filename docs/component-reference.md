@@ -184,7 +184,7 @@ On Windows x64 the install carries the pinned Bash payload as an optional depend
 
 "Prefer bash as the terminal" means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. OPS never overlays the host PowerShell executor configuration. Use `dsh-ops upgrade-host-pwsh` to preview an explicit standard PowerShell 7 installation; `--yes` executes it. Restart DSH afterwards, and review any custom host `pwshPath` in host settings. Existing running commands and old provisioned copies are not removed.
 
-The plugin renders the routing table the model sees from what it actually published. The excerpt below shows the shell-visible slice; the full generated table also lists `ops_discover_tools`, `ops_read_files`, the document readers and every other published file tool:
+The plugin renders routing guidance from what it actually published. The excerpt below is a synthesised example; in production the model sees the file and shell prompt sections separately, each rendered from its own published tools (including `ops_discover_tools`, `ops_read_files`, the document readers and the other file tools):
 
 ```
 # Shell routing: bash → host PowerShell
