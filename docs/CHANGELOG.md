@@ -7,6 +7,14 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Read multiple file ranges and apply atomic multi-edits (#261)
+
+- Add read_many with 1-32 independently reported UTF-8 ranges in one worker call, current-session
+  paths, credential preflight, per-file revisions/errors and explicit pending-file/line recovery.
+- Add edit_many as a single-file atomic CAS edit operation with short receipts. Bound escaped
+  read output using actual metadata bytes; an incomplete line retains its offset and hex guidance.
+- 新增多文件范围读取与单文件原子多段编辑；逐文件报告版本、错误及未读范围，保持权限边界与短回执。
+
 ### Render Native file results as bounded, readable text (#261)
 
 - Show file headings and physical line numbers, concise mutation receipts, and explicit

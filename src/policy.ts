@@ -46,6 +46,8 @@ export function renderToolingPolicy({ published, mounted, levels, pwsh7 = false,
   const row = (raw: string, task: string) => {
     if (names.has(publicToolName(raw))) lines.push(`| ${task} | ${publicToolName(raw)} |`)
   }
+  row('read_many', 'Read UTF-8 ranges from multiple files')
+  row('edit_many', 'Atomic original-text edits in one file (CAS)')
   row('inspect_local_file', 'Bounded UTF-8 lines / hex')
   if (hasFiles && names.has('read_image')) lines.push('| Images | read_image (host) |')
   row('grep', 'Search contents')

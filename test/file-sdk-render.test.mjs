@@ -6,8 +6,8 @@ import { capNativeText, NATIVE_OUTPUT_BYTES } from '../lib/modes/native/render.j
 import { renderToolingPolicy, publicToolName } from '../lib/policy.js'
 import { assert, test, report } from './lib/harness.mjs'
 
-await test('all eleven file argument schemas remain discoverable without unknown types', () => {
-  assert.equal(FILE_TOOLS.length, 11)
+await test('all thirteen file argument schemas remain discoverable without unknown types', () => {
+  assert.equal(FILE_TOOLS.length, 13)
   for (const tool of FILE_TOOLS) {
     const schema = PARAMETERS[tool]
     assertSupportedJsonSchema(schema)

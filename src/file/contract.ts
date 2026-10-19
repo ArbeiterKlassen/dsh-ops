@@ -2,7 +2,7 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { publicToolName } from '../policy.js'
 import { capability } from '../capabilities/registry.js'
 import type { FileToolName } from '../capabilities/registry.js'
-import { PARAMETERS, DESCRIPTIONS, OUTPUT, SEARCH_OUTPUT } from '../capabilities/file.js'
+import { PARAMETERS, DESCRIPTIONS, OUTPUT, fileOutput } from '../capabilities/file.js'
 export { FILE_TOOLS } from '../capabilities/registry.js'
 export { PARAMETERS, DESCRIPTIONS, OUTPUT }
 import { renderNative } from '../modes/native/render.js'
@@ -33,7 +33,7 @@ export function definition(rawName: FileToolName, execute: ToolDefinition['execu
     description: DESCRIPTIONS[rawName],
     parameters: PARAMETERS[rawName],
     ...(capability(rawName)?.concurrencySafe ? { isConcurrencySafe: () => true } : {}),
-    output: { schema: rawName === 'glob' || rawName === 'grep' ? SEARCH_OUTPUT : OUTPUT, render: (args, value) => [{ type: 'text', text: renderNative(rawName, args, value) }] },
+    output: { schema: fileOutput(rawName), render: (args, value) => [{ type: 'text', text: renderNative(rawName, args, value) }] },
     execute,
   }
 }

@@ -46,7 +46,8 @@ pub fn dispatch(request: &Request) -> Result<Value> {
     if let Some(raw) = request.args.get("path").and_then(Value::as_str) { request.authorize_path(Path::new(raw))?; }
     match request.tool.as_str() {
         "inspect_local_file" => inspect(request),
-        "stat" | "diff" | "write_file" | "edit_file" | "copy" | "move" | "remove" => single::run(request),
+        "read_many" => many::read_many(request),
+        "stat" | "diff" | "write_file" | "edit_file" | "edit_many" | "copy" | "move" | "remove" => single::run(request),
         _ => Err(Failure::new("INVALID_ARGUMENT", "Unknown file capability")),
     }.map_err(|mut error| { error.message = format!("{}: {}", request.tool, error.message); error })
 }
@@ -66,68 +67,28 @@ pub fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     if bytes.len() as u64 > MAX_FILE_BYTES { return Err(Failure::new("OUTPUT_LIMIT", "File exceeds the bounded read budget")); }
     Ok(bytes)
 }
-/// What one character costs in serde_json's encoding.
-fn encoded_cost(character: char) -> usize {
-    match character {
-        '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
-        c if (c as u32) < 0x20 => 6,
-        c => c.len_utf8(),
-    }
-}
-/// The longest prefix of `text` whose encoding fits `budget` bytes, cut on a
-/// character boundary so the result is still valid UTF-8.
-fn truncate_to_encoded(text: &str, budget: usize) -> (String, bool) {
-    let mut kept = String::new(); let mut used = 0usize;
-    for character in text.chars() { let cost = encoded_cost(character); if used + cost > budget { return (kept, true); } used += cost; kept.push(character); }
-    (kept, false)
-}
-/// `offset` is how many units were skipped, counted from zero the way `glob` and
-/// `grep` count their own `offset`. `next_base` is the value a caller must pass
-/// back to resume, which is its own paging base rather than the skipped count:
-/// `inspect` declares a 1-based `offset` (like its hex rows), so deriving the
-/// next page from the skipped count re-read the last returned line on every page.
+#[path = "file_output.rs"]
+mod output;
+#[path = "file_many.rs"]
+mod many;
+
+/// Reserve space for metadata added by search callers after this shared builder.
 pub fn result(items: Vec<Value>, total: usize, offset: usize, next_base: usize, matched: usize, truncated: bool) -> Value {
-    // Spend the response budget on the serialized items. Returning more than the
-    // host will collect is not a bigger answer, it is a failed read: the host
-    // truncates stdout, reports OUTPUT_LIMIT and declares the effect unknown, so
-    // the caller loses the content and is told something may have changed.
-    let budget = MAX_OUTPUT_BYTES.saturating_sub(ENVELOPE_OVERHEAD);
-    let mut kept: Vec<Value> = Vec::new(); let mut used = 0usize; let mut stopped = false;
-    for item in items {
-        let size = serde_json::to_string(&item).map_or(0, |encoded| encoded.len()) + 1;
-        if used + size <= budget { used += size; kept.push(item); continue; }
-        // This item does not fit whole. Keep a bounded prefix of its text rather
-        // than returning nothing at all, so a file holding one long line still
-        // answers with its beginning; every remaining item is omitted and counted
-        // as such. Reading past the cut is the hex view's job, which pages by
-        // 16-byte rows.
-        let whole = item.get("text").and_then(Value::as_str);
-        let room = budget.saturating_sub(used).saturating_sub(96);
-        let prefix = whole.map(|text| truncate_to_encoded(text, room));
-        if let Some((text, cut)) = prefix {
-            if !text.is_empty() {
-                let mut trimmed = item.clone();
-                trimmed["text"] = Value::String(text);
-                trimmed["bytesTotal"] = json!(whole.map_or(0, |text| text.len()));
-                trimmed["truncatedInLine"] = json!(cut);
-                kept.push(trimmed);
-            }
-        }
-        stopped = true;
-        break;
-    }
-    let returned = kept.len(); let cut = truncated || stopped;
-    json!({"status":"completed","phase":"verify","changed":0,"matched":matched,"skipped":offset,"failed":0,"complete":!cut && offset + returned >= total,"truncated":cut,"omitted":total.saturating_sub(offset + returned),"items":kept,"total":total,"nextOffset":next_base + returned})
+    output::bounded(items, total, offset, next_base, matched, truncated, json!({}), MAX_OUTPUT_BYTES - ENVELOPE_OVERHEAD)
 }
 
 fn inspect(request: &Request) -> Result<Value> {
     let args: InspectArgs = serde_json::from_value(request.args.clone())?;
+    inspect_args(args, MAX_OUTPUT_BYTES, false)
+}
+fn inspect_args(args: InspectArgs, budget: usize, include_path: bool) -> Result<Value> {
     if args.limit == 0 || args.limit > 10_000 { return Err(Failure::new("INVALID_ARGUMENT", "inspect limit is 1-10000")); }
     if !args.encoding.eq_ignore_ascii_case("utf-8") { return Err(Failure::new("ERR_INVALID_ENCODING", "Text inspection supports UTF-8 only")); }
     let path = target(&args.path, false)?;
     if !path.is_file() { return Err(Failure::new("INVALID_ARGUMENT", "path is a directory; use ops_glob or ops_grep")); }
     let bytes = read_bytes(&path)?;
-    let facts = content_facts(&bytes);
+    let mut facts = content_facts(&bytes);
+    if include_path { facts["path"] = json!(path); }
     if bytes.len() as u64 > MAX_FILE_BYTES { return Err(Failure::new("OUTPUT_LIMIT", "file exceeds the inspect size budget")); }
     if args.view == "hex" {
         // `offset` means the same thing in both views: the 1-based unit to start
@@ -146,9 +107,11 @@ fn inspect(request: &Request) -> Result<Value> {
     // str::lines splits physical LF/CRLF, never bare CR or Unicode separators.
     // Empty files have zero lines; a final LF does not create a phantom line.
     let lines: Vec<_> = text.lines().enumerate().skip(args.offset.saturating_sub(1)).take(args.limit).map(|(i, line)| json!({"path":path,"line":i+1,"text":line})).collect();
-    let mut output = result(lines, text.lines().count(), args.offset.saturating_sub(1), args.offset, text.lines().count(), false);
-    for key in ["revision", "bytes", "lineCount"] { output[key] = facts[key].clone(); }
-    Ok(output)
+    let value = output::bounded(lines, text.lines().count(), args.offset.saturating_sub(1), args.offset, text.lines().count(), false, facts, budget);
+    if output::size(&value) + 1 > budget {
+        return Err(Failure::new("OUTPUT_LIMIT", "File metadata exceeds the remaining output budget"));
+    }
+    Ok(value)
 }
 /// A POSIX ACL is exposed as this attribute, so preserving ACLs needs no libacl.
 #[cfg(unix)]

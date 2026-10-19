@@ -23,7 +23,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { resolveConfig } from '../lib/config.js'
-import { renderToolingPolicy } from '../lib/policy.js'
+import { renderToolingPolicy, publicToolName } from '../lib/policy.js'
 import { resolveShells } from '../lib/shells.js'
 import { PACKAGE_ROOT, TEST_HOME, assert, report, test, withTempDir } from './lib/harness.mjs'
 
@@ -272,7 +272,7 @@ function assertLadder(report_) {
   const { levels, rungs } = report_
   assert.deepEqual(rungs, [], 'the retired numbered ladder is empty')
   const published = [
-    ...(levels.files ? ['glob', 'grep', 'inspect_local_file', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove'].map(name => `ops_${name}`) : []),
+    ...(levels.files ? ['glob', 'grep', 'inspect_local_file', 'replace', 'write_file', 'edit_file', 'diff', 'stat', 'copy', 'move', 'remove', 'read_many', 'edit_many'].map(publicToolName) : []),
     ...(levels.bash ? ['ops_bash'] : []),
     ...(levels.pwsh ? ['pwsh'] : []),
   ]
