@@ -20,7 +20,7 @@ The former `dsh-ops/background` component (FastCtx background jobs: `ops_run`, `
 
 ## Tool summary
 
-The shared catalogue has 21 entries. The generated PTC SDK contains 19 APIs: 16 file/document tools plus batch, result and sdk; bash and discover belong to other entry points. Catalogue membership does not mean residency or permission. Fresh PTC pools follow the implemented catalogue; saved explicit pools remain authoritative. Document tools load on demand.
+The shared catalogue has 20 entries. The generated PTC SDK contains 18 APIs: 15 file/document tools plus batch, result and load_sdk; bash and discover_tools belong to other entry points. Catalogue membership does not mean residency or permission. Fresh PTC pools follow the implemented catalogue; saved explicit pools remain authoritative. Document tools load on demand.
 
 | Tool | Purpose | Full-access requirement |
 | --- | --- | --- |
@@ -36,6 +36,7 @@ The shared catalogue has 21 entries. The generated PTC SDK contains 19 APIs: 16 
 | `ops_bash` | Preferred general bash command executor; `command` for short commands, `script_path` for long scripts | Confined in restricted modes; matched Windows x64 private IPC runtime |
 | `ops_batch` | Preflight and execute copy / move / remove with audit and recovery | See the PTC notes |
 | `ops_result` | Bounded result references: put, page, release | See the PTC notes |
+| `ops_load_sdk` | Load 1-5 named PTC APIs for the next model step; no file operation runs | PTC-only |
 | Host `pwsh` | Windows-native operations using the host-selected PowerShell | Host policy |
 
 ¹ **Fixed file operations use a trusted-operation policy fence, matching DSH fs-sandbox, not arbitrary-code isolation.** OS-readable paths are readable in all modes subject to the credential fence and current scoped authority; read-only rejects replacement, including its dry run; workspace-write permits writes under the workspace and this session's private temporary directory, and full access adds no write fence. The fixed Rust worker uses host subprocess governance plus no-follow traversal, budgets and CAS. Bash/run_code still require OS confinement; no unconfined fallback exists. On Windows, owned workspaces automatically receive directory-only WRITE_OWNER for the host grant prerequisite, with DACL backups; no recursive ACL edits or ownership changes. That preparation runs the package's own script as the current user before sandbox confinement applies, only in workspace-write, with `-ExecutionPolicy Bypass` (Group Policy still wins).
@@ -183,7 +184,7 @@ On Windows x64 the install carries the pinned Bash payload as an optional depend
 
 "Prefer bash as the terminal" means prompting the model to use `ops_bash` first; it **does not change the system default terminal, PATH or existing host shell tool names**. OPS never overlays the host PowerShell executor configuration. Use `dsh-ops upgrade-host-pwsh` to preview an explicit standard PowerShell 7 installation; `--yes` executes it. Restart DSH afterwards, and review any custom host `pwshPath` in host settings. Existing running commands and old provisioned copies are not removed.
 
-The routing table the model sees is rendered by the plugin from what it actually published:
+The plugin renders the routing table the model sees from what it actually published. The excerpt below shows the shell-visible slice; the full generated table also lists `ops_discover_tools`, `ops_read_files`, the document readers and every other published file tool:
 
 ```
 # Shell routing: bash → host PowerShell

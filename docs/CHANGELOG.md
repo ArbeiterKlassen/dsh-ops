@@ -256,8 +256,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Keep Native startup to the bounded multi-file reader (#261, 9/16)
 
-- Publish `ops_read_many` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
-- Measure compact file/discovery schemas at 241 tokens; the integrated full Windows Bash/jobs provider order is 660 tokens (catalogue order 661). The earlier full-surface 400-token requirement failed; the operator subsequently approved a file/discovery-only budget with startup Bash and full totals retained.
+- Publish `ops_read_many` from startup (raw name then `read_many`, later renamed `read_files`); make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
+- Measure compact file/discovery schemas at 242 tokens; the integrated full Windows Bash/jobs provider order is 660 tokens (catalogue order 661). The earlier full-surface 400-token requirement failed; the operator subsequently approved a file/discovery-only budget with startup Bash and full totals retained.
 - Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；含 Bash 的完整工具面曾超过原400-token门禁；操作者随后批准仅对文件/发现小计设预算，保留 Bash 启动常驻与完整总数。
 
 ### Publish progressive tools before the next real provider snapshot (#261, 7–8/16)
