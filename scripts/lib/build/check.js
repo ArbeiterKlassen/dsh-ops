@@ -85,8 +85,8 @@ export async function stepCheck(context) {
         }
       }
     }
-    if (provenance.version !== mainManifest().version) {
-      missing('stage', `${pkg.name} records version ${provenance.version}, the package is at ${mainManifest().version}`)
+    if (provenance.version !== pkg.version) {
+      missing('stage', `${pkg.name} records version ${provenance.version}, its declared pin is ${pkg.version}`)
     }
     assembled.push({ pkg, stage, provenance })
   }
@@ -144,6 +144,9 @@ export async function stepCheck(context) {
 
   // 4. The publish directory and the main tarball.
   const manifest = mainManifest()
+  // Each platform package is compared with its own declared pin, not with the main package
+  // version: the restored Windows Bash payload stays at 0.2.1 while the plugin is at 0.4.0.
+  const declaredVersions = new Map(context.packages.map((pkg) => [pkg.name, pkg.version]))
   const publishDir = path.join(dist, 'publish', `${manifest.name}-${manifest.version}`)
   const publishManifest = readJsonIfExists(path.join(publishDir, 'package.json'))
   const mainTarball = path.join(dist, `${manifest.name}-${manifest.version}.tgz`)
@@ -179,10 +182,10 @@ export async function stepCheck(context) {
   if (releaseProvenance === undefined) missing('provenance', 'provenance.json is not written')
   else if ((releaseProvenance.packages ?? []).length !== context.packages.length) {
     missing('provenance', `provenance.json lists ${String((releaseProvenance.packages ?? []).length)} packages, expected ${context.packages.length}`)
-  } else if ((releaseProvenance.packages ?? []).some((entry) => entry.version !== manifest.version)) {
-    missing('provenance', `provenance.json carries a package whose version is not ${manifest.version}`)
+  } else if ((releaseProvenance.packages ?? []).some((entry) => declaredVersions.get(entry.name) !== entry.version)) {
+    missing('provenance', 'provenance.json carries a package whose version is not its declared pin')
   } else {
-    ok('provenance', `provenance.json lists ${releaseProvenance.packages.length} packages at ${manifest.version}`)
+    ok('provenance', `provenance.json lists ${releaseProvenance.packages.length} packages at their declared pins`)
   }
 
   printInjection(context)

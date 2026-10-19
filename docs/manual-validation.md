@@ -10,15 +10,15 @@ open its settings page.
 Run the [full release gate](CONTRIBUTING.md#the-verification-gate) with the required worker and,
 on Windows, the verified Bash fixture. A skipped required runtime is not a pass. Run the separate
 [BM-01–05 gates](benchmark-gates.md); record individual failed/blocked/passed states and raw receipts.
-Apply the explicitly approved criteria: BM-01 requires at least 40% fewer bytes than OPS 0.3.x on the fixed lossless workload; retain the official reader as a separate comparison. BM-03 applies ≤400 tokens to the file/discovery schemas while keeping Bash at startup. Record both the scoped score and the full actual provider total, and require the exact default tool inventory including usable Windows Bash. A smaller workload, missing Bash or functional CI success cannot replace these measurements.
+Apply the explicitly approved criteria: BM-01 requires at least 40% fewer bytes than OPS 0.3.x on the fixed lossless workload; retain the official reader as a separate comparison. BM-03 applies ≤400 tokens to the file/discovery schemas while keeping Bash at startup. Record both the scoped score and the full actual provider total, and require the exact default tool inventory including a usable Bash (pinned Windows payload or host Bash). A smaller workload, missing Bash or functional CI success cannot replace these measurements.
 
 ## Profiles and configuration
 
 1. Start a saved six-row profile with explicit name-qualified overrides, mixed on/off switches and
    unrelated plugin settings. Upgrade and restart twice. Verify seven unique OPS IDs, the unchanged
    legacy file name/configuration, preserved switches and the added discovery row.
-2. In a fresh profile, verify file/PTC/discovery on, shell on only on Windows, and panel/TUI/replacements
-   off. Enable a fresh panel row and observe new events; disable it and verify queued collection stops
+2. In a fresh profile, verify file/PTC/discovery on, shell on for all three platforms, and
+   panel/TUI/replacements off. Enable a fresh panel row and observe new events; disable it and verify queued collection stops
    with no final fold. An explicit legacy capture:false must stay inert until changed by the operator.
 3. Save valid built-in row settings and restart. Reject an unknown key or wrong type without changing
    saved values. A stale revision must not overwrite a newer edit. Null legacy file/root/shell settings
@@ -30,7 +30,7 @@ Apply the explicitly approved criteria: BM-01 requires at least 40% fewer bytes 
 
 ## Tool publication and results
 
-1. Inspect the actual first provider request: Native has read_many/discover and eligible Windows Bash;
+1. Inspect the actual first provider request: Native has read_many/discover and a usable Bash (pinned Windows payload or host Bash);
    advanced document schemas are absent. Select one advanced capability and verify it appears only in
    the owning next request, not in current-round diagnostics or a sibling agent.
 2. PTC starts with inspect_local_file/result/sdk. Load permitted advanced APIs through ops_sdk and

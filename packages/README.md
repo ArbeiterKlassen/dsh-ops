@@ -1,7 +1,19 @@
-# Historical platform package skeletons
+# Platform package skeletons
 
-These directories record the older shell payload package layout. Current releases publish only the main plugin: `describePackages()` returns no shell packages, and the npm manifest declares neither Bash nor PowerShell payload dependencies. The old skeletons and assembly helpers remain for historical provenance and fixture checks.
+`bash-win32-x64/` is the committed skeleton of the Windows Bash platform package this plugin
+publishes; the release build assembles it from the verified pinned upstream tree plus a per-package
+`provenance.json`. `pwsh-win32-x64/` is historical only: PowerShell stays host-managed and is never
+packaged.
 
-Bash is now an explicit verified upstream download through `dsh-ops bash-runtime install`. PowerShell stays host-managed; `dsh-ops upgrade-host-pwsh` previews a standard Windows installation and `--yes` executes it. See [usage](../docs/usage.md).
+| Skeleton | Released as | What it carries |
+| --- | --- | --- |
+| `bash-win32-x64/` | `@dsh-ops/bash-win32-x64@0.2.1`, declared as an optional dependency of the main package | Git for Windows PortableGit, the pinned upstream release, unchanged (GNU bash 5.3.15) |
+| `pwsh-win32-x64/` | not published (historical skeleton) | — |
 
-这些目录保留旧 shell 载荷包布局。当前仅发布主插件，不再声明、组装或发布 Bash/PowerShell npm 载荷包；旧骨架与辅助函数仅供历史来源记录及 fixture 检查。Bash 通过显式命令下载，PowerShell 由宿主管理，详见[使用指南](../docs/使用指南.md)。
+**No binary is ever committed here.** The main package's published copy declares
+`@dsh-ops/bash-win32-x64@0.2.1` in `optionalDependencies`, so npm fetches it automatically on
+Windows x64 and skips it on platforms it does not cover; POSIX keeps the system Bash. Because an
+optional dependency resolves silently when it is missing, `dsh-ops bash-runtime install` remains the
+repair path. See [usage](../docs/usage.md).
+
+这些目录保留平台包骨架：`bash-win32-x64/` 是主包 Windows bash 可选依赖的骨架，发布构建用固定的上游 PortableGit 树与 `provenance.json` 组装；`pwsh-win32-x64/` 仅作历史记录，PowerShell 始终由宿主管理，不随包发布。主包在 `optionalDependencies` 中声明 `@dsh-ops/bash-win32-x64@0.2.1`，Windows x64 上 npm 安装时自动拉取，其它平台跳过并继续使用系统 bash；可选依赖缺失时解析是静默的，因此 `dsh-ops bash-runtime install` 仍是修复路径。详见[使用指南](../docs/使用指南.md)。

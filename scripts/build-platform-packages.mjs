@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Assemble the main release artifact and verify its provenance and checksum manifest.
- * Shell payloads are no longer npm packages. Legacy subcommands remain accepted;
- * their shell package list is empty and they acquire no shell archives.
+ * The main package declares the Windows bash payload as an exact optionalDependency;
+ * this pipeline materializes that pinned package next to the plugin.
  *
  * Usage:
  *   node scripts/build-platform-packages.mjs [all|publish-dir|check] [--dist <directory>]

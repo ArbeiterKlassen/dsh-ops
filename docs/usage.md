@@ -5,10 +5,11 @@ The complete install, update and remove flow, plus every option of the command-l
 ## 0.4.0 candidate and component defaults
 
 This checkout is an unreleased candidate; acceptance uses the approved OPS 0.3.x BM-01 comparator and file/discovery BM-03 budget, with Bash still resident and the full total reported separately.
-See [candidate status](release-0.4.0.md). The seven rows enable file/PTC/discovery, enable shell only
-on Windows, and leave panel/TUI/replacements off in fresh profiles. Existing explicit switches and
-name-qualified settings survive upgrade. Only read_many/discover are initially resident in Native,
-plus available Windows Bash; documents load on demand. The PTC catalogue has 19 typed APIs, with its
+See [candidate status](release-0.4.0.md). The seven rows enable file/PTC/discovery and shell on all
+the supported platforms, and leave panel/TUI/replacements off in fresh profiles. Existing explicit
+switches and name-qualified settings survive upgrade. Only read_many/discover are initially resident
+in Native, plus the available Bash (the pinned payload on Windows, the distribution Bash on POSIX);
+documents load on demand. The PTC catalogue has 19 typed APIs, with its
 own configured pool and SDK loader. [Configuration](configuration-reference.md) describes built-in
 forms and the optional browser carrier. Use [manual acceptance](manual-validation.md) for upgrades.
 
@@ -19,7 +20,7 @@ forms and the optional browser carrier. Use [manual acceptance](manual-validatio
 
 | Item | Requirement |
 | --- | --- |
-| OS | Windows x64, Linux x64 or macOS arm64; optional OPS Bash defaults on only on Windows |
+| OS | Windows x64, Linux x64 or macOS arm64; OPS Bash is on by default on all three (pinned payload on Windows, distribution Bash on POSIX) |
 | Node.js | `^22.19 \|\| >=24` (the `engines` field in `package.json`) |
 | Host | DSH `0.2.0-rc.2` |
 | Target application | Initialized |
@@ -58,11 +59,11 @@ capability matrix and the known limitations.
 
 ### Official plugin marketplace
 
-In the target DSH application's plugin marketplace, enter the npm package name **`dsh-ops`**, install, then enable. Installation belongs to the currently running profile, which is `desktop` for the desktop app. Neither Bash nor PowerShell binaries are npm dependencies. Bash is acquired separately through the runtime manager; PowerShell stays under host control. Installation runs no shell downloader and does not change system PATH.
+In the target DSH application's plugin marketplace, enter the npm package name **`dsh-ops`**, install, then enable. Installation belongs to the currently running profile, which is `desktop` for the desktop app. The main package declares the Windows Bash payload as an optional dependency (`@dsh-ops/bash-win32-x64@0.2.1`), so a Windows x64 install automatically fetches the pinned PortableGit runtime (GNU bash 5.3.15); other platforms skip it and keep the system Bash. PowerShell stays under host control. Installation runs no shell downloader and does not change system PATH.
 
 ### Optional Bash runtime
 
-Bash is no longer an npm dependency. On Windows, install the verified managed copy explicitly, or select an existing Git Bash:
+On Windows the pinned Bash payload arrives with the install; `bash-runtime` remains the selection and repair path when a copy is missing or damaged, and can install the verified managed copy or select an existing Git Bash:
 
 ```console
 dsh-ops bash-runtime status
