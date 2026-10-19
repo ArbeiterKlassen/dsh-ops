@@ -72,4 +72,9 @@ await test('only bounded codes, booleans and safe nonnegative counters survive p
   assert.ok(Object.isFrozen(detail))
   assert.equal(inspect({ error: { code: 'bad\ncode' } }).errorCode, undefined)
 })
+await test('untrusted result payload shapes remain unconfirmed without retaining or throwing on them', () => {
+  for (const data of [null, undefined, false, 1, 'PRIVATE_BODY', [], { message: null }, { message: { content: [null] } }]) {
+    assert.deepEqual(resultDetails('ops_grep', data, false), { outcome: 'unconfirmed' })
+  }
+})
 report('TUI result diagnostics')

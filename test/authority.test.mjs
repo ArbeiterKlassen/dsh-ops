@@ -47,6 +47,24 @@ await test('native normalization requires a recognized stable reason and preserv
   }
 })
 
+await test('untrusted native reason shapes never invent permission advice or lose execution facts', () => {
+  const policy = { mode: 'workspace-write', workspaceRoot: process.cwd() }
+  for (const value of [undefined, null, 0, 'error', [], {}, { error: null }, { error: [] },
+    { error: { code: 'POLICY_DENIED', reason: ['write-roots'] } },
+    { error: { code: 'POLICY_DENIED', reason: { toString: () => 'write-roots' } } }]) {
+    assert.equal(normalizeNativeDenial(value, policy, 'copy'), value)
+  }
+  const value = { status: 'error', changed: 1, receipt: { complete: false }, error: {
+    code: 'POLICY_DENIED', reason: 'write-roots', phase: 'publish', effectState: 'partial', customReceipt: { written: 1 },
+  } }
+  const normalized = normalizeNativeDenial(value, policy, 'copy')
+  assert.equal(normalized.receipt, value.receipt)
+  assert.equal(normalized.error.customReceipt, value.error.customReceipt)
+  assert.equal(normalized.error.phase, 'publish'); assert.equal(normalized.error.effectState, 'partial')
+  assert.equal(normalized.error.permission.required, 'danger-full-access')
+  assert.equal(value.status, 'error', 'normalization never mutates the original worker result')
+})
+
 await test('missing sessions and credentials are not selector authorization failures', async () => {
   for (const call of [fileCall, ptcCall]) {
     const value = await call({}, 'unused', 'stat', {}, {}, signal())

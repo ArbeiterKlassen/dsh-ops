@@ -555,7 +555,7 @@ await test('provision-shells --dry-run downloads nothing and writes nothing', as
     assert.ok(run.stdout.includes(pin.url), 'the report names the URL it would fetch')
     assert.ok(run.stdout.includes(pin.sha256), 'the report names the digest it would check')
     assert.match(run.stdout, /\(1\.2 kB\)/u, 'the report names the size it would download')
-    assert.match(run.stdout, new RegExp(home.replace(/\\/g, '\\\\'), 'u'), 'the report names the store it would write')
+    assert.ok(run.stdout.includes(home), 'the report names the literal store it would write')
     // Neither the store nor a scratch download exists: a dry run is a report.
     assert.equal(fs.existsSync(path.join(home, 'dsh-ops')), false)
     assert.deepEqual(fs.readdirSync(home), [])

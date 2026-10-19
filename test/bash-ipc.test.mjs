@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import { pinnedBashExecutable } from '../lib/shells/pinned.js'
 import { patchMsys, proxyDefinition } from '../lib/bash-pe.js'
@@ -109,6 +110,28 @@ await test('a tampered cached generation is rejected, quarantined and rebuilt', 
     // (3) Served from the rebuild, and the quarantine does not accumulate.
     assert.equal(confinedBash(bash,{home}).file,third.file)
     assert.equal(bads()<=2,true)
+  })
+})
+await test('malformed IPC proxy receipts fail before staging a runtime', async () => {
+  await withTempDir('bash-ipc-receipt', async root => {
+    const plugin = path.join(root, 'plugin'), payload = path.join(root, 'payload'), home = path.join(root, 'home')
+    fs.mkdirSync(path.join(plugin, 'lib/shells'), { recursive: true })
+    fs.mkdirSync(path.join(plugin, 'runtime/win32-x64/bash-ipc'), { recursive: true })
+    fs.mkdirSync(path.join(payload, 'usr/bin'), { recursive: true })
+    fs.writeFileSync(path.join(plugin, 'package.json'), JSON.stringify({ type: 'module' }))
+    for (const file of ['bash-ipc.js', 'bash-pe.js', 'shells/types.js']) {
+      fs.copyFileSync(path.resolve('lib', file), path.join(plugin, 'lib', file))
+    }
+    const dll = Buffer.from('receipt validation must precede PE parsing')
+    fs.writeFileSync(path.join(payload, 'usr/bin/msys-2.0.dll'), dll)
+    fs.writeFileSync(path.join(plugin, 'runtime/win32-x64/bash-ipc/provenance.json'), JSON.stringify({
+      platform: 'win32-x64', msysSha256: createHash('sha256').update(dll).digest('hex'), files: null,
+    }))
+    const isolated = await import(pathToFileURL(path.join(plugin, 'lib/bash-ipc.js')).href)
+    assert.throws(() => isolated.confinedBash(path.join(payload, 'usr/bin/bash.exe'), { home, platform: 'win32' }),
+      /^Error: EXECUTOR_UNAVAILABLE: This MSYS version has no verified DSH IPC compatibility build/)
+    assert.equal(fs.existsSync(home), false, 'invalid receipts cannot create a private runtime')
+    assert.deepEqual(fs.readFileSync(path.join(payload, 'usr/bin/msys-2.0.dll')), dll)
   })
 })
 report('bash-ipc')

@@ -57,17 +57,16 @@ npm run verify
 
 ## Building the plugin and installing from source
 
-Edit the plugin in `src/`. The TypeScript compiler accepts the existing JavaScript during the
-migration and emits JavaScript into `lib/`; `npm run build` recreates that directory and copies
-component manifests, locale files, icons and the panel HTML. `lib/` is ignored by Git and must not
-be edited by hand. Package exports, component entries and tests continue to load `lib/`.
+Edit the plugin in `src/` using strict TypeScript or TSX. `npm run build` emits JavaScript into
+`lib/` and copies component manifests, locale files, icons and the panel HTML. `lib/` is ignored by
+Git and must not be edited by hand. Package exports, component entries and tests load `lib/`;
+runtime imports retain their `.js` paths.
 
 Run `npm run build` after changing source or assets and before invoking a suite directly with
 `node test/run.mjs <filter>`. `npm test`, `npm run test:ptc` and `npm run verify` build first;
-`npm run typecheck` checks the compiler configuration and migrated TypeScript without emitting
-files. JavaScript type checking remains disabled during the migration. The shell execution handle,
-host contract, approvals, jobs, session executor and runtime manager use strict TypeScript; older
-resolver, IPC and mount modules remain JavaScript with typed boundaries while their migration is staged.
+`npm run typecheck` checks all plugin source without emitting files. JavaScript source under `src/`
+is rejected by the build, including unimported files that the TypeScript compiler would otherwise
+silently ignore. Repository scripts and tests may continue to use JavaScript.
 
 For a local or Git-source installation, build and pack a checkout before installing it into DSH:
 
@@ -158,7 +157,7 @@ catalogue, retry rules and positive/negative TypeScript contracts. Node declarat
   `test/lib/` layout.
 - **Tool names** always come from `publicToolName()` in `src/policy.ts`; never hand-write the `ops_`
   prefix.
-- **Config validation** lives in `src/config.js`; an unknown key is an error that names the key.
+- **Config validation** lives in `src/config.ts`; an unknown key is an error that names the key.
   Defaults in `cordis.patch.yml` must match the defaults in code.
 - **Parsing and probing** happen synchronously in `apply`; `required: true` must refuse activation
   at load time.
@@ -193,6 +192,12 @@ reproduced in `NOTICE` and the READMEs **must stay verbatim** — do not "polish
 Native build and acceptance details: [native-ptc.md](native-ptc.md) and
 [manual-validation.md](manual-validation.md).
 
+The credential fence, trusted path anchors and permission helpers are strict TypeScript modules (`src/credential-policy.ts`, `src/authority-paths.ts`, `src/permissions.ts`). Their emitted `.js` imports and wire failures stay stable. Authority policies use type-only host definitions; unknown worker failures must be narrowed before use. `node test/run.mjs kernel-types authority credential-fence credential-denial safety-atomicity permissions` covers the typed boundary and existing authority behavior.
+
+`src/profile-install.ts` and `src/session-temp.ts` are strict TypeScript helpers with unchanged emitted paths. Profile mutations still delegate to the official CLI; manifest data is narrowed before reading it. Private temporary directories retain their session-derived names and refusal of link/file targets. `node test/run.mjs profile-temp kernel-types` checks delegation, dry-run, failures and typed outcomes.
+
+`src/index.ts` types the component entry against the public Cordis `Context` and `Agent` contracts. Raw configuration remains `unknown` until validation; callbacks and tool-denial decisions retain their public host signatures. Runtime imports remain `.js`, and host dependencies remain type-only at module load. `node test/run.mjs kernel-types mount bundle-startup progressive-loop` checks the type boundary, scoped startup/disposal and next-step publication.
+
 The settings integration tests use exact development-only host settings, profile boot and config
 editor packages at `0.2.0-rc.2`, with matching Cordis loader/group/include, CosmoKit and Schemastery
 patch versions. They exercise the real profile writer and component reload instead of substituting
@@ -209,3 +214,5 @@ The optional carrier regression also uses development-only `@deepseek-ai/dsh-cli
 `0.2.0-rc.2` (published 2026-09-29) to assert actual client registry activation, teardown and
 restart against temporary installed profiles. `settings-carrier` covers exact composition,
 backups and atomic rollback; it never migrates a developer profile.
+
+`src/panel/collect.ts` uses typed filesystem seams and validates persisted event fields before folding. Valid capture documents keep their text, counters and archive behavior. Invalid persisted text/usage/timestamp fields are counted as malformed and mark the result degraded, with incomplete usage totals; they cannot be silently coerced. Stopping still cancels queued work, waits for issued I/O and retains the append log; explicit sealing remains separate. Run `node test/run.mjs ops-panel-collect panel-records panel-stop kernel-types` for recovery, bounded data, physical-stop and type checks.

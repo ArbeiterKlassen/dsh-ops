@@ -303,3 +303,34 @@ keep canonical prefix data inside failure Outcomes without a looping page contin
 scans alone permit forward rescan pages, with revisions compared before combining results. References
 retain typed original page coverage, decoded/processed work, scope and capture facts. All reads use
 the same live authority, credentials, no-follow, shared budgets and cancellation path as file tools.
+
+## Typed runtime ownership (16/16)
+
+Worker selection and Native runtime lifecycle are strict TypeScript. Resolution is a discriminated
+success/path or failure/reason value; configuration and Native tool names are checked at compile
+time. Missing runtime initialization returns an unavailable value before creating call state.
+The shipped runtime paths remain .js, with the same provenance, scope and cancellation behavior.
+
+The Native worker bridge also compiles under strict TypeScript, using host policy, filesystem and
+execution types with unknown-valued input/output records. Non-object arguments fail before spawning;
+malformed or non-object process results report unknown effects and never record a successful read.
+Receipt observations preserve the provider's version facts. This validation does not change the fixed
+Native subprocess path, permission checks or the separate PTC confinement path.
+
+The PTC bridge uses the same typed input/output narrowing, plus the host's exact confinement and
+runner-failure contracts. Non-object argument failures precede batch admission; invalid JSON receipts
+after a spawn retain unknown effects and the generated audit identity. Only recognized runner-failure
+evidence may claim the wrapped worker never ran. Permission rechecks and per-call confined argv remain
+mandatory; this migration adds no unconfined fallback or cache/business authority expansion.
+
+Source-build helpers are strict TypeScript as well. Cargo discovery returns an executable, provenance
+label, version and environment; building requires that resolved toolchain and a crate directory,
+streams text diagnostics, and returns a numeric exit code with collected output. The CLI still runs
+an explicit locked release build and stages its existing provenance receipt; no dependency, toolchain
+installation, runtime path or automatic-build behavior changes in this typing slice.
+
+The optional TUI activity, attention and rendering helpers and the packaged HTML template reader are
+strict TypeScript. Readonly snapshots retain only bounded counters and diagnostic metadata; running
+rows have no settlement facts. The injected React/UI seam preserves the host's node type without
+loading a TUI or React dependency. Existing notification, session, pagination and HTML asset behavior
+is preserved. Invalid result-payload shapes remain unconfirmed and never retain their raw bodies.

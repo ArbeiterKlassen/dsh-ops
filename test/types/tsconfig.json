@@ -6,6 +6,13 @@
   },
   "include": [
     "kernel.ts",
-    "ptc-sdk.ts"
+    "ptc-sdk.ts",
+    "worker-runtime.ts",
+    "tui.ts",
+    "authority.ts",
+    "profile-temp.ts",
+    "host-entry.ts",
+    "panel-collector.ts",
+    "config.ts"
   ]
 }
