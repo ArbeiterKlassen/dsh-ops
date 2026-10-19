@@ -192,3 +192,8 @@ reproduced in `NOTICE` and the READMEs **must stay verbatim** — do not "polish
 
 Native build and acceptance details: [native-ptc.md](native-ptc.md) and
 [manual-validation.md](manual-validation.md).
+
+The settings integration tests use exact development-only host settings, profile boot and config
+editor packages at `0.2.0-rc.2`, with matching Cordis loader/group/include, CosmoKit and Schemastery
+patch versions. They exercise the real profile writer and component reload instead of substituting
+an in-memory save. These packages are not production dependencies or host runtime imports.

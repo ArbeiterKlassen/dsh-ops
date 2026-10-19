@@ -3,6 +3,7 @@ import { createActivityStore, resolveActivityConfig } from '../../tui/activity.j
 import { createOpsPanel } from '../../tui/panel.js'
 import { createAttentionStore } from '../../tui/attention.js'
 
+export { Config } from '../../settings/tui-config.js'
 export const name = 'dsh-ops-tui'
 export const inject = ['tuiPanels']
 export { resolveActivityConfig as resolveTuiConfig }

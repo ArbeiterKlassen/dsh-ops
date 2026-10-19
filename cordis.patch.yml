@@ -1,15 +1,13 @@
-
-# Six independent components. PTC enhancement and shell are enabled by default;
-# PTC capabilities are still published only to authoritative PTC-only sessions.
-# The read-only TUI panel and per-tool official replacements remain opt-in.
-# The panel row is inserted enabled so its config is addressable in the settings
-# editor, and its own switch (`capture`, the settings item 「启动数据检测」) is off
-# by default: an untouched row registers nothing and writes nothing.
-# Explicit existing profile choices are not migrated or overwritten.
-# The former dsh-ops/background row is no longer inserted; existing rows load as a no-op stub.
+# Seven stable component IDs. Saved profile row overrides take precedence.
+# Fresh shell defaults on Windows only; the Loader evaluates this public expression.
+# File, PTC and discovery start enabled. Panel, TUI and official replacements are opt-in.
+# Keep the legacy file specifier so name-qualified saved overrides still match.
+# The removed background row remains a no-op compatibility export.
 - insert:
     - id: dsh-ops-shell
       name: dsh-ops/shell
+      disabled:
+        __jsExpr: "process.platform !== 'win32'"
       config:
         promptPolicy: true
         publishBashTool: true
@@ -26,11 +24,20 @@
         required: false
         allowedTools: [grep, glob, replace, write_file, edit_file, diff, stat, copy, move, remove, read_many, edit_many, batch]
         alwaysLoaded: []
+    - id: dsh-ops-discovery
+      name: dsh-ops/discovery
+      config:
+        enabled: true
+        maxResults: 3
+        alwaysLoaded: []
+        required: false
+        denyCredentialReads: true
     - id: dsh-ops-panel
       name: dsh-ops/panel
+      disabled: true
       config:
-        # 「启动数据检测」: off by default; on writes <cwd>/.dsh-ops/panel/.
-        capture: false
+        # Row enablement starts capture; explicit legacy capture:false stays inert.
+        capture: true
         textLimit: 2000
         maxSessionBytes: 8388608
     - id: dsh-ops-tui

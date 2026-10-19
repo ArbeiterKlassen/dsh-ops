@@ -11,6 +11,7 @@ import { mountWorkspacePreparation } from './workspace-preparation.js'
 import { safeDispose, safeDisposeAll } from './teardown.js'
 import { mountResultLifecycle } from './kernel/result-lifecycle.js'
 
+export { Config } from './settings/file-config.js'
 export const name = 'dsh-ops'
 function report(ctx, message, level = 'error') {
   const logger = ctx?.logger

@@ -9,14 +9,16 @@ import * as FsTools from '@deepseek-ai/dsh-tool-fs'
 import * as SearchTools from '@deepseek-ai/dsh-tool-fs-search'
 import NodePtc from '@deepseek-ai/dsh-ptc-runtime-node'
 import { createScope } from '@deepseek-ai/dsh-scope'
+import { evaluate, isJsExpr } from '@deepseek-ai/cordis-plugin-loader'
 import { bootHost, shutdown } from './lib/host.mjs'
 import { assert, test, report, waitFor, withTempDir, PACKAGE_ROOT } from './lib/harness.mjs'
 import { resolveWorker } from '../lib/ptc/runtime.js'
 
 const { parse } = YAML
 resolveWorker({})
-// Parse the shipped data-only bundle; executable YAML tags are not supported.
+// The shipped data-only bundle uses the public serialized Loader expression for platform defaults.
 const rows = parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'cordis.patch.yml'), 'utf8'))[0].insert
+const enabled = row => !(isJsExpr(row.disabled) ? evaluate({ process }, row.disabled.__jsExpr) : row.disabled)
 assert.equal(rows.find(row => row.id === 'dsh-ops-hide-official').disabled, true)
 assert.equal(rows.find(row => row.id === 'dsh-ops-tui').disabled, true)
 
@@ -30,8 +32,8 @@ for (const mode of ['read-only', 'workspace-write', 'danger-full-access']) {
         await ctx.plugin(FileSystem, {})
         await ctx.plugin(inner => inner.provide('sandboxPolicy', { resolve: ({ session }) => ({ mode: session.mode, workspaceRoot: root, sessionId: session.id }) }))
         await ctx.plugin(NodePtc, {})
-        for (const row of rows.filter(row => !row.disabled)) {
-          const component = row.name.split('/')[1]
+        for (const row of rows.filter(enabled)) {
+          const component = row.name === 'dsh-ops' ? 'file' : row.name.split('/')[1]
           const module = await import(`../lib/components/${component}/index.js`)
           const config = component === 'shell' && process.env.DSH_OPS_TEST_BASH
             ? { ...row.config, bashPath: process.env.DSH_OPS_TEST_BASH } : row.config
@@ -49,7 +51,7 @@ for (const mode of ['read-only', 'workspace-write', 'danger-full-access']) {
           const names = () => ctx.get('tools').schemas(agent).map(tool => tool.name)
           await waitFor(() => names().includes(presentation === 'ptc' ? 'ops_inspect_local_file' : 'ops_read_many') && names().includes('read') && names().includes('grep') &&
             names().includes('ops_sdk') === (presentation === 'ptc') &&
-            names().includes('ops_bash'), { what: `${mode}/${presentation} default publication` })
+            names().includes('ops_bash') === (process.platform === 'win32'), { what: `${mode}/${presentation} default publication` })
           const assembled = await ctx.get('systemPrompt').assemble({ scope: agent, signal: new AbortController().signal })
           assert.equal(assembled.tools.some(tool => tool.name === 'run_code'), presentation !== 'native')
           assert.ok(assembled.sections.length > 0)
@@ -72,8 +74,8 @@ await test('a missing optional Bash leaves the file bundle available', async () 
       await ctx.plugin(Subprocess)
       await ctx.plugin(Sandbox, {})
       await ctx.plugin(inner => inner.provide('sandboxPolicy', { resolve: ({ session }) => ({ mode: session.mode, workspaceRoot: root, sessionId: session.id }) }))
-      for (const row of rows.filter(row => !row.disabled)) {
-        const component = row.name.split('/')[1]
+      for (const row of rows.filter(enabled)) {
+        const component = row.name === 'dsh-ops' ? 'file' : row.name.split('/')[1]
         const module = await import('../lib/components/' + component + '/index.js')
         await ctx.plugin(module, component === 'shell' ? { ...row.config, bashPath: path.join(root, 'absent-bash.exe') } : row.config)
       }

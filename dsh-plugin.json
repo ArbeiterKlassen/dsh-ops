@@ -116,7 +116,7 @@
       {
         "id": "dsh-ops-shell",
         "entry": "dsh-ops/shell",
-        "defaultEnabled": true,
+        "defaultEnabled": { "win32": true, "linux": false, "darwin": false },
         "platforms": ["win32", "linux", "darwin"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"]
       },
@@ -128,10 +128,19 @@
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"]
       },
       {
+        "id": "dsh-ops-discovery",
+        "entry": "dsh-ops/discovery",
+        "defaultEnabled": true,
+        "platforms": ["win32", "linux", "darwin"],
+        "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
+        "presentation": "Native scopes; activation on the next admitted model step",
+        "tools": ["ops_discover"]
+      },
+      {
         "id": "dsh-ops-panel",
         "entry": "dsh-ops/panel",
-        "defaultEnabled": true,
-        "presentation": "Opt-in static-file capture of new conversations: the row is addressable, its switch 「启动数据检测」(capture) is off by default and an untouched row registers nothing",
+        "defaultEnabled": false,
+        "presentation": "Disabled by default; enabling the row captures subsequent events. Explicit legacy capture:false stays off until changed.",
         "platforms": ["win32", "linux", "darwin"],
         "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
         "tools": []

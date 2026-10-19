@@ -5,6 +5,7 @@
  * See the paired component references before opting into a different workflow.
  */
 import { publicToolName } from './policy.js'
+import { componentEnabled } from './components/defaults.js'
 
 // Only reviewed, implemented replacements belong here. A similarly named ops_*
 // registration is NOT evidence of equivalent capability. In particular replace
@@ -19,5 +20,5 @@ export type OfficialReplacement = keyof typeof OFFICIAL_REPLACEMENTS
 
 export function platformSurface(platform: string = process.platform) {
   if (!['win32', 'linux', 'darwin'].includes(platform)) throw new Error(`Unsupported official-tool hiding platform: ${platform}`)
-  return { retainedCommand: platform === 'win32' ? 'pwsh' : 'bash', shellDefaultEnabled: true }
+  return { retainedCommand: platform === 'win32' ? 'pwsh' : 'bash', shellDefaultEnabled: componentEnabled('shell', platform) }
 }

@@ -101,6 +101,7 @@ function optionalStringList(raw, key, fallback) {
  * @property {number} configUpdateVersion - per-row completed configuration migration version.
  * @property {string|undefined} binaryPath - explicit native worker executable.
  * @property {boolean} required - fail activation when the native worker is unavailable.
+ * @property {boolean} denyCredentialReads - refuse reads of credential locations.
  * @property {'advise'|'deny-host-shell'} shellPolicy - treatment of host shell tools.
  * @property {string[]} deniedHostTools - tool names refused by `deny-host-shell`.
  * @property {boolean} promptPolicy - inject the repository-tooling prompt section.
@@ -191,3 +192,4 @@ export { resolveHidingConfig } from './official-tool-config.js'
 /** Independent PTC row configuration uses the same central validation entry point. */
 export { parsePtcConfig as resolvePtcConfig } from './ptc/config.js'
 export { resolveDiscoveryConfig } from './discovery/config.js'
+
