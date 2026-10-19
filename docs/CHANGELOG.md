@@ -7,6 +7,15 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Apply the confirmed acceptance scopes: BM-01 gates against OPS 0.3.x with official-reader comparisons reported separately; BM-03 gates file/discovery schemas while retaining startup Bash, exact full-inventory readiness and separate full totals. Preserve historical failed evidence.
+- 按已确认的验收范围判定：BM-01 以 OPS 0.3.x 为准，官方读取器比较单列；BM-03 仅约束文件/发现 schema，保留启动 Bash、完整目录就绪校验及单列完整总量。历史失败证据保持不变。
+
+- Compact each fully returned Native range's metadata receipt by removing its repeated notice label; keep exact source text, full revisions, continuation/EOF facts and the aggregate notice.
+- 删除 Native 完整返回范围的逐文件元数据回执中重复的提示标签；保留精确正文、完整版本标识、续读/文件结束事实及汇总提示。
+
+- Fetch baseline Git history in full CI gates, optional benchmark smoke and the release gate so exact 0.3.1 provenance checks work on fresh checkouts.
+- 完整 CI 门禁、可选基准冒烟与发布门禁获取基线 Git 历史，确保全新检出能校验 0.3.1 的精确来源。
+
 - Include each activated document reader in scoped routing guidance; validate real document receipts in the PTC API coverage suite.
 - 在作用域路由中显示已激活的文档读取工具，并用真实文档回执验证 PTC API 覆盖。
 
@@ -35,6 +44,20 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Migrate credential fences, trusted path anchors and permission failures to strict TypeScript without changing emitted entrypoints or authority decisions. Preserve worker effect facts during denial normalization and assert typed host modes/unknown-input narrowing.
 - 将凭据围栏、可信路径锚点和权限错误迁移为严格 TypeScript，保持生成入口和权限决策不变；拒绝归一化保留 worker 效果事实，并验证宿主模式及未知输入的类型缩窄。
+### Require benchmark readiness and valid controls (#261, 16/16)
+
+- Block startup scoring when any default Native tool is missing, duplicated or unexpected. Require successful allowed-read controls and exact effect-free denial codes, and independently decode Native source text before comparing bytes. Keep all fixtures, defaults and acceptance thresholds unchanged.
+- 默认 Native 工具缺失、重复或多出时阻塞启动评分；要求允许读取对照成功、拒绝代码与无副作用事实正确，并独立解码 Native 正文后再比较字节。不改变夹具、默认值及验收阈值。
+
+### Preserve literal backslashes in Native source lines (#261)
+
+- Share a reversible source-line encoder across compact and general Native output so literal backslash sequences cannot be confused with tabs, control characters or Unicode separators. Canonical data and ordinary ASCII line output remain unchanged.
+- 紧凑与通用 Native 正文共用可逆行编码，区分字面反斜杠序列、制表符、控制字符和 Unicode 分隔符；规范数据和普通 ASCII 行输出不变。
+
+### Add opt-in real-host acceptance evidence (#261, 16/16)
+
+- Run BM-01–05 with a scripted provider, exact0.3.1 and pinned official comparators, immutable sensitivity fixtures, visible-content assertions, numerical lossless lower bounds and JSON/Markdown reports. Manual cross-platform CI uploads failed and blocked evidence; no paid model calls or default gate changes.
+- 新增真实宿主 BM-01–05 按需基准、独立基线及不可变敏感性夹具；保留准确正文断言、无损字节下界和失败/阻塞证据，不调用付费模型，不改变默认门禁。
 
 ### Keep credential denial paths private (#261, BM-05)
 
@@ -203,6 +226,10 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - 新增有界 CSV/TSV worker 读取，严格解码、保留原字符串与物理行范围；错误保留此前有效行，
   并分别报告扫描、分页和引用捕获完整性，不新增外部依赖。通过发现/SDK 按代理在下一步骤启用；解析缺口保留前缀且不伪造续取。
 
+### Compact fully returned Native file ranges (#261, BM-01)
+
+- Use exact numbered multi-file bodies, quoted shared parent paths and one full-revision/continuation receipt per file. Preserve canonical metadata and diagnostic output for clipped, failed or uncertain ranges; update current-context repeat suppression for compact line labels.
+- 多文件范围以紧凑行号、带引号的共享父目录及完整版本/续读提示展示；规范数据不变，截断、失败及不确定覆盖保留诊断信息，当前上下文去重同步支持新行号格式。
 
 ### Deduplicate Native reads with current-context evidence (#261, 10/16)
 

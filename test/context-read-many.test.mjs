@@ -29,8 +29,8 @@ await test('multi-file repeats require every fresh file and the exact prior batc
   assert.equal((text(repeat).match(/=== FILE:/g) ?? []).length, 2)
   assert.match(text(repeat), /nextOffset=11/)
   assert.match(text(repeat), /nextOffset=15/)
-  assert.match(text(repeat), /nextIndex=2; pending=0/)
-  assert.match(text(repeat), /complete=false/)
+  assert.match(text(repeat), /2\/2 requested ranges revalidated/)
+  assert.match(text(repeat), /more lines/); assert.equal(repeat.value.complete, false)
 }))
 
 await test('a changed sibling, its metadata or its identity restores the entire batch body', () => fixture(async context => {
@@ -48,7 +48,7 @@ await test('a changed sibling, its metadata or its identity restores the entire 
   fs.writeFileSync(second, original.toString().replace('payload line 3', 'changed line 3'))
   const changed = await batch()
   full(changed)
-  assert.match(text(changed), /^3 \| changed/m)
+  assert.match(text(changed), /^3\|changed/m)
 }))
 
 await test('single-file proof, reordered ranges and compaction cannot stand in for a batch', () => fixture(async context => {
@@ -59,7 +59,7 @@ await test('single-file proof, reordered ranges and compaction cannot stand in f
   const first = await batch()
   await request([first.assistant, first.message])
   const reordered = await batch({ args: { files: [...args.files].reverse() } })
-  assert.match(text(reordered), /^3 \| payload/m)
+  assert.match(text(reordered), /^3\|payload/m)
   assert.doesNotMatch(text(reordered), /Unchanged file range/)
   compact()
   await request([first.assistant, first.message])

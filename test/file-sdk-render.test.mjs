@@ -34,7 +34,9 @@ await test('inspect prints one file heading and physical line labels without cha
   const original = JSON.stringify(value)
   const view = render('inspect_local_file', value)
   assert.ok(view.startsWith(`=== FILE: ${path} (Lines 1-200 of 201) ===`))
-  assert.ok(view.includes('1 | αβ"\\中'))
+  const firstBody = /^1 \| (.*)$/m.exec(view)?.[1]
+  assert.equal(typeof firstBody, 'string')
+  assert.equal(JSON.parse('"' + firstBody.replaceAll('"', '\\"') + '"'), value.items[0].text)
   assert.match(view, /revision=a{64}/)
   assert.match(view, /complete=false/)
   assert.match(view, /nextOffset=201/)

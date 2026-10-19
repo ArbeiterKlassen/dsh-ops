@@ -2,6 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { getEncoding } from 'js-tiktoken'
+import { startupAssessment } from '../bench/gates/integrity.mjs'
 import * as file from '../lib/components/file/index.js'
 import { FILE_TOOLS, publicToolName } from '../lib/policy.js'
 import { NativeFileTools } from '../lib/file/runtime.js'
@@ -33,12 +34,12 @@ await test('the resident file row publishes one bounded reader even with the dis
     fs.writeFileSync(path.join(dir, 'second.txt'), 'second file')
     const read = await callTool(ctx, READ, { files: [{ path: 'read.txt' }, { path: 'second.txt' }] }, undefined, agent)
     assert.equal(read.value.status, 'completed')
-    assert.match(read.text, /1 \| bounded reader/); assert.match(read.text, /1 \| second file/)
+    assert.match(read.text, /1\|bounded reader/); assert.match(read.text, /1\|second file/)
     const absent = await ctx.get('tools').execute({ agent, name: publicToolName('stat'), arguments: { path: 'read.txt' }, callId: 'absent', signal: new AbortController().signal })
     assert.equal(absent.isError, true)
   } finally { await shutdown(ctx) }
 }))
-await test('measure the full default Native surface including Bash and retain the unresolved BM-03 budget', () => withTempDir('resident', async dir => {
+await test('gate the approved file/discovery budget and separately retain full startup Bash cost', () => withTempDir('resident', async dir => {
   const { ctx } = await mount()
   try {
     const agent = await mintDiscoveryAgent(ctx, 'resident-budget', dir)
@@ -56,7 +57,12 @@ await test('measure the full default Native surface including Bash and retain th
     console.log('  cl100k_base/js-tiktoken1.0.21 compact host-schema JSON:', JSON.stringify({ core, fullFileCatalogue: full, hostBash: measure([shell]), corePlusBash: withShell }))
     assert.equal(core.tokens, 241, JSON.stringify(core))
     assert.ok(full.tokens > 400 && full.tokens > core.tokens, 'retain honest full-surface measurement')
-    assert.ok(withShell.tokens > 400, 'BM-03 remains unresolved until the full default, including host-compatible Bash, fits400')
+    assert.ok(withShell.tokens > 400, 'the complete startup surface remains separately reported')
+    const assessed = startupAssessment([...assembly.tools, shell], 'win32')
+    assert.equal(assessed.status, 'passed')
+    assert.equal(assessed.gatedMeasurement.tokens, core.tokens)
+    assert.equal(assessed.measurement.tokens, withShell.tokens)
+    assert.equal(startupAssessment(assembly.tools, 'win32').status, 'blocked', 'missing Bash cannot pass a narrower budget')
     const text = assembly.sections.map(section => section.text).join('\n')
     for (const raw of FILE_TOOLS.filter(raw => raw !== 'read_many')) assert.equal(text.includes(publicToolName(raw)), false)
     assert.ok(text.includes(DISCOVER))
