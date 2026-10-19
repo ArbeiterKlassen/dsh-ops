@@ -23,6 +23,7 @@ import { commandProvisionShells } from '../lib/cli/provision-shells.js'
 import { commandUpgradeHostPwsh } from '../lib/cli/pwsh-upgrade.js'
 import { commandBashRuntime } from '../lib/cli/bash-runtime.js'
 import { commandUninstall } from '../lib/cli/uninstall.js'
+import { commandSettingsProfile } from '../lib/cli/settings-profile.js'
 
 /**
  * Print one usage block.
@@ -38,6 +39,8 @@ Usage:
                                   Remove the profile plugin and its binary dependency references
   dsh-ops status --profile <desktop|web|tui>
                                   Report target-profile installation (tui maps to dsh-tui)
+  dsh-ops settings-profile --profile-dir <dir> --host-anchor <host package.json> [--dsh-home <dir>] [--offline --yes]
+                                  Preview or explicitly enable the optional browser settings carrier
   dsh-ops build-ptc              Build the independent native Rust worker (all platforms)
   dsh-ops uninstall [--yes] [--purge-fastctx]
                                   Report files older versions left under <DSH_HOME>/dsh-ops and,
@@ -93,6 +96,10 @@ async function main() {
     allowPositionals: true,
     options: {
       profile: { type: 'string' },
+      'profile-dir': { type: 'string' },
+      'host-anchor': { type: 'string' },
+      'dsh-home': { type: 'string' },
+      offline: { type: 'boolean', default: false },
       'dsh-cli': { type: 'string' },
       force: { type: 'boolean', default: false },
       yes: { type: 'boolean', default: false },
@@ -115,6 +122,8 @@ async function main() {
     return 2
   }
   switch (command) {
+    case 'settings-profile':
+      return commandSettingsProfile({ profileDir: values['profile-dir'], hostAnchor: values['host-anchor'], home: values['dsh-home'], yes: values.yes, offline: values.offline, dryRun: values['dry-run'] })
     case 'upgrade-host-pwsh':
       return commandUpgradeHostPwsh({ yes: values.yes, dryRun: values['dry-run'] })
     case 'bash-runtime':

@@ -16,8 +16,12 @@ function fixture(root) {
   fs.mkdirSync(path.join(root, 'node_modules'), { recursive: true })
   fs.copyFileSync(path.join(PACKAGE_ROOT, 'scripts/build.mjs'), path.join(root, 'scripts/build.mjs'))
   fs.copyFileSync(path.join(PACKAGE_ROOT, 'tsconfig.json'), path.join(root, 'tsconfig.json'))
+  write(root, 'scripts/lib/build/client.mjs', fs.readFileSync(path.join(PACKAGE_ROOT, 'scripts/lib/build/client.mjs')))
+  write(root, 'scripts/lib/build/client-profile.mjs', fs.readFileSync(path.join(PACKAGE_ROOT, 'scripts/lib/build/client-profile.mjs')))
+  write(root, 'cordis.patch.yml', fs.readFileSync(path.join(PACKAGE_ROOT, 'cordis.patch.yml')))
+  write(root, 'src/profiles/client/package.json', fs.readFileSync(path.join(PACKAGE_ROOT, 'src/profiles/client/package.json')))
   // Copies also work in Windows sandboxes where directory junctions are unavailable.
-  for (const name of ['typescript', '@types/node', 'undici-types']) {
+  for (const name of ['typescript', '@types/node', 'undici-types', 'yaml']) {
     fs.cpSync(path.join(PACKAGE_ROOT, 'node_modules', name),
       path.join(root, 'node_modules', name), { recursive: true })
   }

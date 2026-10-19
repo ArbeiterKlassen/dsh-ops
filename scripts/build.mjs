@@ -4,6 +4,8 @@ import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { bundleClient } from './lib/build/client.mjs'
+import { buildClientProfile } from './lib/build/client-profile.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const source = path.join(root, 'src')
@@ -41,12 +43,14 @@ try {
     process.exitCode = result.status ?? 1
     console.error('build: TypeScript compilation failed; assets were not copied.')
   } else {
+    bundleClient(root)
     const assets = copyAssets(source)
     if (existsSync(path.join(source, 'ptc/contract.ts'))) {
       const { writePtcDeclarations } = await import('./lib/build/ptc-sdk.mjs')
       const sdk = await writePtcDeclarations(root)
       console.log(`build: generated PTC declarations for ${sdk.tools} capabilities (${sdk.bytes} bytes)`)
     }
+    buildClientProfile(root)
     console.log(`build: compiled src/ to lib/ and copied ${assets} assets`)
   }
 } catch (error) {

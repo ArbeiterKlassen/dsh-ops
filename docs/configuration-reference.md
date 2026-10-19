@@ -8,6 +8,59 @@ Active rows expose validated settings through the host Settings/ConfigEditor. Ac
 
 The default bundle retains `dsh-ops/file` and stable ID `dsh-ops-file`, so saved name-qualified overrides continue to match. It does not activate custom browser pages on the pinned host.
 
+## Optional browser settings pages
+
+When a bare-package client carrier is configured, the replacement, discovery and shell rows have settings pages in the host plugin manager. The default seven-row bundle keeps its legacy file module name and does not activate these pages. Changes
+remain a draft until **Save changes** succeeds. A stale or refused save keeps the draft for review;
+**Reset to saved** loads the latest saved values. Accepted changes persist through the host profile
+writer and reload the affected row.
+
+- **Replacements:** choose `read`, `glob` and `grep` independently. Selected tools use OPS contracts.
+  Keep each selected counterpart (`inspect_local_file` for `read`, `glob` or `grep`) always loaded in Discovery, or activate it before selecting the replacement. `read_many` does not satisfy the single-file `read` replacement contract.
+- **Discovery:** choose the allowed pool, its always-loaded subset and a result limit from 1 to 5.
+  Removing an allowed capability removes it from the always-loaded subset in the same save.
+- **Shell:** enable Bash, enter an absolute executor override, or select detected managed/Git Bash.
+  Selecting a runtime fills the draft path; save it explicitly. Clearing the override inherits the
+  configured default. Runtime installation does not silently change that selection.
+
+Bash installation/removal and PowerShell upgrade buttons first show a plan. Execute that reviewed
+plan explicitly; cancellation after launch can leave changes and reports an unknown effect. Managed
+Bash removal only deletes receipt-owned installations. Stop Bash jobs first. PowerShell actions use
+WinGet for the standard host PowerShell 7 installation, preserve Windows PowerShell 5.1, and require
+a DSH restart. Check a custom host `pwshPath` separately. No installer runs when opening a page.
+
+A client carrier uses the stable `dsh-ops-file` row with the bare package name `dsh-ops` to load these browser pages. Its
+server behavior remains the file component; the `dsh-ops/file` export remains compatible. Disabling
+this carrier unloads all custom settings pages. Use the host's **built-in row switch** to re-enable
+it. There is no automatic form fallback. A disabled target row must also be re-enabled before its
+settings can be edited. The discovery page is available once its component row is installed.
+
+### Enable the optional browser carrier
+
+This is an opt-in offline profile migration, not a prerequisite for upgrading. With DSH stopped,
+preview the installed profile using absolute paths:
+
+```console
+dsh-ops settings-profile --profile-dir <profile-directory> --host-anchor <DSH-installation-package.json> --dsh-home <DSH-home>
+```
+
+`--host-anchor` identifies the host installation whose public profile APIs the command uses.
+After reviewing the preview, repeat it with `--offline --yes`. The command selects
+`dsh-ops/lib/profiles/client` **instead of** `dsh-ops`, removes only verified legacy file-name
+matchers in that profile's patch, and preserves all seven IDs, switches, and effective configuration.
+It refuses skipped bundles, duplicate OPS rows, external name-qualified file overrides,
+incompatible higher-priority patches, or stale previews. Home patches are included; launch-time command-line overlays are outside this preview.
+No other profile is changed. Do not enable both bundle choices together.
+
+Original files are backed up in the reported `.dsh-ops-settings-backup-*` directory. Each write uses
+the host's atomic writer and profile lock. The first write remains valid with the old bundle if the
+process stops before the second; reported write failures restore unchanged originals when possible.
+For manual recovery while stopped, restore `package.json` first, then `cordis.patch.yml` as described
+in `recovery.json`. Keep the backup until the restarted profile is verified. The installed `dsh-ops`
+package supplies both bundle choices; the nested layer is not a separate package to install.
+An already-disabled file row remains disabled, so re-enable it through the builtin switch before
+expecting custom pages. The default legacy bundle remains supported without this command.
+
 ---
 
 ## Where configuration lives
