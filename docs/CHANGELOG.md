@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Account for existing append-log and new-session header bytes before admitting queued panel events, with bounded pending data and physical-stop behavior. Recover persisted caps without appending further events or duplicate markers. If opening the log fails, stop that capture without appending or replacing existing output. JSON parse losses now mark capture degraded and usage incomplete while preserving valid records and totals.
+- 面板恢复先计入已有追加日志或新会话头部的字节，再接纳排队事件，保留有界待写数据与实际停止语义；恢复已封顶日志时不再追加事件或重复的封顶标记。日志初始化失败后停止该会话的采集，不再追加或替换已有输出。JSON 解析丢失的记录现在会标记采集降级、用量不完整，同时保留有效记录及其合计。
+
 - Require one CI run per pull request: the PR template now asks for the URL of the `CI required` aggregate run triggered by the pull request's own `pull_request` event, and the contributing guides document how to confirm it (`gh run list --branch <branch> --event pull_request`, the PR checks tab), the fork path from #150, the `action_required` approval for first-time fork runs, and the admin-only repository setting that makes `CI required` a required check (#303). Documentation and process only; no workflow or runtime behavior changes.
 - 每个 PR 必须有一次 CI 运行：PR 模板改为要求贴出由 PR 自身 `pull_request` 事件触发的 `CI required` 聚合 run URL；贡献指南说明如何确认（`gh run list --branch <branch> --event pull_request`、PR checks 页）、#150 的 fork 路径、首次 fork 运行的 `action_required` 批准，以及把 `CI required` 设为必需检查的 admin 仓库设置（#303）。仅文档与流程变更，不改工作流与运行时行为。
 - Enable the shell row by default on all three supported platforms: Windows runs the pinned Bash payload declared by the main package, Linux/macOS run the distribution's Bash (overridable with `config.bashPath`), and PowerShell stays host-managed.
