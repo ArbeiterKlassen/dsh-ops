@@ -7,6 +7,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Stop inventing audit references for new batch validation failures that occur before a job is saved, and for synchronous failures before worker creation. Preserve worker-provided references, existing resume identities and recovery ids for interrupted or ambiguous execution; no additional worker calls are made (#78).
+- 新批次在审计记录创建前发生已确认的校验失败，或工作进程创建前同步失败时，不再返回不存在的审计引用。保留 worker 返回的引用、已有 resume 标识，以及执行中断或状态不明时的恢复标识；不增加 worker 调用（#78）。
 - Require one CI run per pull request: the PR template now asks for the URL of the `CI required` aggregate run triggered by the pull request's own `pull_request` event, and the contributing guides document how to confirm it (`gh run list --branch <branch> --event pull_request`, the PR checks tab), the fork path from #150, the `action_required` approval for first-time fork runs, and the admin-only repository setting that makes `CI required` a required check (#303). Documentation and process only; no workflow or runtime behavior changes.
 - 每个 PR 必须有一次 CI 运行：PR 模板改为要求贴出由 PR 自身 `pull_request` 事件触发的 `CI required` 聚合 run URL；贡献指南说明如何确认（`gh run list --branch <branch> --event pull_request`、PR checks 页）、#150 的 fork 路径、首次 fork 运行的 `action_required` 批准，以及把 `CI required` 设为必需检查的 admin 仓库设置（#303）。仅文档与流程变更，不改工作流与运行时行为。
 - Enable the shell row by default on all three supported platforms: Windows runs the pinned Bash payload declared by the main package, Linux/macOS run the distribution's Bash (overridable with `config.bashPath`), and PowerShell stays host-managed.
