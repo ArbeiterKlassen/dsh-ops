@@ -148,9 +148,9 @@
         "entry": "dsh-ops/hide-official",
         "defaultEnabled": false,
         "platforms": ["win32", "linux", "darwin"],
-        "strict": true,
+        "replaceTools": [],
         "retainedOfficialCommand": { "win32": "pwsh", "linux": "bash", "darwin": "bash" },
-        "readiness": "Opt-in: READINESS_BLOCKED blocks assembly/execution only for the affected scope; healthy scopes retain verified masks. All visible official capabilities require reviewed implemented OPS equivalents before that scope is masked. run_code is not exempt; unhideable transports and own-scope registrations fail prompt assembly and execution closed."
+        "readiness": "Opt-in per-tool read/glob/grep alternatives, selected by replaceTools (default empty). Only selected official tools are hidden after their OPS counterparts are registered in the same scope. Missing selected counterparts block that scope; unselected tools stay visible without warning lists."
       }
     ]
   },

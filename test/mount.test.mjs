@@ -342,15 +342,16 @@ await test('an old background row loads as a no-op: no tools, no section, one wa
 await test('the host half refuses to mount a background component itself', () => {
   assert.throws(() => applyComponent({}, {}, 'background'), /unknown component "background"/)
 })
-await test('legacy blanket hiding fails closed when the file row publishes only its resident core', async () => {
+await test('selected replacements fail closed when the file row publishes only its resident core', async () => {
   const { ctx } = await bootHost()
   try {
     await fileMount(ctx)
     for (const name of ['read', 'glob', 'grep']) ctx.tools.register(foreignTool(name))
     const { apply: hideOfficial } = await import('../lib/official-tool-hiding.js')
-    const hiding = await ctx.plugin({ name: 'legacy-file-takeover', apply: hideOfficial }, {})
-    const current = await agent(ctx, 'legacy-file-takeover')
+    const hiding = await ctx.plugin({ name: 'selected-file-takeover', apply: hideOfficial }, { replaceTools: ['read', 'glob', 'grep'] })
+    const current = await agent(ctx, 'selected-file-takeover')
     await assert.rejects(() => ctx.get('systemPrompt').assemble({ scope: current }), /READINESS_BLOCKED/)
+    for (const name of ['read', 'glob', 'grep']) assert.ok(ctx.tools.schemas(current).some(tool => tool.name === name))
     await hiding.dispose()
     const assembly = await ctx.get('systemPrompt').assemble({ scope: current })
     for (const name of ['read', 'glob', 'grep', ...EXPECTED]) assert.ok(assembly.tools.some(tool => tool.name === name))

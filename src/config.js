@@ -2,7 +2,7 @@
  * Plugin configuration: one plain object read from the `dsh-ops` row in
  * `cordis.yml`, validated here.
  *
- * The plugin deliberately exports no Schemastery `Config`: this host half must
+ * Validation uses plain data and Standard Schema without host value imports. This host half must
  * resolve with no `@deepseek-ai/*` value import of its own (the profile loader
  * supplies those names, and every extra one is another way for the plugin to
  * fail to load). Validation is therefore explicit and fails loud, naming the
@@ -10,6 +10,7 @@
  *
  * @module dsh-ops/config
  */
+
 
 /**
  * Keys only the removed FastCtx surface read. Existing rows still carry them
@@ -28,16 +29,8 @@ export const SHELL_POLICIES = ['advise', 'deny-host-shell']
 /** Host tool names the `deny-host-shell` policy refuses by default. */
 export const DEFAULT_DENIED_HOST_TOOLS = ['pwsh', 'bash', 'pwsh_persistent']
 
-/** Error raised for a configuration value this plugin cannot honour. */
-export class ConfigError extends Error {
-  /**
-   * @param {string} message - what is wrong and what is accepted.
-   */
-  constructor(message) {
-    super(`dsh-ops config: ${message}`)
-    this.name = 'ConfigError'
-  }
-}
+import { ConfigError } from './config-error.js'
+export { ConfigError } from './config-error.js'
 
 /**
  * Reject a key the plugin does not implement instead of silently ignoring it.
@@ -193,17 +186,7 @@ export function resolveConfig(rawConfig) {
   }
 }
 
-/** Independent strict takeover row; disabling the row is the only opt-out. */
-export function resolveHidingConfig(raw = {}) {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new ConfigError('hiding config must be an object')
-  for (const key of Object.keys(raw)) if (!['strict', 'additionalOfficialTools'].includes(key)) throw new ConfigError(`unknown hiding key: ${key}`)
-  if (raw.strict !== undefined && raw.strict !== true) throw new ConfigError('strict must be true; disable the component row to restore host tools')
-  const aliases = raw.additionalOfficialTools ?? []
-  if (!Array.isArray(aliases) || aliases.some(n => typeof n !== 'string' || !/^[A-Za-z0-9_-]+$/.test(n) || n.startsWith('ops_'))) {
-    throw new ConfigError('additionalOfficialTools must be an array of official tool names (not ops_* replacements)')
-  }
-  return { strict: true, additionalOfficialTools: [...new Set(aliases)] }
-}
+export { resolveHidingConfig } from './official-tool-config.js'
 
 /** Independent PTC row configuration uses the same central validation entry point. */
 export { parsePtcConfig as resolvePtcConfig } from './ptc/config.js'

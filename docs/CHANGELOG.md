@@ -7,6 +7,18 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Drain release-gate stdout and stderr concurrently so a full diagnostic pipe cannot deadlock verification; retain both streams and failing exit codes.
+- 发布门禁并行读取 stdout 和 stderr，避免诊断管道写满后验证死锁；保留两路完整输出及失败退出码。
+
+- Require exact OPS-owned Native definitions for selected official replacements, including same-schema ownership changes; preserve fail-closed provider requests while discovery completes startup readiness. Move the replacement boundary and config validator to strict TypeScript.
+- 所选官方替代工具必须是 OPS 拥有的确切 Native 定义，schema 相同的所有权变化也会重新校验；发现组件可完成启动就绪检查，普通提供方请求仍严格拒绝未就绪状态。替代边界和配置校验器迁移为严格 TypeScript。
+
+### Select official read/search replacements individually (#261)
+
+- Replace blanket hiding with `replaceTools: []`: explicitly select reviewed `read`, `glob`, or `grep` alternatives. Unselected tools remain visible without warning lists; only selected counterparts are required for scoped readiness.
+- Legacy `strict`, `scope`, and `additionalOfficialTools` remain validated but inert. Document argument/coverage differences and exclude write/edit because their CAS contracts differ. Cordis validation is implemented; a browser multi-select is separate UI work.
+- 官方工具改为通过 `replaceTools: []` 逐项选择 `read`、`glob`、`grep` 替代流程；未选工具保持可见且无警告列表，只校验所选替代工具的作用域就绪状态。
+- 旧 `strict`、`scope`、`additionalOfficialTools` 仅校验不生效；文档说明参数与覆盖差异，写入/编辑因 CAS 契约不同而不提供替换。已实现 Cordis 校验，浏览器多选界面另行实现。
 ### Leave PowerShell with its host (#261)
 
 - Remove the PowerShell npm payload dependency, shell payload release assembly and automatic
@@ -596,6 +608,9 @@ The capability is taken; the duplicate component is not.
 - Refuse a native worker that exists without its execute bit, naming the path and the mode, instead of failing later as a bare `EACCES` from `spawn`. The resolver's "unavailable" error lists the candidates it tried, a missing or malformed `provenance.json` is named as an incomplete stage, and `node bin/native-runtime.mjs check` on a package missing a declared platform explains both ways forward instead of raising a raw `ENOENT`.
 
 ## [Unreleased]
+
+- Drain release-gate stdout and stderr concurrently so a full diagnostic pipe cannot deadlock verification; retain both streams and failing exit codes.
+- 发布门禁并行读取 stdout 和 stderr，避免诊断管道写满后验证死锁；保留两路完整输出及失败退出码。
 
 ### Read-only sidebar navigation
 
