@@ -97,6 +97,7 @@ config:
 - `publishBashTool`: publish `ops_bash` using current session policy; restricted modes require the host sandbox, full access uses the host subprocess service.
 - `promptPolicy`: whether to inject the component's runtime guidance; use `extraGuidance` to append instructions.
 - `required`: whether to reject activation when the native worker is unavailable.
+- Host PowerShell is outside OPS runtime selection: no bundled executable or `pwshPath` override. `upgrade-host-pwsh` previews a standard Windows installation; `--yes` runs it. Restart DSH and review any custom host `pwshPath` afterwards.
 - `shellPolicy`: defaults to `advise`; `deny-host-shell` rejects host shells in `deniedHostTools` (default `[pwsh, bash, pwsh_persistent]`). This also disables third-layer pwsh; enable cautiously.
 - `allowSystemShellFallback`: defaults to `false`. Without a bundled/provisioned bash, do not discover system PATH or well-known installations (**on a POSIX host this key has no effect**: the shell component already resolves the host bash and there is no pinned payload to fall back from). Explicit `true` opts into an unpinned system bash that the operator must trust and maintain. Explicit `bashPath` is a separate operator selection, not an automatic fallback. See the update configuration modification area in the [usage guide](usage.md) for the first-start migration.
 - `shellPolicy` is independent: `deny-host-shell` masks/refuses host tools; disabling fallback constrains the plugin's bash resolver, not the host's own `pwsh`, and is not a filesystem sandbox.

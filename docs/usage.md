@@ -46,7 +46,7 @@ capability matrix and the known limitations.
 
 ### Official plugin marketplace
 
-In the target DSH application's plugin marketplace, enter the npm package name **`dsh-ops`**, install, then enable. Installation belongs to the currently running profile, which is `desktop` for the desktop app. Bash is acquired separately through the runtime manager; PowerShell 7 remains an optional payload dependency in this slice. Installation runs no shell downloader and does not change system PATH.
+In the target DSH application's plugin marketplace, enter the npm package name **`dsh-ops`**, install, then enable. Installation belongs to the currently running profile, which is `desktop` for the desktop app. Neither Bash nor PowerShell binaries are npm dependencies. Bash is acquired separately through the runtime manager; PowerShell stays under host control. Installation runs no shell downloader and does not change system PATH.
 
 ### Optional Bash runtime
 
@@ -106,6 +106,20 @@ Legacy explicitly provisioned `<DSH_HOME>/dsh-ops/` files (provisioned shells, a
 
 ---
 
+## Host PowerShell on Windows
+
+OPS no longer bundles PowerShell or changes the host's `pwshPath`. Windows PowerShell 5.1, existing custom executors and old OPS provisioned copies remain untouched. To install or upgrade the standard PowerShell 7 installation, first inspect the plan:
+
+```console
+dsh-ops upgrade-host-pwsh
+dsh-ops upgrade-host-pwsh --yes --dry-run
+dsh-ops upgrade-host-pwsh --yes
+```
+
+Only `--yes` executes WinGet; `--dry-run` always previews. The action uses the exact stable `Microsoft.PowerShell` package from the `winget` source and retains WinGet's installer and agreement prompts. It may require Windows elevation. Missing WinGet produces guidance without attempting installation; see [Microsoft's Windows installation guide](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows).
+
+Restart DSH after successful installation so the host probes its executor again. An explicit host `pwshPath` remains authoritative: review it in host settings if it points elsewhere. A `no-update` result means WinGet found no applicable update for this package, not that every custom PowerShell copy is current. Cancellation after the installer starts has unknown effects; check the standard installation before retrying. The older `provision-shells --pwsh` command remains an explicit compatibility download, but OPS does not activate its copy automatically.
+
 ## Command-line interface
 
 ```console
@@ -117,6 +131,7 @@ dsh-ops build-ptc              Build the independent native Rust worker (all pla
 dsh-ops uninstall [--yes] [--purge-fastctx]
 dsh-ops ladder [--json] [--config <file>]
                                 prompt ladder actually renders; nothing is spawned
+dsh-ops upgrade-host-pwsh [--yes] [--dry-run]
 dsh-ops provision-shells [--bash] [--pwsh] [--force] [--dry-run] [--pin <file>]
                                 their digests, and install them under <DSH_HOME>/dsh-ops/shells
 ```

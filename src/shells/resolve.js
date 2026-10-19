@@ -1,5 +1,5 @@
 /**
- * Resolution of the plugin's two shell rungs: its own bash and PowerShell 7.
+ * Resolution of the plugin's Bash runtime; PowerShell stays owned by the host.
  *
  * Together with the probes in `lib/shells/paths.js`, this module is the ONLY
  * place that answers "can this deployment run the plugin's bash / pwsh right
@@ -142,52 +142,10 @@ function resolveBash({
   }
 }
 
-/**
- * Resolve the PowerShell 7 rung.
- *
- * L3 is "the plugin's own pwsh 7", and whether that rung runs is decided by the
- * executable it needs actually being there: `cordis.patch.yml` points the
- * host's `pwsh-sandbox` row at this same path whenever it exists, so
- * `available` here and the host row's behaviour are one fact, not two. There is
- * deliberately no configured-path form: the row the plugin would have to
- * rewrite is resolved before any dsh-ops config is read.
- * @param {object} options - resolution inputs.
- * @param {{file: string, version: string}|undefined} options.provisioned - the
- *   copy `provision-shells` installed, when the store has one.
- * @param {string|undefined} options.bundled - the plugin's own pwsh, when it has one.
- * @param {string|undefined} options.bundledDetail - why the plugin's own copy is unusable, when it has none.
- * @param {boolean} options.allowSystemFallback - whether the host's pwsh may serve as the last rung.
- * @returns {import('./paths.js').ShellResolution} the resolution.
- */
-function resolvePwsh({ provisioned, bundled, bundledDetail, allowSystemFallback }) {
-  if (provisioned !== undefined) {
-    return {
-      available: true,
-      file: provisioned.file,
-      source: 'provisioned',
-      detail: 'the PowerShell 7 this deployment provisioned from upstream '
-        + `(version ${provisioned.version}), which the pwsh-sandbox override points at`,
-    }
-  }
-  if (bundled !== undefined) {
-    return {
-      available: true,
-      file: bundled,
-      source: 'bundled',
-      detail: "the plugin's own PowerShell 7, which the pwsh-sandbox override points at",
-    }
-  }
-  return {
-    available: false,
-    file: undefined,
-    source: 'missing',
-    detail: 'the plugin carries no PowerShell 7 for this platform'
-      + (bundledDetail === undefined ? '' : ` (${bundledDetail})`)
-      + '; run `dsh-ops provision-shells --pwsh` to install the pinned upstream copy'
-      + (allowSystemFallback
-        ? "; the host's own pwsh tool is the ladder's last rung"
-        : '; allowSystemShellFallback is false, so the ladder has no PowerShell rung'),
-  }
+/** The host owns PowerShell selection. Legacy OPS copies are never automatically activated. */
+function resolvePwsh() {
+  return { available: false, file: undefined, source: 'host',
+    detail: 'PowerShell is managed by the host; OPS does not supply or override its executable. Use dsh-ops upgrade-host-pwsh on Windows, then restart DSH. An explicit host pwshPath remains authoritative.' }
 }
 
 /**
@@ -215,15 +173,7 @@ export function resolveShells(config, options = {}) {
   // and for `dsh-ops ladder`.
   const posix = platform !== 'win32'
   const probe = { bundleRoot, env, platform, arch }
-  const pwshBundled = bundledShell({ kind: 'pwsh', ...probe })
-  const pwshProvisioned = provisionedShell({ kind: 'pwsh', env, platform, arch })
-
-  const pwsh = resolvePwsh({
-    provisioned: pwshProvisioned,
-    bundled: pwshBundled.file,
-    bundledDetail: pwshBundled.detail,
-    allowSystemFallback,
-  })
+  const pwsh = resolvePwsh()
 
   if (config?.publishBashTool === false) {
     return {

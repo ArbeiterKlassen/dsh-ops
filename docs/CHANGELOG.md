@@ -7,6 +7,15 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Leave PowerShell with its host (#261)
+
+- Remove the PowerShell npm payload dependency, shell payload release assembly and automatic
+  host executor overlay. Existing host settings, Windows PowerShell 5.1 and legacy copies stay intact.
+- Add a strict TypeScript manager and `upgrade-host-pwsh` CLI with preview by default,
+  explicit WinGet execution, honest exit/cancellation effects and restart/custom-path guidance.
+- 移除 PowerShell 载荷依赖和宿主执行器覆盖；新增默认预览、显式执行的宿主升级命令，
+  保留已有设置及旧副本，并说明取消后的未知副作用、重启与自定义路径要求。
+
 - Return host-compatible Bash argument failures as values with stable retry/effect metadata; interrupted or failed running commands require read-only inspection before replay. Bash 参数失败返回结构化值；运行后的未知副作用禁止自动重试。
 
 - Cancel queued job starters when host admission fails after accepting the run hook; never retry that call in the foreground. 宿主接受任务启动回调后若准入失败，取消排队启动且不转为前台重试。

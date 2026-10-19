@@ -1,6 +1,6 @@
 # 发布流程与如何启用
 
-对象是 `.github/workflows/release.yml`（workflow 名 `Release`）。发布目标只有一个：**GitHub Release**（tag + 自动 notes + 三个可安装 tarball + `SHA256SUMS`）。npm publish 不在这条流水线里，理由见下。
+对象是 `.github/workflows/release.yml`（workflow 名 `Release`）。发布目标只有一个：**GitHub Release**（tag + 自动 notes + 一个可安装主包 tarball + `SHA256SUMS`）。npm publish 不在这条流水线里，理由见下。
 
 ## 当前状态：`disabled_manually`，推 tag 不会发布
 
@@ -40,9 +40,9 @@ Sync master with main | active
    - 下载三个 artifact 分别放回 `runtime/win32-x64`、`runtime/linux-x64`、`runtime/darwin-arm64`，不把各目标的 `provenance.json` 展平覆盖。
    - 单独编译 gate 宿主 worker 到 `native/target/release` 供固定路径的真实套件使用；这份测试 build 不替换来自冷构建矩阵的 staged 发布产物。
    - **`npm run verify:release`**（`validate-manifest` + 全部仓库测试 + `bin/check-release.mjs`）是硬门禁：三目标缺一、receipt 与字节哈希不符、Windows IPC 二进制/源码哈希不符、`dsh-plugin.json` 与 runtime 白名单不一致，任一都失败。
-   - 之后才 `build-platform-packages.mjs --dist`（组装 Windows 两个 payload 包 + 主包并打 tarball，写 `provenance.json` 与 `SHA256SUMS`），再 `... check --dist`（只重读已记录的摘要，不下载不构建）。
+   - 之后才 `build-platform-packages.mjs --dist`（只组装主包并打 tarball，不再下载或发布 shell 载荷包，写 `provenance.json` 与 `SHA256SUMS`），再 `... check --dist`（只重读已记录的摘要，不下载不构建）。
    - dist 目录以 `release-dist` 上传，`if-no-files-found: error`。
-   - 组装必须跑在 Windows：`build-platform-packages.mjs` 只发布 Windows payload（默认 `--platform win32`）。
+   - 组装当前仍在 Windows gate 执行；`build-platform-packages.mjs` 保留兼容命令名，但不再产生平台 shell 包。Windows 构建和测试使用显式获取的固定 Bash fixture。
 3. **`publish`（`ubuntu-24.04`，`needs: gate`，仅 tag）**
    - 唯一持有 `contents: write` 的 job；不用任何 secret，只用 Actions 自带 `github.token`。
    - `gh release create ... --verify-tag` 创建，已存在则 `gh release upload --clobber` 覆盖资产；tarball 数量为 0 或缺 `SHA256SUMS` 时显式报错退出，不会发出空 Release。
@@ -51,7 +51,7 @@ Sync master with main | active
 ## npm 发布：不在本工作流内（要改需 admin）
 
 - 本仓库的 GitHub Release 与 npm registry 是两个渠道；[PROVENANCE.md](PROVENANCE.md) 明确记录"GitHub 发布不会自动发布 npm"，而 `npm publish` 需要 `NPM_TOKEN`。
-- 这条工作流**不引用任何 secret**：写一个引用未知 secret 的步骤，结果只会是启用后第一次运行才发现它不存在。当前流程仍是维护者本机 `npm publish`（先平台包、后主包，注意凭据选择与 hard link 限制，见 [release-0.2.1.md](release-0.2.1.md)）。
+- 这条工作流**不引用任何 secret**：写一个引用未知 secret 的步骤，结果只会是启用后第一次运行才发现它不存在。当前流程仍是维护者本机 `npm publish`（当前只发布主包；旧版平台包流程见 [release-0.2.1.md](release-0.2.1.md)，不再适用于此版本）。
 - 若将来要让 CI 发布 npm，需要 admin 做的事：在仓库 secrets 里添加 `NPM_TOKEN`（带 2FA bypass 的 granular token），并新增一个 `needs: gate`、`permissions: contents: read` 的 job 显式读取 `secrets.NPM_TOKEN`——**这一半没有实现，属人为占位**。
 
 ## 如何启用（需要 admin）
@@ -71,7 +71,7 @@ gh api repos/T-Auto/dsh-ops/actions/workflows --jq '.workflows[]|select(.name=="
 ## 启用后：先手动干跑一次，再打 tag
 
 1. Actions → Release → **Run workflow**，分支选 `main`，不选 tag。预期：`native` 矩阵三个分支全绿、`gate` 绿、`publish` **skipped**，并产出 `native-win32-x64`／`native-linux-x64`／`native-darwin-arm64`／`release-dist` 四个 artifact。
-2. 检查 `release-dist` 里有三个 tarball、`SHA256SUMS`、`provenance.json`；把 `SHA256SUMS` 与 run summary 里的摘要对上。
+2. 检查 `release-dist` 里有一个主包 tarball、`SHA256SUMS`、`provenance.json`；把 `SHA256SUMS` 与 run summary 里的摘要对上。
 3. 干跑全绿之前**不要**打 tag：`push` tag 会立即发布，而 Release 一旦创建就对外可见（可以改 notes、可以替换资产，但"没发布过"这件事收不回来）。
 4. 需要真正发布时：`git tag v<package.json 版本>` → push tag（或按上面第 1 步改用 tag 作为 ref 手动 dispatch）。tag 与 `package.json` 版本必须一致，否则 `gate` 会拒绝。
 5. 万一中断：重新 dispatch 同一个 tag 即可，`gh release upload --clobber` 会替换资产而不是叠一份。

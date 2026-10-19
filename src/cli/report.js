@@ -197,7 +197,7 @@ export function printLadder(report) {
     }
   }
 
-  console.log('\nThree layers: repository tools → bash → PowerShell 7')
+  console.log('\nRouting: repository tools → bash → host PowerShell')
   console.log(report.policy || '(no file tools resolved)')
   console.log('\nResolution only: command visibility requires a live host session and sandboxPolicy.')
   console.log('Resolved candidates only; bash also needs the host subprocess service. Full access runs the executable directly;')

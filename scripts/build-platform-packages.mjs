@@ -1,57 +1,13 @@
 #!/usr/bin/env node
 /**
- * Build and verify the remaining PowerShell platform package. Bash is acquired separately.
- *
- * The PowerShell package carries the complete, digest-verified Windows runtime
- * with its licenses preserved. It is injected as an exact optional dependency. Downloads happen during release assembly,
- * never in an install lifecycle hook.
- *
- * `--verify-upstream` keeps the packages honest: it downloads the pinned assets,
- * checks each one against the sha256 recorded here, and deletes them again. It
- * never runs as part of `all`.
- *
- * NAMES AND PINS ARE NOT DEFINED HERE WHEN SOMETHING ELSE OWNS THEM. The scope
- * and the shell package names come from `lib/shells.js` (`PLATFORM_PACKAGES`).
- * The shell pins are read from `lib/shells.js` too
- * when that module exports a pin table or a pin function (see
- * {@link resolveShellPin} for the shapes accepted); a module that exports
- * neither is an error, never a silent second copy of the pins in this file.
- * Re-scoping the release is therefore one edit in one module, and the pins have
- * exactly one definition per shell.
- *
- * PIPELINE. Each step is re-runnable on its own:
- *
- *   assemble      the package directory, from the committed skeletons
- *                 in `packages/<kind>-<platform>-<arch>/` plus the verified
- *                 upstream tree and a per-package `provenance.json`
- *   pack          `npm pack` each directory, then write `SHA256SUMS` and the
- *                 release-wide `provenance.json`
- *   publish-dir   copy the main package into a temporary publish directory,
- *                 inject the remaining platform payload and pack it
- *   check         verify every artifact without downloading or building
- *   fetch         download the pinned upstream assets and keep them
- *   verify-upstream  download them, verify the digests, delete them again
- *
- * Everything lands under `--dist` (default: `../dist`, a sibling of this
- * checkout so a build never writes into the source tree).
+ * Assemble the main release artifact and verify its provenance and checksum manifest.
+ * Shell payloads are no longer npm packages. Legacy subcommands remain accepted;
+ * their shell package list is empty and they acquire no shell archives.
  *
  * Usage:
- *   node scripts/build-platform-packages.mjs [command] [flags]
+ *   node scripts/build-platform-packages.mjs [all|publish-dir|check] [--dist <directory>]
  *
- * Commands (default: `all`):
- *   all | assemble | pack | publish-dir | check | fetch | verify-upstream
- *
- * Flags:
- *   --platform <p>     target platform (default: win32 — the only one published)
- *   --arch <a>         target architecture (default: x64)
- *   --dist <path>      artifact directory (default: ../dist)
- *   --proxy <url>      HTTP proxy for downloads (default: $HTTPS_PROXY/$HTTP_PROXY)
- *   --no-proxy         ignore the proxy environment
- *   --verify-upstream  alias for the `verify-upstream` command
- *   --force            re-download assets and rebuild stages
- *   --check            alias for the `check` command
- *
- * @module dsh-ops/build-platform-packages
+ * @module dsh-ops/build/platform-packages
  */
 
 import fs from 'node:fs'
@@ -64,8 +20,6 @@ import { printArtifactTable, stepPack } from './lib/build/pack.js'
 import { stepPublishDir } from './lib/build/publish-dir.js'
 import { REPO_ROOT, log } from './lib/build/util.js'
 
-/** The packages this release publishes, in publish order. */
-const KINDS = Object.freeze(['pwsh'])
 
 // ---------------------------------------------------------------------------
 // Step: fetch and verify-upstream
