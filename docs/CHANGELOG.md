@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Add concise, field-level help to discoverable core file-tool input schemas, including quoted glob-array examples, regex/literal distinctions, search defaults and preview semantics. Keep resident `read_files`, validation constraints and runtime behavior unchanged; improved guidance does not guarantee model-generated JSON correctness (#328).
+- 为按需发现的核心文件工具输入 schema 补充简短字段说明，包括带引号的 glob 数组示例、正则与字面量的区别、搜索默认值和预览语义。常驻 `read_files`、校验约束和运行时行为不变；改善指引不代表保证模型生成的 JSON 一定正确（#328）。
+
 ## [0.4.1] — 2026-10-20 — Update locks stop leaving files behind
 
 - Stop the update lock from leaving `.dsh-ops-update-*.lock` sidecars behind (#319). The writer that takes the lock removes it on release, and only after proving the name still leads to the inode it locked, so a waiter that opened the old inode can never publish under it. A published write, a request refused after the lock and a directory-wide `replace` now leave the directory exactly as they found it; a sidecar left by a killed writer is not a stuck lock — the next write of that name binds to it, publishes under it and removes it.
