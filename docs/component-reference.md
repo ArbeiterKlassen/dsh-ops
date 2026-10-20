@@ -102,6 +102,8 @@ Use `summary` for aggregate file/match totals, `count` for per-file counts, `con
 
 Perform a deterministic UTF-8 replacement under `path`. `pattern` is **literal text, not a regex**; `glob` works as in `ops_grep`. `dryRun` observes only; writes use revision checks and atomic replacement. Read-only sessions are rejected.
 
+Each proposed file is limited to **32 MiB of UTF-8 bytes**, including in `dryRun`. The complete plan is checked with overflow-safe arithmetic before replacement content is constructed or any file is published. If any file would exceed the bound, the whole call returns `OUTPUT_LIMIT` with no file changes; narrow `path`/`glob` or reduce the replacement size. `maxReplacements` remains a separate match-count ceiling, not a truncation setting.
+
 Cooperating writers serialise on a hidden update-lock sidecar beside each target (`.dsh-ops-update-<sha256 of the lowercased name>.lock`). It is created before the target is read and removed by the writer that holds it, so a refused call leaves nothing behind; see [Update-lock sidecars](native-ptc.md#update-lock-sidecars) for the binding rule that makes removal safe and for the one residue a killed writer can leave.
 
 | Parameter | Type | Notes |
