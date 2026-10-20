@@ -265,7 +265,7 @@ export function foldRecords(records: readonly unknown[], context: FoldContext = 
   const toolCallsByName: Record<string, number> = {}
   const counters = {
     turns: 0, steps: 0, stepsWithUsage: 0, toolCalls: 0, toolErrors: 0,
-    textChars: 0, thinkingChars: 0, eventCount: 0, usageReported: true,
+    textChars: 0, thinkingChars: 0, eventCount: 0, usageReported: (context.malformed ?? 0) === 0,
   }
   let sessionId: string | undefined
   let cwd: string | undefined
@@ -404,7 +404,7 @@ export function foldRecords(records: readonly unknown[], context: FoldContext = 
     trace,
     verify: {
       checks: 0, passed: 0, failed: 0,
-      degraded: capped || conversationTruncated || traceTruncated || malformedRecords > 0,
+      degraded: capped || conversationTruncated || traceTruncated || events.malformed > 0,
       notes: [
         '实时采集没有 verifier:「判卷」标签页只反映采集自身的完整性,不代表任何任务的通过情况。',
         '只有挂载之后产生的事件会被采集;挂载之前的历史与已恢复的会话前缀不回放。',
@@ -486,7 +486,7 @@ export function createPanelCollector(options: CollectorOptions = {}) {
     note(key, `dsh-ops panel: capture failed (${key}): ${reason}; this session continues uncaptured.`, 'warn')
   }
 
-  /** Read the append log's first record and size, or undefined when it is unusable. */
+  /** Recover the append log's header, size and persisted cap without retaining parsed payloads. */
   async function readAppendLog(wal: string) {
     let text
     try { text = await io.readText(wal) } catch (error) {
@@ -495,11 +495,21 @@ export function createPanelCollector(options: CollectorOptions = {}) {
     }
     if (text.trim() === '') return undefined
     let header: Row | undefined
-    try {
-      const parsed: unknown = JSON.parse(text.slice(0, text.indexOf('\n') === -1 ? text.length : text.indexOf('\n')))
-      if (object(parsed) && parsed.record === 'open') header = parsed
-    } catch { /* a corrupted header is counted as malformed by the fold */ }
-    return { header, size: bytes(text) }
+    let capped = false
+    for (let start = 0; start < text.length;) {
+      const newline = text.indexOf('\n', start)
+      const end = newline < 0 ? text.length : newline
+      try {
+        const parsed: unknown = JSON.parse(text.slice(start, end))
+        if (object(parsed) && !Array.isArray(parsed)) {
+          if (start === 0 && parsed.record === 'open') header = parsed
+          // Match the fold's top-level marker contract, never cap-like text inside an event.
+          if (parsed.record === 'capped') { capped = true; break }
+        }
+      } catch { /* malformed records are counted when the document is folded */ }
+      start = end + 1
+    }
+    return { header, size: bytes(text), capped }
   }
 
   /** Open (or resume) one session's append log; refuse with one log line, never a throw. */
@@ -514,6 +524,7 @@ export function createPanelCollector(options: CollectorOptions = {}) {
     }
     const state: SessionState = {
       sessionId, paths, size: 0, droppedEvents: 0, capped: false, closed: false,
+      pendingBytes: 0, queueCapped: false, openFailed: false,
       header: undefined, chain: Promise.resolve(),
     }
     sessions.set(sessionId, state)
@@ -521,6 +532,7 @@ export function createPanelCollector(options: CollectorOptions = {}) {
       const prior = await readAppendLog(paths.wal)
       if (prior !== undefined) {
         state.size = prior.size
+        state.capped = prior.capped
         state.header = prior.header
         return
       }
@@ -530,31 +542,51 @@ export function createPanelCollector(options: CollectorOptions = {}) {
       await io.appendFile(paths.wal, line)
       state.size += bytes(line)
       state.header = header
-    })().catch((error) => { fail('open', error) })
+    })().catch((error) => {
+      // Neither an unread log nor a failed header establishes a safe append state.
+      state.openFailed = true
+      fail('open', error)
+    })
     return state
   }
 
-  /** Append one record, or count it as dropped once the session budget is spent. */
+  /** The first rejected event seals the retained prefix with one bounded marker. */
+  async function cap(state: SessionState): Promise<void> {
+    if (state.openFailed || state.capped) return
+    state.capped = true
+    const line = `${JSON.stringify({ record: 'capped', at: new Date(now()).toISOString(), limitBytes: config.maxSessionBytes })}\n`
+    state.size += bytes(line)
+    await io.appendFile(state.paths.wal, line)
+  }
+
+  /** Reserve bounded queue space immediately; admit writes only after recovery has loaded its size. */
   function append(state: SessionState, record: CaptureEvent & { record: string }) {
-    if (state.closed) return
+    if (state.closed || state.openFailed) return
+    if (state.capped || state.queueCapped) { state.droppedEvents += 1; return }
     let line
     try { line = `${JSON.stringify(record)}\n` } catch (error) { fail('serialize', error); return }
     const size = bytes(line)
-    if (state.capped || state.size + size > config.maxSessionBytes) {
+    if (state.size + state.pendingBytes + size > config.maxSessionBytes) {
       state.droppedEvents += 1
-      if (!state.capped) {
-        state.capped = true
-        const capLine = `${JSON.stringify({ record: 'capped', at: new Date(now()).toISOString(), limitBytes: config.maxSessionBytes })}\n`
-        state.size += bytes(capLine)
-        state.chain = state.chain
-          .then(() => io.appendFile(state.paths.wal, capLine))
-          .catch((error) => { fail('append-cap', error) })
-      }
+      // Close admission without retaining another payload or overtaking the already queued prefix.
+      state.queueCapped = true
+      state.chain = state.chain.then(() => cap(state)).catch((error) => { fail('append-cap', error) })
       return
     }
-    state.size += size
+    state.pendingBytes += size
     state.chain = state.chain
-      .then(() => io.appendFile(state.paths.wal, line))
+      .then(async () => {
+        state.pendingBytes -= size
+        if (state.openFailed) return
+        // Initial I/O may have discovered an existing log or added a new-session header.
+        if (state.capped || state.size + size > config.maxSessionBytes) {
+          state.droppedEvents += 1
+          await cap(state)
+          return
+        }
+        state.size += size
+        await io.appendFile(state.paths.wal, line)
+      })
       .catch((error) => { fail('append', error) })
   }
 
@@ -586,6 +618,7 @@ export function createPanelCollector(options: CollectorOptions = {}) {
 
   /** Fold the append log into the JSON document and refresh the viewer. */
   async function materialise(state: SessionState, final: boolean): Promise<void> {
+    if (state.openFailed) return
     const { paths } = state
     let text = ''
     try { text = await io.readText(paths.wal) } catch (error) {
@@ -632,7 +665,7 @@ export function createPanelCollector(options: CollectorOptions = {}) {
         const sessionId = safeSessionId(field(session, 'id'))
         if (sessionId === undefined) return
         const state = open(sessionId, field(field(session, 'header'), 'cwd') ?? field(session, 'cwd'))
-        if (state === undefined) return
+        if (state === undefined || state.openFailed) return
         const projected = projectEvent(event, config)
         if (projected === undefined) return
         append(state, { record: 'event', ...projected })

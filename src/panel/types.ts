@@ -21,6 +21,7 @@ export interface FoldedEvents {
 }
 export interface SessionState {
   sessionId: string; paths: PanelPaths; size: number; droppedEvents: number; capped: boolean; closed: boolean
+  pendingBytes: number; queueCapped: boolean; openFailed: boolean
   header?: Row; chain: Promise<void>
 }
 export interface PanelMeta { pluginVersion?: unknown; platform?: unknown; node?: unknown; argv?: unknown }
