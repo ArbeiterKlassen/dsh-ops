@@ -96,6 +96,16 @@ jobs:
       - name: Functional gate (skips, suite inventory, packed artifact)
         shell: bash
         run: node scripts/verify-gate.mjs --skip-install
+      # The UNC enumeration path needs a real UNC share. The Windows runner's
+      # system drive is reachable through the C$ administrative share, so the
+      # otherwise opt-in Rust regression runs in CI instead of staying local-only.
+      - name: UNC directory regression
+        if: matrix.target == 'win32-x64'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path 'C:\dsh-ops-unc' | Out-Null
+          $env:DSH_OPS_UNC_TEST_ROOT = '\\localhost\C$\dsh-ops-unc'
+          cargo test --locked --manifest-path native/Cargo.toml -p ops-search unc_directory -- --ignored --nocapture
       - name: Verify native staged closure
         run: node bin/native-runtime.mjs check --platform ${{ matrix.target }}
       - name: Check shell payload platform filtering
