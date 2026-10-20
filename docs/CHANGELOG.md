@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Distinguish ordinary nonzero Bash exits (`failure.code: EXIT_CODE`, `retry: after-input-change`) from interrupted or unavailable execution. Keep failed command status and unknown side effects, but let callers inspect output and correct inputs instead of categorically forbidding another command. Timeout, cancellation, signal death and execution refusals retain their existing retry guidance (#331).
+- 将 Bash 正常结束但退出码非零（`failure.code: EXIT_CODE`、`retry: after-input-change`）与执行中断或执行器不可用区分开。保留失败状态和副作用未知，不再一概禁止再次调用，而是指导先检查输出并修改输入；超时、取消、信号终止和执行拒绝的重试语义不变（#331）。
+
 ## [0.4.1] — 2026-10-20 — Update locks stop leaving files behind
 
 - Stop the update lock from leaving `.dsh-ops-update-*.lock` sidecars behind (#319). The writer that takes the lock removes it on release, and only after proving the name still leads to the inode it locked, so a waiter that opened the old inode can never publish under it. A published write, a request refused after the lock and a directory-wide `replace` now leave the directory exactly as they found it; a sidecar left by a killed writer is not a stuck lock — the next write of that name binds to it, publishes under it and removes it.

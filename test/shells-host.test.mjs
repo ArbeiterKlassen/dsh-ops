@@ -4,6 +4,7 @@ import { hostBashDefinition } from '../lib/shells/host-tool.js'
 import { startSessionBash } from '../lib/shells/session-execution.js'
 import { startBashJob, waitOnBashJob } from '../lib/shells/jobs.js'
 import { sessionWorkdir } from '../lib/session-shells.js'
+import { hostForeground } from '../lib/shells/host-contract.js'
 import { assert, report, test, TEST_HOME } from './lib/harness.mjs'
 
 function fixture({ mode = 'danger-full-access', jobs, approval, settle = true, exitCode = 0, file = process.execPath } = {}) {
@@ -218,8 +219,31 @@ await test('nonzero exit completes the host job but preserves the failed command
   const value = await f.definition.execute({ command: 'exit 7', description: 'Report a nonzero command exit' }, f.exec)
   assert.equal(jobs.outcome.status, 'completed'); assert.equal(jobs.outcome.detail, 'exit code: 7')
   assert.equal(value.exitCode, 7); assert.equal(value.status, 'failed')
-  assert.equal(value.failure.effectState, 'unknown'); assert.equal(value.failure.retry, 'never')
+  assert.equal(value.failure.effectState, 'unknown'); assert.equal(value.failure.retry, 'after-input-change')
+  assert.equal(value.failure.code, 'EXIT_CODE')
+  const text = f.definition.output.render({}, value)[0].text
+  assert.match(text, /correct the command or its inputs before retrying/)
+  assert.match(text, /Prior side effects may remain/)
+  assert.doesNotMatch(text, /Do not repeat the command/)
   assert.deepEqual(validateJsonSchemaValue(f.definition.output.schema, value, 'value'), [])
+})
+
+await test('only an ordinary nonzero exit permits a corrected command after input changes', () => {
+  const base = { exitCode: 2, signal: null, timedOut: false, timeoutMs: 1000,
+    stdout: { text: '', truncated: false }, stderr: { text: 'usage error', truncated: false } }
+  for (const extra of [{ timedOut: true }, { cancelled: true }, { signal: 'SIGTERM' },
+    { error: 'SPAWN_FAILED: unavailable' }, { restriction: { code: 'POLICY_DENIED', message: 'denied' } },
+    { permission: { code: 'PERMISSION_DENIED', message: 'denied' } }, { exitCode: null }]) {
+    const value = hostForeground({ ...base, ...extra })
+    assert.notEqual(value.failure.code, 'EXIT_CODE', JSON.stringify(extra))
+    assert.equal(value.failure.retry, 'never', JSON.stringify(extra))
+    assert.equal(value.failure.effectState, 'unknown')
+  }
+  assert.equal(hostForeground({ ...base, exitCode: 0 }).failure, undefined)
+  const normal = hostForeground(base)
+  assert.equal(normal.failure.code, 'EXIT_CODE')
+  assert.equal(normal.failure.retry, 'after-input-change')
+  assert.equal(normal.failure.effectState, 'unknown')
 })
 
 await test('job cancellation before asynchronous preparation prevents the starter from running', async () => {
