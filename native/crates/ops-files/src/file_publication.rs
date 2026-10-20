@@ -57,6 +57,7 @@ pub fn authorize_write(request: &Request, raw: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fs2::FileExt;
     #[test]
     fn simultaneous_lock_creators_keep_one_live_inode() {
         let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("ops-lock-test-{}", uuid::Uuid::new_v4()));

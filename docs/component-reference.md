@@ -102,7 +102,7 @@ Use `summary` for aggregate file/match totals, `count` for per-file counts, `con
 
 Perform a deterministic UTF-8 replacement under `path`. `pattern` is **literal text, not a regex**; `glob` works as in `ops_grep`. `dryRun` observes only; writes use revision checks and atomic replacement. Read-only sessions are rejected.
 
-Cooperating writers serialise on a persistent, hidden update-lock sidecar beside each target (`.dsh-ops-update-<sha256 of the lowercased name>.lock`). It is created before the target is read, so a refused call can leave it behind; see [Update-lock sidecars](native-ptc.md#update-lock-sidecars) for why it is not removed and who may clean it up.
+Cooperating writers serialise on a hidden update-lock sidecar beside each target (`.dsh-ops-update-<sha256 of the lowercased name>.lock`). It is created before the target is read and removed by the writer that holds it, so a refused call leaves nothing behind; see [Update-lock sidecars](native-ptc.md#update-lock-sidecars) for the binding rule that makes removal safe and for the one residue a killed writer can leave.
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
