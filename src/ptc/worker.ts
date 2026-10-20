@@ -24,6 +24,17 @@ export function failure(code: string, message: string, effectState: EffectState 
   return { status: 'error', error: { code, phase: effectState === 'none' ? 'preflight' : 'execute', retryable: false, effectState,
     nextAction: effectState === 'none' ? 'Correct the request or restore host authority.' : 'Inspect the persistent job manifest; never blindly rerun an interrupted batch.', message } }
 }
+// For fresh batches these validation failures precede Store::save in ops-batch::run.
+// Later path/credential checks become per-item errors in an existing job summary.
+// Store::save serializes a typed Job with the already-validated host-generated id.
+const BEFORE_AUDIT_ERRORS = new Set(['INVALID_ARGUMENT', 'PATH_RESTRICTED', 'CREDENTIAL_DENIED', 'REFERENCE_EXPIRED'])
+function rejectedBeforeAudit(value: Record<string, unknown>): boolean {
+  const error = value.error
+  // phase/effectState alone do not establish whether an audit exists: persistence
+  // IO/quota/conflict failures can report preflight/none after a plan was saved.
+  return record(error) && error.phase === 'preflight' && error.effectState === 'none'
+    && typeof error.code === 'string' && BEFORE_AUDIT_ERRORS.has(error.code)
+}
 export async function invoke(ctx: Context, file: string, tool: string, args: unknown, exec: ToolRunContext, signal?: AbortSignal, config?: WorkerInvokeConfig): Promise<unknown> {
   try {
     const session = exec?.agent?.session
@@ -48,9 +59,11 @@ async function invokeTrusted(ctx: Context, file: string, tool: string, args: unk
   const subprocess: SubprocessRuntime | undefined = ctx.get('subprocess')
   if (!policyService?.resolve || !subprocess?.spawn) return failure('EXECUTOR_UNAVAILABLE', 'DSH policy and subprocess services are required.')
   if (!record(args)) return failure('INVALID_ARGUMENT', 'Arguments must be an object.')
-  const jobId = tool === 'batch' ? (args?.action === 'run' || args?.action === 'plan' ? `j-${randomUUID()}` : args?.id) : undefined
-  const errorResult = (code: string, message: string, effect: EffectState = 'none') => ({ ...failure(code, message, effect), ...(jobId ? { detailsRef: jobId } : {}) })
+  const newJob = tool === 'batch' && (args.action === 'run' || args.action === 'plan')
+  const jobId = tool === 'batch' ? (newJob ? `j-${randomUUID()}` : args.id) : undefined
   let confined: ConfinedArgv | undefined, spawned = false
+  const errorResult = (code: string, message: string, effect: EffectState = 'none') => ({ ...failure(code, message, effect),
+    ...(jobId && (!newJob || spawned) ? { detailsRef: jobId } : {}) })
   try {
     const policy: SandboxExecutionPolicy = policyService.resolve({ session })
     if (!['read-only', 'workspace-write', 'danger-full-access'].includes(policy?.mode)
@@ -130,7 +143,9 @@ async function invokeTrusted(ctx: Context, file: string, tool: string, args: unk
     try { value = JSON.parse(stdout.text) } catch { return errorResult('RESULT_UNKNOWN', 'Worker returned invalid JSON; inspect audit records.', 'unknown') }
     if (!record(value)) return errorResult('RESULT_UNKNOWN', 'Worker returned a non-object result; inspect audit records.', 'unknown')
     const normalized = normalizeNativeDenial(value, policy, `${tool} ${args?.action ?? ''}`.trim(), 'workspace-write')
-    return { ...normalized, ...(tool === 'batch' ? { root: operationRoot } : {}), ...(normalized.status === 'error' && jobId ? { detailsRef: jobId } : {}), sandbox: { mode: policy.mode, ...(confined ? { enforcement: confined.enforcement } : {}) } }
+    const recoverableId = normalized.status === 'error' && jobId && normalized.detailsRef === undefined
+      && (!newJob || !rejectedBeforeAudit(normalized))
+    return { ...normalized, ...(tool === 'batch' ? { root: operationRoot } : {}), ...(recoverableId ? { detailsRef: jobId } : {}), sandbox: { mode: policy.mode, ...(confined ? { enforcement: confined.enforcement } : {}) } }
   } catch (error) {
     return errorResult(spawned ? 'RESULT_UNKNOWN' : 'EXECUTOR_UNAVAILABLE',
       `DSH execution infrastructure failed, not a user authorization denial: ${errorText(error)}`, spawned ? 'unknown' : 'none')
