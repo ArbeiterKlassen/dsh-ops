@@ -78,6 +78,7 @@ impl Failure {
             next_action: match code {
                 "ERR_INVALID_ENCODING" => "Use a dedicated document/binary reader, or inspect with view=hex; do not replace invalid bytes with lossy text.",
                 "METADATA_UNSUPPORTED" => "Use a filesystem/platform or dedicated tool that preserves the source metadata. Changing the permission selector or blindly retrying cannot repair this limitation.",
+                "LOCK_UNSUPPORTED" => "Use a local drive or the shell for this filesystem; retrying cannot add lock support.",
                 "PATH_CHANGED" => "Restart the query; the directory changed during enumeration. No complete result is available.",
                 "REFERENCE_EXPIRED" => "Release the expired result and acquire a new observation; references never grant authority.",
                 "REVISION_CONFLICT" => "Inspect the current revision before preparing a new request; do not blindly retry.",
