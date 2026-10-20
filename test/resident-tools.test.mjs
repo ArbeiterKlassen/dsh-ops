@@ -49,8 +49,8 @@ await test('gate the approved file/discovery budget and separately retain full s
     const discovery = assembly.tools.find(tool => tool.name === DISCOVER)
     const full = measure([...NATIVE_FILE_TOOLS.map(raw => new NativeFileTools({ctx:{},config:{}}).definition(raw)), discovery])
     const base = bashToolDefinition({ file: 'fixture', source: 'test', subprocess: {} })
-    const shell = hostBashDefinition({ get: name => name === 'jobs' ? {} : undefined }, base,
-      () => { throw new Error('Schema measurement must not execute a command') }, () => dir)
+    const shell = hostBashDefinition({ get: () => undefined }, base,
+      () => { throw new Error('Schema measurement must not execute a command') }, () => dir, {})
     assert.deepEqual(shell.parameters.required, ['description'])
     assert.ok(shell.parameters.properties.run_in_background)
     const withShell = measure([...assembly.tools, shell])

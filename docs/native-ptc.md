@@ -93,32 +93,44 @@ the active workspace root in the message. Results are bounded and UTF-8-first.
 
 ### Update-lock sidecars
 
-Every mutating file operation serialises cooperating writers on a persistent,
-hidden sidecar next to the target: `.dsh-ops-update-<sha256 of the lowercased
-basename>.lock`, created mode 0600 when the lock is first needed and reused by every
-later operation on that name. Single-file operations validate a snapshot before locking:
-stale revisions, edit conflicts and existing destinations are refused without a sidecar.
-`write_file` and `edit_file` dry runs never acquire this lock. A concurrent change or a
-publication failure after locking can still leave the artifact behind.
+Every mutating file operation serialises cooperating writers on a hidden sidecar
+next to the target: `.dsh-ops-update-<sha256 of the lowercased basename>.lock`,
+created mode 0600 when the lock is first needed and **removed when the writer that
+holds it is done** (#319). Single-file operations validate a snapshot before
+locking: stale revisions, edit conflicts and existing destinations are refused
+without a sidecar. `write_file` and `edit_file` dry runs never acquire this lock.
 
-Keeping it after a refusal is deliberate (#240 P5). Unlinking it on release
-would let a waiter that already opened the old inode hold a lock on an inode the
-path no longer names, while the next writer creates and locks a fresh file under
-the same name: two writers, one target. A zero-byte artifact that can be named,
-counted and tested is strictly better than that hole. `test/lock-sidecar.test.mjs`
-checks pre-lock refusals and dry runs; `test/linux-args.test.mjs` checks persistence
-and reuse. `ops_replace` is
-the broad case — it locks every file its `glob` selects before it counts a match,
-so a refused directory-wide replace leaves a sidecar beside each candidate,
-matching or not, and only a narrower `glob` bounds that.
+Removing the artifact on release used to be considered unsafe (#240 P5): a waiter
+that had already opened the old inode could lock it after the unlink, while the
+next writer created and locked a fresh file under the same name — two writers, one
+target. Two rules close that window without leaving anything in the operator's
+directory:
 
-Nothing removes a sidecar automatically, and nothing should while a `dsh-ops`
-writer may be active: deleting one is what re-opens the race above. An operator
-may delete sidecars in a directory no writer is using; the next write recreates
-what it needs. The name starts with `.`, so the walker's hidden-component rule
-keeps it out of `ops_glob`, `ops_grep` and a directory-wide `ops_replace`, and
-`ops_batch` resolves its operations from the request rather than from a walk —
-the artifact is never a result, never a replacement target and never a batch item.
+- **Bind before publishing.** After taking the exclusive lock, the holder reopens
+the name and compares the `(device, inode)` identity of that handle with the inode
+it locked. A name that no longer leads to the locked inode means the previous
+holder finished and removed the sidecar while this writer was opening it: the
+handle is dropped and the acquisition starts over. Only a bound holder publishes.
+- **Unlink while the lock is still held, and only the bound inode.** The same
+identity check runs first, so a sidecar that someone removed out of band and
+another writer has since re-created is left alone.
+
+What this means for a directory: a published write leaves nothing behind, and a
+request refused *after* the lock leaves nothing behind either — including
+`ops_replace`, which locks every file its `glob` selects before it counts a match,
+so a fenced directory-wide replace no longer leaves a sidecar beside each
+candidate. A writer killed between locking and release (`SIGKILL`, power loss)
+cannot run a cleanup path, so it can leave a zero-byte sidecar; it is not a stuck
+lock — the next writer of that name binds to it, publishes under it and removes it.
+`test/lock-sidecar.test.mjs` checks refusals, dry runs, published writes and that
+reuse; `native/crates/ops-files/src/file_update_lock.rs` is the protocol and its
+unit tests.
+
+Because the name is derived from the target's basename rather than its bytes, the
+walker's hidden-component rule keeps it out of `ops_glob`, `ops_grep` and a
+directory-wide `ops_replace`, and `ops_batch` resolves its operations from the
+request rather than from a walk — the artifact is never a result, never a
+replacement target and never a batch item.
 
 ### `ops_glob` details and ordering
 

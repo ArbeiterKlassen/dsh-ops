@@ -14,6 +14,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import Subprocess from '@deepseek-ai/dsh-subprocess-local'
+import { Service } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { assert, report, scenarioDir, skipSuite, test, waitFor, withTempDir } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
@@ -182,6 +183,28 @@ await test('every value the session layer settles on satisfies its registered sc
 })
 
 
+/** A tracked `jobs` service, the way the host provides it: every `ctx.get('jobs')` is a new proxy. */
+class TrackedJobs extends Service {
+  constructor(ctx) {
+    super(ctx, 'jobs')
+    this.records = []
+  }
+
+  start(spec) {
+    const hooks = spec.run({ updateProgress() {} })
+    this.records.push({ id: 'ops-job-1', spec, hooks })
+    return 'ops-job-1'
+  }
+
+  wait() { return this.records[0].hooks.done }
+
+  kill(_id, _owner, reason) { this.records[0].hooks.cancel(reason) }
+
+  remove() {}
+
+  read() { return { chunks: [], lossy: false, job: { output: { spillPaths: [] } } } }
+}
+
 await test('host jobs mount and teardown update the scoped background schema', async () => {
   const { ctx } = await bootHost()
   try {
@@ -190,8 +213,16 @@ await test('host jobs mount and teardown update the scoped background schema', a
       try {
         const current = () => ctx.get('tools').get('ops_bash', agent)
         assert.equal(current().parameters.properties.run_in_background, undefined)
-        const jobs = await ctx.plugin(inner => inner.provide('jobs', {}))
+        let registry
+        const jobs = await ctx.plugin(inner => { registry = new TrackedJobs(inner) })
         await waitFor(() => current()?.parameters.properties.run_in_background !== undefined, { what: 'background Bash schema publication' })
+        // The registry is a tracked service: a fresh traceable proxy answers every `ctx.get('jobs')`,
+        // so an identity check against the definition-time value can never hold. The bound registry
+        // must serve the call instead — this is the production failure the fix removes.
+        const value = await current().execute({ command: 'printf NPM_BG', description: 'Run a real background command', run_in_background: true }, { agent, signal: signal() })
+        assert.equal(value.kind, 'background', JSON.stringify(value))
+        assert.equal(value.jobId, 'ops-job-1')
+        assert.equal((await registry.records[0].hooks.done).status, 'completed')
         await jobs.dispose()
         await waitFor(() => current()?.parameters.properties.run_in_background === undefined, { what: 'background Bash schema removal' })
       } finally { await scope.dispose() }

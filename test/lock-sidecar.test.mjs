@@ -1,13 +1,11 @@
 /**
- * The persistent update sidecar is created for writes that publish — not for requests that are
- * refused, and not for a dry run.
+ * The update sidecar is taken for writes that publish, and it is gone afterwards.
  *
  * `ops_replace` and the single-file tools serialize cooperating writers on a hidden
- * `.dsh-ops-update-<sha256 of the name>.lock` beside the target. It is created on first use and
- * never unlinked (the lock must keep its identity across an atomic rename), so a *refused* request
- * that took the lock would leave a trace in a directory it never changed. The pure snapshot
- * validations therefore run before the lock: a stale revision, an edit conflict, an existing copy
- * destination or a dry run must leave the directory exactly as it was.
+ * `.dsh-ops-update-<sha256 of the name>.lock` beside the target. The sidecar is
+ * created on first use and removed by the writer that held it (#319), so a request
+ * that publishes, and a request refused after the lock, both leave the directory
+ * exactly as they found it.
  *
  * What this suite locks in:
  *
@@ -16,14 +14,12 @@
  * - `EDIT_CONFLICT` — a pure function of the current bytes — also leaves no sidecar.
  * - A `copy`/`move` whose destination already exists leaves no destination sidecar.
  * - A dry run creates nothing: `write_file` and `edit_file` answer without a lock.
- * - A successful write **does** create the sidecar: the lock contract is unchanged, so this is an
- *   assertion, not a leftover.
+ * - A successful write leaves no sidecar behind: the guard removes the artifact it locked.
  *
- * Not asserted, and why: a request that fails *after* the lock (a concurrent writer winning the
- * race, publication failure) can still leave a sidecar, and a `replace` refused by
- * `maxReplacements` can leave one per matched file. Those are the documented residual cases; the
- * safety property asserted there is that no file content changes, not that the directory stays
- * identical.
+ * Not asserted, and why: a writer killed between locking and release (`SIGKILL`, power
+ * loss) cannot run a cleanup path, so it can leave a zero-byte sidecar. That residue is
+ * not a stuck lock — the next writer of the same name binds to it, publishes under it
+ * and removes it (`native/crates/ops-files/src/file_update_lock.rs`).
  *
  * @module dsh-ops/test/lock-sidecar
  */
@@ -39,7 +35,7 @@ requireWorker('lock-sidecar')
 
 /** The revision form the worker accepts: a lowercase SHA-256 of the bytes. */
 const revisionOf = value => crypto.createHash('sha256').update(value).digest('hex')
-/** The persistent sidecar name for a target's base name. */
+/** The sidecar name for a target's base name, as the worker derives it. */
 const sidecarOf = name => `.dsh-ops-update-${revisionOf(name.toLowerCase())}.lock`
 /** The sidecars currently in a directory, sorted so a comparison is stable. */
 const sidecars = directory => fs.readdirSync(directory).filter(entry => entry.endsWith('.lock')).sort()
@@ -119,13 +115,41 @@ await test('a dry run answers without creating the update sidecar', async () => 
   })
 })
 
-await test('a write that publishes still creates the sidecar', async () => {
+await test('a write that publishes leaves no sidecar behind', async () => {
+  // #319: the sidecar used to be permanent, so every write left one file per target
+  // name in the operator's directory. The guard that holds the exclusive lock now
+  // removes it on release, in the same step that releases the lock.
   await withTempDir('lock-success', async workspace => {
+    const options = { root: workspace, writeRoots: [workspace] }
     const target = fixture(workspace, 'publish.txt', 'original')
-    const done = envelopeOf(await callTool('write_file', { path: target, content: 'next', expectedRevision: revisionOf('original') }, { root: workspace, writeRoots: [workspace] }), assert)
+    const beforeEach = sidecars(workspace)
+    assert.deepEqual(beforeEach, [], 'the fixture starts without a sidecar')
+    const done = envelopeOf(await callTool('write_file', { path: target, content: 'next', expectedRevision: revisionOf('original') }, options), assert)
     assert.equal(done.status, 'completed', JSON.stringify(done))
     assert.equal(fs.readFileSync(target, 'utf8'), 'next')
-    assert.equal(fs.existsSync(path.join(workspace, sidecarOf('publish.txt'))), true, 'the persistent lock contract is unchanged')
+    assert.deepEqual(sidecars(workspace), [], 'a published write must not leave its lock sidecar')
+    assert.deepEqual(fs.readdirSync(workspace), ['publish.txt'], 'the directory holds nothing but the target')
+
+    // A second write to the same name behaves the same: nothing accumulates.
+    const again = envelopeOf(await callTool('write_file', { path: target, content: 'third', expectedRevision: revisionOf('next') }, options), assert)
+    assert.equal(again.status, 'completed', JSON.stringify(again))
+    assert.deepEqual(fs.readdirSync(workspace), ['publish.txt'], 'repeated writes leave no artifact either')
+  })
+})
+
+await test('a leftover sidecar from a killed writer is reused and then removed', async () => {
+  // A `SIGKILL` cannot run the cleanup path, so that residue — and only that — can
+  // exist on disk. It must not block the next write, and the writer that finishes
+  // under it removes it, so debris cannot accumulate across sessions.
+  await withTempDir('lock-leftover', async workspace => {
+    const options = { root: workspace, writeRoots: [workspace] }
+    const target = fixture(workspace, 'orphan.txt', 'original')
+    fs.writeFileSync(path.join(workspace, sidecarOf('orphan.txt')), '')
+
+    const done = envelopeOf(await callTool('write_file', { path: target, content: 'next', expectedRevision: revisionOf('original') }, options), assert)
+    assert.equal(done.status, 'completed', JSON.stringify(done))
+    assert.equal(fs.readFileSync(target, 'utf8'), 'next')
+    assert.deepEqual(sidecars(workspace), [], 'the writer that finished removes the leftover it reused')
   })
 })
 
