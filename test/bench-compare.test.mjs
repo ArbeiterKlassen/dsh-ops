@@ -56,7 +56,7 @@ function metrics(taskId, tokens, pass, extra = {}) {
     usageReported: true,
     steps: extra.steps ?? 4,
     toolCalls: extra.toolCalls ?? 6,
-    toolErrors: 0,
+    toolErrors: extra.toolErrors ?? 0,
     toolCallsByName: extra.toolCallsByName ?? { ops_read: 2, bash: 1 },
     verify: { passed: pass, checks: [] },
     exitCode: 0,
@@ -173,6 +173,11 @@ await test('the same comparison renders byte-identical text twice, and the closi
   assert.equal(renderReport(beyond, SOURCES), text, 'rendering is a pure function of its inputs')
   assertEnglish(text)
   assert.match(text, /^# DSH-OPS Benchmark Report\n\n## Per-task pairs$/m, 'the title leads straight into the data — no summary bar')
+  assert.match(text, /^\| task \| base \| cand \(Δ%\) \| steps base→cand \(Δ%\) \| tool calls base→cand \(Δ%\) \| tool errors \| pass \|$/m, 'the first table carries cost, behaviour and pass: no pairs, exclusion or direction column')
+  assert.ok(text.includes(`| csv-sum | 1,000 | 926 (${green('\u22127.4%')}) | 4 → 4 (${green('0.0%')}) | 6 → 6 (${green('0.0%')}) | 0 → 0 | 2/2→2/2 |`), 'each cell keeps its own Δ% in parentheses, painted like every other percent')
+  assert.doesNotMatch(text, /geomean/, 'the table ends at TOTAL: the geomean row is gone')
+  assert.doesNotMatch(text, /## Excluded pairs|## A\/A noise band|## Token attribution/, 'the report keeps to cost, calls and the verdict: the three diagnostic sections are gone')
+  assert.doesNotMatch(text, /^## (Per-task pairs|Tool calls \(per-side overlap counts\)|Per-task bucket detail \(median\)|usage split \(TOTAL, median\)|steps and tool calls \(median\))\n\n(?!\|)/m, 'a table heading leads straight into its table: no explanatory line')
   assert.match(text, /^- base:\/runs\/aa\/base\/run\.json\(spec `bench-base`,run\)$/m, 'the compared sides stay named in Evidence')
   assert.match(text, /^- cand:\/runs\/aa\/cand\/run\.json\(spec `bench-ops`,run\)$/m)
   const headings = text.split('\n').filter((line) => line.startsWith('## '))
@@ -202,7 +207,7 @@ await test('the same comparison renders byte-identical text twice, and the closi
   const worseText = renderReport(worse, SOURCES)
   assert.ok(worseText.includes(`- Direction: Δ ${red('+5.0%')}, beyond the noise floor ±${red('3.1%')} ⇒ readable direction: costlier`), 'a rise beyond the band reads red')
   assert.match(worseText, /- gate: 🚦 failed \(regression\) ·/)
-  assert.ok(worseText.includes(`| csv-sum | 1,000 | 1,050 | ${red('+5.0%')} | 2/2 | 0 | 2/2→2/2 | ⚠ regression |`))
+  assert.ok(worseText.includes(`| csv-sum | 1,000 | 1,050 (${red('+5.0%')}) | 4 → 4 (${green('0.0%')}) | 6 → 6 (${green('0.0%')}) | 0 → 0 | 2/2→2/2 |`))
   assert.ok(worseText.includes(`- reason: token regression: csv-sum 1,050 > 1,020 (base 1,000 + ${red('2%')}; noise ±${red('3.1%')})`), 'a reason quoted from the core is painted too, its digits intact')
   for (const rendered of [insideText, unknownText, worseText]) assertEnglish(rendered)
 })
@@ -229,37 +234,65 @@ await test('the steps and tool calls table pairs each task, sums the totals, and
   const halfCand = summary('bench-ops', [metrics('csv-sum', 900, true, { toolCalls: 13 }), metrics('csv-sum', 900, true, { toolCalls: 13 })])
   const halfText = renderReport(compareSummaries(halfBase, halfCand, { noiseFloorPct: 3.1, failOn: 'both' }), SOURCES)
   assert.ok(halfText.includes(`| csv-sum | 4 → 4 (${green('0.0%')}) | 12.5 → 13 (${red('+4.0%')}) |`))
+
+  // Tool errors are raw counts in the first table, not a median ratio: 2 → 0.
+  const errBase = summary('bench-base', [metrics('csv-sum', 1000, true, { toolErrors: 2 })])
+  const errCand = summary('bench-ops', [metrics('csv-sum', 900, true, { toolErrors: 0 })])
+  const errText = renderReport(compareSummaries(errBase, errCand, { noiseFloorPct: 3.1, failOn: 'both' }), SOURCES)
+  assert.ok(errText.includes('| 2 → 0 | 1/1→1/1 |'), 'tool errors are counted, not percentaged')
 })
 
-await test('the tool table paints the candidate reaching for a tool the plugin does not publish', () => {
-  const base = summary('bench-base', [metrics('csv-sum', 1000, true, { toolCallsByName: { ops_read: 2, bash: 1 } })])
-  const cand = summary('bench-ops', [metrics('csv-sum', 900, true, { toolCallsByName: { ops_read: 3, bash: 1 } })])
+await test('the tool table keeps the per-side totals, splits them by task, and colours adoption', () => {
+  const base = summary('bench-base', [metrics('csv-sum', 1000, true, { toolCallsByName: { ops_read: 2, bash: 1, write: 4 } })])
+  const cand = summary('bench-ops', [metrics('csv-sum', 900, true, { toolCallsByName: { ops_read: 3, bash: 2, write: 4 } })])
   const text = renderReport(compareSummaries(base, cand, { noiseFloorPct: 3.1, failOn: 'both' }), SOURCES)
   assert.match(text, /^## Tool calls \(per-side overlap counts\)$/m)
-  assert.ok(text.includes('| ops_read | 2 | 3 |'), 'a published tool needs no alarm, and base is never painted')
-  assert.ok(text.includes(`| bash | 1 | ${red('1')} |`), 'a built-in the candidate still reached for is red')
+  const headings = text.split('\n').filter((line) => line.startsWith('## '))
+  assert.equal(headings[1], '## Tool calls (per-side overlap counts)', 'the tool table sits directly under the per-task pair table: it is the first explanation of where the token Δ went')
+  assert.match(text, /^\| tool \| base \| cand \| csv-sum \|$/m, 'the base/cand totals stay, and each task adds a column')
+  assert.ok(text.includes(`| ops_read | 2 | ${green('3')} | 2 → ${green('3')} |`), 'an ops tool rising is green: the plugin replaced a built-in')
+  assert.ok(text.includes(`| bash | 1 | ${red('2')} | 1 → ${red('2')} |`), 'a built-in rising is red: the candidate reached past the plugin')
+  assert.ok(text.includes('| write | 4 | 4 | 4 → 4 |'), 'equal counts are not painted')
 
-  // A built-in only the baseline used is a gap that is already closed: 0 is not an alarm.
+  // Falling is green for a built-in and red for an ops tool: adoption, not the sign.
   const closed = summary('bench-ops', [metrics('csv-sum', 900, true, { toolCallsByName: { ops_read: 3 } })])
   const closedText = renderReport(compareSummaries(base, closed, { noiseFloorPct: 3.1, failOn: 'both' }), SOURCES)
-  assert.ok(closedText.includes('| bash | 1 | 0 |'), 'a count of zero says the candidate stopped reaching for it')
+  assert.ok(closedText.includes(`| bash | 1 | ${green('0')} | 1 → ${green('0')} |`), 'a built-in the candidate stopped calling is green')
+  assert.ok(closedText.includes(`| write | 4 | ${green('0')} | 4 → ${green('0')} |`))
+
+  const declined = compareSummaries(
+    summary('bench-base', [metrics('csv-sum', 1000, true, { toolCallsByName: { ops_read: 5 } })]),
+    summary('bench-ops', [metrics('csv-sum', 900, true, { toolCallsByName: { ops_read: 2 } })]),
+    { noiseFloorPct: 3.1, failOn: 'both' },
+  )
+  assert.ok(renderReport(declined, SOURCES).includes(`| ops_read | 5 | ${red('2')} | 5 → ${red('2')} |`), 'an ops tool falling is red: adoption moved backwards')
+
+  // Each task keeps its own column; a tool nobody used in a task reads as a dash.
+  const twoTasks = compareSummaries(
+    summary('bench-base', [metrics('csv-sum', 1000, true, { toolCallsByName: { ops_read: 1 } }), metrics('api-rename', 1000, true, { toolCallsByName: { ops_read: 2 } })]),
+    summary('bench-ops', [metrics('csv-sum', 900, true, { toolCallsByName: { ops_read: 3 } }), metrics('api-rename', 900, true, { toolCallsByName: { ops_read: 4 } })]),
+    { noiseFloorPct: 3.1, failOn: 'both' },
+  )
+  const twoText = renderReport(twoTasks, SOURCES)
+  assert.match(twoText, /^\| tool \| base \| cand \| csv-sum \| api-rename \|$/m)
+  assert.ok(twoText.includes(`| ops_read | 3 | ${green('7')} | 1 → ${green('3')} | 2 → ${green('4')} |`), 'the count belongs to the task that made the call')
 })
 
-await test('excluded pairs are counted per task and in total, and their absence is said out loud', () => {
+await test('excluded pairs leave the report body but stay in the warnings, and the pair table prices only usable pairs', () => {
   const base = summary('bench-base', [metrics('csv-sum', 1000, true), metrics('csv-sum', 1000, true), metrics('csv-sum', 1000, true)])
   const cand = summary('bench-ops', [metrics('csv-sum', 500, true), metrics('csv-sum', 100, false), metrics('csv-sum', 200, false)])
   const comparison = compareSummaries(base, cand, { noiseFloorPct: 3.1, failOn: 'pass-drop' })
   const text = renderReport(comparison, SOURCES)
   assertEnglish(text)
-  assert.match(text, /## Excluded pairs \(not in cost\)/)
-  assert.match(text, /Excluded 2 pair\(s\) because at least one side failed: base failed 0 · cand failed 2 · both failed 0\./)
-  assert.match(text, /\| csv-sum \| 2 \| 0 \| 2 \| 0 \|/)
-  assert.match(text, /1\/3 \| 2 \| 3\/3→1\/3 \|/, 'the pair table shows the usable/considered split next to the exclusion count')
-  assert.match(text, /- cost-pairs-excluded: 2 \(base 0, cand 2, both 0\)/)
+  assert.doesNotMatch(text, /## Excluded pairs/, 'the section is gone; the counts must not vanish with it')
+  assert.ok(text.includes(`| csv-sum | 1,000 | 500 (${green('\u221250.0%')}) |`), 'the pair table still prices the one usable pair')
+  assert.ok(text.includes('| 3/3→1/3 |'), 'the pass column counts every repeat, not only the usable pairs')
+  assert.doesNotMatch(text, /pairs usable\/counted/, 'the usable/considered split no longer has a column')
+  assert.match(text, /- cost-pairs-excluded: 2 \(base 0, cand 2, both 0\)/, 'the warnings still carry how many pairs the cost statistics lost')
 
   const clean = compareSummaries(base, summary('bench-ops', base.results.map((entry) => ({ ...entry, usage: { ...entry.usage } }))), { noiseFloorPct: 3.1, failOn: 'none' })
   const cleanText = renderReport(clean, SOURCES)
-  assert.match(cleanText, /No pairs were excluded: every pair that passed on both sides counted toward cost\./)
+  assert.match(cleanText, /No warnings\./, 'nothing excluded means nothing to warn about')
   assertEnglish(cleanText)
 })
 
@@ -383,7 +416,7 @@ await test('label, directory and file forms resolve to the same comparison', asy
     assert.equal(body(byFile.text()), body(byDir.text()), 'all three forms reach the same comparison')
     assert.match(byLabel.text(), /- base:.*run\.json\(spec `bench-base`,run\)/)
     assert.match(byDir.text(), /- base:.*run\.json\(spec `.*bench-base`,run\)/)
-    assert.ok(byDir.text().includes(`api-rename | 500 | 620 | ${red('+24.0%')} | 1/1 | 0 | 1/1→1/1 | ⚠ regression |`))
+    assert.ok(byDir.text().includes(`api-rename | 500 | 620 (${red('+24.0%')}) | 2 → 2 (${green('0.0%')}) | 1 → 1 (${green('0.0%')}) | 0 → 0 | 1/1→1/1 |`))
 
     // A group is searched with --folder; the flat root is searched without it.
     assert.equal((await invoke(['bench-base', 'bench-ops', '--runs', runs, ...common]).run()), EXIT.ok)
@@ -453,12 +486,12 @@ await test('--noise measures the floor in the call, and a missing prompt degrade
     assert.equal(doc.gate.regressionFailed, true)
     assert.match(renderReport(doc, SOURCES), /method `aa-max-abs-task-pct`/)
 
-    // A row with no duration/prompt capture cannot support attribution, and the
-    // report says "Skipped" rather than presenting a guess.
-    const bare = summary('bench-base', [{ ...metrics('csv-sum', 1000, true, { prompt: false }) }])
-    const text = renderReport(compareSummaries(bare, summary('bench-ops', [metrics('csv-sum', 900, true, { prompt: false })]), { noiseFloorPct: 3.1 }), SOURCES)
-    assert.match(text, /Skipped: at least one side has no prompt capture/)
-    assert.doesNotMatch(text, /fixed overhead per request \|/)
+    // A row with no prompt capture cannot support attribution: the core records that,
+    // and the report has no attribution section left to hedge in.
+    const bare = compareSummaries(summary('bench-base', [metrics('csv-sum', 1000, true, { prompt: false })]), summary('bench-ops', [metrics('csv-sum', 900, true, { prompt: false })]), { noiseFloorPct: 3.1 })
+    assert.equal(bare.overhead.comparable, false, 'the core marks the split incomparable')
+    const text = renderReport(bare, SOURCES)
+    assert.doesNotMatch(text, /Token attribution|fixed overhead per request/)
     assertEnglish(text)
   })
 })

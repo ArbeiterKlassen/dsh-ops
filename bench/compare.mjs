@@ -355,16 +355,6 @@ function paintPercents(text) {
 }
 
 /**
- * A count painted red for a reason that is not a sign: the plugin side reached for a
- * tool this plugin does not publish.
- * @param {string} text - the rendered count.
- * @returns {string} the HTML span.
- */
-function alarm(text) {
-  return `<span style="color:${RED}">${text}</span>`
-}
-
-/**
  * Paint one rendered value: a drop (or no change) is green, a rise is red — the same
  * two colours `panel.html` uses, inline because a markdown file cannot carry a
  * stylesheet. A value with no number behind it is returned unwrapped.
@@ -393,19 +383,6 @@ function percent(value) {
 function rawPercent(value) {
   if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a'
   return color(`${value}%`, value)
-}
-
-/** The short verdict name for one task's cost conclusion. */
-function directionLabel(cost, regressed) {
-  if (regressed) return '⚠ regression'
-  switch (cost?.conclusion) {
-    case 'cheaper': return 'cheaper'
-    case 'costlier': return 'costlier'
-    case 'within-noise': return 'within noise'
-    case 'noise-floor-unknown': return 'abstain (noise floor unknown)'
-    case 'incomparable': return 'incomparable'
-    default: return 'no change'
-  }
 }
 
 /**
@@ -460,123 +437,33 @@ function verdictSection(comparison) {
 }
 
 /**
- * The per-task paired table: cost plus the pass migration a reviewer scans for.
+ * The per-task paired table: cost, the behaviour behind it (steps, tool calls, tool
+ * errors) and the pass migration, all on the row a reviewer reads first.
  * @param {object} comparison - the comparison structure.
  * @returns {string[]} the section lines.
  */
 function taskSection(comparison) {
-  const { gate, totals } = comparison
+  const { totals } = comparison
+  const useMin = comparison.aggregate === 'min'
+  const keys = { steps: useMin ? 'stepsMin' : 'stepsMedian', toolCalls: useMin ? 'toolCallsMin' : 'toolCallsMedian', toolErrors: useMin ? 'toolErrorsMin' : 'toolErrorsMedian' }
+  // The change rides inside the cell it belongs to (`1,050 (+5.0%)`, `4 → 3 (−25%)`):
+  // one number per row, with its Δ% in parentheses rather than a column of its own.
+  const candCell = (value, pct) => `${number(value)}${Number.isFinite(pct) ? ` (${percent(pct)})` : ''}`
+  const deltaCell = (baseValue, candValue, pct) => `${count(baseValue)} → ${count(candValue)}${Number.isFinite(pct) ? ` (${percent(pct)})` : ''}`
+  const countCell = (baseValue, candValue) => `${count(baseValue)} → ${count(candValue)}`
+  const passCell = (side) => `${side.base.passed}/${side.base.repeats}→${side.cand.passed}/${side.cand.repeats}`
   const lines = [
     '## Per-task pairs',
     '',
-    'Cost counts only pairs that passed on both sides (`paired-both-passed`); Δ% is the change in paired cost, not the mean over every repeat.',
-    '',
-    '| task | base | cand | Δ% | pairs usable/counted | excluded | pass base→cand | direction |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| task | base | cand (Δ%) | steps base→cand (Δ%) | tool calls base→cand (Δ%) | tool errors | pass |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
   ]
   for (const task of comparison.tasks) {
     const pair = task.paired
     const name = task.inBase && task.inCand ? task.id : `${task.id}${task.inBase ? '(base only)' : '(cand only)'}`
-    lines.push(`| ${name} | ${number(pair.baseValue)} | ${number(pair.candValue)} | ${percent(pair.pct)} | ${pair.pairs}/${pair.considered} | ${pair.excluded.total} | ${task.base.passed}/${task.base.repeats}→${task.cand.passed}/${task.cand.repeats} | ${directionLabel(task.cost, task.regressed)} |`)
+    lines.push(`| ${name} | ${number(pair.baseValue)} | ${candCell(pair.candValue, pair.pct)} | ${deltaCell(task.base[keys.steps], task.cand[keys.steps], task.delta.stepsPct)} | ${deltaCell(task.base[keys.toolCalls], task.cand[keys.toolCalls], task.delta.toolCallsPct)} | ${countCell(task.base[keys.toolErrors], task.cand[keys.toolErrors])} | ${passCell(task)} |`)
   }
-  const totalPairs = `${gate.usablePairs}/${gate.usablePairs + gate.excludedPairs}`
-  lines.push(`| **TOTAL** | ${number(totals.baseGrandTotal)} | ${number(totals.candGrandTotal)} | ${percent(totals.grandTotalPct)} | ${totalPairs} | ${gate.excludedPairs} | ${totals.basePasses}/${totals.baseRuns}→${totals.candPasses}/${totals.candRuns} | ${directionLabel(comparison.verdict.cost, false)} |`)
-  lines.push(`| **geomean Δ** | — | — | ${percent(totals.grandTotalGeomeanPct)} | — | — | — | equal weight per task |`)
-  return lines
-}
-
-/**
- * The pairs a failed side forced out of the cost statistics — the count the issue
- * requires to be visible, so a run cannot shrink its own denominator quietly.
- * @param {object} comparison - the comparison structure.
- * @returns {string[]} the section lines.
- */
-function excludedSection(comparison) {
-  const { excluded } = comparison.pairing
-  const lines = ['## Excluded pairs (not in cost)', '']
-  if (excluded.total === 0) {
-    lines.push('No pairs were excluded: every pair that passed on both sides counted toward cost.')
-  } else {
-    lines.push(`Excluded ${excluded.total} pair(s) because at least one side failed: base failed ${excluded.baseFailed} · cand failed ${excluded.candFailed} · both failed ${excluded.bothFailed}.`, '')
-    lines.push('| task | excluded | base failed | cand failed | both failed |', '| --- | --- | --- | --- | --- |')
-    for (const task of comparison.tasks) {
-      const counts = task.paired.excluded
-      if (counts.total === 0) continue
-      lines.push(`| ${task.id} | ${counts.total} | ${counts.baseFailed} | ${counts.candFailed} | ${counts.bothFailed} |`)
-    }
-  }
-  const counts = comparison.pairing.counts
-  lines.push(
-    '',
-    `Pairing: keys ${counts.pairs} · missing base ${counts.missingBase} · missing cand ${counts.missingCand} · duplicate keys ${counts.duplicates} · label mismatches ${counts.labelMismatches} · invalid rows ${counts.invalid}; merge ${comparison.pairing.complete ? 'complete' : 'incomplete'}.`,
-  )
-  return lines
-}
-
-/**
- * The A/A band: what "nothing changed" looked like, or an explicit statement that
- * it is unknown and every direction is therefore withheld.
- * @param {object} comparison - the comparison structure.
- * @returns {string[]} the section lines.
- */
-function noiseSection(comparison) {
-  const noise = comparison.noiseFloor
-  const lines = ['## A/A noise band', '']
-  if (!noise.comparable) {
-    lines.push(
-      'The noise floor is unknown ⇒ there is no readable interval, and every cost direction is withheld (`noise-floor-unknown`); the report states the measured Δ only, with no direction.',
-      '',
-      'How to supply one: `--noise-floor-pct N` pins a previously measured floor, or `--noise <base> <cand>` measures it from two baseline runs.',
-    )
-    return lines
-  }
-  lines.push(
-    `half-width ±${rawPercent(noise.pct)} · interval [${percent(noise.band.low)}, ${percent(noise.band.high)}] · method \`${noise.method}\` · pairs ${noise.pairs} · task samples ${noise.samples}${noise.medianAbsPct === null ? '' : ` · median magnitude ${rawPercent(noise.medianAbsPct)}`}`,
-    '',
-    'A Δ is read as a direction only beyond this half-width; inside the band only the interval is reported.',
-  )
-  if (noise.method === 'provided') lines.push('', 'The floor came from outside (`--noise-floor-pct`), not from a measurement in this run.')
-  if (noise.perTask.length > 0) {
-    lines.push('', '| task | base | cand | Δ% | pairs |', '| --- | --- | --- | --- | --- |')
-    for (const entry of noise.perTask) lines.push(`| ${entry.id} | ${number(entry.base)} | ${number(entry.cand)} | ${percent(entry.pct)} | ${entry.pairs} |`)
-  }
-  return lines
-}
-
-/**
- * The token attribution: how the TOTAL delta splits into the per-request fixed cost,
- * the extra steps, and what neither explains. Diagnostic only — it never fails a run.
- * @param {object} comparison - the comparison structure.
- * @returns {string[]} the section lines.
- */
-function attributionSection(comparison) {
-  const overhead = comparison.overhead
-  const lines = ['## Token attribution (diagnostic, not a verdict)', '']
-  if (!overhead.comparable) {
-    lines.push('Skipped: at least one side has no prompt capture (`metrics.prompt`), so the Δ cannot be split into fixed overhead / extra steps / residual.')
-    return lines
-  }
-  lines.push(
-    `Attributable tasks ${overhead.comparableTasks}/${overhead.tasks} (the first-step prompt is the only request without history, so fixed overhead is read from it).`,
-    '',
-    `Attribution covers all ${overhead.tasks} tasks with prompt capture (including pairs outside the cost statistics), so its total can differ from the paired token Δ by the excluded tasks' share.`,
-    '',
-    '| item | tokens Δ | reading |',
-    '| --- | --- | --- |',
-    `| fixed overhead per request | ${signed(overhead.fixedOverheadTokens)} | first-step prompt Δ × cand steps: tool schema / prompt strategy |`,
-    `| extra steps | ${signed(overhead.extraStepsTokens)} | Δ steps × base first-step prompt: model behaviour |`,
-    `| residual | ${signed(overhead.residualTokens)} | context growth / tool returns — whatever the first two terms leave unexplained |`,
-    `| output | ${signed(overhead.outputDelta)} | model output |`,
-    `| total (prompt + output) | ${signed(overhead.totalDelta)} | same sign and magnitude as the paired token Δ (the gap is the excluded tasks) |`,
-  )
-  const rows = comparison.tasks.filter((task) => task.overhead?.comparable === true)
-  if (rows.length > 0) {
-    lines.push('', '### Per-task attribution', '', '| task | fixed overhead Δ | extra steps Δ | residual Δ | output Δ | total Δ |', '| --- | --- | --- | --- | --- | --- |')
-    for (const task of rows) {
-      const entry = task.overhead
-      lines.push(`| ${task.id} | ${signed(entry.fixedOverheadTokens)} | ${signed(entry.extraStepsTokens)} | ${signed(entry.residualTokens)} | ${signed(entry.outputDelta)} | ${signed(entry.totalDelta)} |`)
-    }
-  }
+  lines.push(`| **TOTAL** | ${number(totals.baseGrandTotal)} | ${candCell(totals.candGrandTotal, totals.grandTotalPct)} | ${deltaCell(totals.baseSteps, totals.candSteps, percentChange(totals.baseSteps, totals.candSteps))} | ${deltaCell(totals.baseToolCalls, totals.candToolCalls, percentChange(totals.baseToolCalls, totals.candToolCalls))} | ${countCell(totals.baseToolErrors, totals.candToolErrors)} | ${totals.basePasses}/${totals.baseRuns}→${totals.candPasses}/${totals.candRuns} |`)
   return lines
 }
 
@@ -591,8 +478,6 @@ function bucketSection(comparison) {
   const cell = (baseValue, candValue) => `${number(baseValue)} → ${number(candValue)} (${percent(percentChange(baseValue, candValue))})`
   const lines = [
     `## Per-task bucket detail (${comparison.aggregate})`,
-    '',
-    'Each cell is the paired-sample statistic for that side; the TOTAL row sums the pairs, a different basis from "sum of per-task statistics" (they differ when repeat counts differ, and only the per-task table drives the verdict).',
     '',
     '| task | input base→cand (Δ%) | output base→cand (Δ%) | cache read base→cand (Δ%) |',
     '| --- | --- | --- | --- |',
@@ -622,8 +507,6 @@ function usageSplitSection(comparison) {
   }
   const row = (label, bucket) => `| ${label} | ${number(bucket.base)} | ${number(bucket.cand)} | ${signed(bucket.delta)} (${percent(percentChange(bucket.base, bucket.cand))}) | ${rawPercent(bucket.sharePct)} |`
   lines.push(
-    'The three buckets sum to the total; a Δ in cache read and a Δ in uncached input are two very different bills. This section sums the pairs (a different basis from the per-task table totals), and the verdict still reads only the paired token Δ.',
-    '',
     '| bucket | base | cand | Δ (Δ%) | share of Δ |',
     '| --- | --- | --- | --- | --- |',
     row('uncached input', buckets.input),
@@ -649,8 +532,6 @@ function stepsSection(comparison) {
   const lines = [
     `## steps and tool calls (${comparison.aggregate})`,
     '',
-    'Each cell is the statistic over all repeats on that side; the TOTAL row sums the per-task statistics. Both numbers only explain where the token Δ came from; neither takes part in the verdict.',
-    '',
     '| task | steps base→cand (Δ%) | tool calls base→cand (Δ%) |',
     '| --- | --- | --- |',
   ]
@@ -663,39 +544,57 @@ function stepsSection(comparison) {
 }
 
 /**
- * Tool adoption, summed over every repeat on each side: a tool called once and never
- * again is still evidence it was published and reached for, and a built-in the
- * candidate kept reaching for is the number this table exists to surface.
+ * Tool adoption, per tool and per task: a tool called once and never again is still
+ * evidence it was published and reached for. The `base` and `cand` columns keep the
+ * sweep-wide sums; each task column splits them by task, so a call can be read against
+ * the task whose Δ it explains.
+ *
+ * Colour follows adoption, not the sign: an `ops_*` tool rising is green (the plugin's
+ * tool replaced a built-in), while any other tool rising is red (the candidate kept
+ * reaching past the plugin); falling is green for a built-in and red for an `ops_*`
+ * tool. Equal counts are not painted.
+ *
+ * It renders directly under the per-task pair table: that table prices the Δ, this
+ * one shows the calls it was spent on, so the reader meets the two together.
  * @param {object} comparison - the comparison structure.
  * @returns {string[]} the section lines.
  */
 function toolSection(comparison) {
   const totals = new Map()
-  for (const task of comparison.tasks) {
+  const perTask = comparison.tasks.map((task) => {
+    const counts = new Map()
     for (const side of ['base', 'cand']) {
-      for (const [name, count] of Object.entries(task[side].toolCallsByName ?? {})) {
+      for (const [name, value] of Object.entries(task[side].toolCallsByName ?? {})) {
         const entry = totals.get(name) ?? { base: 0, cand: 0 }
-        entry[side] += count
+        entry[side] += value
         totals.set(name, entry)
+        const own = counts.get(name) ?? { base: 0, cand: 0 }
+        own[side] += value
+        counts.set(name, own)
       }
     }
-  }
+    return { id: task.id, counts }
+  })
   const lines = ['## Tool calls (per-side overlap counts)', '']
   if (totals.size === 0) {
     lines.push('Skipped: neither side recorded `toolCallsByName`.')
     return lines
   }
   const own = (name) => name.startsWith('ops')
+  const cand = (name, counts) => {
+    if (counts.cand === counts.base) return number(counts.cand)
+    const good = own(name) ? counts.cand > counts.base : counts.cand < counts.base
+    return `<span style="color:${good ? GREEN : RED}">${number(counts.cand)}</span>`
+  }
+  const cell = (name, counts) => (counts ? `${number(counts.base)} → ${cand(name, counts)}` : '—')
   const rows = [...totals.entries()].sort((left, right) => (Number(own(right[0])) - Number(own(left[0]))) || (right[1].cand - left[1].cand) || left[0].localeCompare(right[0]))
   lines.push(
-    'Red numbers in the cand column: the tool does not start with `ops`, yet the candidate side called it — a call the plugin did not cover. The base column is never painted (the baseline only has built-ins), and a count of zero is not painted either (that is not using it, not still using it).',
-    '',
-    '| tool | base | cand |',
-    '| --- | --- | --- |',
+    `| tool | base | cand | ${comparison.tasks.map((task) => task.id).join(' | ')} |`,
+    `| --- | --- | --- | ${comparison.tasks.map(() => '---').join(' | ')} |`,
   )
   for (const [name, counts] of rows) {
-    const cell = counts.cand > 0 && !own(name) ? alarm(number(counts.cand)) : number(counts.cand)
-    lines.push(`| ${name} | ${number(counts.base)} | ${cell} |`)
+    const tasks = perTask.map((task) => cell(name, task.counts.get(name))).join(' | ')
+    lines.push(`| ${name} | ${number(counts.base)} | ${cand(name, counts)} | ${tasks} |`)
   }
   return lines
 }
@@ -727,19 +626,13 @@ export function renderReport(comparison, sources = {}) {
     '',
     ...taskSection(comparison),
     '',
-    ...excludedSection(comparison),
-    '',
-    ...noiseSection(comparison),
-    '',
-    ...attributionSection(comparison),
+    ...toolSection(comparison),
     '',
     ...bucketSection(comparison),
     '',
     ...usageSplitSection(comparison),
     '',
     ...stepsSection(comparison),
-    '',
-    ...toolSection(comparison),
     '',
     ...warningSection(comparison),
     '',

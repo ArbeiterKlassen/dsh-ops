@@ -121,26 +121,26 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 
 按这个顺序读,不要跳(报告正文与标题都是英文,小节名照英文读):
 
-1. **`Per-task pairs`**:`task | base | cand | Δ% | pairs usable/counted | excluded | pass(base→cand) | direction`;`TOTAL` 行后还有
-   一行 **`geomean Δ`**(每任务等权);
-2. **`Excluded pairs (not in cost)`**:多少对因至少一侧未通过被排除,以及 base / cand / 两侧各占多少 ——
-   通过率一变,这里就是成本口径的地基;
-3. **`A/A noise band`**:半宽、区间、方法(`measured` 来自 `--noise`,或 `provided` 来自 `--noise-floor-pct`)、
-   配对数与任务样本;未知时这一段直接说明"方向一律弃权";
-4. **`Token attribution`**(诊断,不改判决)与 **`Per-task bucket detail`** / **`usage split`** / **`steps and tool calls`** /
-   **`Tool calls`**:都是诊断,把 Δ 拆成固定开销 / 额外步数 / 残差,按 input / output / cacheRead 分桶,
-   或给出每任务的步数与工具调用数;
-5. **`Warnings`**与**`Evidence`**:前者列出无法支撑结论的行(如某侧丢了 `step_end.usage`),后者给出 `run.json` 与
+1. **`Per-task pairs`**:`task | base | cand(Δ%) | steps base→cand(Δ%) | tool calls base→cand(Δ%) | tool errors | pass`;
+   数值单元格自带括号 Δ%,不单列;steps / tool calls 取该侧全部 repeat 的中位数(`--aggregate min` 时取最小值),
+   tool errors 与 pass 统计全部 repeat,配对可用数/排除数不再进这张表(它们留在 JSON 与门禁理由里);
+   表格以 `TOTAL` 行收尾,没有单独的 geomean 行(几何均值仍在 JSON 里);
+2. **`Tool calls (per-side overlap counts)`**:紧跟第一个表 —— 每个工具一行,`base` / `cand` 是整轮合计,
+   后面每个 task 一列,格子写成 `base → cand`;`ops_*` 工具计数上升标绿、下降标红,
+   其它工具相反(下降绿、上升红);两侧都没调用的格子写 `—`,相等不标色;
+3. **`Per-task bucket detail`** / **`usage split`** / **`steps and tool calls`**(都是诊断,不改判决):
+   按 input / output / cacheRead 分桶看 Δ,或给出每任务的步数与工具调用数;
+4. **`Warnings`**与**`Evidence`**:前者列出无法支撑结论的行(如某侧丢了 `step_end.usage`),后者给出 `run.json` 与
    归档路径;
-6. **`Conclusion`**(报告的最后一段):通过率、配对 token Δ、噪声底、方向、门禁与判定理由,顺序就是判决顺序。
+5. **`Conclusion`**(报告的最后一段):通过率、配对 token Δ、噪声底、方向、门禁与判定理由,顺序就是判决顺序。
 
 标题下没有汇总行:判决只写在结尾的 **`Conclusion`** 里,标题之后直接进数据。
 
 所有百分数按方向着色:**小于等于 0 绿、大于 0 红**(与 `panel.html` 同一套色,写成行内 `style`)。
 着色只是包一层 `<span>`,数字本身不被改写;GitHub 会剥掉 `style`,在那边退化成纯文本。
 
-**工具调用**表另有一条红色规则:cand 列里不以 `ops` 开头的工具、且候选侧真的调用过(计数 > 0),
-那个数字标红 —— 那是一次插件没覆盖到的调用;base 列不参与,计数为 0 也不标红。
+**工具调用**表的颜色看"采用方向",不是数字本身的涨跌:`ops_*` 工具计数上升是绿(插件工具接住了),下降是红;
+其它工具上升是红(候选仍在伸手够插件没覆盖的工具),下降是绿。计数相等不标色,两侧都没调用写 `—`。
 
 ## 面板怎么读(五个标签)
 
