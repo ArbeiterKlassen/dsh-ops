@@ -20,8 +20,8 @@
  *   `^beta$` matches, `alpha\nbeta` does not.
  * - `ops_glob` `details` timestamps are real epoch milliseconds and
  *   `sort: "modified"` orders by them, newest first, with equal timestamps left
- *   in the walk's path order (#236); and a refused update leaves exactly the
- *   documented update-lock sidecar beside its target and nothing else (#240 P5).
+ *   in the walk's path order (#236); and an update lock leaves nothing behind —
+ *   not after a published write, not after a refusal (#319).
  *
  * Platform. The subject is JSON argument handling in the native worker, plus
  * filesystem-neutral fixtures, so every case runs on win32 as well. The one
@@ -378,10 +378,11 @@ await test('glob details report a real mtime, and sort:modified orders by it rat
   })
 })
 
-await test('pre-lock refusals leave no sidecar and published locks remain invisible', async () => {
-  // #244 checks pure snapshots before acquiring a single-file update lock.
-  // Published writes and replace scans still retain the persistent lock inode;
-  // selection tools must never expose or rewrite that cooperative sidecar.
+await test('an update lock leaves no sidecar behind, refused or published', async () => {
+  // #319 replaced the permanent sidecar: the writer that holds the exclusive lock
+  // removes it on release, so a refusal *after* the lock (a directory-wide replace
+  // fenced by `write_roots`, which locks every walked candidate before it counts a
+  // match) no longer leaves one artifact per candidate in the operator's directory.
   await withTempDir('update-lock-refusal', async workspace => {
     const target = path.join(workspace, 'notes.txt')
     fs.writeFileSync(target, 'one TOKEN two\n')
@@ -413,27 +414,13 @@ await test('pre-lock refusals leave no sidecar and published locks remain invisi
     assert.equal(frozen.error.code, 'POLICY_DENIED')
     assert.deepEqual(snapshot(), declared('notes.txt'), 'a fence decided before the lock leaves no new entry')
 
-    // A successful no-op write acquires the persistent lock without restamping the target.
-    const noOp = envelopeOf(await callTool('write_file', { path: target, content: before.toString(), expectedRevision: createHash('sha256').update(before).digest('hex') }, { root: workspace }), assert)
-    assert.equal(noOp.status, 'completed', JSON.stringify(noOp))
-    assert.deepEqual(snapshot(), declared('notes.txt', sidecarOf('notes.txt')))
-    assert.equal(fs.statSync(path.join(workspace, sidecarOf('notes.txt'))).size, 0, 'the sidecar carries no payload')
+    // A successful write holds the lock only while it publishes, then removes it.
+    const written = envelopeOf(await callTool('write_file', { path: target, content: before.toString(), expectedRevision: createHash('sha256').update(before).digest('hex') }, { root: workspace }), assert)
+    assert.equal(written.status, 'completed', JSON.stringify(written))
+    assert.deepEqual(snapshot(), declared('notes.txt'), 'a published write must not leave a sidecar')
 
-    // Invisible to every selection tool, including a directory-wide replace.
-    const globbed = envelopeOf(await callTool('glob', { path: workspace, pattern: ['**/*'] }, { root: workspace }), assert)
-    assert.deepEqual(globbed.items.map(item => path.basename(String(item))), ['notes.txt'], 'glob must not report the sidecar')
-    const grepped = envelopeOf(await callTool('grep', { path: workspace, pattern: 'TOKEN' }, { root: workspace }), assert)
-    assert.deepEqual([...new Set(grepped.items.map(item => path.basename(item.path)))], ['notes.txt'], 'grep must not search the sidecar')
-    const replaced = envelopeOf(await callTool('replace', { path: workspace, pattern: 'TOKEN', replacement: 'DONE' }, { root: workspace }), assert)
-    assert.equal(replaced.changed, 1)
-    assert.deepEqual(replaced.items.map(item => path.basename(item.path)), ['notes.txt'], 'replace must not rewrite the sidecar')
-    assert.equal(fs.readFileSync(target, 'utf8'), 'one DONE two\n')
-    assert.equal(fs.statSync(path.join(workspace, sidecarOf('notes.txt'))).size, 0, 'a directory-wide replace leaves the sidecar empty')
-    assert.deepEqual(snapshot(), declared('notes.txt', sidecarOf('notes.txt')), 'a successful replace reuses the same sidecar')
-
-    // A directory-wide replace walks and locks every candidate *before* it counts
-    // a match or consults the write-roots fence, so its refusal leaves one declared
-    // sidecar per walked file — including a bystander that held no match.
+    // A directory-wide replace walks and locks every candidate *before* it counts a
+    // match or consults the write-roots fence; its refusal must leave nothing either.
     const fenced = path.join(workspace, 'fenced.txt')
     const bystander = path.join(workspace, 'bystander.txt')
     fs.writeFileSync(fenced, 'TOKEN\n')
@@ -442,8 +429,19 @@ await test('pre-lock refusals leave no sidecar and published locks remain invisi
     assert.equal(refusedReplace.error?.code, 'POLICY_DENIED')
     assert.equal(fs.readFileSync(fenced, 'utf8'), 'TOKEN\n', 'a fenced replace must change nothing')
     assert.equal(fs.readFileSync(bystander, 'utf8'), 'nothing here\n', 'a file with no match is untouched too')
-    assert.deepEqual(snapshot(), declared('notes.txt', 'fenced.txt', 'bystander.txt', sidecarOf('notes.txt'), sidecarOf('fenced.txt'), sidecarOf('bystander.txt')), 'one declared sidecar per walked file, no temporary debris')
-    assert.equal(envelopeOf(await callTool('glob', { path: workspace, pattern: ['**/*'] }, { root: workspace }), assert).items.every(item => !String(item).includes('dsh-ops-update-')), true, 'the new sidecars are invisible too')
+    assert.deepEqual(snapshot(), declared('notes.txt', 'fenced.txt', 'bystander.txt'), 'a refused replace leaves no lock artifact on any walked file')
+
+    // Invisible to every selection tool, including a directory-wide replace, and
+    // none of those selections creates one.
+    const globbed = envelopeOf(await callTool('glob', { path: workspace, pattern: ['**/*'] }, { root: workspace }), assert)
+    assert.deepEqual(globbed.items.map(item => path.basename(String(item))).sort(), ['bystander.txt', 'fenced.txt', 'notes.txt'], 'glob must not report a lock')
+    const replaced = envelopeOf(await callTool('replace', { path: workspace, pattern: 'TOKEN', replacement: 'DONE' }, { root: workspace }), assert)
+    assert.equal(replaced.changed, 2)
+    assert.deepEqual(replaced.items.map(item => path.basename(item.path)).sort(), ['fenced.txt', 'notes.txt'], 'replace must not rewrite a lock')
+    assert.equal(fs.readFileSync(target, 'utf8'), 'one DONE two\n')
+    assert.equal(fs.readFileSync(fenced, 'utf8'), 'DONE\n')
+    assert.deepEqual(snapshot(), declared('notes.txt', 'fenced.txt', 'bystander.txt'), 'a successful replace removes every lock it took')
+    assert.equal(fs.existsSync(path.join(workspace, sidecarOf('notes.txt'))), false, 'the lock name is not left behind')
   })
 })
 

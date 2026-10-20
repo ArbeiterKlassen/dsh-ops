@@ -111,19 +111,23 @@ fence). `denyCredentialReads: false` on a row disables this fence for that row o
 
 ### A `.dsh-ops-update-*.lock` file appeared in a directory
 
-**This is a persistent cooperative lock, not debris.** Writers serialize on a hidden sidecar beside
-the target: `.dsh-ops-update-<sha256 of the file name>.lock`. It is created on first use and never
-unlinked, because the lock must keep the same identity across an atomic rename; deleting it would let
-two writers lock different objects under the same name. It is not a sign that an operation succeeded
-or failed, it never contains data, and `glob`, `grep` and directory-wide `replace` skip it.
+**This is a cooperative writer lock, and a normal write does not leave it behind.** Writers serialize
+on a hidden sidecar beside the target: `.dsh-ops-update-<sha256 of the file name>.lock`. It is created
+on first use and **removed by the writer that holds it when that writer is done** (#319). It never
+contains data, and `glob`, `grep` and directory-wide `replace` skip it.
 
-Requests refused before the lock is taken (stale `expectedRevision`, `EDIT_CONFLICT`, an existing
-destination, a credential path) no longer create one since this release. A request that fails *after*
-the lock is taken — a concurrent writer winning the race, or a publication failure — can still leave
-one behind, and a `replace` refused by `maxReplacements` can leave one per file the scan
-opened (not only the files that matched).
-**Do not delete these files by hand**: removing a sidecar while another process may be waiting on it
-lets a later writer believe it is alone.
+A published write leaves nothing behind, and neither does a request refused *after* the lock (a
+concurrent writer winning the race, a publication failure, a `write_roots` fence around a directory-wide
+`replace`): the guard removes the sidecar on release, and it unlinks only after checking that the name
+still leads to the inode it locked. Requests refused before the lock (stale `expectedRevision`,
+`EDIT_CONFLICT`, an existing destination, a credential path) never created one.
+
+The only way to see a leftover is a writer killed between locking and release (`SIGKILL`, power loss),
+which cannot run a cleanup path. That is not a stuck lock: the next writer of the same name binds to
+it, publishes under it and removes it. Sidecars an older release left permanently are reclaimed by
+those same writes; in a directory nothing writes any more they can be deleted by hand
+(`Get-ChildItem -Recurse -Force -Filter .dsh-ops-update-*.lock | Remove-Item`), because the current
+release never creates them.
 
 ### Where did the background tools go?
 

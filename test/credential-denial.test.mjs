@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { assert, test, report, withTempDir } from './lib/harness.mjs'
+import { assert, test, report, ownWindowsFixture, withTempDir } from './lib/harness.mjs'
 import { requireWorker } from './lib/boundary.mjs'
 import { bootLoop } from './lib/agent-loop.mjs'
 import { credentialRefusal, credentialPath, DENY_ENV } from '../lib/credential-policy.js'
@@ -23,6 +23,10 @@ await test('credential refusal omits both a resolved path and a configured absol
 for (const ptcMode of [false, true]) await test(`real ${ptcMode ? 'PTC' : 'Native'} denials preserve authority without disclosing external credential paths`, () => withTempDir('credential-private', async temporary => {
   const root = path.join(temporary, 'workspace'), outside = path.join(temporary, 'private-store'), target = path.join(outside, 'config')
   fs.mkdirSync(root); fs.mkdirSync(outside); fs.writeFileSync(target, 'PRIVATE_FIXTURE_SECRET')
+  // An elevated hosted runner creates subdirectories with Administrators as owner even though the
+  // process user is the runner account. The Windows workspace preparation only accepts a
+  // user-owned root, so give this fixture root the process user's ownership like the temp root.
+  ownWindowsFixture(root)
   const previous = process.env[DENY_ENV]
   process.env[DENY_ENV] = [previous, outside].filter(Boolean).join(path.delimiter)
   let host
