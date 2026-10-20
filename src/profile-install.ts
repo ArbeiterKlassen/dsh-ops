@@ -49,6 +49,41 @@ function readManifest(file: string): Record<string, unknown> {
   return value
 }
 
+/** Static checks only: probing a candidate by running it would make dry-run execute user code. */
+function cliFileAvailable(file: string, script = false): boolean {
+  try {
+    if (!fs.statSync(file).isFile()) return false
+    fs.accessSync(file, script ? fs.constants.R_OK : process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK)
+    return true
+  } catch { return false }
+}
+
+function preflightCli(command: string, entry?: string): string {
+  const windows = process.platform === 'win32'
+  const explicitPath = windows ? /[\\/]|^[a-z]:/i.test(command) : command.includes('/')
+  const extensions = windows && !path.extname(command)
+    ? (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean) : ['']
+  const searchPath = (process.env.PATH ?? (windows ? '' : '/usr/bin:/bin')).split(path.delimiter)
+    .filter(directory => !windows || directory !== '')
+  // cmd searches the current directory unless the operator disabled that lookup.
+  if (windows && process.env.NoDefaultCurrentDirectoryInExePath === undefined) searchPath.unshift(process.cwd())
+  const candidates = explicitPath
+    ? [...extensions.filter(Boolean).map(extension => path.resolve(command + extension)), path.resolve(command)]
+    : searchPath.flatMap(directory => {
+      // Quoted PATH entries are a Windows convention; quotes are literal POSIX filename bytes.
+      const base = windows ? directory.replace(/^"(.*)"$/, '$1') : directory
+      return extensions.map(extension => path.resolve(base, command + extension))
+    })
+  const resolved = candidates.find(file => cliFileAvailable(file))
+  if (!resolved) throw new Error(`Official CLI not found or not executable: ${command}. Pass --dsh-cli <path> to an available DSH CLI.`)
+  if (windows && /\.(cmd|bat)$/i.test(resolved) && /["\r\n&|<>^%!]/.test(resolved)) {
+    throw new Error('Unsafe CLI path; use a path without cmd metacharacters.')
+  }
+  // A CLI found through @deepseek-ai/dsh runs under Node, so its bin needs read access, not +x.
+  if (entry !== undefined && !cliFileAvailable(entry, true)) throw new Error(`Official CLI entry point is missing or unreadable: ${entry}. Repair the DSH installation or pass --dsh-cli <path>.`)
+  return resolved
+}
+
 export function profileCommand(operation: ProfileOperation, { profile, dshCli, dryRun = false }: ProfileCommandOptions): number {
   if (!(SUPPORTED_TARGETS[process.platform] ?? []).includes(process.arch)) throw new Error(`Supported targets: ${PLATFORMS.join(', ')}; unsupported host ${process.platform}-${process.arch}.`)
   const aliases = { desktop: 'desktop', web: 'web', tui: 'dsh-tui', 'dsh-tui': 'dsh-tui' }
@@ -99,19 +134,18 @@ export function profileCommand(operation: ProfileOperation, { profile, dshCli, d
       }
     }
   }
+  command = preflightCli(command, prefix[0])
   console.log(`Target: ${target} (${directory})`)
-  console.log(`Official CLI: ${command}; ${args.join(' ')}`)
+  console.log(`Official CLI: ${command}; ${[...prefix, ...args].join(' ')}`)
   if (dryRun) return 0
   let result
-  if (process.platform === 'win32' && /\.cmd$/i.test(command)) {
-    // cmd wrappers are Windows-owned launchers; reject shell metacharacters in caller-supplied paths.
-    if (/["\r\n&|<>^%!]/.test(command)) throw new Error('Unsafe CLI path; use a path without cmd metacharacters.')
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
     result = spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `""${command}" ${args.join(' ')}"`], { stdio: 'inherit', windowsHide: true, windowsVerbatimArguments: true })
   } else result = spawnSync(command, [...prefix, ...args], { stdio: 'inherit', windowsHide: true })
   if (result.error) throw result.error
   if (result.status !== 0) return result.status ?? 1
   console.log(operation === 'install'
-    ? 'Installed through the official profile manager. Reload/restart the target application if needed. Bash is an explicit optional download: dsh-ops bash-runtime install. No postinstall downloads.'
+    ? 'Installed through the official profile manager. Reload/restart the target application if needed. On Windows the pinned Bash payload ships as an optional dependency; run dsh-ops bash-runtime install to repair a missing payload. No postinstall downloads.'
     : 'Removed through the official profile manager, including its runtime dependency references. Package-manager shared caches are not deleted.')
   return 0
 }

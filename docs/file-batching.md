@@ -2,7 +2,7 @@
 
 中文版：[文件批量操作.md](文件批量操作.md)。
 
-`ops_read_many` reads 1-32 UTF-8 ranges with one one-shot worker invocation. Every relative
+`ops_read_files` reads 1-32 UTF-8 ranges with one one-shot worker invocation. Every relative
 path resolves against the current session cwd on that call. Each entry has `path`, optional
 1-based `offset` (default 1), and `limit` from 1 to 10000 (default 200). Unlike the legacy
 inspector, offset 0 is invalid. Unknown fields, invalid bounds and malformed descriptors reject
@@ -36,7 +36,7 @@ a smaller original range, never advancing past unseen content. Native renders fi
 physical line numbers, per-file errors and continuation notices; the programmatic value stays
 structured.
 
-`ops_edit_many` applies 1-100 edits to **one** UTF-8 file, atomically. Supply `path`, the exact
+`ops_edit_file` applies 1-100 edits to **one** UTF-8 file, atomically. Supply `path`, the exact
 SHA-256 `expectedRevision` from a read/stat, and `edits: [{oldText,newText}]`. Each nonempty
 `oldText` must occur exactly once in the same original bytes; overlaps, ambiguity or stale
 revision reject all edits before publication. Empty `newText` deletes the match. Preserve

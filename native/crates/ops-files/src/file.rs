@@ -46,8 +46,8 @@ pub fn dispatch(request: &Request) -> Result<Value> {
     if let Some(raw) = request.args.get("path").and_then(Value::as_str) { request.authorize_path(Path::new(raw))?; }
     match request.tool.as_str() {
         "inspect_local_file" => inspect(request),
-        "read_many" => many::read_many(request),
-        "stat" | "diff" | "write_file" | "edit_file" | "edit_many" | "copy" | "move" | "remove" => single::run(request),
+        "read_files" => many::read_files(request),
+        "stat" | "diff" | "write_file" | "edit_file" | "copy" | "move" | "remove" => single::run(request),
         _ => Err(Failure::new("INVALID_ARGUMENT", "Unknown file capability")),
     }.map_err(|mut error| { error.message = format!("{}: {}", request.tool, error.message); error })
 }

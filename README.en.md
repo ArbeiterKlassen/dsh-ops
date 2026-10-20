@@ -33,9 +33,10 @@ strict TypeScript, compiled to the existing JavaScript package paths.
 > See [release status and limitations](docs/release-0.4.0.md). Commands using `@latest` below select
 > the published package; build and pack this checkout to evaluate the candidate.
 
-- Native starts with `ops_read_many` and `ops_discover`; eligible Windows sessions also receive
-  `ops_bash`. Advanced tools activate in the owning agent's next provider request.
-- The PTC SDK catalogue has 19 APIs: 16 file/document tools, batch, result references and its loader.
+- Native starts with `ops_read_files` and `ops_discover_tools`; the default profile enables the shell row
+  and publishes `ops_bash` on every platform. Advanced tools activate in the owning agent's next
+  provider request.
+- The PTC SDK catalogue has 18 APIs: 15 file/document tools, batch, result references and its loader.
   Only the configured resident or selected APIs are exposed. Native and PTC use separate outputs.
 - Discover bounded CSV/TSV, DOCX main-body paragraphs and a restricted PDF text layer. Binary DOC,
   OCR, general PDF rendering, web search and HTML crawling are not implemented. Read the
@@ -43,9 +44,13 @@ strict TypeScript, compiled to the existing JavaScript package paths.
 - Seven independently toggled rows preserve saved profile IDs and settings. Per-tool official
   replacements are off by default. [Settings](docs/configuration-reference.md) include validated
   built-in forms and optional browser pages with an explicit offline carrier migration.
-- Windows Bash is optional: install a verified managed copy with `dsh-ops bash-runtime install`
-  or choose Git Bash through `bashPath`. PowerShell stays host-managed; its upgrade command previews
-  the standard installation and requires `--yes` to execute. Neither shell is an npm payload.
+- The shell row is on by default on all three platforms: Windows uses the pinned Bash payload
+  declared by the main package — `@dsh-ops/bash-win32-x64@0.2.1` in `optionalDependencies`, so npm
+  installs the independent **bash 5.3.15** (PortableGit `v2.56.0.windows.2`) that ships with ops,
+  and `bashPath` can point `ops_bash` at Git Bash instead; Linux/macOS use the distribution's own
+  Bash, overridable with `config.bashPath`. `dsh-ops bash-runtime install` remains the path for
+  installing, repairing and selecting a managed copy. PowerShell stays host-managed; its upgrade
+  command previews the standard installation and requires `--yes` to execute.
 
 OPS publishes its own scoped tools and optional routing guidance; it does not rewrite the shared
 tool registry. Permissions and cancellation are checked per call. Windows restricted Bash retains
@@ -78,6 +83,8 @@ An explicit target profile is required. `tui` maps to the **dsh-TUI product's `d
 
 Desktop must use the CLI bundled with the desktop application; the default auto-detected path is `%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`. For another installation location, add `--dsh-cli "<installation>\resources\runtime\cli\bin\dsh.cmd"`. Web/TUI require an available DSH CLI, which can also be specified explicitly.
 
+Add `--dry-run` to an install or uninstall command to preview it. The preview resolves the CLI from its path or `PATH` (`PATHEXT` on Windows), checks the file, POSIX execute permission and any Node CLI entry point, and applies the same Windows command-script path checks as execution. A failed check returns a nonzero exit code. The preview prints the plan without starting the CLI or changing the profile. Success covers these static checks; it does not establish the program's identity, version, profile compatibility or eventual installation result.
+
 You can also use the official commands directly:
 
 ```console
@@ -99,7 +106,7 @@ npx --yes dsh-ops@latest status --profile desktop
 npx --yes dsh-ops@latest uninstall --profile desktop
 ```
 
-Replace `desktop` with `web` or `tui` as needed. You can also uninstall from the marketplace, or run the official `dsh plugin --profile ... remove dsh-ops`. Profile uninstall removes plugin dependency references. Remove separately downloaded Bash with `dsh-ops bash-runtime remove --yes`; this does not delete the system shell, copies in other profiles, or the package manager's shared cache.
+Replace `desktop` with `web` or `tui` as needed. You can also uninstall from the marketplace, or run the official `dsh plugin --profile ... remove dsh-ops`. Profile uninstall removes plugin dependency references, including the optional Windows Bash payload. Remove separately provisioned Bash with `dsh-ops bash-runtime remove --yes`; this does not delete the system shell, copies in other profiles, or the package manager's shared cache.
 
 Old files explicitly provisioned by earlier versions under `<DSH_HOME>/dsh-ops/` (provisioned shells, and the FastCtx runtime earlier versions could provision) need separate cleanup: `npx --yes dsh-ops@latest uninstall --yes`. The `~/.fastctx/` state left by the removed background component is not deleted by default; add `--purge-fastctx` when needed.
 
@@ -119,7 +126,7 @@ Enable the `dsh-ops/tui` row in dsh-TUI and restart to add the OPS sidebar witho
 
 Plugin source is distributed under **`MIT AND Apache-2.0`**: everything outside `licenses/fastctx/` is MIT; FastCtx is Apache-2.0. See [NOTICE](NOTICE), `licenses/fastctx/LICENSE-APACHE`, and `licenses/fastctx/NOTICE`.
 
-Shell binaries are obtained separately from their upstream distributors, under their upstream licenses. Git for Windows includes GPL and other licensed components, and PowerShell includes MIT and third-party components. The plugin's MIT license does not replace those licenses. See [PROVENANCE.md](docs/PROVENANCE.md).
+The separate Windows Bash payload package (the npm optional dependency `@dsh-ops/bash-win32-x64`) is distributed under its upstream components' licenses: Git for Windows includes GPL-2.0 and other licensed components, whose original licenses, notices and provenance records are kept with the payload. PowerShell stays host-managed and is distributed under Microsoft's MIT and third-party component licenses. The plugin's MIT license does not replace those licenses. See [PROVENANCE.md](docs/PROVENANCE.md).
 
 ## Acknowledgements
 

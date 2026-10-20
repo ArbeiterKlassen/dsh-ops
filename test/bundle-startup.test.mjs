@@ -49,14 +49,16 @@ for (const mode of ['read-only', 'workspace-write', 'danger-full-access']) {
           await agent.ctx.plugin(SearchTools, { sampleOverCapGlobResults: false })
           await ctx.serial('agent/created', { agent, source: 'startup' })
           const names = () => ctx.get('tools').schemas(agent).map(tool => tool.name)
-          await waitFor(() => names().includes(presentation === 'ptc' ? 'ops_inspect_local_file' : 'ops_read_many') && names().includes('read') && names().includes('grep') &&
-            names().includes('ops_sdk') === (presentation === 'ptc') &&
-            names().includes('ops_bash') === (process.platform === 'win32'), { what: `${mode}/${presentation} default publication` })
+          await waitFor(() => names().includes(presentation === 'ptc' ? 'ops_inspect_local_file' : 'ops_read_files') && names().includes('read') && names().includes('grep') &&
+            names().includes('ops_load_sdk') === (presentation === 'ptc') &&
+            // The shell row is on by default on every supported platform (POSIX resolves the
+            // distribution's own bash); a configured-but-missing bash is covered below.
+            names().includes('ops_bash'), { what: `${mode}/${presentation} default publication` })
           const assembled = await ctx.get('systemPrompt').assemble({ scope: agent, signal: new AbortController().signal })
           assert.equal(assembled.tools.some(tool => tool.name === 'run_code'), presentation !== 'native')
           assert.ok(assembled.sections.length > 0)
           assert.ok(names().includes('write'), 'defaults must not mask standard-preset mutation tools')
-          const name = presentation === 'ptc' ? 'ops_inspect_local_file' : 'ops_read_many'
+          const name = presentation === 'ptc' ? 'ops_inspect_local_file' : 'ops_read_files'
           const args = presentation === 'ptc' ? { path: path.join(root, 'absent') } : { files: [{ path: path.join(root, 'absent') }] }
           const result = await ctx.get('tools').get(name, agent).execute(args, { agent, signal: new AbortController().signal })
           const data = presentation === 'ptc' ? result.data : result
@@ -83,9 +85,9 @@ await test('a missing optional Bash leaves the file bundle available', async () 
       agent.ctx = createScope(ctx, agent).ctx
       await ctx.serial('agent/created', { agent, source: 'startup' })
       const names = () => ctx.get('tools').schemas(agent).map(tool => tool.name)
-      await waitFor(() => names().includes('ops_read_many'), { what: 'file publication without optional Bash' })
+      await waitFor(() => names().includes('ops_read_files'), { what: 'file publication without optional Bash' })
       assert.equal(names().includes('ops_bash'), false)
-      const result = await ctx.get('tools').get('ops_read_many', agent).execute({ files: [{ path: path.join(root, 'absent') }] }, { agent, signal: new AbortController().signal })
+      const result = await ctx.get('tools').get('ops_read_files', agent).execute({ files: [{ path: path.join(root, 'absent') }] }, { agent, signal: new AbortController().signal })
       assert.equal(result.items[0].status, 'error', JSON.stringify(result))
       assert.equal(result.items[0].error.code, 'NOT_FOUND')
     } finally { await shutdown(ctx) }

@@ -32,7 +32,7 @@ import { resolveTuiConfig } from '../lib/components/tui/index.js'
 import { resolvePanelConfig } from '../lib/components/panel/index.js'
 import { PTC_API_TOOLS, definition } from '../lib/ptc/contract.js'
 import { resolveConfig, resolveDiscoveryConfig } from '../lib/config.js'
-import { COMPONENTS, componentEntry, componentEnabled, SHELL_DISABLED_EXPRESSION } from '../lib/components/defaults.js'
+import { COMPONENTS, componentEntry, componentEnabled } from '../lib/components/defaults.js'
 import { resolveHidingConfig } from '../lib/official-tool-hiding.js'
 
 /** The repository root (`scripts/`'s parent). */
@@ -233,7 +233,7 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
       const row = rows.find(candidate => candidate?.name === componentEntry(component))
       check(row?.id === `${pkg.name}-${component}`, `the ${component} component has a stable row id`)
       if (!row) continue
-      check(component === 'shell' ? row.disabled?.__jsExpr === SHELL_DISABLED_EXPRESSION : (row.disabled === true) === !componentEnabled(component, process.platform), `${component} has its documented enablement default`)
+      check((row.disabled === true) === !componentEnabled(component, process.platform), `${component} has its documented enablement default`)
       const resolve = component === 'discovery' ? resolveDiscoveryConfig : component === 'tui' ? resolveTuiConfig
         : component === 'ptc' ? resolvePtcConfig
           : component === 'hide-official' ? resolveHidingConfig
@@ -486,7 +486,7 @@ if (display !== undefined) {
 /** Payload the published package must carry, as `files` entries or paths they cover. */
 const ptc = manifestRaw.contributes?.['x-components']?.find(c => c.id === 'dsh-ops-ptc')
 check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === true, 'native PTC enhancement is enabled by default; presentation stays scoped')
-check(JSON.stringify(ptc?.tools) === JSON.stringify([...PTC_API_TOOLS, 'sdk'].map(publicToolName)), 'PTC declaration matches the generated tool contract')
+check(JSON.stringify(ptc?.tools) === JSON.stringify([...PTC_API_TOOLS, 'load_sdk'].map(publicToolName)), 'PTC declaration matches the generated tool contract')
 check(PTC_API_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
 check(JSON.stringify(pkg.os) === '["win32","linux","darwin"]' && JSON.stringify(pkg.cpu) === '["x64","arm64"]' &&
   JSON.stringify(ptc?.platforms) === '["win32","linux","darwin"]' && JSON.stringify(ptc?.architectures) === '["x64","arm64"]' &&

@@ -3,7 +3,7 @@ import { NATIVE_RESIDENT_FILE_TOOLS } from '../../lib/capabilities/registry.js'
 import { publicToolName } from '../../lib/policy.js'
 import { schemaMeasurement } from './metrics.mjs'
 export function startupReadiness(tools, platform = process.platform) {
-  const expected = [...NATIVE_RESIDENT_FILE_TOOLS, 'discover', ...(platform === 'win32' ? ['bash'] : [])].map(publicToolName).sort()
+  const expected = [...NATIVE_RESIDENT_FILE_TOOLS, 'discover_tools', ...(platform === 'win32' ? ['bash'] : [])].map(publicToolName).sort()
   const names = tools.map(tool => tool.name), actual = new Set(names)
   const missing = expected.filter(name => !actual.has(name)), unexpected = names.filter(name => !expected.includes(name))
   const duplicates = names.filter((name, index) => names.indexOf(name) !== index)

@@ -29,15 +29,31 @@ Exit codes are part of the contract: `0` every step passed, `1` a step failed, `
 host cannot answer this gate (a `--target` that is not the host, a missing toolchain).
 There is no exit code for "green with a surprise in it" — that is `1`.
 
+## The pull request run (CI, not this host)
+
+Every pull request must show one `Cross-platform validation` run triggered by its own
+`pull_request` event, and paste the `CI required` run URL into the PR template. A local
+`verify-gate` run — however green — is not that run: it proves the checkout, not the merge
+request. Confirm it with:
+
+```console
+gh run list --branch <branch> --workflow ci.yml --event pull_request --limit 1
+gh run view <run-id> --json url,event,conclusion --jq '"\(.url) \(.event) \(.conclusion)"'
+```
+
+Fork contributors have two verifiable paths (open the PR upstream, or open a PR inside the
+fork); see [CONTRIBUTING.md](CONTRIBUTING.md#one-ci-run-per-pull-request). A hand-dispatched
+`workflow_dispatch` run, or a `push` run on a release branch, does not count.
+
 ## What each step proves
 
 | Step | Command | What it settles |
 | --- | --- | --- |
 | versions | `node --version`, `cargo --version` | The toolchain is the pinned one, before anything else can be blamed |
-| install | `npm ci --ignore-scripts --registry=https://registry.npmjs.org` | Locked dependencies, and no install-time script runs (Bash is acquired explicitly for Windows tests; no install hook downloads it) |
+| install | `npm ci --ignore-scripts --registry=https://registry.npmjs.org` | Locked dependencies, and no install-time script runs. The Windows Bash payload is an optional dependency, so a Windows x64 install carries it; a Linux install skips it through npm's `os` filter, and `--ignore-scripts` guarantees no install script tries to fetch it |
 | worker unit tests | `cargo test --workspace --locked --manifest-path native/Cargo.toml` | The Rust worker in isolation |
 | stage | `npm run build:ptc` | Builds the worker **and stages it with its provenance receipt** into `runtime/<platform>-<arch>/`. Skipping this is the most common way to get a misleading failure — see the traps below |
-| Bash fixture | `node bin/dsh-ops.mjs bash-runtime install` (Windows) | Explicit pinned fixture acquisition; `DSH_OPS_TEST_BASH` can name a verified offline copy |
+| Bash fixture | `node bin/dsh-ops.mjs bash-runtime install` (Windows) | Repair path for a missing or incomplete payload; `DSH_OPS_TEST_BASH` can name a verified offline copy |
 | platform payloads | `npm run build:bash-ipc` (Windows) | The Windows IPC proxies |
 | manifest | `npm run validate:manifest` | The declaration layers agree; asserts a floor of `59` (currently `62`) |
 | suites | `DSH_HOME=<temp> DSH_OPS_REQUIRE_RUNTIME=1 npm run verify` | Every suite on this host. `DSH_OPS_REQUIRE_RUNTIME=1` turns a runtime-absence skip into a failure, and `DSH_HOME` must be a temporary directory or `test/lib/harness.mjs` refuses to run |

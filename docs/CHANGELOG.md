@@ -7,6 +7,21 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Validate the selected profile CLI before both dry-run and execution (#100): reject missing or unusable launchers and missing Node bin targets, preserve PATH lookup and Windows PATHEXT/batch launchers, and apply Windows command-script path checks during preview. Dry-run never executes the candidate or changes the profile.
+- 在安装/卸载的预演与实际执行前共用 CLI 静态检查（#100）：拒绝缺失或不可用的启动文件及缺失的 Node bin 入口，保留 PATH 查找与 Windows PATHEXT/命令脚本，并在预演时同样检查 Windows 命令脚本路径。预演不启动候选程序、不修改 profile。
+- Fix the generated `ops_load_sdk` declaration (the builder still keyed on the pre-rename `sdk` name), cover the rename alias plus the `select:` and SDK request paths with tests, and align the catalogue facts in the current docs (20/18/15, 242 tokens/1101 bytes) with a docs guard (#302).
+- 修复生成的 `ops_load_sdk` 声明（构建脚本仍按改名前的 `sdk` 判定）、为改名别名与 `select:`/SDK 请求路径补测试，并把当前文档的目录事实（20/18/15、242 tokens/1101 bytes）对齐并加守护（#302）。
+- Add `dsh-ops panel [--serve] [dir] [--port <n>]`: serve one capture directory and the shipped viewer on loopback, preselect the newest valid report, offer the other valid reports for switching, refuse malformed reports and paths outside the directory, and document the capture-directory `.gitignore` and drag-and-drop fallback (#257).
+- 新增 `dsh-ops panel [--serve] [dir] [--port <n>]`：在回环地址上服务一个采集目录与随包查看器，默认选中最新有效报告并列出其它有效报告供切换，拒绝格式错误报告与目录外路径，并补充采集目录的 `.gitignore` 与拖拽回退说明（#257）。
+
+- Require one CI run per pull request: the PR template now asks for the URL of the `CI required` aggregate run triggered by the pull request's own `pull_request` event, and the contributing guides document how to confirm it (`gh run list --branch <branch> --event pull_request`, the PR checks tab), the fork path from #150, the `action_required` approval for first-time fork runs, and the admin-only repository setting that makes `CI required` a required check (#303). Documentation and process only; no workflow or runtime behavior changes.
+- 每个 PR 必须有一次 CI 运行：PR 模板改为要求贴出由 PR 自身 `pull_request` 事件触发的 `CI required` 聚合 run URL；贡献指南说明如何确认（`gh run list --branch <branch> --event pull_request`、PR checks 页）、#150 的 fork 路径、首次 fork 运行的 `action_required` 批准，以及把 `CI required` 设为必需检查的 admin 仓库设置（#303）。仅文档与流程变更，不改工作流与运行时行为。
+- Rename 0.4.0 tools for consistent `verb_noun` naming: `read_many`→`read_files`, `table_read`→`read_table`, `doc_read`→`read_docx`, `pdf_read`→`read_pdf`, `sdk`→`load_sdk`, `discover`→`discover_tools`; merge `edit_many` into `edit_file`. Old raw names in user profiles are silently migrated.
+- 将 0.4.0 工具重命名为一致的 `verb_noun` 形式：`read_many`→`read_files`、`table_read`→`read_table`、`doc_read`→`read_docx`、`pdf_read`→`read_pdf`、`sdk`→`load_sdk`、`discover`→`discover_tools`；`edit_many` 合并入 `edit_file`。用户配置中的旧名会静默迁移。
+- Enable the shell row by default on all three supported platforms: Windows runs the pinned Bash payload declared by the main package, Linux/macOS run the distribution's Bash (overridable with `config.bashPath`), and PowerShell stays host-managed.
+- shell 行恢复为三个受支持平台默认开启：Windows 使用主包声明的固定 bash 载荷，Linux/macOS 使用发行版自带 bash（可用 `config.bashPath` 覆盖），PowerShell 仍由宿主管理。
+- Restore the Windows Bash npm optional payload: the main package declares `@dsh-ops/bash-win32-x64@0.2.1` in `optionalDependencies`, so npm install brings the pinned PortableGit (GNU bash 5.3.15); `bash-runtime`/`provision-shells` and the runtime settings pages remain the selection and repair path. POSIX keeps the system Bash and PowerShell stays host-managed.
+- 恢复 Windows bash 的 npm 可选载荷声明：主包在 `optionalDependencies` 中声明 `@dsh-ops/bash-win32-x64@0.2.1`，npm 安装即带固定版本的 PortableGit（GNU bash 5.3.15）；`bash-runtime`/`provision-shells` 与运行时设置页保留为选择与修复路径。POSIX 继续使用系统 bash，PowerShell 仍由宿主管理。
 - Prepare the 0.4.0 candidate version across owned npm/plugin and Rust workspace metadata without dependency changes. Audit paired release, usage, component, SDK, discovery and manual-validation documentation; record the explicitly approved benchmark scope and retain historical failures separately from functional CI. No release/tag is created.
 - 将自有 npm/插件与 Rust workspace 版本统一为 0.4.0 候选，不变更依赖；同步双语发布、使用、组件、SDK、发现和手动验收文档。记录明确批准的基准范围并保留历史失败，不以功能 CI 代替验收，不创建发布或 tag。
 - Apply the confirmed acceptance scopes: BM-01 gates against OPS 0.3.x with official-reader comparisons reported separately; BM-03 gates file/discovery schemas while retaining startup Bash, exact full-inventory readiness and separate full totals. Preserve historical failed evidence.
@@ -82,8 +97,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Migrate panel collection to strict TypeScript while preserving queued-stop, issued-I/O waiting and explicit sealing. Count malformed persisted fields and mark incomplete capture without corrupting valid text or usage totals.
 - 将面板采集迁移为严格 TypeScript，保留排队停止、等待已发起 I/O 与显式封存；错误的持久化字段计入 malformed 并标记不完整，不破坏有效正文或用量总计。
 
-- Add discovery as the seventh bundle row; preserve existing named row overrides. Fresh defaults enable shell only on Windows and leave panel/TUI/replacements off. Enabling a fresh panel row starts capture; explicit legacy capture:false stays inert. Provide builtin validated file/PTC/TUI configuration.
-- bundle 新增第七行 discovery，保留已有带名称行覆盖。首次安装仅 Windows 默认启用 shell，panel/TUI/替换默认关闭；启用新 panel 行即采集，旧配置 capture:false 保持不采集。补充文件/PTC/TUI 内置校验配置。
+- Add discovery as the seventh bundle row; preserve existing named row overrides. Fresh defaults enable shell on every supported platform and leave panel/TUI/replacements off. Enabling a fresh panel row starts capture; explicit legacy capture:false stays inert. Provide builtin validated file/PTC/TUI configuration.
+- bundle 新增第七行 discovery，保留已有带名称行覆盖。首次安装三个平台默认启用 shell，panel/TUI/替换默认关闭；启用新 panel 行即采集，旧配置 capture:false 保持不采集。补充文件/PTC/TUI 内置校验配置。
 
 - Stop panel collection and queued filesystem work when its row or capture switch is disabled; wait for issued I/O without scheduling a final fold. Expose validated capture settings through the host editor.
 - 关闭 panel 行或采集开关时停止采集及排队文件操作，等待已开始的 I/O，但不触发最终归并；宿主编辑器提供严格校验的采集设置。
@@ -248,8 +263,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Keep Native startup to the bounded multi-file reader (#261, 9/16)
 
-- Publish `ops_read_many` from startup; make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
-- Measure compact file/discovery schemas at 241 tokens; the integrated full Windows Bash/jobs provider order is 660 tokens (catalogue order 661). The earlier full-surface 400-token requirement failed; the operator subsequently approved a file/discovery-only budget with startup Bash and full totals retained.
+- Publish `ops_read_many` from startup (raw name `read_many`, later renamed `read_files`); make the single-file/hex reader, search, mutations and Native result paging discoverable. Routing describes only published tools, and the trial explicitly loads its advanced operations.
+- Measure compact file/discovery schemas at 242 tokens; the integrated full Windows Bash/jobs provider order is 660 tokens (catalogue order 661). The earlier full-surface 400-token requirement failed; the operator subsequently approved a file/discovery-only budget with startup Bash and full totals retained.
 - Native 启动仅常驻多文件读取器；单文件/hex、搜索、修改与引用分页按需加载。路由仅描述已发布工具；含 Bash 的完整工具面曾超过原400-token门禁；操作者随后批准仅对文件/发现小计设预算，保留 Bash 启动常驻与完整总数。
 
 ### Publish progressive tools before the next real provider snapshot (#261, 7–8/16)

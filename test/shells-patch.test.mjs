@@ -33,7 +33,7 @@ await test('the bundle patch declares independent components, with no persistent
   assert.equal(entries.length, 1)
   assert.deepEqual(entries[0].insert.map(row => row.id), ['dsh-ops-shell', 'dsh-ops-file', 'dsh-ops-ptc', 'dsh-ops-discovery', 'dsh-ops-panel', 'dsh-ops-tui', 'dsh-ops-hide-official'])
   const row = id => entries[0].insert.find(item => item.id === `dsh-ops-${id}`)
-  assert.deepEqual(row('shell').disabled, { __jsExpr: "process.platform !== 'win32'" })
+  assert.equal(row('shell').disabled, undefined, 'the shell row is on by default on every platform')
   for (const name of ['file', 'ptc', 'discovery']) assert.equal(row(name).disabled, undefined)
   for (const name of ['panel', 'tui', 'hide-official']) assert.equal(row(name).disabled, true)
   assert.equal(row('panel').config.capture, true, 'a fresh enabled row starts capture')

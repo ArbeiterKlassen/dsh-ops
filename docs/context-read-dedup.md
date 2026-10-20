@@ -19,7 +19,7 @@ An ordinary request clears previous proof before starting. Failed, aborted, inco
 
 Permission-mode changes, agent/session disposal, component unload, and mutation or unknown tool results discard evidence. Missing signals silently disable optimization. Evidence belongs to the mounting component and calling agent. Retention is bounded to 16 agents, 32 records and 2 MiB of bodies per agent; evictions return full output. There is no disk cache, host registry replacement or new dependency.
 
-This supports ops_inspect_local_file and ops_read_many. A repeated batch must match the complete earlier batch message and arguments. Every returned file is independently revalidated; a changed, missing, clipped or unobserved sibling keeps the entire body. Pending files, failed items and storage references are never eligible. Bounded line ranges may remain incomplete at file level: their original completeness and continuation notices are retained.
+This supports ops_inspect_local_file and ops_read_files. A repeated batch must match the complete earlier batch message and arguments. Every returned file is independently revalidated; a changed, missing, clipped or unobserved sibling keeps the entire body. Pending files, failed items and storage references are never eligible. Bounded line ranges may remain incomplete at file level: their original completeness and continuation notices are retained.
 
 ## Pinned host research
 

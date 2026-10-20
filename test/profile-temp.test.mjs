@@ -19,13 +19,43 @@ async function profileFixture(body) {
     fs.writeFileSync(manifest, JSON.stringify({ dependencies: { 'dsh-ops': '^0.3.1' }, dsh: { profile: { bundles: ['dsh-ops'] } } }))
     const cli = path.join(directory, 'node_modules', '@deepseek-ai', 'dsh'); fs.mkdirSync(cli, { recursive: true })
     fs.writeFileSync(path.join(cli, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', type: 'module', bin: { dsh: './cli.mjs' } }))
-    fs.writeFileSync(path.join(cli, 'cli.mjs'), `import fs from 'node:fs';fs.writeFileSync(${JSON.stringify(receipt)},JSON.stringify(process.argv.slice(2)));process.exit(Number(process.env.PROFILE_TEST_EXIT ?? 0))`)
-    try { await body({ root, manifest, receipt }) } finally {
+    const entry = path.join(cli, 'cli.mjs')
+    fs.writeFileSync(entry, `import fs from 'node:fs';fs.writeFileSync(${JSON.stringify(receipt)},JSON.stringify(process.argv.slice(2)));process.exit(Number(process.env.PROFILE_TEST_EXIT ?? 0))`)
+    try { await body({ root, manifest, receipt, entry }) } finally {
       for (const [key, value] of [['DSH_HOME', previous.home], ['DSH_OPS_DSH_CLI', previous.cli], ['DSH_OPS_INSTALL_SPEC', previous.spec], ['PROFILE_TEST_EXIT', previous.exit]]) {
         if (value === undefined) delete process.env[key]; else process.env[key] = value
       }
     }
   })
+}
+function withEnv(values, body) {
+  const previous = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]))
+  try {
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value
+    }
+    return body()
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value
+    }
+  }
+}
+function launcher(file, entry) {
+  const quote = value => `'${value.replaceAll("'", "'\\''")}'`
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, process.platform === 'win32'
+    ? `@"${process.execPath}" "${entry}" %*\r\n`
+    : `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(entry)} "$@"\n`)
+  fs.chmodSync(file, 0o755)
+  return file
+}
+const launcherName = process.platform === 'win32' ? 'profile-fixture.cmd' : 'profile-fixture'
+function refusal(operation, options) {
+  let error
+  try { capture(() => profileCommand(operation, options)) } catch (caught) { error = caught }
+  assert.ok(error instanceof Error, 'an unusable CLI must be refused before invocation')
+  return error.message
 }
 await test('profile status and dry-run preserve the tui alias and never execute the official CLI', async () => {
   await profileFixture(({ receipt }) => {
@@ -48,6 +78,106 @@ await test('profile mutations delegate exact arguments and propagate official CL
     assert.equal(fs.readFileSync(manifest, 'utf8'), before)
   })
 })
+await test('dry-run and execution reject the same missing CLI paths and directories', async () => {
+  await profileFixture(({ root, receipt }) => {
+    for (const dshCli of [path.join(root, 'missing', launcherName), root]) {
+      for (const operation of ['install', 'uninstall']) {
+        const preview = refusal(operation, { profile: 'tui', dshCli, dryRun: true })
+        assert.match(preview, /CLI/)
+        assert.equal(refusal(operation, { profile: 'tui', dshCli }), preview)
+      }
+    }
+    assert.equal(fs.existsSync(receipt), false)
+  })
+})
+await test('missing bare CLI names are refused against PATH, including environment overrides', async () => {
+  await profileFixture(({ root, receipt }) => withEnv({ PATH: root, DSH_OPS_DSH_CLI: 'dsh-ops-missing-cli' }, () => {
+    const preview = refusal('install', { profile: 'tui', dryRun: true })
+    assert.match(preview, /CLI.*dsh-ops-missing-cli/)
+    assert.equal(refusal('install', { profile: 'tui' }), preview)
+    assert.equal(fs.existsSync(receipt), false)
+  }))
+})
+await test('absolute and relative script launchers with spaces survive preflight without dry-run execution', async () => {
+  await profileFixture(({ root, entry, receipt }) => {
+    const file = launcher(path.join(root, 'CLI with spaces', launcherName), entry)
+    for (const dshCli of [file, path.relative(process.cwd(), file)]) {
+      assert.equal(capture(() => profileCommand('install', { profile: 'tui', dshCli, dryRun: true })).status, 0)
+      assert.equal(fs.existsSync(receipt), false)
+      assert.equal(capture(() => profileCommand('uninstall', { profile: 'tui', dshCli })).status, 0)
+      assert.deepEqual(JSON.parse(fs.readFileSync(receipt, 'utf8')), ['plugin', '--profile', 'dsh-tui', 'remove', 'dsh-ops'])
+      fs.unlinkSync(receipt)
+    }
+  })
+})
+await test('bare CLI lookup preserves PATH launchers and never probes them by executing', async () => {
+  await profileFixture(({ root, entry, receipt }) => {
+    const directory = path.join(root, 'PATH with spaces')
+    launcher(path.join(directory, launcherName), entry)
+    withEnv({ PATH: directory, PATHEXT: '.COM;.EXE;.BAT;.CMD' }, () => {
+      assert.equal(capture(() => profileCommand('install', { profile: 'tui', dshCli: 'profile-fixture', dryRun: true })).status, 0)
+      assert.equal(fs.existsSync(receipt), false)
+      assert.equal(capture(() => profileCommand('uninstall', { profile: 'tui', dshCli: 'profile-fixture' })).status, 0)
+      assert.deepEqual(JSON.parse(fs.readFileSync(receipt, 'utf8')), ['plugin', '--profile', 'dsh-tui', 'remove', 'dsh-ops'])
+    })
+  })
+})
+await test('an inferred Node CLI entry must remain a readable file, not an executable', async () => {
+  await profileFixture(({ entry, receipt }) => {
+    fs.chmodSync(entry, 0o644)
+    assert.equal(capture(() => profileCommand('install', { profile: 'tui', dryRun: true })).status, 0)
+    assert.equal(fs.existsSync(receipt), false)
+    fs.unlinkSync(entry)
+    const missing = refusal('install', { profile: 'tui', dryRun: true })
+    assert.match(missing, /CLI.*cli\.mjs/)
+    assert.equal(refusal('install', { profile: 'tui' }), missing)
+    fs.mkdirSync(entry)
+    const directory = refusal('uninstall', { profile: 'tui', dryRun: true })
+    assert.match(directory, /CLI.*cli\.mjs/)
+    assert.equal(refusal('uninstall', { profile: 'tui' }), directory)
+    assert.equal(fs.existsSync(receipt), false)
+  })
+})
+if (process.platform !== 'win32') await test('POSIX preflight rejects non-executables but follows usable launcher symlinks', async () => {
+  await profileFixture(({ root, entry, receipt }) => {
+    const file = launcher(path.join(root, launcherName), entry)
+    fs.chmodSync(file, 0o644)
+    const preview = refusal('install', { profile: 'tui', dshCli: file, dryRun: true })
+    assert.match(preview, /CLI/)
+    assert.equal(refusal('install', { profile: 'tui', dshCli: file }), preview)
+    fs.chmodSync(file, 0o755)
+    const link = path.join(root, 'linked-cli')
+    fs.symlinkSync(file, link)
+    assert.equal(capture(() => profileCommand('install', { profile: 'tui', dshCli: link, dryRun: true })).status, 0)
+    assert.equal(fs.existsSync(receipt), false)
+    assert.equal(capture(() => profileCommand('uninstall', { profile: 'tui', dshCli: link })).status, 0)
+    assert.ok(fs.existsSync(receipt))
+  })
+})
+else console.log('  POSIX CLI fixture unavailable: executable mode checks require POSIX')
+if (process.platform === 'win32') await test('Windows cmd path checks apply before dry-run and PATHEXT keeps batch launchers', async () => {
+  await profileFixture(({ root, entry, receipt }) => {
+    const unsafe = launcher(path.join(root, 'unsafe&cli.cmd'), entry)
+    const preview = refusal('install', { profile: 'tui', dshCli: unsafe, dryRun: true })
+    assert.match(preview, /Unsafe CLI path/)
+    assert.equal(refusal('install', { profile: 'tui', dshCli: unsafe }), preview)
+    const directory = path.join(root, 'batch bin')
+    launcher(path.join(directory, 'profile-fixture.BAT'), entry)
+    const extensionless = path.join(directory, 'profile-fixture')
+    fs.writeFileSync(extensionless, '#!/bin/sh\nnot a Windows launcher\n')
+    withEnv({ PATH: `"${directory}"`, PATHEXT: '.BAT;.CMD;.EXE' }, () => {
+      // npm-style bin directories can contain a POSIX shim beside their Windows wrapper.
+      for (const dshCli of ['profile-fixture', extensionless]) {
+        assert.equal(capture(() => profileCommand('install', { profile: 'tui', dshCli, dryRun: true })).status, 0)
+        assert.equal(fs.existsSync(receipt), false)
+        assert.equal(capture(() => profileCommand('uninstall', { profile: 'tui', dshCli })).status, 0)
+        assert.ok(fs.existsSync(receipt))
+        fs.unlinkSync(receipt)
+      }
+    })
+  })
+})
+else console.log('  Windows CLI fixture unavailable: cmd.exe and PATHEXT execution require Windows')
 await test('malformed profile manifest data fails before CLI invocation', async () => {
   await profileFixture(({ manifest, receipt }) => {
     fs.writeFileSync(manifest, 'null')

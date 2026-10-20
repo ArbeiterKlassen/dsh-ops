@@ -16,7 +16,7 @@ remain a draft until **Save changes** succeeds. A stale or refused save keeps th
 writer and reload the affected row.
 
 - **Replacements:** choose `read`, `glob` and `grep` independently. Selected tools use OPS contracts.
-  Keep each selected counterpart (`inspect_local_file` for `read`, `glob` or `grep`) always loaded in Discovery, or activate it before selecting the replacement. `read_many` does not satisfy the single-file `read` replacement contract.
+  Keep each selected counterpart (`inspect_local_file` for `read`, `glob` or `grep`) always loaded in Discovery, or activate it before selecting the replacement. `read_files` does not satisfy the single-file `read` replacement contract.
 - **Discovery:** choose the allowed pool, its always-loaded subset and a result limit from 1 to 5.
   Removing an allowed capability removes it from the always-loaded subset in the same save.
 - **Shell:** enable Bash, enter an absolute executor override, or select detected managed/Git Bash.
@@ -69,7 +69,7 @@ In DSH's configuration editor, find the corresponding `dsh-ops/shell`, `dsh-ops/
 The bundle declares seven independently toggled components. Fresh defaults follow the table. Saved profile switches and raw configuration override bundle defaults; adding discovery does not rewrite them. Profiles without explicit switch overrides inherit updated defaults.
 | Row `name` | Component | Default |
 | --- | --- | --- |
-| `dsh-ops/shell` | Terminal and shell | Windows on; Linux/macOS off |
+| `dsh-ops/shell` | Terminal and shell | On (all platforms) |
 | `dsh-ops/file` (`dsh-ops-file`) | Rust file tools | On |
 | `dsh-ops/ptc` | Native PTC batches | On |
 | `dsh-ops/discovery` | Advanced Native tool discovery | On |
@@ -165,7 +165,7 @@ config:
 - `shellPolicy`: defaults to `advise`; `deny-host-shell` rejects host shells in `deniedHostTools` (default `[pwsh, bash, pwsh_persistent]`). This also disables third-layer pwsh; enable cautiously.
 - `allowSystemShellFallback`: defaults to `false`. Without a bundled/provisioned bash, do not discover system PATH or well-known installations (**on a POSIX host this key has no effect**: the shell component already resolves the host bash and there is no pinned payload to fall back from). Explicit `true` opts into an unpinned system bash that the operator must trust and maintain. Explicit `bashPath` is a separate operator selection, not an automatic fallback. See the update configuration modification area in the [usage guide](usage.md) for the first-start migration.
 - `shellPolicy` is independent: `deny-host-shell` masks/refuses host tools; disabling fallback constrains the plugin's bash resolver, not the host's own `pwsh`, and is not a filesystem sandbox.
-- `binaryPath` (the native worker executable) / `bashPath`: optional explicit absolute paths; unavailable paths cause an error rather than silently switching executors. Use `dsh-ops bash-runtime git` or `managed` to print a Bash selection.
+- `binaryPath` (the native worker executable) / `bashPath`: optional explicit absolute paths; unavailable paths cause an error rather than silently switching executors. On Windows the pinned Bash payload is an optional npm dependency of the main package and arrives with the install, so normally no configuration is needed; use `dsh-ops bash-runtime install` if it is missing or incomplete, or `dsh-ops bash-runtime git` / `managed` to print a Bash selection.
 - **On a POSIX host `ops_bash` already runs the distribution's own bash**: `bashPath` → `PATH` → `/bin/bash`, `/usr/bin/bash`, `/usr/local/bin/bash`, with no second shell shipped, so there is no payload to "fall back" from and `allowSystemShellFallback` does not affect it. In a confined mode (`workspace-write` / `read-only`) `bashPath` still takes effect, with the constraint enforced by a host sandbox (bwrap / Landlock); when no sandbox can confine the call it is **refused** rather than run unrestricted.
 - `bashPath` **(Windows) must match the pinned MSYS for restricted execution.** In read-only and workspace-write, `ops_bash` runs only the pinned MSYS whose IPC compatibility proxies were verified (`dsh-ops bash-runtime install`, or a compatible existing copy); any other `msys-2.0.dll`, including your own Git for Windows, returns `EXECUTOR_UNAVAILABLE` by design and is never run unconfined. Do not point `bashPath` at your own Git Bash to work around a restricted-mode problem. Check a selection with `dsh-ops ladder --config <file>`, which reports `restricted: yes/no` for the resolved bash. See [Troubleshooting](troubleshooting.md#ops_bash-cannot-run-a-custom-bashpath-or-git-for-windows-in-restricted-modes).
 - `deniedHostTools`: the host tool names refused by the `deny-host-shell` policy.
@@ -174,9 +174,9 @@ Disabling the row or saving `capture: false` stops event collection immediately,
 
 - The panel row defaults disabled and registers no listener or file. Once enabled, `capture` defaults to `true`; an explicit legacy `false` still registers nothing and is never silently changed. The host cannot atomically clear that old field while disabling its row, so the compatibility setting remains visible for deliberate edits. Captured events write into the session working directory:
   - `<cwd>/.dsh-ops/panel/<sessionId>.json` — the only data source: conversation text, the tool-call/result/milestone trace, usage buckets, and trimmings/limits;
-  - `<cwd>/.dsh-ops/panel/panel.html` — a static viewer that reads that JSON in the browser and inlines no data (drag the JSON onto it, or pass `?data=<sessionId>.json` under a static server).
+  - `<cwd>/.dsh-ops/panel/panel.html` — a static viewer that reads that JSON in the browser and inlines no data (drag the JSON onto it, or run `dsh-ops panel [dir]` to serve the directory on loopback; a plain static server can pass `?data=<sessionId>.json`).
 
-  While a session is live the sink appends NDJSON (`<sessionId>.ndjson`, crash safe) and folds it into the JSON at each turn end and when the session is sealed; sealing removes the append log. There is no port, no UI registration, no `~/.dsh` write, and no build step — `panel.html` ships in the package. Sessions whose working directory is inside the DSH home, or whose id cannot be a file name, are refused with one log line.
+  While a session is live the sink appends NDJSON (`<sessionId>.ndjson`, crash safe) and folds it into the JSON at each turn end and when the session is sealed; sealing removes the append log. The capture row opens no port, registers no UI and writes no `~/.dsh`; only the explicit `dsh-ops panel` operator command starts a loopback-only server, reads the named directory and writes nothing. There is no build step — `panel.html` ships in the package. Sessions whose working directory is inside the DSH home, or whose id cannot be a file name, are refused with one log line. Capture writes into the conversation's working directory, so add `.dsh-ops/` to that project's `.gitignore`: reports can contain prompts, conversation text and tool output.
 - `textLimit`: characters kept per message text, tool argument and reasoning field; a clamp sets `truncated`/`droppedChars` on that row instead of silently shortening it. `64`–`100000`.
 - `maxSessionBytes`: the per-session budget for the append log, and therefore the ceiling the merged JSON is trimmed to fit. Records over it are dropped and counted in `limits.droppedEvents`; when the JSON would overrun, the oldest conversation/trace rows are dropped and counted in `limits.trimmedRows`, while the usage totals stay complete. `65536`–`268435456`.
 
@@ -200,7 +200,7 @@ For example, replace only host read and grep while retaining host glob:
 
 Set `replaceTools: []` or disable the row to restore every official tool. A selected OPS counterpart must be an exact OPS-owned Native definition registered and visible in each agent scope; a same-name foreign tool or a PTC-only data API does not qualify. If any is missing, that scope restores its masks and refuses prompt assembly and execution with `READINESS_BLOCKED`; healthy scopes remain usable. Restore the counterpart, remove that selection, or disable the row. Unrelated OPS tools are not required.
 
-With the slim Native defaults, configure discovery `alwaysLoaded: [inspect_local_file, grep]` before selecting the example above, or activate those Native capabilities first. `read` still maps to `inspect_local_file`; resident `read_many` does not satisfy that selection. Removing or shadowing an owned counterpart rechecks readiness immediately, even if its schema is byte-identical.
+With the slim Native defaults, configure discovery `alwaysLoaded: [inspect_local_file, grep]` before selecting the example above, or activate those Native capabilities first. `read` still maps to `inspect_local_file`; resident `read_files` does not satisfy that selection. Removing or shadowing an owned counterpart rechecks readiness immediately, even if its schema is byte-identical.
 
 **Migration from 0.3:** `strict`, `scope`, and `additionalOfficialTools` are accepted only for compatibility and validated with their old types/values. They grant no hiding authority, including `scope: extended` and aliases. An existing row containing only those keys becomes inert. Explicit `replaceTools` is the sole source of selections even if legacy keys remain. No saved profile is rewritten by this component.
 
@@ -211,7 +211,7 @@ Cordis validates configuration through `StandardSchemaV1`; detached public setti
 
 ## Prompt registration
 
-Prompts are registered as scoped runtime sections, not written to AGENTS.md. Disabling shell withdraws its routing; disabling file withdraws its Native file guidance. Fresh Native file publishes only ops_read_many, discovery publishes ops_discover, and eligible Windows shell scopes add ops_bash. Advanced Native tools are discovered or explicitly always loaded. PTC owns its separate typed SDK and current permission checks. The approved BM-03 budget measures file/discovery schemas at ≤400 tokens. Bash startup residency is unchanged; its schema and the complete startup total are reported separately, and missing Bash cannot satisfy the Windows readiness check.
+Prompts are registered as scoped runtime sections, not written to AGENTS.md. Disabling shell withdraws its routing; disabling file withdraws its Native file guidance. Fresh Native file publishes only ops_read_files, discovery publishes ops_discover_tools, and shell scopes on every platform add ops_bash (the pinned Windows payload or the distribution Bash). Advanced Native tools are discovered or explicitly always loaded. PTC owns its separate typed SDK and current permission checks. The approved BM-03 budget measures file/discovery schemas at ≤400 tokens. Bash startup residency is unchanged; its schema and the complete startup total are reported separately, and missing Bash cannot satisfy the Windows readiness check.
 
 ---
 
