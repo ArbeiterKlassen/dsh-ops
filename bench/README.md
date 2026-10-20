@@ -114,22 +114,22 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 
 ## 如何读 `report.md`
 
-按这个顺序读,不要跳:
+按这个顺序读,不要跳(报告正文与标题都是英文,小节名照英文读):
 
-1. **每任务配对**:`task | base | cand | Δ% | 配对/考虑 | 排除 | pass(base→cand) | 方向`;`TOTAL` 行后还有
-   一行**几何均值 Δ**(每任务等权);
-2. **被排除的配对(成本不统计)**:多少对因至少一侧未通过被排除,以及 base / cand / 两侧各占多少 ——
+1. **`Per-task pairs`**:`task | base | cand | Δ% | pairs usable/counted | excluded | pass(base→cand) | direction`;`TOTAL` 行后还有
+   一行 **`geomean Δ`**(每任务等权);
+2. **`Excluded pairs (not in cost)`**:多少对因至少一侧未通过被排除,以及 base / cand / 两侧各占多少 ——
    通过率一变,这里就是成本口径的地基;
-3. **A/A 噪声带**:半宽、区间、方法(`measured` 来自 `--noise`,或 `provided` 来自 `--noise-floor-pct`)、
+3. **`A/A noise band`**:半宽、区间、方法(`measured` 来自 `--noise`,或 `provided` 来自 `--noise-floor-pct`)、
    配对数与任务样本;未知时这一段直接说明"方向一律弃权";
-4. **token 归因(诊断,不改判决)** 与 **每任务 bucket 明细** / **usage 拆分** / **steps 与 tool calls** /
-   **工具调用**:都是诊断,把 Δ 拆成固定开销 / 额外步数 / 残差,按 input / output / cacheRead 分桶,
+4. **`Token attribution`**(诊断,不改判决)与 **`Per-task bucket detail`** / **`usage split`** / **`steps and tool calls`** /
+   **`Tool calls`**:都是诊断,把 Δ 拆成固定开销 / 额外步数 / 残差,按 input / output / cacheRead 分桶,
    或给出每任务的步数与工具调用数;
-5. **警告**与**证据**:前者列出无法支撑结论的行(如某侧丢了 `step_end.usage`),后者给出 `run.json` 与
+5. **`Warnings`**与**`Evidence`**:前者列出无法支撑结论的行(如某侧丢了 `step_end.usage`),后者给出 `run.json` 与
    归档路径;
-6. **结论**(报告的最后一段):通过率、配对 token Δ、噪声底、方向、门禁与判定理由,顺序就是判决顺序。
+6. **`Conclusion`**(报告的最后一段):通过率、配对 token Δ、噪声底、方向、门禁与判定理由,顺序就是判决顺序。
 
-标题下没有汇总行:判决只写在结尾的**结论**里,标题之后直接进数据。
+标题下没有汇总行:判决只写在结尾的 **`Conclusion`** 里,标题之后直接进数据。
 
 所有百分数按方向着色:**小于等于 0 绿、大于 0 红**(与 `panel.html` 同一套色,写成行内 `style`)。
 着色只是包一层 `<span>`,数字本身不被改写;GitHub 会剥掉 `style`,在那边退化成纯文本。
