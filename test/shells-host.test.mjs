@@ -19,11 +19,17 @@ function fixture({ mode = 'danger-full-access', jobs, approval, settle = true, e
       return { done: pending.promise, collected: { stdout: stream('ok'), stderr: stream('warning') } }
     } },
   }
-  const ctx = { get: name => services[name], logger: { warn() {} } }
+  // A tracked Cordis service hands out a fresh traceable proxy on every read, so the definition
+  // must never consult `ctx.get('jobs')` again: jobs are bound explicitly, exactly as the component
+  // binds them through `ctx.inject(['jobs'], …)`. Throwing here keeps a regression loud.
+  const ctx = { get: name => {
+    if (name === 'jobs') throw new Error('the bash definition must not re-read the jobs service')
+    return services[name]
+  }, logger: { warn() {} } }
   const bash = { file, source: 'config' }
   const base = bashToolDefinition({ ...bash, subprocess: services.subprocess })
   const definition = hostBashDefinition(ctx, base, (args, exec, standing, policy, env, options) =>
-    startSessionBash({ ctx, bash, active: () => true }, args, exec, standing, policy, env, options), sessionWorkdir)
+    startSessionBash({ ctx, bash, active: () => true }, args, exec, standing, policy, env, options), sessionWorkdir, jobs)
   const exec = { agent, callId: 'shell-call', signal: new AbortController().signal }
   return { definition, exec, services, calls, pending, setMode: next => { mode = next } }
 }
@@ -151,6 +157,18 @@ await test('background returns a host job id and cancellation stops work', async
   const jobs = jobRegistry(), f = fixture({ jobs, settle: false })
   const value = await f.definition.execute({ command: 'true', description: 'Start a cancellable background job', run_in_background: true }, f.exec)
   assert.equal(value.kind, 'background')
+  jobs.kill(value.jobId, f.exec.agent.id, 'stop test')
+  await jobs.hooks.done
+  assert.equal(jobs.outcome.status, 'killed')
+})
+
+await test('the bound registry serves background work even when a re-read would not be identity-equal', async () => {
+  // This is the regression that made `ops_bash` refuse background work in the real host: the
+  // registry is a tracked service, so `ctx.get('jobs')` returns a new proxy each call. The fixture
+  // throws on that read, so only a definition that uses the bound registry can pass.
+  const jobs = jobRegistry(), f = fixture({ jobs, settle: false })
+  const value = await f.definition.execute({ command: 'true', description: 'Use the bound job registry', run_in_background: true }, f.exec)
+  assert.equal(value.kind, 'background'); assert.equal(value.jobId, 'bash-1')
   jobs.kill(value.jobId, f.exec.agent.id, 'stop test')
   await jobs.hooks.done
   assert.equal(jobs.outcome.status, 'killed')

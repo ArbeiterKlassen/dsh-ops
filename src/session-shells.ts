@@ -4,7 +4,7 @@ import type { Context, Fiber } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ResolvedConfig } from './config.js'
 import type { ShellResolution } from './shells/paths.js'
-import type { HostShellDefinition, ShellResult } from './shells/types.js'
+import type { HostShellDefinition, ShellJobs, ShellResult } from './shells/types.js'
 import { errorMessage } from './shells/types.js'
 import { BASH_TOOL } from './policy.js'
 import { bashToolDefinition, DEFAULT_BASH_TIMEOUT_MS } from './shells.js'
@@ -114,6 +114,9 @@ export function mountSessionBash(ctx: Context, config: Pick<ResolvedConfig, 'pub
   const entries = new Map<Agent, Entry>()
   let ready = false
   let stopped = false
+  // Bound once by the jobs injection below; the host's registry is a tracked service, so every
+  // `ctx.get('jobs')` hands out a fresh traceable proxy and cannot be compared by identity.
+  let jobs: ShellJobs | undefined
   const allowed = (agent: Agent) => {
     if (!ready || stopped || !agent?.session) return false
     try {
@@ -158,7 +161,7 @@ export function mountSessionBash(ctx: Context, config: Pick<ResolvedConfig, 'pub
       const base = bashToolDefinition({ file: bash.file, source: bash.source, subprocess: ctx.get('subprocess') })
       const definition = hostBashDefinition(ctx, base,
         (args, exec, standing, policy, dshEnv, options) => startSessionBash({ ctx, bash, active: () => ready && !stopped && exec.agent !== undefined && entries.has(exec.agent) },
-          args, exec, standing, policy, dshEnv, options), sessionWorkdir)
+          args, exec, standing, policy, dshEnv, options), sessionWorkdir, jobs)
       publish(entry, definition)
     }
     for (const [agent, entry] of entries) {
@@ -197,7 +200,11 @@ export function mountSessionBash(ctx: Context, config: Pick<ResolvedConfig, 'pub
   ctx.on('agent/disposed', ({ agent }) => detach(agent))
   ctx.on('session/event', (_session, event) => { if (event.type === 'sandbox/mode') reconcile() })
   ctx.inject(['sandbox'], () => { reconcile() })
-  ctx.inject(['jobs'], jobsCtx => { reconcile(); jobsCtx.effect(() => () => { reconcile() }) })
+  ctx.inject(['jobs'], jobsCtx => {
+    jobs = jobsCtx.get('jobs') as ShellJobs | undefined
+    reconcile()
+    jobsCtx.effect(() => () => { jobs = undefined; reconcile() })
+  })
   ctx.inject(['sandboxPolicy', 'subprocess'], authorityCtx => {
     ready = true
     reconcile()
