@@ -7,7 +7,7 @@ import { assert, test, report, withTempDir } from './lib/harness.mjs'
 import { bootHost, shutdown } from './lib/host.mjs'
 import { WORKER, requireWorker } from './lib/boundary.mjs'
 import { definition } from '../lib/file/contract.js'
-import { windowsCacheLocation, resultStorage } from '../lib/kernel/result-storage.js'
+import { exposePosixCache, windowsCacheLocation, resultStorage } from '../lib/kernel/result-storage.js'
 import { mountResultLifecycle, expireResultSession } from '../lib/kernel/result-lifecycle.js'
 import { invoke } from '../lib/ptc/worker.js'
 
@@ -65,6 +65,50 @@ await test('real host references bind live session, current authority and produc
       assert.equal(fs.readFileSync(path.join(root, '.dsh-ops', 'audit'), 'utf8'), 'durable')
       assert.equal(fs.existsSync(path.join(cache, 'lock')), true)
       assert.equal(calls, 5)
+    } finally { await shutdown(ctx) }
+  })
+})
+
+await test('only a bwrap private /tmp gains a bind for the one session cache, before the wrapped program', () => {
+  const storage = { root: '/tmp/dsh-ops-results-abc', authorityId: 'a', allowedTools: ['result'] }
+  const bwrap = ['/usr/bin/bwrap', '--ro-bind', '/', '/', '--tmpfs', '/tmp', '--bind', '/w', '/w', '--', 'worker']
+  assert.deepEqual(exposePosixCache(bwrap, storage),
+    ['/usr/bin/bwrap', '--ro-bind', '/', '/', '--tmpfs', '/tmp', '--bind', '/w', '/w', '--bind', storage.root, storage.root, '--', 'worker'])
+  assert.deepEqual(exposePosixCache(['bwrap', '--ro-bind', '/', '/', '--', 'worker'], storage), ['bwrap', '--ro-bind', '/', '/', '--', 'worker'])
+  assert.deepEqual(exposePosixCache(['bwrap', '--', 'worker', '--tmpfs', '/tmp'], storage), ['bwrap', '--', 'worker', '--tmpfs', '/tmp'])
+  assert.deepEqual(exposePosixCache(['landlock-run', '--rw', '/tmp', '--', 'worker'], storage), ['landlock-run', '--rw', '/tmp', '--', 'worker'])
+  assert.deepEqual(exposePosixCache(bwrap, undefined), bwrap)
+  assert.deepEqual(exposePosixCache(bwrap, { ...storage, windowsWriteSid: 'S-1-4-1-2-1' }), bwrap)
+  assert.deepEqual(exposePosixCache(bwrap, { ...storage, root: 'relative' }), bwrap)
+})
+
+// Windows has no bwrap runner and keeps its cache in the runner's own --temp grant (checked above).
+if (process.platform !== 'win32') await test('a bwrap-style private /tmp still sees the session cache for put, page and session purge', async () => {
+  await withTempDir('storage-bwrap', async root => {
+    const runner = path.join(root, 'runner'), log = path.join(runner, 'argv.log'), shim = path.join(runner, 'bwrap')
+    fs.mkdirSync(runner)
+    // Records each runner argv, then runs the wrapped program like bwrap would after its own options.
+    fs.writeFileSync(shim, `#!/bin/sh\nfor a in "$@"; do printf '%s\\037' "$a"; done >> '${log}'\necho >> '${log}'\n`
+      + 'while [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n', { mode: 0o755 })
+    const { ctx } = await bootHost(), session = { id: 'bwrap-private-tmp', header: { cwd: root } }
+    try {
+      await ctx.plugin(Subprocess)
+      await ctx.plugin(inner => inner.provide('sandbox', { confine: async argv => ({ enforcement: 'full', runnerFailureRules: [],
+        argv: [shim, '--ro-bind', '/', '/', '--tmpfs', '/tmp', '--bind', root, root, '--', ...argv] }) }))
+      await ctx.plugin(inner => inner.provide('sandboxPolicy', { resolve: () => ({ mode: 'workspace-write', workspaceRoot: root, sessionId: session.id }) }))
+      await ctx.plugin(inner => mountResultLifecycle(inner))
+      const call = args => invoke(ctx, WORKER, 'result', args, { agent: { session } }, undefined, { denyCredentialReads: false })
+      const stored = await call({ action: 'put', items: [{ value: 'kept' }] })
+      assert.equal(stored.status, 'completed', JSON.stringify(stored))
+      assert.deepEqual((await call({ action: 'page', id: stored.id })).items, [{ value: 'kept' }])
+      const cacheRoot = (await resultStorage(ctx, session, undefined, WORKER, 'result', ctx.get('sandboxPolicy').resolve({ session }), [], false)).root
+      await expireResultSession(ctx, session)
+      const runs = fs.readFileSync(log, 'utf8').trim().split('\n').map(line => line.split('\x1f').slice(0, -1))
+      assert.equal(runs.length, 3, 'put, page and the session purge each run through the runner')
+      for (const argv of runs) {
+        const separator = argv.indexOf('--'), bind = argv.lastIndexOf(cacheRoot, separator)
+        assert.ok(bind > 0 && argv[bind - 2] === '--bind' && argv[bind - 1] === cacheRoot && bind === separator - 1, argv.join(' '))
+      }
     } finally { await shutdown(ctx) }
   })
 })
