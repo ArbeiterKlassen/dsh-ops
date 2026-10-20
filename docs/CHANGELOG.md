@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Reuse unchanged discovery presentation decisions during reconciliation instead of reassembling every existing agent when one is created (#333). Invalidate on live authority inputs, registry/configuration and ownership changes, and host-service lifecycle; keep pre-step and execution checks fresh. Avoid empty worker-provider notifications and retain asynchronous invalidation and unload safety.
+- 发现组件 reconcile 复用未变化的 presentation 判定，不再因新增一个 agent 而重组全部旧 agent（#333）。实时权限输入、注册表/配置、ownership 与宿主服务生命周期变化均使缓存失效；pre-step 和执行检查保持新鲜。避免空 worker provider 发送无效通知，保留异步失效和卸载安全性。
+
 ## [0.4.1] — 2026-10-20 — Update locks stop leaving files behind
 
 - Stop the update lock from leaving `.dsh-ops-update-*.lock` sidecars behind (#319). The writer that takes the lock removes it on release, and only after proving the name still leads to the inode it locked, so a waiter that opened the old inode can never publish under it. A published write, a request refused after the lock and a directory-wide `replace` now leave the directory exactly as they found it; a sidecar left by a killed writer is not a stuck lock — the next write of that name binds to it, publishes under it and removes it.
