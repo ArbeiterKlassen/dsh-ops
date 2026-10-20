@@ -1,5 +1,6 @@
-/** Read only the six OPS native JSON envelopes, never shell stdout or arbitrary tool prose. */
+/** Read only OPS outcome facts (presentation metadata or JSON envelopes), never shell stdout or arbitrary tool prose. */
 import { FILE_TOOLS, publicToolName } from '../policy.js'
+import { OUTCOME_META } from '../kernel/presentation-outcome.js'
 import { PTC_TOOLS } from '../ptc/contract.js'
 const JSON_TOOLS = new Set([...FILE_TOOLS, ...PTC_TOOLS].map(publicToolName))
 const MAX_JSON_BYTES = 64 * 1024
@@ -20,6 +21,10 @@ export function record(value: unknown): value is Record<string, unknown> {
 export function resultDetails(tool: string, data: unknown, nested: boolean): ResultDetails {
   if (!JSON_TOOLS.has(tool) || !record(data)) return UNCONFIRMED
   const message = record(data.message) ? data.message : undefined
+  const hostFailed = data.error !== undefined || (nested ? data.isError === true : message?.isError === true)
+  // Native results render model text; their outcome travels in the host's replayable presentation metadata.
+  const meta = !nested && record(data.meta) ? data.meta[OUTCOME_META] : undefined
+  if (record(meta)) return summarize(meta, hostFailed)
   const content = nested ? data.content : message?.content
   // Multiple blocks can be a spill preview plus locator, not the original JSON envelope.
   if (!Array.isArray(content) || content.length !== 1 || !record(content[0]) || content[0].type !== 'text') return UNCONFIRMED
@@ -27,7 +32,10 @@ export function resultDetails(tool: string, data: unknown, nested: boolean): Res
   if (typeof text !== 'string' || text.length > MAX_JSON_BYTES || Buffer.byteLength(text, 'utf8') > MAX_JSON_BYTES) return UNCONFIRMED
   let value: unknown
   try { value = JSON.parse(text) } catch { return UNCONFIRMED }
-  if (!record(value)) return UNCONFIRMED
+  return record(value) ? summarize(value, hostFailed) : UNCONFIRMED
+}
+
+function summarize(value: Record<string, unknown>, hostFailed: boolean): ResultDetails {
   const summary: ResultSummary = {}
   for (const key of ['done', 'total', 'failed', 'unknown', 'omitted', 'nextOffset'] as const) {
     if (integer(value[key])) summary[key] = value[key]
@@ -42,6 +50,5 @@ export function resultDetails(tool: string, data: unknown, nested: boolean): Res
     : (summary.failed ?? 0) > 0 || value.status === 'partial' ? 'partial'
     : value.status === 'planned' || (value.status === 'completed' && value.dryRun === true) ? 'planned'
     : value.status === 'completed' ? 'completed' : 'unconfirmed'
-  const hostFailed = data.error !== undefined || (nested ? data.isError === true : message?.isError === true)
   return Object.freeze({ outcome: hostFailed && (outcome === 'completed' || outcome === 'planned') ? 'unconfirmed' : outcome, ...summary })
 }
