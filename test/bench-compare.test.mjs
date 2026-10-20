@@ -1,6 +1,6 @@
 /**
  * The report layer: `bench/compare.mjs`, the slice that turns two archived runs into
- * the `report.md` a change review reads.
+ * the timestamped report a change review reads.
  *
  * The judgement itself is `compare-core.mjs` and is pinned by its own suite; what is
  * pinned here is the rendering and the wiring around it:
@@ -33,7 +33,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { assert, report, test, withTempDir } from './lib/harness.mjs'
 
-import { EXIT, main, parseArgs, renderReport, resolveSide } from '../bench/compare.mjs'
+import { EXIT, main, parseArgs, renderReport, reportFileName, reportStamp, resolveSide } from '../bench/compare.mjs'
 import { COMPARE_FORMAT, compareSummaries } from '../bench/lib/compare-core.mjs'
 
 const LABEL = 'bench-compare'
@@ -137,14 +137,19 @@ function writeRun(root, name, doc, fileName = 'run.json') {
 }
 
 /** A CLI invocation with the report and the diagnostics captured apart. */
-function invoke(argv) {
+function invoke(argv, extra = {}) {
   const out = []
   const err = []
   return {
-    run: () => main(argv, { out: (line) => out.push(line), err: (line) => err.push(line) }),
+    run: () => main(argv, { out: (line) => out.push(line), err: (line) => err.push(line), ...extra }),
     text: () => out.join('\n'),
     err: () => err.join('\n'),
   }
+}
+
+/** A literal path, escaped so it can be matched against a regex. */
+function literal(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /** The two resolved sides a render needs, with stable paths. */
@@ -306,7 +311,7 @@ await test('--json prints the compare-core document itself, not a re-derived sha
       { noiseFloorPct: 3.1 },
     )
     assert.deepEqual(doc, JSON.parse(JSON.stringify(expected)), 'the JSON is the core document verbatim')
-    assert.equal(fs.existsSync(path.join(candDir, 'report.md')), false, 'JSON mode writes no markdown unless --out names a file')
+    assert.equal(fs.readdirSync(candDir).sort().join(), 'run.json', 'JSON mode writes no markdown unless --out names a file')
 
     // …and --out writes the JSON where asked.
     const target = path.join(root, 'out', 'comparison.json')
@@ -316,25 +321,47 @@ await test('--json prints the compare-core document itself, not a re-derived sha
   })
 })
 
-await test('the default artifact is <cand>/report.md, and --out - writes nothing', async () => {
+await test('the default artifact lands in the sweep folder, named by the write instant', async () => {
+  assert.equal(reportStamp(new Date('2026-10-20T12:36:38.123Z')), '2026-10-20T12-36-38Z', 'the name carries a filesystem-safe UTC stamp')
+  assert.equal(reportFileName(new Date('2026-10-20T12:36:38.123Z')), 'DSH-OPS Benchmark Report 2026-10-20T12-36-38Z.md')
   await withTempDir('bench-compare-out', async (root) => {
-    const baseDir = writeRun(root, 'base', sealedRun('bench-base', [row('csv-sum', 1, 700, true)]))
-    const candDir = writeRun(root, 'cand', sealedRun('bench-ops', [row('csv-sum', 1, 500, true)]))
-    const cli = invoke([baseDir, candDir, '--noise-floor-pct', '3.1'])
+    const runs = path.join(root, 'runs')
+    const group = path.join(runs, 'benchmark-test-07')
+    const baseDir = writeRun(group, '2026-10-18T00-00-00Z-bench-base', sealedRun('bench-base', [row('csv-sum', 1, 700, true)]))
+    const candDir = writeRun(group, '2026-10-18T00-00-01Z-bench-ops', sealedRun('bench-ops', [row('csv-sum', 1, 500, true)]))
+    const instant = Date.parse('2026-10-20T12:36:38.123Z')
+    const sides = ['bench-base', 'bench-ops', '--runs', runs, '--folder', 'benchmark-test-07', '--noise-floor-pct', '3.1']
+    const cli = invoke(sides, { now: () => instant })
     assert.equal(await cli.run(), EXIT.ok)
-    const reportFile = path.join(candDir, 'report.md')
-    assert.ok(fs.existsSync(reportFile), 'the report lands beside the candidate run.json')
+    const reportFile = path.join(group, 'DSH-OPS Benchmark Report 2026-10-20T12-36-38Z.md')
+    assert.ok(fs.existsSync(reportFile), 'the report lands in the sweep folder, not inside the arm that measured half of it')
+    assert.equal(fs.readdirSync(candDir).sort().join(), 'run.json', 'the arm directory keeps its own evidence only')
     assert.equal(fs.readFileSync(reportFile, 'utf8'), cli.text())
-    assert.match(cli.err(), new RegExp(`compare: wrote ${reportFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
+    assert.match(cli.err(), new RegExp(`compare: wrote ${literal(reportFile)}`))
 
-    const stdoutOnly = invoke([baseDir, candDir, '--noise-floor-pct', '3.1', '--out', '-'])
+    // A second comparison is a second artifact: the instant in the name stops one sweep
+    // from overwriting the report of another that ran a second earlier.
+    const later = invoke(sides, { now: () => instant + 1000 })
+    assert.equal(await later.run(), EXIT.ok)
+    assert.ok(fs.existsSync(reportFile) && fs.existsSync(path.join(group, 'DSH-OPS Benchmark Report 2026-10-20T12-36-39Z.md')))
+
+    // The same placement holds when the sides are given as directories rather than labels.
+    const byDir = invoke([baseDir, candDir, '--runs', runs, '--noise-floor-pct', '3.1'], { now: () => instant + 2000 })
+    assert.equal(await byDir.run(), EXIT.ok)
+    assert.ok(fs.existsSync(path.join(group, 'DSH-OPS Benchmark Report 2026-10-20T12-36-40Z.md')), 'a run directory inside a sweep folder is promoted too')
+
+    // A run directory directly under the runs root has no sweep folder to promote to.
+    const flatDir = writeRun(runs, '2026-10-18T00-00-02Z-bench-ops', sealedRun('bench-ops', [row('csv-sum', 1, 500, true)]))
+    assert.equal(await invoke([baseDir, flatDir, '--runs', runs, '--noise-floor-pct', '3.1'], { now: () => instant }).run(), EXIT.ok)
+    assert.ok(fs.existsSync(path.join(flatDir, 'DSH-OPS Benchmark Report 2026-10-20T12-36-38Z.md')), 'no group folder ⇒ the report stays beside run.json')
+
+    const stdoutOnly = invoke([baseDir, candDir, '--noise-floor-pct', '3.1', '--out', '-'], { now: () => instant })
     assert.equal(await stdoutOnly.run(), EXIT.ok)
-    assert.equal(fs.existsSync(path.join(root, 'report.md')), false)
-    assert.equal(fs.readFileSync(reportFile, 'utf8'), stdoutOnly.text(), '--out - renders the same text without touching disk')
+    assert.equal(fs.readdirSync(candDir).sort().join(), 'run.json', '--out - writes nothing')
 
     const explicit = path.join(root, 'elsewhere', 'r.md')
-    assert.equal(await invoke([baseDir, candDir, '--noise-floor-pct', '3.1', '--out', explicit]).run(), EXIT.ok)
-    assert.equal(fs.readFileSync(explicit, 'utf8'), cli.text())
+    assert.equal(await invoke([baseDir, candDir, '--noise-floor-pct', '3.1', '--out', explicit], { now: () => instant }).run(), EXIT.ok)
+    assert.equal(fs.readFileSync(explicit, 'utf8'), stdoutOnly.text())
   })
 })
 

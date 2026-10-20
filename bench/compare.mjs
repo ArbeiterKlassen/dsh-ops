@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 /**
- * The comparison report: two archived runs in, one `report.md` out.
+ * The comparison report: two archived runs in, one timestamped markdown file out.
+ *
+ * The artifact lands where a reviewer looks for a sweep, not inside the arm directory
+ * that measured half of it: a run in `bench/runs/<group>/<stamp>-<label>` writes
+ * `bench/runs/<group>/DSH-OPS Benchmark Report <UTC>.md`, and a run with no group folder
+ * above it keeps the report in its own directory. The file name carries the write
+ * instant (the same UTC shape as a run directory) so a second comparison never
+ * overwrites the first; the rendered text stays clock-free and diffable.
  *
  * The verdict is *not* computed here. `lib/compare-core.mjs` owns every rule — pass
  * rate first, cost only over pairs that passed on both sides, and a direction only
@@ -47,7 +54,9 @@ const LEGACY_SUMMARY = 'summary.json'
 const SUMMARY_FORMAT = 'dsh-ops-bench-summary-v1'
 /** The report's fixed title; the two sides are named in Evidence, not in the heading. */
 const REPORT_TITLE = '# DSH-OPS Benchmark Report'
-/** The panel's palette: `report.md` and `panel.html` must agree on what green and red mean. */
+/** The file name stem: the title's words, so the artifact is recognizable in a folder listing. */
+const REPORT_STEM = 'DSH-OPS Benchmark Report'
+/** The panel's palette: the report and `panel.html` must agree on what green and red mean. */
 const GREEN = '#3fb950'
 const RED = '#f85149'
 
@@ -75,7 +84,9 @@ const USAGE = `usage: node bench/compare.mjs <base> <cand> [options]
                      direction is withheld (noise-floor-unknown)
   --noise <a> <b>    measure the A/A noise floor from two baseline runs
   --json             print the comparison document as JSON instead of the report
-  --out <file>       where the rendered artifact goes (default <cand dir>/report.md;
+  --out <file>       where the rendered artifact goes (default: the sweep's group
+                     folder, named "DSH-OPS Benchmark Report <UTC>.md" — a run with no
+                     group folder above it keeps the report in its own directory;
                      "-" is stdout only). With --json the file carries the JSON.
   --help             this text
 
@@ -701,7 +712,8 @@ function warningSection(comparison) {
 }
 
 /**
- * Render the comparison as `report.md`.
+ * Render the comparison as the report document — the text `reportFileName` names and
+ * `main` writes.
  *
  * Pure: same comparison and sources in, byte-identical text out. No timestamps are
  * written, so the report is reproducible and diffable.
@@ -745,16 +757,59 @@ export function renderReport(comparison, sources = {}) {
 }
 
 /**
+ * The write instant in the shape a run directory carries it: `2026-10-20T12-36-38Z`.
+ * Colons and dots become dashes so the name is legal on every filesystem, and the
+ * seconds are UTC so two comparisons never share a name across time zones.
+ * @param {number|Date} [now] - the instant; defaults to the wall clock.
+ * @returns {string} the stamp.
+ */
+export function reportStamp(now = Date.now()) {
+  return `${new Date(now).toISOString().replace(/[:.]/g, '-').slice(0, 19)}Z`
+}
+
+/**
+ * The report's file name: the title's words plus the write instant, so a folder of
+ * sweeps reads as reports rather than as `report.md` repeated.
+ * @param {number|Date} [now] - the instant; defaults to the wall clock.
+ * @returns {string} the file name, `.md` included.
+ */
+export function reportFileName(now = Date.now()) {
+  return `${REPORT_STEM} ${reportStamp(now)}.md`
+}
+
+/**
+ * The directory the report belongs to: the group folder a sweep shares, not the arm
+ * directory that measured half of it. A comparison is about the sweep, so a reviewer
+ * opening `bench/runs/full-sweep-4/` should find the report there.
+ *
+ * Only the shape this harness writes is promoted — a run directory one level below the
+ * runs root. A run directly under the root has no group folder to promote to, and
+ * anything deeper is some other layout, so both keep the report beside `run.json`.
+ * @param {Options} options - the parsed options.
+ * @param {{dir: string}} cand - the resolved candidate side.
+ * @returns {string} the absolute directory.
+ */
+function reportDir(options, cand) {
+  const runsDir = path.resolve(options.runsDir ?? RUNS_DIR)
+  const dir = path.resolve(cand.dir)
+  const parent = path.dirname(dir)
+  const group = path.relative(runsDir, parent)
+  const nested = group !== '' && !group.startsWith('..') && !path.isAbsolute(group) && !/[\\/]/.test(group)
+  return nested ? parent : dir
+}
+
+/**
  * Where the rendered artifact goes.
  * @param {Options} options - the parsed options.
  * @param {{dir: string}} cand - the resolved candidate side.
+ * @param {number} now - the instant the default file name carries.
  * @returns {string|null} the absolute path, or null to write no file.
  */
-function reportPath(options, cand) {
+function reportPath(options, cand, now) {
   if (options.out === '-') return null
   if (options.out !== null) return path.resolve(options.out)
   if (options.json) return null
-  return path.join(cand.dir, 'report.md')
+  return path.join(reportDir(options, cand), reportFileName(now))
 }
 
 /**
@@ -764,12 +819,14 @@ function reportPath(options, cand) {
  * and maps the gate to an exit code. A cost gate that could not run (no noise floor,
  * incomplete usage, no both-passed pair) abstains — it does not fail the run.
  * @param {string[]} argv - the arguments after the script name.
- * @param {{out?: Function, err?: Function}} [io] - output sinks; defaults to the console.
+ * @param {{out?: Function, err?: Function, now?: Function}} [io] - output sinks and the
+ *   clock the default file name reads; defaults to the console and the wall clock.
  * @returns {Promise<number>} the process exit code.
  */
 export async function main(argv, io = {}) {
   const out = io.out ?? ((line) => console.log(line))
   const err = io.err ?? ((line) => console.error(line))
+  const now = io.now ?? (() => Date.now())
   let options
   try {
     options = parseArgs(argv)
@@ -814,7 +871,7 @@ export async function main(argv, io = {}) {
     : `${renderReport(comparison, sources)}\n`
   out(payload)
 
-  const target = reportPath(options, cand)
+  const target = reportPath(options, cand, now())
   if (target !== null) {
     try {
       fs.mkdirSync(path.dirname(target), { recursive: true })

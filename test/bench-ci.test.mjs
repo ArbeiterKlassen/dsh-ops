@@ -86,6 +86,7 @@ await test('the smoke uploads report.md / run.json / panel.html when they exist'
   for (const name of ['run.json', 'report.md', 'panel.html']) {
     assert.ok(paths.includes(name), `the artifact path list includes ${name}`)
   }
+  assert.match(paths, /bench\/runs\/\*\/DSH-OPS Benchmark Report\*\.md/u, 'the default stamped report name is globbed too, so a group-level report is not silently left behind')
 })
 
 await test('.gitignore keeps bench evidence and the operator overlay out of the repository', () => {

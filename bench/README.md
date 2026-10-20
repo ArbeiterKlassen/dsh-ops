@@ -67,7 +67,7 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 | --- | --- | --- |
 | `setup` | `bench/setup.mjs` | 自检 + 幂等准备两侧 profile(`bench-base` / `bench-ops`),打印跑 sweep 的那一条命令 |
 | `ab` | `bench/run.mjs` → `bench/compare.mjs` | 先基线、再候选、再比较,三步共用**一个** `bench/runs/benchmark-test-NN` 组目录 |
-| `report` | `bench/compare.mjs` | 从已封存的 `run.json` 渲染 `report.md` |
+| `report` | `bench/compare.mjs` | 从已封存的 `run.json` 渲染报告(`DSH-OPS Benchmark Report <UTC>.md`) |
 | `panel` | `bench/report/panel.mjs` | 生成/打开一个只读 `run.json` 的 `panel.html` |
 | `tools` | `bench/tools/index.mjs` | 无模型的工具级确定性对比 |
 
@@ -98,7 +98,12 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 
 两侧各自可以是 label(`bench/runs/*-<label>`,含一层组目录,最新时间戳优先)、一个 run 目录、或一个
 `run.json` / 旧版 `summary.json` 路径。`--folder` 限定组,`--runs` 换根,`--aggregate median|min`,
-`--json` 输出比较文档而不是报告,`--out <file>`(`-` 只到 stdout;默认 `<cand 目录>/report.md`)。
+`--json` 输出比较文档而不是报告,`--out <file>`(`-` 只到 stdout)。默认落点是**当次跑的组目录**,
+文件名带写入时刻:一次 `bench/runs/<组>/<stamp>-<label>` 里的跑,报告写成
+`bench/runs/<组>/DSH-OPS Benchmark Report <UTC>.md`(UTC 与目录名同形,冒号换横线,如
+`2026-10-20T12-36-38Z`),所以 `full-sweep-4` 的报告就在 `bench/runs/full-sweep-4/`,不在某个 arm 目录里;
+重跑一次就是一份新报告,不覆盖上一份。不在组目录下的跑(直接挂在 `bench/runs/` 下)没有可上提的组,
+报告留在自己的 run 目录里。
 
 ### `panel`
 
@@ -112,7 +117,7 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 `--temp-dir`、`--scale`、`--timeout-ms`(这套旗标沿用 #103 的参数面,随接线片一并落地)。预热 1 次 +
 5 轮交替配对,同二进制两侧时它只证明"harness 没坏、输出可重复",**不是**性能基准。
 
-## 如何读 `report.md`
+## 如何读报告(`DSH-OPS Benchmark Report <UTC>.md`)
 
 按这个顺序读,不要跳(报告正文与标题都是英文,小节名照英文读):
 
@@ -230,7 +235,7 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
   所以绿只说明"harness 还能驱动真实 worker、worker 两次答得一样",**不构成任何性能结论**;
 - **不阻塞**:该作业 `continue-on-error: true`,不进必需状态检查,聚合门禁不计它;
 - **artifact**:证据以 `bench-smoke-report` 上传(沿用 `tools-trial-report` 的命名),含 `bench/runs/smoke/**`
-  以及存在时的 `run.json` / `report.md` / `panel.html`;
+  以及存在时的 `run.json` / `DSH-OPS Benchmark Report <UTC>.md` / `panel.html`;
 - **模型驱动的 sweep 绝不在 CI 跑**:它要断言成本方向,那是本地的人类判断。
 
 ## 为什么 bench 不随包发布
