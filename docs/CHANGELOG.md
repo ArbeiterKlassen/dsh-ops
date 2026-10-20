@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Use `ops_bash`'s description as the host job label, and include the same label in background/promoted results and their rendered text (#322). Keep command/script/default fallbacks for internal callers without a description; document migration from the retired OPS background tools to host job controls.
+- `ops_bash` 使用任务说明作为宿主 job 标签，后台及超时转后台的返回值和显示文本同时带上该标签（#322）。内部调用未提供说明时保留命令、脚本路径及默认名称回退，并补充旧 OPS 后台工具迁移到宿主任务控制的说明。
+
 ## [0.4.1] — 2026-10-20 — Update locks stop leaving files behind
 
 - Stop the update lock from leaving `.dsh-ops-update-*.lock` sidecars behind (#319). The writer that takes the lock removes it on release, and only after proving the name still leads to the inode it locked, so a waiter that opened the old inode can never publish under it. A published write, a request refused after the lock and a directory-wide `replace` now leave the directory exactly as they found it; a sidecar left by a killed writer is not a stuck lock — the next write of that name binds to it, publishes under it and removes it.
