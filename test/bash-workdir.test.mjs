@@ -43,13 +43,16 @@ await test('a relative workdir cannot fall back to the process cwd without a val
 })
 
 await test('a POSIX-style drive workdir maps onto the Windows form on a Windows session (#318)', () => {
-  if (process.platform !== 'win32') return
+  // No host-platform guard: the flavour comes from the session workspace's
+  // spelling (`windowsFlavoured`), so these assertions hold on every platform
+  // the gate runs — a guard would let two of the three CI legs skip them.
   const session = { header: { cwd: 'D:\\session\\workspace' } }
   // The raw `/d/…` string must never reach the executor: before #318 it did,
   // and Node's `fs` read it against the *host process's* current drive, where
   // a decoy directory made the command run in the wrong tree with exit 0.
-  assert.equal(sessionWorkdir({ workdir: '/d/global/x' }, session), 'D:\\global\\x')
-  assert.notEqual(sessionWorkdir({ workdir: '/d/global/x' }, session), '/d/global/x')
+  const mapped = sessionWorkdir({ workdir: '/d/global/x' }, session)
+  assert.equal(mapped, 'D:\\global\\x')
+  assert.equal(mapped.includes('/'), false, 'the normalized form carries no POSIX separators')
   assert.equal(sessionWorkdir({ workdir: '/D/global/x' }, session), 'D:\\global\\x')
   assert.equal(sessionWorkdir({ workdir: '/d' }, session), 'D:\\')
   // A different drive stays an absolute path, like `E:\x` today: existence is
@@ -60,7 +63,6 @@ await test('a POSIX-style drive workdir maps onto the Windows form on a Windows 
 })
 
 await test('a drive-less POSIX absolute workdir is refused, never drive-guessed (#318)', () => {
-  if (process.platform !== 'win32') return
   const session = { header: { cwd: 'D:\\session\\workspace' } }
   for (const workdir of ['/', '/tmp/x', '/d-global', '/d:/x']) {
     assert.throws(() => sessionWorkdir({ workdir }, session), /invalid workdir:.*drive/, workdir)

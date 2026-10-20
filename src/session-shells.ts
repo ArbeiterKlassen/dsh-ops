@@ -69,13 +69,17 @@ export function sessionWorkdir(args: { workdir?: unknown } | null | undefined, s
   // A `/`-rooted path's `parse().root` is `'/'`, not `'\\'`, so the
   // `driveRooted` escape below lets `/d/…` through untouched and Node's `fs`
   // later reads it against the helper process's current drive (#318).
-  // `//server/share` keeps its existing forward-slash UNC passthrough.
+  // `//server/share` keeps its existing forward-slash UNC passthrough. The
+  // flavour comes from the session workspace's own spelling: a POSIX-spelled
+  // workspace on a Windows host keeps POSIX rules by design — pinned by the
+  // POSIX-session test, not guessed at from `process.platform`.
   if (win && candidate.startsWith('/') && !candidate.startsWith('//')) {
     const driveForm = /^\/([A-Za-z])(?:\/(.*))?$/.exec(candidate)
     if (driveForm === null) {
-      throw new BashArgumentError('invalid workdir: Windows has no drive-less POSIX absolute '
-        + `paths; ${JSON.stringify(candidate)} would be read against the host process's current `
-        + 'drive. Write it with a drive letter (D:/path or /d/path) instead.', 'workdir')
+      throw new BashArgumentError('invalid workdir: '
+        + `${JSON.stringify(candidate)} starts with "/" but carries no usable drive letter; `
+        + 'Windows would read it against the host process\'s current drive. '
+        + 'Write it as "D:/path" or "/d/path", or cd to it inside the command.', 'workdir')
     }
     candidate = `${driveForm[1].toUpperCase()}:\\${(driveForm[2] ?? '').replaceAll('/', '\\')}`
   }
