@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Classify Native file and `ops_result` outcomes in the OPS TUI sidebar from bounded, replayable presentation metadata rather than compact model text. Preserve PTC child JSON handling and exclude paths, content and error messages from the metadata; cover the producer and consumer in always-on tests and the real dsh-TUI host loop (#339).
+- OPS TUI 侧栏通过有界、可重放的展示元数据识别 Native 文件工具和 `ops_result` 的业务结果，不再尝试解析面向模型的精简文本。保留 PTC 子调用的 JSON 处理，元数据不含路径、正文和错误消息；补充 CI 必跑的生产/消费回归及真实 dsh-TUI 宿主闭环测试（#339）。
+
 ## [0.4.1] — 2026-10-20 — Update locks stop leaving files behind
 
 - Stop the update lock from leaving `.dsh-ops-update-*.lock` sidecars behind (#319). The writer that takes the lock removes it on release, and only after proving the name still leads to the inode it locked, so a waiter that opened the old inode can never publish under it. A published write, a request refused after the lock and a directory-wide `replace` now leave the directory exactly as they found it; a sidecar left by a killed writer is not a stuck lock — the next write of that name binds to it, publishes under it and removes it.
