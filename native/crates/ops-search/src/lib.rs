@@ -4,7 +4,7 @@ mod scan;
 mod paging;
 mod search;
 use ops_protocol::{Failure, Request, Result};
-use ops_files::{file_path, target, relative_display, read_bytes, result, lock_and_read_for_update, atomic_write, MAX_OUTPUT_BYTES};
+use ops_files::{file_path, target, relative_display, read_bytes, result, lock_and_read_for_update, atomic_write, MAX_OUTPUT_BYTES, MAX_FILE_BYTES};
 use ops_files as publication;
 use cap_fs_ext::DirExt;
 #[cfg(windows)]
@@ -228,6 +228,16 @@ fn segment_match(pattern: &str, value: &str) -> bool {
     while pi < p.len() && p[pi] == b'*' { pi += 1; }
     pi == p.len()
 }
+/// Check the UTF-8 byte expansion before allocating replacement text or publishing any file.
+fn replacement_size(before: usize, pattern: usize, replacement: usize, count: usize) -> Result<usize> {
+    let size = pattern.checked_mul(count).and_then(|removed| before.checked_sub(removed))
+        .and_then(|kept| replacement.checked_mul(count).and_then(|added| kept.checked_add(added)));
+    match size {
+        Some(size) if size as u64 <= MAX_FILE_BYTES => Ok(size),
+        _ => Err(Failure::new("OUTPUT_LIMIT",
+            "Proposed replacement exceeds 32 MiB; narrow path/glob or reduce replacement size. No file was changed.")),
+    }
+}
 fn replace(request: &Request) -> Result<Value> {
     if request.read_only { return Err(Failure::policy("read-only", "replace is unavailable in read-only mode")); }
     let args: ReplaceArgs = serde_json::from_value(request.args.clone())?;
@@ -248,7 +258,11 @@ fn replace(request: &Request) -> Result<Value> {
         match String::from_utf8(bytes.clone()) {
             Ok(text) => {
                 let count = text.match_indices(&args.pattern).count();
-                if count > 0 { total += count; plans.push((file, bytes, text, count)); update_guards.push(guard); }
+                if count > 0 {
+                    replacement_size(bytes.len(), args.pattern.len(), args.replacement.len(), count)?;
+                    total = total.checked_add(count).ok_or_else(|| Failure::new("OUTPUT_LIMIT", "Replacement count overflow; no file was changed."))?;
+                    plans.push((file, bytes, text, count)); update_guards.push(guard);
+                }
             }
             Err(_) => binary.push(file),
         }
@@ -360,6 +374,17 @@ mod tests {
         assert_eq!(replace["status"], "completed", "{replace}");
         assert_eq!(replace["dryRun"], true, "{replace}");
         assert_eq!(replace["matched"], 2, "{replace}");
+    }
+
+    #[test]
+    fn replacement_byte_budget_handles_boundary_shrink_and_checked_arithmetic() {
+        assert_eq!(replacement_size(32_768, 1, 1024, 32_768).unwrap() as u64, MAX_FILE_BYTES);
+        assert_eq!(replacement_size(32_769, 1, 1024, 32_768).unwrap_err().code, "OUTPUT_LIMIT");
+        assert_eq!(replacement_size(8, 2, 0, 4).unwrap(), 0);
+        assert_eq!(replacement_size(8, 2, 2, 4).unwrap(), 8);
+        assert_eq!(replacement_size(4, 1, usize::MAX, 2).unwrap_err().code, "OUTPUT_LIMIT");
+        assert_eq!(replacement_size(usize::MAX, 1, 2, 1).unwrap_err().code, "OUTPUT_LIMIT");
+        assert_eq!(replacement_size(4, usize::MAX, 1, 2).unwrap_err().code, "OUTPUT_LIMIT");
     }
 
     /// One private fixture directory under the canonical ambient temp root.

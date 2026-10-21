@@ -43,11 +43,19 @@ function windowsFlavoured(cwd: unknown) {
  * drive-relative path (`C:child`) is anchored at the session's drive when the
  * drives match and refused when they do not, because resolving it would consult
  * that drive's process-wide current directory — state a session does not own.
+ *
+ * A POSIX-style absolute workdir on a Windows session (#318) follows bash's own
+ * spelling, which writes `/d/…` for `D:\…`: the drive-letter form is mapped
+ * onto the Windows form and then anchored and validated like any other
+ * absolute path, while a drive-less POSIX absolute (`/`, `/tmp/x`) is refused
+ * outright — Windows would read it against the helper process's current drive,
+ * the exact ambient base the anchoring here exists to remove, and where a decoy
+ * directory made the command run in the wrong tree with exit 0.
  * @param {object} args - the tool call arguments.
  * @param {object} session - the authoritative DSH session.
  * @returns {string|undefined} the absolute workdir, or the session directory.
  * @throws {BashArgumentError} when a relative path has no absolute session workspace to anchor at,
- *   or names a drive other than the session's.
+ *   names a drive other than the session's, or is a drive-less POSIX absolute path on Windows.
  */
 export function sessionWorkdir(args: { workdir?: unknown } | null | undefined, session: { header?: { cwd?: string } } | undefined) {
   const raw = args?.workdir
@@ -57,27 +65,45 @@ export function sessionWorkdir(args: { workdir?: unknown } | null | undefined, s
   if (typeof explicit !== 'string') return explicit
   const win = windowsFlavoured(cwd)
   const p = win ? path.win32 : path.posix
+  let candidate = explicit
+  // A `/`-rooted path's `parse().root` is `'/'`, not `'\\'`, so the
+  // `driveRooted` escape below lets `/d/…` through untouched and Node's `fs`
+  // later reads it against the helper process's current drive (#318).
+  // `//server/share` keeps its existing forward-slash UNC passthrough. The
+  // flavour comes from the session workspace's own spelling: a POSIX-spelled
+  // workspace on a Windows host keeps POSIX rules by design — pinned by the
+  // POSIX-session test, not guessed at from `process.platform`.
+  if (win && candidate.startsWith('/') && !candidate.startsWith('//')) {
+    const driveForm = /^\/([A-Za-z])(?:\/(.*))?$/.exec(candidate)
+    if (driveForm === null) {
+      throw new BashArgumentError('invalid workdir: '
+        + `${JSON.stringify(candidate)} starts with "/" but carries no usable drive letter; `
+        + 'Windows would read it against the host process\'s current drive. '
+        + 'Write it as "D:/path" or "/d/path", or cd to it inside the command.', 'workdir')
+    }
+    candidate = `${driveForm[1].toUpperCase()}:\\${(driveForm[2] ?? '').replaceAll('/', '\\')}`
+  }
   // On Windows, `\child` is rooted but still needs the session's drive.
-  const driveRooted = win && path.win32.parse(explicit).root === '\\'
-  if (p.isAbsolute(explicit) && !driveRooted) return explicit
+  const driveRooted = win && path.win32.parse(candidate).root === '\\'
+  if (p.isAbsolute(candidate) && !driveRooted) return candidate
   if (typeof cwd !== 'string' || !p.isAbsolute(cwd) || (win && path.win32.parse(cwd).root === '\\')) {
     throw new BashArgumentError('invalid workdir: resolving the relative path '
-      + `${JSON.stringify(explicit)} needs an absolute session workspace, but the session reported `
+      + `${JSON.stringify(candidate)} needs an absolute session workspace, but the session reported `
       + `${JSON.stringify(cwd ?? null)}; pass an absolute workdir instead.`, 'workdir')
   }
-  const drive = win ? /^([A-Za-z]):/.exec(explicit) : null
+  const drive = win ? /^([A-Za-z]):/.exec(candidate) : null
   if (drive !== null) {
     const sessionDrive = /^([A-Za-z]):/.exec(cwd)
     if (sessionDrive === null || sessionDrive[1].toLowerCase() !== drive[1].toLowerCase()) {
       throw new BashArgumentError('invalid workdir: the drive-relative path '
-        + `${JSON.stringify(explicit)} names drive ${drive[1].toUpperCase()}:, but the session workspace is on `
+        + `${JSON.stringify(candidate)} names drive ${drive[1].toUpperCase()}:, but the session workspace is on `
         + `${sessionDrive === null ? 'no drive' : `${sessionDrive[1].toUpperCase()}:`}; `
         + 'write it as an absolute path instead of relying on another drive\'s current directory.', 'workdir')
     }
     // The drive matches: resolve against the session workspace, never `C:`'s own cwd.
-    return p.resolve(cwd, explicit.slice(2))
+    return p.resolve(cwd, candidate.slice(2))
   }
-  return p.resolve(cwd, explicit)
+  return p.resolve(cwd, candidate)
 }
 
 /**
