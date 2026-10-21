@@ -127,6 +127,54 @@ function sourceState(root: string, dll: string): SourceState{
   sourceMemo.set(root,state)
   return state
 }
+/** How long a directory rename keeps being retried, and how long to wait between attempts.
+ *  Cumulative budget is 1.5 s, matching the window measured in #352: on Windows 11 26100 the same
+ *  rename that raises `EPERM` at +2 ms succeeds at +1.5 s, including from another process, with
+ *  real-time antivirus off. Only sharing/ownership errors are retried — a permission that will never
+ *  change still surfaces after the last delay instead of waiting forever. */
+export const RENAME_RETRY_DELAYS_MS: readonly number[]=[100,200,400,800]
+const RETRYABLE_RENAME_CODES: ReadonlySet<string>=new Set(['EPERM','EBUSY','EACCES'])
+/** A blocking sleep, so the retry does not turn the per-command path asynchronous. */
+const sleepSync=(ms: number): void=>{ Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,ms) }
+/** Rename a directory, tolerating the brief window in which Windows still holds the freshly written
+ *  tree. Without this, a recovering cache fails on the first `EPERM` and reports "could not be
+ *  quarantined" for a condition that is gone a moment later (#352).
+ *
+ *  `rename` and `wait` are injectable so a test can make the failure deterministic and assert the
+ *  bound instead of sleeping on a real 1.5 s window. */
+export function renameWithRetry(from: string, to: string, {
+  rename=(source: string,destination: string): void=>{ fs.renameSync(source,destination) },
+  delays=RENAME_RETRY_DELAYS_MS,
+  wait=sleepSync,
+}: { rename?: (from: string,to: string)=>void; delays?: readonly number[]; wait?: (ms: number)=>void }={}): void {
+  for(let attempt=0;;attempt+=1){
+    try{ rename(from,to); return }catch(error){
+      const code=(error as NodeJS.ErrnoException).code
+      if(attempt>=delays.length||code===undefined||!RETRYABLE_RENAME_CODES.has(code))throw error
+      wait(delays[attempt])
+    }
+  }
+}
+/** Move one unverifiable generation aside, keeping the two most recent quarantines.
+ *
+ *  Renaming keeps a generation that may still belong to a running process intact, and gives the next
+ *  attempt somewhere to stage into. The rename is retried by {@link renameWithRetry}; `rename` is
+ *  injectable so the retry can be asserted with a deterministic transient failure rather than by
+ *  waiting on a real Windows sharing window (#352). */
+export function quarantineGeneration(target: string, {rename}: { rename?: (from: string,to: string)=>void }={}): string {
+  const quarantine=`${target}.bad-${Date.now().toString(36)}`
+  renameWithRetry(target,quarantine,{rename})
+  // Keep the quarantine bounded: each generation is hundreds of MB, and a generation can go bad
+  // for wholly mundane reasons (a restored backup, a `touch`, a sync tool rewriting mtimes).
+  // Keep the two most recent and drop older ones.
+  try{
+    const parent=path.dirname(target), base=path.basename(target)
+    const stale=fs.readdirSync(parent).filter(name=>name.startsWith(`${base}.bad-`)).sort().slice(0,-2)
+    for(const name of stale){ fs.rmSync(path.join(parent,name),{recursive:true,force:true}); console.error(`dsh-ops: removed an older quarantined bash runtime: ${name}`) }
+  }catch{ /* best effort — cleanup must never block recovery */ }
+  console.error(`dsh-ops: quarantined an unverifiable bash runtime generation at ${quarantine}; staging a fresh one. Delete it once no confined shell is running.`)
+  return quarantine
+}
 /** @param {string} file
  * @param {{home?: string, platform?: NodeJS.Platform, source?: string}} options */
 export function confinedBash(file: string, {home=process.env.DSH_HOME ?? path.join(os.homedir(),'.dsh'), platform=process.platform, source}: { home?: string; platform?: NodeJS.Platform; source?: string }={}): Runtime {
@@ -194,21 +242,11 @@ export function confinedBash(file: string, {home=process.env.DSH_HOME ?? path.jo
     // (the previous code threw "refusing to overwrite an existing generation" on every later call,
     // with no way out and no recovery hint).
     if(fs.existsSync(target)){
-      const quarantine=`${target}.bad-${Date.now().toString(36)}`
       try{
-        fs.renameSync(target,quarantine)
-        // Keep the quarantine bounded: each generation is hundreds of MB, and a generation can go bad
-        // for wholly mundane reasons (a restored backup, a `touch`, a sync tool rewriting mtimes).
-        // Keep the two most recent and drop older ones.
-        try{
-          const parent=path.dirname(target), base=path.basename(target)
-          const stale=fs.readdirSync(parent).filter(name=>name.startsWith(`${base}.bad-`)).sort().slice(0,-2)
-          for(const name of stale){ fs.rmSync(path.join(parent,name),{recursive:true,force:true}); console.error(`dsh-ops: removed an older quarantined bash runtime: ${name}`) }
-        }catch{ /* best effort — cleanup must never block recovery */ }
-        console.error(`dsh-ops: quarantined an unverifiable bash runtime generation at ${quarantine}; staging a fresh one. Delete it once no confined shell is running.`)
+        quarantineGeneration(target)
       }catch(error){
-        throw Error(`Bash IPC runtime at ${target} failed verification and could not be quarantined (${errorMessage(error)}). `
-          +'Stop any confined shell, then delete that directory and retry.')
+        throw Error(`Bash IPC runtime at ${target} failed verification and could not be quarantined after retrying (${errorMessage(error)}). `
+          +'A confined shell or another process may still be using it: stop any confined shell, then delete that directory and retry.')
       }
     }
     // Failed incomplete builds get a new staging directory and only complete copies are published.
@@ -221,7 +259,7 @@ export function confinedBash(file: string, {home=process.env.DSH_HOME ?? path.jo
       // Stat-only manifest: `generationIntact` re-checks this tree with `stat`, so recording a
       // sha256 per file here bought nothing and cost a full 174 MB read on every staging.
       fs.writeFileSync(path.join(stage,'.ops-ipc.json'),JSON.stringify({identity,source:root,msys:receipt.msysSha256,patchedSha256:patchedSha,files:receipt.files,tree:treeDigest(stage,false)})+'\n')
-      try {fs.renameSync(stage,target)} catch(error){if(!fs.existsSync(marker))throw error}
+      try {renameWithRetry(stage,target)} catch(error){if(!fs.existsSync(marker))throw error}
     } finally {fs.rmSync(stage,{recursive:true,force:true})}
   }
   const result={file:selected,env:{PATH:[path.join(target,'usr/bin'),path.join(target,'ucrt64/bin'),path.join(target,'cmd'),process.env.PATH??''].join(path.delimiter)},runtime:identity}

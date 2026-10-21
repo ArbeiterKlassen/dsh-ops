@@ -4,10 +4,23 @@ import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import { pinnedBashExecutable } from '../lib/shells/pinned.js'
 import { patchMsys, proxyDefinition } from '../lib/bash-pe.js'
-import { confinedBash, restrictedCompatibility } from '../lib/bash-ipc.js'
+import { confinedBash, quarantineGeneration, renameWithRetry, restrictedCompatibility, RENAME_RETRY_DELAYS_MS } from '../lib/bash-ipc.js'
 import { assert, test, report, withTempDir } from './lib/harness.mjs'
 await test('PE patch rejects non-PE input without writing anything', () => {
   assert.throws(()=>patchMsys(Buffer.from('not a DLL')),/Expected PE/)
+})
+await test('quarantine rename retries only transient sharing errors, a bounded number of times', () => {
+  const eperm=()=>Object.assign(new Error('EPERM: operation not permitted'),{code:'EPERM'})
+  let calls=0, waits=[]
+  renameWithRetry('a','b',{delays:[1,2],wait:ms=>waits.push(ms),rename:()=>{calls+=1; if(calls<3)throw eperm()}})
+  assert.equal(calls,3,'two refusals are absorbed, the third attempt succeeds')
+  assert.deepEqual(waits,[1,2])
+  calls=0
+  assert.throws(()=>renameWithRetry('a','b',{delays:[1,2],wait:()=>{},rename:()=>{calls+=1; throw eperm()}}),error=>error.code==='EPERM')
+  assert.equal(calls,3,'bounded: the first attempt plus one per delay, never more')
+  calls=0
+  assert.throws(()=>renameWithRetry('a','b',{delays:[1,2],wait:()=>{},rename:()=>{calls+=1; throw Object.assign(new Error('ENOENT: no such file'),{code:'ENOENT'})}}))
+  assert.equal(calls,1,'an error that will not change is surfaced immediately')
 })
 await test('proxy definitions never intercept file, token, or impersonation APIs', () => {
   const kernel=proxyDefinition(['CreateNamedPipeA','CreatePipe','CreateFileA','CreateProcessW','ImpersonateNamedPipeClient'],'kernel32.dll')
@@ -110,6 +123,34 @@ await test('a tampered cached generation is rejected, quarantined and rebuilt', 
     // (3) Served from the rebuild, and the quarantine does not accumulate.
     assert.equal(confinedBash(bash,{home}).file,third.file)
     assert.equal(bads()<=2,true)
+  })
+})
+await test('a transient EPERM on quarantine is retried instead of stranding the cache (#352)', async () => {
+  await withTempDir('bash-ipc-quarantine', async home=>{
+    const target=path.join(home,'dsh-ops','bash-ipc','generation')
+    fs.mkdirSync(target,{recursive:true})
+    fs.writeFileSync(path.join(target,'payload.txt'),'a generation that failed verification')
+    const realRename=fs.renameSync
+    let attempts=0
+    // Two refusals, then the same rename Windows would accept a moment later. Without the retry the
+    // first `EPERM` escapes and the generation is never quarantined — the cache stays stranded.
+    const quarantine=quarantineGeneration(target,{rename:(from,to)=>{
+      attempts+=1
+      if(attempts<=2)throw Object.assign(new Error('EPERM: operation not permitted'),{code:'EPERM'})
+      realRename(from,to)
+    }})
+    assert.equal(attempts,3,'both refused attempts are retried, and the third succeeds')
+    assert.equal(fs.existsSync(target),false,'the failed generation is moved aside')
+    assert.equal(fs.existsSync(quarantine),true,'the quarantine is a sibling, not a deletion')
+    assert.equal(path.dirname(quarantine),path.dirname(target))
+
+    // A failure that does not go away must stay bounded rather than spin.
+    const stuck=path.join(home,'dsh-ops','bash-ipc','stuck')
+    fs.mkdirSync(stuck,{recursive:true})
+    let calls=0
+    assert.throws(()=>quarantineGeneration(stuck,{rename:()=>{calls+=1; throw Object.assign(new Error('EPERM'),{code:'EPERM'})}}),error=>error.code==='EPERM')
+    assert.equal(calls,RENAME_RETRY_DELAYS_MS.length+1,'the attempt budget is the configured one')
+    assert.equal(fs.existsSync(stuck),true,'a generation that cannot be moved is left where it was')
   })
 })
 await test('malformed IPC proxy receipts fail before staging a runtime', async () => {

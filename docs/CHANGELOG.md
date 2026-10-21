@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Retry a quarantined Bash IPC generation with a bounded backoff (100/200/400/800 ms) instead of stranding it on the first refusal. On Windows a freshly written generation can stay un-renamable for about 1.5 s: the same rename that raises `EPERM` at +2 ms succeeds at +1.5 s, from another process too, so a single attempt turned a recovery the cache would have finished a moment later into "could not be quarantined" and failed the `bash-ipc` suite with it (#352). Only `EPERM`/`EBUSY`/`EACCES` are retried, and the publish rename uses the same helper.
+- 隔离 Bash IPC generation 时改用 100/200/400/800 ms 有界退避重试，不再因第一次拒绝就把缓存搁置。Windows 上新写入的 generation 约 1.5 秒内不可改名：同一条 rename 在 +2 ms 报 `EPERM`、1.5 秒后成功（换进程同样如此），单次尝试会把本可稍后完成的恢复变成 "could not be quarantined"，`bash-ipc` 套件也随之变红（#352）。只对 `EPERM`/`EBUSY`/`EACCES` 重试，发布用的 rename 走同一助手。
+
 ## [0.4.1] — 2026-10-20 — Update locks stop leaving files behind
 
 - Stop the update lock from leaving `.dsh-ops-update-*.lock` sidecars behind (#319). The writer that takes the lock removes it on release, and only after proving the name still leads to the inode it locked, so a waiter that opened the old inode can never publish under it. A published write, a request refused after the lock and a directory-wide `replace` now leave the directory exactly as they found it; a sidecar left by a killed writer is not a stuck lock — the next write of that name binds to it, publishes under it and removes it.
