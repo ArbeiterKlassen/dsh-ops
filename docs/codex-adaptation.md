@@ -2,94 +2,120 @@
 
 ## Goal
 
-Make the FastCtx runtime available to Codex without weakening the DSH plugin's own boundaries.
+Expose the `dsh-ops@0.4.1` native file worker to Codex without reproducing the
+DSH host runtime or reintroducing the removed FastCtx transport.
 
-FastCtx already speaks MCP over stdio. The Codex adapter therefore does not reimplement file tools or proxy JSON-RPC. It supplies three pieces:
+## Runtime change in 0.4.1
 
-1. A launcher that resolves `fastctx.exe`, prepares the environment, and hands stdio to Codex.
-2. A bootstrap that installs the Windows FastCtx package under `%CODEX_HOME%\dsh-ops\fastctx\0.2.1`.
-3. A Codex plugin manifest and skill that describe when to use the tools.
+Upstream 0.4.1 uses one bounded Rust executable. Each call receives one v1 JSON
+envelope on stdin and writes one JSON result on stdout. The worker performs
+authority checks, path validation, search, reads, revisions, atomic edits, and
+bounded document parsing. It does not expose an MCP server directly.
 
-## Runtime layout
+The Codex adapter therefore adds a stdio MCP process around the worker.
 
-The adapter keeps the runtime outside the plugin cache:
-
-```text
-%CODEX_HOME%\dsh-ops\fastctx\0.2.1\
-├─ fastctx.exe
-├─ package\
-└─ licenses\
-```
-
-This matters because Codex can copy a marketplace plugin into a cache directory. A runtime stored inside the plugin folder would be duplicated and could become stale. The bootstrap puts the executable in a stable location that survives plugin cache refreshes.
-
-## Launcher
-
-`codex-plugin/scripts/start-fastctx.mjs` resolves FastCtx in this order:
-
-1. `DSH_OPS_FASTCTX_BIN`
-2. The managed runtime under `%CODEX_HOME%`
-3. The unpacked platform package under the managed runtime
-4. The plugin's `node_modules`
-5. The repository's `node_modules`
-6. `PATH`
-
-It removes credential-shaped environment variables and `DSH_*` variables before starting FastCtx. The child receives `FASTCTX_NO_PARENT_WATCH=0`.
-
-## Tool surface
-
-File tools are enabled by default:
-
-- `glob`
-- `grep`
-- `inspect_local_file`
-- `replace`
-
-Shell tools require `DSH_OPS_ENABLE_SHELL=1` and a bash executable:
-
-- `run`
-- `run_background`
-- `job_output`
-- `job_list`
-- `job_kill`
-
-The launcher resolves bash from `DSH_OPS_BASH_PATH`, the managed bash runtime, Git for Windows, or `PATH`. If no bash is available, it starts FastCtx without shell tools instead of failing the whole plugin.
-
-## Codex plugin shape
-
-The adapter follows the portable Agent Plugins layout:
+## Adapter layout
 
 ```text
 codex-plugin/
-├─ plugin.json
-├─ mcp.json
-├─ .codex-plugin\plugin.json
-├─ .mcp.json
-├─ skills\
-│  ├─ dsh-ops\SKILL.md
-│  └─ setup\SKILL.md
-└─ scripts\
-   ├─ runtime.mjs
-   ├─ bootstrap-fastctx.mjs
-   ├─ start-fastctx.mjs
-   └─ smoke-mcp.mjs
+├─ scripts/
+│  ├─ native-mcp.mjs
+│  ├─ bootstrap-native.mjs
+│  ├─ smoke-mcp.mjs
+│  └─ runtime.mjs
+├─ vendor/
+│  ├─ credential-policy.js
+│  └─ capabilities/
+│     ├─ documents.js
+│     ├─ file.js
+│     └─ result.js
+└─ worker/
+   └─ win32-x64/
+      ├─ dsh-ops-worker.exe
+      └─ provenance.json
 ```
 
-The repository marketplace at `.agents\plugins\marketplace.json` points at `./codex-plugin`.
+The tool schemas are copied from the 0.4.1 published build. Keeping the
+generated schema helpers in the plugin makes the installed cache independent of
+the repository's built `lib/` directory.
+
+## MCP bridge
+
+`native-mcp.mjs` implements the JSON-RPC methods Codex needs for a tools-only
+server:
+
+- `initialize`
+- `notifications/initialized`
+- `tools/list`
+- `tools/call`
+- `ping`
+- `shutdown`
+
+Each `tools/call` builds a fresh version-1 worker envelope and starts one worker
+process. The adapter limits stdin to 2 MiB, stdout to 128 KiB, stderr to 16 KiB,
+and execution to 30 seconds.
+
+Stdout carries MCP JSON only. Diagnostics go to stderr.
+
+## Tool surface
+
+The adapter exposes 16 native tools:
+
+```text
+inspect_local_file grep glob replace write_file edit_file diff stat
+copy move remove read_files read_table read_docx read_pdf result
+```
+
+Mutation tools retain the worker's revision checks. `replace` can be previewed
+with `dryRun`. `write_file` uses `expectedRevision: "absent"` for create-only
+operation.
+
+The PTC execution lane is not bridged. PTC is a DSH agent-loop feature with
+progressive tool loading and confined code execution. Reproducing that inside
+MCP would add a second security and lifecycle model. The native worker's common
+file/document tools are sufficient for Codex.
+
+## Runtime selection
+
+The worker resolves in this order:
+
+1. `DSH_OPS_WORKER_BIN`
+2. Managed `%CODEX_HOME%\dsh-ops\native\0.4.1\<worker>`
+3. The worker packaged inside the plugin
+4. `PATH`
+
+The packaged copy is included so Codex can copy only the plugin directory into
+its cache.
+
+## Authority and approvals
+
+Codex owns MCP tool approval. The adapter adds three worker controls:
+
+- `DSH_OPS_READ_ONLY=1` rejects mutations.
+- `DSH_OPS_WRITE_ROOT=<absolute-path>` supplies a workspace-write boundary.
+- `DSH_OPS_WORKSPACE_ROOT=<absolute-path>` sets the root for relative paths.
+
+Credential roots are passed to the worker as traversal exclusions, and
+credential names remain denied. A direct path into a denied location is
+refused.
 
 ## Verification
 
-The adapter was tested in three modes:
+Three checks are required:
 
-1. Direct MCP handshake with `DSH_OPS_FASTCTX_BIN` pointing at an unpacked FastCtx release.
-2. Managed-runtime resolution after provisioning `%CODEX_HOME%\dsh-ops\fastctx\0.2.1`.
-3. Shell opt-in with Git Bash, including `run` and `run_background` plus `job_output`.
+1. `bootstrap-native.mjs` verifies the provenance version and SHA-256.
+2. `smoke-mcp.mjs` performs a real MCP initialize, tool list, `glob`, and
+   `stat`.
+3. The installed plugin cache reruns the same smoke from its own directory.
 
-The expected file tool list is `glob`, `grep`, `inspect_local_file`, `replace`. The expected shell-enabled list adds `run`, `run_background`, `job_output`, `job_list`, and `job_kill`.
+The second run proves the cache is self-contained and that the MCP server does
+not depend on repository files.
 
-## Limits
+## Known limits
 
-- Windows x64 only, matching the published FastCtx platform package.
-- The DSH plugin's bundled bash and PowerShell payloads are not part of this adapter. Git Bash is the default shell fallback for opt-in shell tools.
-- Codex tool approval policy stays in Codex configuration. The adapter does not bypass it.
-- The adapter does not modify the user's global Codex configuration. Use the plugin marketplace or the example `config.toml` entry.
+- No FastCtx background jobs. Upstream 0.4.1 removed that component.
+- No PTC `run_code` or `load_sdk`.
+- No trusted result cache, so references are consumed only when supplied by a
+  compatible worker deployment.
+- The bundled binary is Windows x64. Other targets need a matching worker and
+  provenance receipt.

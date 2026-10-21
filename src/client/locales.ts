@@ -1,0 +1,41 @@
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+export const en = {
+  replacements: 'Choose which official tools OPS replaces.', discovery: 'Choose discoverable and always-loaded capabilities.', shell: 'Manage Bash and the standard host PowerShell installation.',
+  unavailable: 'Enable this row with the built-in switch to edit its settings. A writable host profile is required.', loading: 'Loading host settings…',
+  save: 'Save changes', reset: 'Reset to saved', saved: 'Saved. The host reloaded this row.', rejected: 'The host refused this save. Reset to the latest saved values and review your changes.', saving: 'Saving…',
+  replacementsHelp: 'Selected tools use OPS argument and output contracts. Read is bounded UTF-8; search excludes hidden files and links. Leave a tool unchecked to keep the official workflow.',
+  read: 'Read files', glob: 'Find file paths', grep: 'Search file contents', replacementPool: 'Keep inspect_local_file for read, or glob/grep for search, always loaded in Discovery or activate them before selecting a replacement. read_files is not the read counterpart.',
+  discoverEnabled: 'Enable on-demand discovery', discoverHelp: 'Always-loaded choices remain available when discovery is off. Permissions still apply to every call.',
+  allowed: 'Allowed capabilities', always: 'Always loaded', limit: 'Maximum tools per discovery call', invalidLimit: 'Choose a whole number from 1 to 5.',
+  poolHelp: 'Removing a capability from the allowed pool also removes it from the always-loaded selection.',
+  publishBash: 'Enable Bash for authorized sessions', bashPath: 'Bash executable override', bashHint: 'Use an absolute path. Clear the override to inherit the configured default.',
+  refresh: 'Refresh runtime status', managed: 'Use managed Bash', git: 'Use Git Bash', selectionHint: 'Review the selected path, then save the shell settings.',
+  runtime: 'Runtime management', runtimeHelp: 'Installations do not change your saved executor choice. Stop Bash jobs before removing a managed installation.',
+  previewInstall: 'Review Bash installation', previewRemove: 'Review Bash removal', previewPwsh: 'Review PowerShell upgrade',
+  install: 'Install managed Bash', remove: 'Remove managed Bash', upgrade: 'Install or upgrade PowerShell',
+  preview: 'Review this action', cancel: 'Cancel running action', dismiss: 'Close preview', busy: 'Working…',
+  pwshHelp: 'This updates the standard PowerShell 7 installation through WinGet. Restart DSH afterwards. Review a custom host pwshPath separately; Windows PowerShell 5.1 is preserved.',
+  unknownEffect: 'Changes may have occurred. Inspect the installation before trying again.', noRuntime: 'Runtime controls require an enabled shell row and the host runtime services.',
+  exitCode: 'Exit code', managedCount: 'Managed installations', gitCount: 'Git Bash installations', error: 'The operation failed.',
+}
+export const zh: Record<keyof typeof en, string> = {
+  replacements: '选择由 OPS 替换的官方工具。', discovery: '选择可发现及始终加载的能力。', shell: '管理 Bash 和标准宿主 PowerShell 安装。',
+  unavailable: '请先用内置开关启用此行。编辑设置需要可写的宿主配置。', loading: '正在加载宿主设置…',
+  save: '保存更改', reset: '恢复已保存值', saved: '已保存，宿主已重新加载此行。', rejected: '宿主拒绝了此次保存。请恢复最新已保存值后重新检查更改。', saving: '正在保存…',
+  replacementsHelp: '所选工具改用 OPS 参数和输出契约。读取仅支持有界 UTF-8；搜索不包含隐藏文件和链接。取消勾选即可保留官方流程。',
+  read: '读取文件', glob: '查找文件路径', grep: '搜索文件内容', replacementPool: '请在发现设置中始终加载 read 对应的 inspect_local_file 或搜索对应的 glob/grep，或在选择替换前激活它们。read_files 不对应 read。',
+  discoverEnabled: '启用按需发现', discoverHelp: '关闭发现后，始终加载项仍然可用。每次调用仍受权限约束。',
+  allowed: '允许的能力', always: '始终加载', limit: '每次发现最多选择的工具数', invalidLimit: '请输入 1 到 5 的整数。',
+  poolHelp: '从允许池移除能力时，也会将其从始终加载项中移除。',
+  publishBash: '为获得授权的会话启用 Bash', bashPath: 'Bash 执行器路径覆盖', bashHint: '请使用绝对路径。清空覆盖值以继承配置默认值。',
+  refresh: '刷新运行时状态', managed: '使用受管理的 Bash', git: '使用 Git Bash', selectionHint: '请检查所选路径，然后保存 shell 设置。',
+  runtime: '运行时管理', runtimeHelp: '安装不会更改已保存的执行器选择。删除受管理的安装前，请先停止 Bash 作业。',
+  previewInstall: '预览 Bash 安装', previewRemove: '预览 Bash 删除', previewPwsh: '预览 PowerShell 升级',
+  install: '安装受管理的 Bash', remove: '删除受管理的 Bash', upgrade: '安装或升级 PowerShell',
+  preview: '检查本次操作', cancel: '取消正在执行的操作', dismiss: '关闭预览', busy: '正在处理…',
+  pwshHelp: '通过 WinGet 更新标准 PowerShell 7 安装，完成后需重启 DSH。宿主自定义 pwshPath 需要单独检查；Windows PowerShell 5.1 将保留。',
+  unknownEffect: '可能已经发生更改。再次尝试前，请检查安装状态。', noRuntime: '运行时控制需要启用 shell 行并提供宿主运行时服务。',
+  exitCode: '退出码', managedCount: '受管理的安装', gitCount: 'Git Bash 安装', error: '操作失败。',
+}
+declare module '@deepseek-ai/dsh-client-ui-slots' { interface LocaleNamespaceMap { dshOps: keyof typeof en } }
+export type Translator = TranslateNS<'dshOps'>

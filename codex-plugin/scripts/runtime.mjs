@@ -3,14 +3,20 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const FASTCTX_VERSION = '0.2.1'
-export const FASTCTX_PACKAGE = '@dsh-ops/fastctx-win32-x64'
-export const FASTCTX_EXECUTABLE = 'fastctx.exe'
+export const ADAPTER_VERSION = '0.4.1'
+export const WORKER_VERSION = '0.4.1'
+export const WORKER_EXECUTABLE = process.platform === 'win32'
+  ? 'dsh-ops-worker.exe'
+  : 'dsh-ops-worker'
 
 export const PLUGIN_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
 )
+
+export function platformKey(platform = process.platform, arch = process.arch) {
+  return `${platform}-${arch}`
+}
 
 export function codexHome(env = process.env) {
   const configured = env.CODEX_HOME
@@ -19,16 +25,27 @@ export function codexHome(env = process.env) {
     : path.join(os.homedir(), '.codex')
 }
 
-export function runtimeRoot(env = process.env) {
-  return path.join(codexHome(env), 'dsh-ops', 'fastctx', FASTCTX_VERSION)
+export function bundledWorker(
+  env = process.env,
+  platform = process.platform,
+  arch = process.arch,
+) {
+  return path.join(
+    PLUGIN_ROOT,
+    'worker',
+    platformKey(platform, arch),
+    platform === 'win32' ? 'dsh-ops-worker.exe' : 'dsh-ops-worker',
+  )
 }
 
-export function managedBinary(env = process.env) {
-  return path.join(runtimeRoot(env), FASTCTX_EXECUTABLE)
-}
-
-export function unpackedPackageBinary(env = process.env) {
-  return path.join(runtimeRoot(env), 'package', 'bin', FASTCTX_EXECUTABLE)
+export function managedWorker(env = process.env) {
+  return path.join(
+    codexHome(env),
+    'dsh-ops',
+    'native',
+    WORKER_VERSION,
+    WORKER_EXECUTABLE,
+  )
 }
 
 function isFile(file) {
@@ -50,25 +67,17 @@ function findOnPath(name, env = process.env) {
   return undefined
 }
 
-export function resolveFastctxBinary(env = process.env) {
+export function resolveWorkerBinary(env = process.env) {
   const candidates = []
   const add = (source, file) => {
     if (file === undefined || file === null || String(file).trim() === '') return
     candidates.push({ source, file: path.resolve(String(file)) })
   }
 
-  add('DSH_OPS_FASTCTX_BIN', env.DSH_OPS_FASTCTX_BIN)
-  add('managed runtime', managedBinary(env))
-  add('unpacked npm package', unpackedPackageBinary(env))
-  add(
-    'plugin node_modules',
-    path.join(PLUGIN_ROOT, 'node_modules', FASTCTX_PACKAGE, 'bin', FASTCTX_EXECUTABLE),
-  )
-  add(
-    'repository node_modules',
-    path.join(PLUGIN_ROOT, '..', 'node_modules', FASTCTX_PACKAGE, 'bin', FASTCTX_EXECUTABLE),
-  )
-  add('PATH', findOnPath(FASTCTX_EXECUTABLE, env))
+  add('DSH_OPS_WORKER_BIN', env.DSH_OPS_WORKER_BIN)
+  add('managed runtime', managedWorker(env))
+  add('bundled runtime', bundledWorker(env))
+  add('PATH', findOnPath(WORKER_EXECUTABLE, env))
 
   for (const candidate of candidates) {
     if (isFile(candidate.file)) return { ...candidate, tried: candidates }
@@ -76,25 +85,18 @@ export function resolveFastctxBinary(env = process.env) {
   return { tried: candidates }
 }
 
-export function resolveBash(env = process.env) {
-  const candidates = []
-  const add = (source, file) => {
-    if (file === undefined || file === null || String(file).trim() === '') return
-    candidates.push({ source, file: path.resolve(String(file)) })
+export function workspaceRoot(env = process.env) {
+  for (const value of [
+    env.DSH_OPS_WORKSPACE_ROOT,
+    env.CODEX_WORKSPACE_ROOT,
+    env.PWD,
+    process.cwd(),
+  ]) {
+    if (typeof value === 'string' && value.trim() !== '' && path.isAbsolute(value)) {
+      return path.resolve(value)
+    }
   }
-
-  add('DSH_OPS_BASH_PATH', env.DSH_OPS_BASH_PATH)
-  add('managed bash runtime', path.join(codexHome(env), 'dsh-ops', 'bash', 'bash.exe'))
-  add(
-    'Git for Windows',
-    path.join(env.ProgramFiles ?? 'C:\\Program Files', 'Git', 'bin', 'bash.exe'),
-  )
-  add('PATH', findOnPath('bash.exe', env))
-
-  for (const candidate of candidates) {
-    if (isFile(candidate.file)) return { ...candidate, tried: candidates }
-  }
-  return { tried: candidates }
+  return process.cwd()
 }
 
 export function scrubChildEnv(env = process.env) {
@@ -106,10 +108,6 @@ export function scrubChildEnv(env = process.env) {
     clean[key] = value
   }
   return clean
-}
-
-export function truthy(value) {
-  return /^(1|true|yes|on)$/i.test(String(value ?? '').trim())
 }
 
 export function formatResolutionFailure(resolution, label) {

@@ -1,47 +1,64 @@
+<p align="center">
+  <img src="docs/assets/readme/dsh-ops-header.svg" alt="dsh-ops 表头" width="640">
+</p>
+
+<p align="center">
+  <strong>中文</strong> | <a href="README.en.md">English</a>
+</p>
+
+<div align="center" style="text-align: center;">
+  <a href="https://trendshift.io/repositories/296103" title="Trendshift · JavaScript 日榜">
+    <img src="https://trendshift.io/api/badge/trendshift/repositories/296103/daily?language=JavaScript" alt="Trendshift · JavaScript 日榜" width="250" height="55" style="vertical-align: middle;">
+  </a>
+</div>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/dsh-ops"><img alt="npm" src="https://img.shields.io/npm/v/dsh-ops?style=flat-square&color=6c5ce7"></a>
+  <a href="https://www.npmjs.com/package/dsh-ops"><img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-ops?style=flat-square&color=4b6fff"></a>
+  <a href="https://github.com/T-Auto/dsh-ops/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/T-Auto/dsh-ops?style=flat-square&color=eab308"></a>
+</p>
+
 # dsh-ops
 
-**中文** | [English](README.en.md)
-
-致力优化dsh插件token效率，提升ai性能，减少token消耗，减少任务总时间的插件，解决 Windows 下 DSH 反复使用 PowerShell 报错造成的 token、时间和模型注意力浪费，会持续更新。
-
-> tips：本项目的 ops 是广义 operations （运行操作）的缩写，代指本插件处于dsh和系统/代码/文件操作的基础工具位置。本项目不是 operations（运维）插件。
-
-本插件的主要功能：
-
-- 提供独立 **bash 5.3.15** 和 独立 **PowerShell 7.6.6** ，优先使用bash，必要时回退pwsh7，让你的AI不再和PowerShell打架——不改变系统path路径和终端指向，环境变量安全（仅windows）
-- 一些 Rust 编写的性能更好的，更快的读取、查找、替换工具，渐进式纰漏以减少系统prompt的工具定义占用，加速任务运行，减少不必要的输入输出，减少报错率来减少运行过程中的token浪费，以及提供与 DSH 对齐的权限机制。本次 **0.3.0 发布仅支持 Windows x64**；Linux/macOS/ARM64 不在发布范围。
+OPS 为 DSH 增加有界文件与文档工具。Native 模式返回紧凑、带行号的文本；PTC 代码从同一个按调用启动的 Rust worker 获取类型化 Outcome。宿主集成使用严格 TypeScript，编译后保持已有 JavaScript 包路径。
 
 > [!IMPORTANT]
-> **0.3.0 正式发布范围：Windows x64。** 文件工具已迁移为独立 Rust 实现；PTC 批处理与有界引用须显式启用。下述 token 数据是特定任务的用户测试，不是通用性能保证。
-> 0.3.0的ptc模式在 `dv4.1f官方渠道 high推理努力 固定总行数，代码结构和复杂度和实现的功能 超燃生成mc！` 三次测试取平均值测试中取得了：
-> 
-> 97% token减免（开启ops插件的ptc专用工具 对比 windows原装标准模式）
-> 
-> 65% token减免（开启ops插件的ptc专用工具 对比 linux 原装ptc模式）
-> 
-> 的成绩
+> 本分支是 **0.4.0 发布候选**，尚未发布。已批准的验收范围为：BM-01 相比 OPS 0.3.x 输出减少至少 40%，官方读取另列对照；BM-03 对文件/发现 schema 执行 400 token 上限，同时保留 Bash 启动常驻并单列完整总数。最终实测证据与功能 CI 缺一不可。
+> 详情见[发布状态与限制](docs/0.4.0发布候选.md)。下方 `@latest` 命令安装已发布版本；评估候选版本需自行构建本检出目录并打包。
 
-<img width="1603" height="1028" alt="247c1326cca5b66e60d330c3f32150e2" src="https://github.com/user-attachments/assets/7c9ba485-5323-42a2-b5a8-6dcda07f91c4" />
+- Native 默认提供 `ops_read_files` 与 `ops_discover_tools`；三个平台的默认 profile 都启用 shell 行并提供 `ops_bash`。高级工具在所属 agent 的下一次供应商请求中激活。
+- PTC SDK 目录包含 18 个 API：15 个文件/文档工具，加批处理、结果引用和加载器。仅暴露配置为常驻或已选择的 API；Native 与 PTC 分别提供自己的输出形式。
+- 可按需发现有界 CSV/TSV、DOCX 主体段落与受限 PDF 文本层读取。尚不支持二进制 DOC、OCR、通用 PDF 渲染、网页搜索或 HTML 抓取；使用前请查看[文档格式限制](docs/原生内核.md)。
+- 七个组件独立启停，保留已有 profile ID 与配置。逐工具官方替换默认关闭。[设置](docs/配置参考.md)提供严格校验的内置表单；可选浏览器页面需显式执行离线承载行迁移。
+- shell 组件在三个平台默认开启：Windows 使用主包声明的固定 bash 载荷——`optionalDependencies` 中的 `@dsh-ops/bash-win32-x64@0.2.1`，npm 安装时自动拉取 ops 自带的独立 **bash 5.3.15**（PortableGit `v2.56.0.windows.2`），也可用 `bashPath` 把 `ops_bash` 指向 git bash；Linux/macOS 使用发行版自带 bash，可用 `config.bashPath` 覆盖。`dsh-ops bash-runtime install` 保留为安装/修复与选择受管理副本的路径。PowerShell 仍由宿主管理；升级命令先预览标准安装，仅加 `--yes` 才执行。
 
-执行顺序：**工具包 → bash → PowerShell 7**。
+OPS 只发布自身作用域内的工具与可选路由提示，不改写共享工具注册表。每次调用均检查权限与取消状态。Windows 受限 Bash 仍存在文档注明的部分约束与运行时兼容性限制。
 
-**0.3.0 仅支持 Windows x64**，目标宿主 DSH `0.2.0-rc.2`。独立 Rust 文件/PTC worker 和 Bash IPC 代理均随包携带，无需用户编译。Linux/macOS/ARM64 属于后续工作，不在本版兼容承诺内。见 [PTC 设计与使用](docs/native-ptc.md)。
+历史 token 节省说法不能证明本候选版本通过发布门禁。ops 指广义 operations（运行操作），并非运维/SRE 产品。
 
 ## Codex 适配（实验）
 
-本仓库新增了一个 Codex 插件目录 `codex-plugin/`，把 FastCtx 作为本地 stdio MCP server 暴露给 Codex。适配层版本跟随上游，当前为 0.3.0。
+仓库中的 `codex-plugin/` 把 0.4.1 原生 worker 包装成 Codex 的本地 stdio MCP 服务。插件自带 Windows x64 worker 和上游生成的工具 schema，不再下载或启动 FastCtx。
 
-默认只发布 `glob`、`grep`、`inspect_local_file` 和 `replace` 四个文件工具。设置 `DSH_OPS_ENABLE_SHELL=1` 并且能找到 bash 后，才会额外发布 `run`、`run_background` 和三个 `job_*` 工具。
+默认暴露 `inspect_local_file`、`grep`、`glob`、`replace`、`write_file`、`edit_file`、`diff`、`stat`、`copy`、`move`、`remove`、`read_files`、`read_table`、`read_docx`、`read_pdf` 和 `result`。写入工具保留内容 revision 检查，Codex 仍负责逐次审批。
 
-安装与验证方式见 [codex-plugin/README.md](codex-plugin/README.md)，设计说明见 [docs/codex-adaptation.md](docs/codex-adaptation.md)。
+设置与验收入口见 [Codex 插件说明](codex-plugin/README.md) 和 [适配设计](docs/codex-adaptation.md)。
 
 ## 安装、更新、卸载
 
 ### 官方插件市场
 
-在目标 DSH 应用的插件市场中输入 npm 包名 **`dsh-ops`**，安装后选择启用。安装归属于当前运行的 profile，桌面端为 `desktop`。发布包依赖完整 FastCtx、bash 和 PowerShell 7 载荷；不使用安装脚本下载，不改系统 PATH。
+在目标 DSH 应用的插件市场中输入 npm 包名 **`dsh-ops`**，选择自定义地址，输入 `https://mirrors.huaweicloud.com/repository/npm/`，安装后选择启用。目前不推荐用npmmirror安装，有bug。
+
+当然，如果你确定可以连接 npm 官方源那就选择官方源，如果你不确定那就按教程操作。
+
+![在插件市场中选择自定义地址并填入华为云 npm 镜像](docs/assets/marketplace-huaweicloud-mirror.png)
+
+
 
 ### npm 一键安装
+
+#### 安装方法
 
 ```console
 npx --yes dsh-ops@latest install --profile desktop
@@ -53,6 +70,8 @@ npx --yes dsh-ops@latest install --profile tui
 
 桌面端必须使用桌面应用自带的 CLI；默认探测 `%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`。安装在其它位置时加 `--dsh-cli "<安装目录>\resources\runtime\cli\bin\dsh.cmd"`。Web/TUI 需要可用的 DSH CLI，可同样显式指定。
 
+安装或卸载时可加 `--dry-run` 预演。它按指定路径或 `PATH`（Windows 同时使用 `PATHEXT`）解析 CLI，检查文件、POSIX 执行权限及通过 Node 启动的入口文件，并在预演时同样拒绝不安全的 Windows 命令脚本路径；检查失败返回非零。预演只打印计划，不启动 CLI、不修改 profile。成功表示这些静态检查已通过，不保证所选程序的身份、版本、profile 兼容性或后续安装结果。
+
 也可以直接使用官方命令：
 
 ```console
@@ -63,146 +82,42 @@ dsh plugin --profile dsh-tui add dsh-ops
 
 普通 DSH CLI 不能管理保留的 `desktop` profile；不要把它与桌面自带入口混淆。
 
-**更新**：重新运行相同的 `npx --yes dsh-ops@latest install --profile ...`，或用官方 CLI `add dsh-ops@latest`。按应用提示重载；替换已加载代码时重启应用。
+#### 更新方法
 
-`0.3.0` 新增独立原生 Rust PTC 组件：`ops_batch` 安全批处理、`ops_result` 有界引用／投影，适配 DSH 权限、沙箱、取消，提供逐项持久清单与保守恢复。三个 Windows 载荷依赖仍固定 `0.2.1`，无需重复发布。PTC 组件默认关闭，须显式启用；发布包已含 Windows x64 worker，见 [使用说明](docs/native-ptc.md)。
+重新运行相同的 `npx --yes dsh-ops@latest install --profile ...`，或用官方 CLI `add dsh-ops@latest`。按应用提示重载；替换已加载代码时重启应用。
 
-**卸载与查看状态**：
+#### 卸载与查看状态
 
 ```console
 npx --yes dsh-ops@latest status --profile desktop
 npx --yes dsh-ops@latest uninstall --profile desktop
 ```
 
-把 `desktop` 换成 `web` 或 `tui` 即可。也可在市场卸载，或执行官方 `dsh plugin --profile ... remove dsh-ops`。二进制随 profile 的插件依赖管理；卸载移除依赖引用，不误删系统 shell、其它 profile 的副本或包管理器共享缓存。
+把 `desktop` 换成 `web` 或 `tui` 即可。也可在市场卸载，或执行官方 `dsh plugin --profile ... remove dsh-ops`。插件依赖（含 Windows bash 可选载荷）随 profile 管理；单独 provision 的 Bash 用 `dsh-ops bash-runtime remove --yes` 移除，不误删系统 shell、其它 profile 的副本或包管理器共享缓存。
 
-旧版显式 provision 的 `<DSH_HOME>/dsh-ops/` 文件需单独清理：`npx --yes dsh-ops@latest uninstall --yes`。默认不删 `~/.fastctx/` 持久状态；需要时显式加 `--purge-fastctx`。关闭后台组件会等待已发出的调用，然后尝试终止该组件当前连接记住的自有任务；失败会告警。断线丢失归属的旧任务及单纯降权不保证终止，先处理自己的任务。
+旧版显式 provision 的 `<DSH_HOME>/dsh-ops/` 文件（provision 的 shell，以及早期版本可 provision 的 FastCtx 运行时）需单独清理：`npx --yes dsh-ops@latest uninstall --yes`。已移除的后台组件留下的 `~/.fastctx/` 状态默认不删；需要时显式加 `--purge-fastctx`。
 
-## 已知问题
+原 `dsh-ops/background` 组件（FastCtx 后台任务）已移除。仍保留该行的 profile 照常加载：该行不发布任何工具，只记录一条警告，可直接删除。
 
-**`node_modules/@dsh-ops/` 下没有 `bash-win32-x64` 不是安装损坏。** 三个载荷都是精确钉版的**可选依赖**（`optionalDependencies`）：若你的 registry 未同步该平台包的对应版本，包管理器会**静默跳过**它——安装仍以退出码 0 结束，且不打印任何指向缺包的警告。
+## 可选 OPS 只读侧栏
 
-实测（2026-10-12）：`registry.npmmirror.com` 上 `@dsh-ops/bash-win32-x64` 的 `dist-tags.latest = 0.0.0-stage`、`versions` 只有 `0.0.0-stage`；官方源 `registry.npmjs.org` 为 `0.2.1`。走镜像的 `npm view @dsh-ops/bash-win32-x64 version` 因此会打印误导性的旧版本号，不能拿来判断载荷是否可用。镜像补齐后本节自然过期，下面是自证与兜底的办法。
+在 dsh-TUI 中启用 `dsh-ops/tui` 行并重启，即可添加 OPS 侧栏；不抢焦点，不执行额外工具调用。没有 `tuiPanels` 的宿主仅让该可选行等待，不影响其它组件。见 [侧栏说明](docs/tui-panel.zh.md)。 聚焦后可用 `f` 筛选、`n`/`p` 本地翻页、`a` 确认跨会话提醒；只浏览有界保留元数据，不拉取结果分页。
 
-**首选兜底**：`provision-shells` 绕过 registry，直接取上游 GitHub Release 的钉版资产，校验 sha256 后解包，并写 `.provisioned.json` receipt。
+## 文档
 
-```console
-npx --yes dsh-ops@latest provision-shells --bash
-```
-
-需要代理时（`HTTPS_PROXY` 会被显式交给 curl 的 `--proxy`，同时随环境继承）：
-
-```console
-:: cmd
-set HTTPS_PROXY=http://127.0.0.1:<clash-port>
-npx --yes dsh-ops@latest provision-shells --bash
-```
-
-```console
-# PowerShell
-$env:HTTPS_PROXY = 'http://127.0.0.1:<clash-port>'
-npx --yes dsh-ops@latest provision-shells --bash
-```
-
-**核对**请跑 profile 自己那份副本：`ladder` 只报告**执行它的那份包**的随包梯级，`npx … ladder` 检查的是 npx 缓存副本，结论与你的 profile 无关。
-
-```console
-node "%USERPROFILE%\.dsh\profiles\<profile>\node_modules\dsh-ops\bin\dsh-ops.mjs" ladder
-```
-
-provisioned 副本在 `<DSH_HOME>/dsh-ops/shells`（跨 profile 共享，provision 一次对同机所有 profile 生效），解析时优先于随包副本，`ladder` 会给出 `source: provisioned`。
-
-**不要**用 `allowSystemShellFallback: true` 绕过：那是安全姿态降级（改用未固定摘要的系统 bash），且首次升级启动的配置迁移会把它改回 `false`。
-
-## 组件开关与提示词
-
-Bundle 声明四个组件，分别启停，首次安装默认开启前两个旧组件；PTC 增强须显式启用并提供原生 worker：
-
-| 组件 | 介绍 | 默认 | 发布的工具 |
-| --- | --- | --- | --- |
-| `dsh-ops-bash & powershell 7` | 将默认终端改为bash，以及bash覆盖不到时提供powershell7 | 开 | `ops_bash`；宿主 `pwsh` 使用随包 PowerShell 7 |
-| `dsh-ops-file` | 更快、更高性能、输出更精简更省token的rust文件检索 | 开 | 四个文件工具 |
-| `dsh-ops-background` | 为科研仿真、模型训练及其他长进程后台任务提供托管 | 关 | 启动、输出、列出、终止后台任务 |
-| `dsh-ops-ptc` | 独立 Rust 安全批处理和有界结果引用，仅纯 PTC 会话加载 | 关 | `ops_batch`、`ops_result` |
-
-“默认终端改为 bash”指模型提示优先使用 `ops_bash`，**不修改系统默认终端、PATH 或宿主原有 shell 工具名称**。Shell 组件开时，通过官方配置生命周期临时指定 `pwsh-sandbox` 的 PowerShell 7 路径；关时按执行器最新原配置恢复，不写 profile 配置。执行器配置切换不代表取消已在运行的宿主命令。
-
-提示词注册为独立运行时段，**不写 AGENTS.md**：Shell 关就撤销 bash/pwsh 路由；文件关就撤销原生文件说明；后台关就不发布后台工具及自有 job 指导。文件组件使用独立 Rust worker；FastCtx 仅由默认关闭的 background 组件保留。默认新增四个原生文件工具和 `ops_bash`，不发布重复前台 `ops_run`。这些改变减少固定声明成本。极简预设会覆盖附加 system sections；PTC 模式经 SDK 调用底层工具，权限门不变。
-
-## 配置方式与工具列表
-
-在 DSH 的配置编辑器中找到对应的 `dsh-ops/shell`、`dsh-ops/file` 或 `dsh-ops/background` 行，调整 `config` 后保存；未知配置键会点名报错。也可直接在市场切换组件。主要配置：
-
-```yaml
-config:
-  # background component only; its market row is disabled by default
-  enableShellTools: true
-  publishBashTool: true
-  promptPolicy: true
-  toolCallTimeoutMs: 300000
-  required: false
-  shellPolicy: advise
-  allowSystemShellFallback: false
-  # Managed update metadata; do not remove after the first startup self-check
-  # configUpdateVersion: 1
-  # binaryPath: 'C:\tools\fastctx.exe'
-  # bashPath: 'C:\tools\bash.exe'
-```
-
-- `enableShellTools`：后台组件的部署开关，开启仍须会话 `danger-full-access` 才发布四个后台工具；文件组件不发布命令工具。
-- `publishBashTool`：是否发布 `ops_bash`；读取会话最新 DSH 权限，受限模式必须通过宿主 sandbox，完全权限使用宿主 subprocess。Windows x64 的匹配 MSYS 载荷使用校验后的私有 IPC 兼容副本，不修改原包或全局 Git；本地纯 PTC 的 command/script_path/管道及读写权限验收通过。
-- `promptPolicy`：是否注入该组件的运行时说明；可用 `extraGuidance` 追加指导。
-- `toolCallTimeoutMs`：FastCtx RPC 等待超时，不代表服务端工作已终止。
-- `required`：运行时不可用时是否拒绝激活。
-- `shellPolicy`：默认 `advise`；`deny-host-shell` 拒绝 `deniedHostTools` 列表中的宿主 shell（默认 `[pwsh, bash, pwsh_persistent]`）。这也会禁用第三层 pwsh，谨慎开启。
-- `allowSystemShellFallback`：默认 `false`，随包/已 provision 的 bash 缺失时不探测系统 PATH 或常见安装目录；后台组件也不绕过此选择调用 FastCtx 的自动探测。只有显式设 `true` 才使用未固定摘要的系统 bash，请自行信任与维护该执行器。显式 `bashPath` 是另一种操作者选择，并非自动回退。首次升级启动的迁移见下方“更新配置修改区”。
-- `shellPolicy` 与此开关独立：`deny-host-shell` 遮蔽/拒绝宿主工具；禁止系统回退只约束插件自己的 bash 解析，不关闭宿主 `pwsh`，也不提供文件系统沙箱。
-- `binaryPath` / `bashPath`：可选显式路径；不可用时报错，不悄悄换执行器。一般无需配置。
-
-| 工具 | 用途 | 完全权限要求 |
-| --- | --- | --- |
-| `ops_inspect_local_file` | 批量文本范围、编码、PDF 文本、hex | 无命令权限门¹ |
-| `ops_grep` | Rust 正则搜索、多文件过滤、计数/摘要 | 无命令权限门¹ |
-| `ops_glob` | 多模式找路径，支持排除 | 无命令权限门¹ |
-| `ops_replace` | 跨文件批量替换；精确编辑仍用宿主 edit | 无命令权限门¹ |
-| `ops_bash` | 优先的通用 bash 命令执行器；短命令用 `command`，长脚本用 `script_path` | 受限模式经 DSH 沙箱；Windows x64 使用匹配的私有 IPC 副本 |
-| `ops_run_background` | 启动后台任务 | 是 |
-| `ops_job_output` / `ops_job_list` / `ops_job_kill` | 查看、列出、停止当前会话启动的任务 | 是 |
-| 宿主 `pwsh` | 使用随包 PowerShell 7 的 Windows 原生操作 | 沿用宿主策略 |
-
-¹ **固定文件操作采用 DSH fs-sandbox 同类的可信操作权限检查，通过宿主 subprocess 执行固定 Rust worker，不执行模型代码。** 所有模式允许 OS 可读路径的读取；仅可查看拒绝替换；工作区内修改允许 workspace 与 DSH 临时区域内的替换；完全权限不加写入范围限制。Rust 仍拒绝 link/reparse/special object 并保留预算/CAS。任意代码（Bash、run_code）仍需宿主 OS 沙箱，无失败降级。Windows 工作区启动前仅为当前用户拥有的根目录准备目录自身 WRITE_OWNER，备份 DACL；不递归或改所有者。拒绝返回明确的用户授权原因，执行基础设施故障另行分类。
-
-## 长脚本与 JSON 稳定性
-
-`ops_bash` 的 `command` 适合短命令和短管道。对于超过约 1 KB，或包含 heredoc、引号、反斜杠、中文等内容的多行脚本，请先用宿主的文件工具写入脚本文件，再传入 `script_path` 执行；不要把整段 heredoc 塞进 `command`。这样可以显著减少模型在工具调用 JSON 中进行多层转义的负担，降低整轮因 `MALFORMED_RESPONSE` 作废的概率。
-
-当随包 bash 载荷在 profile 的声明/lockfile 中存在、但实际 `node_modules` 已被宿主包管理器清理时，`ops_bash` 会返回可读的 `ENOENT` 诊断，而不是把裸的 `spawn` 异常抛给模型。此时应使用 profile 的 frozen install 或官方插件管理器恢复依赖；不会静默切换到未授权的系统 bash。
-
-`script_path` 只接收脚本路径，脚本内容不会重复进入 `ops_bash` 的工具参数；`command` 与 `script_path` 必须二选一。该接口不会替模型修复非法 JSON，工具调用本身若未能解析，仍需由宿主或模型重试。
-
-`ops_bash` 的参数是**严格**的：传入 schema 未声明的键会在执行前被拒绝，错误信息同时点出未知键与可接受的键，不会静默忽略。**本工具没有 `run_in_background`，也没有 job id**，命令一律前台执行。宿主 `bash` / `pwsh` 工具接受 `run_in_background`，因此模型容易把该参数套到 `ops_bash` 上；这样调用会被明确拒绝而不是静默当前台执行。服务、监听器、watch 等常驻进程请改用宿主 `pwsh` 工具的 `run_in_background`，或在命令内部自行脱离（例如 `nohup ... & disown`）。否则该次调用会一直占用到 `timeoutMs`（上限 `MAX_BASH_TIMEOUT_MS`，约 24.9 天）。
-
-
-插件只回收自己启动的 `fastctx serve` 客户端：组件最后一个连接引用释放、连接关闭、宿主正常退出或强制退出时均有回收路径。`runtime-host` 是上游可复用的共享进程，父进程已退出不等于泄漏；无客户端且空闲约十分钟后自行退出。不要按进程名批量杀它。新版不自动清理旧版本已留下的进程。
-
-## 更新配置修改区
-
-`lib/config-updates.js` 集中维护一次性配置迁移。0.2.5 首次启动时逐个自有配置行执行自检：
-
-- 未完成迁移（无 `configUpdateVersion` 或值为 `0`）：把旧 `allowSystemShellFallback: true` 改为 `false`，在任何执行器解析/工具发布前生效。
-- 通过官方 loader 的配置生命周期写回该行，并加入 `configUpdateVersion: 1`；保留其它字段，不修改外来插件、PATH 或全局配置。未启用的组件在它首次启动时迁移。
-- 完成后重启/热加载不再覆盖；你之后主动改回 `true` 会被保留。不要删除迁移标记，否则会重新自检。
-- 没有 loader 配置行时只应用本次运行的安全值并告警；写入失败由迁移/loader 日志报告，未落盘的标记不能保证跨重启一次性。
+- [使用指南](docs/使用指南.md) · [常见问题](docs/常见问题.md) · [组件参考](docs/组件参考.md) · [配置参考](docs/配置参考.md)
+- [PTC 设计与使用](docs/native-ptc.md) · [手动验证](docs/手动验收.md)
+- [贡献指南](docs/贡献指南.md) · [路线图](docs/路线图.md) · [变更日志](docs/CHANGELOG.md) · [溯源记录](docs/PROVENANCE.md)
 
 ## 许可证
 
-插件源码分发采用 **`MIT AND Apache-2.0`**：`vendor/fastctx/` 之外为 MIT；vendored FastCtx 为 Apache-2.0。见 [NOTICE](NOTICE)、`vendor/fastctx/LICENSE-APACHE` 与 `vendor/fastctx/NOTICE`。
+插件源码分发采用 **`MIT AND Apache-2.0`**：`licenses/fastctx/` 之外为 MIT；FastCtx 为 Apache-2.0。见 [NOTICE](NOTICE)、`licenses/fastctx/LICENSE-APACHE` 与 `licenses/fastctx/NOTICE`。
 
-独立的 Windows 载荷包另按上游组件许可证分发：Git for Windows 包含 GPL 等许可组件，PowerShell 包含 MIT 与第三方组件。其原始许可证、声明及来源记录随载荷保留；插件的 MIT 许可不替代这些许可。详见 [PROVENANCE.md](PROVENANCE.md)。
+独立的 Windows bash 载荷包（npm 可选依赖 `@dsh-ops/bash-win32-x64`）另按上游组件许可证分发：Git for Windows 包含 GPL-2.0 等许可组件，其原始许可证、声明及来源记录随载荷保留；PowerShell 由宿主管理，按其 MIT 与第三方组件许可分发。插件的 MIT 许可不替代这些许可。详见 [PROVENANCE.md](docs/PROVENANCE.md)。
 
 ## 致谢
 
-Rust 工具基于 [yc-duan](https://github.com/yc-duan) 的 Codex 插件 FastCtx 并使用其源代码。vendor 标识与删除型分发改动记在 [vendor/fastctx/FORK.md](vendor/fastctx/FORK.md) 和 [vendor/fastctx/UPSTREAM.md](vendor/fastctx/UPSTREAM.md)。需要转载的 FastCtx 声明如下：
+Rust 工具基于 [yc-duan](https://github.com/yc-duan) 的 Codex 插件 FastCtx 并使用其源代码。vendor 标识与删除型分发改动曾记在 `vendor/fastctx/FORK.md` 和 `vendor/fastctx/UPSTREAM.md`，它们保留在仓库历史和早期发布版本中；vendored 源码本身已随后台组件一并移除。需要转载的 FastCtx 声明如下：
 
 > This product includes FastCtx
 > (https://github.com/yc-duan/fastctx), Copyright (c) 2026 yc-duan,
@@ -214,6 +129,27 @@ Rust 工具基于 [yc-duan](https://github.com/yc-duan) 的 Codex 插件 FastCtx
 > supported by, and not attributable to the author of FastCtx, who
 > accepts no liability of any kind arising from this distribution or
 > from anything built on top of it.
+
+## 维护团队
+
+<table>
+  <tbody>
+    <tr>
+      <td align="center" width="150"><a href="https://github.com/T-Auto"><img src="https://github.com/T-Auto.png?size=160" width="96" height="96" alt="T-Auto"></a><br><a href="https://github.com/T-Auto"><b>T-Auto</b></a></td>
+      <td align="center" width="150"><a href="https://github.com/ccch1mneyyy"><img src="https://github.com/ccch1mneyyy.png?size=160" width="96" height="96" alt="ccch1mneyyy"></a><br><a href="https://github.com/ccch1mneyyy"><b>ccch1mneyyy</b></a></td>
+      <td align="center" width="150"><a href="https://github.com/Haoming9527"><img src="https://github.com/Haoming9527.png?size=160" width="96" height="96" alt="Haoming9527"></a><br><a href="https://github.com/Haoming9527"><b>Haoming9527</b></a></td>
+      <td align="center" width="150"><a href="https://github.com/Thatgfsj"><img src="https://github.com/Thatgfsj.png?size=160" width="96" height="96" alt="Thatgfsj"></a><br><a href="https://github.com/Thatgfsj"><b>Thatgfsj</b></a></td>
+    </tr>
+  </tbody>
+</table>
+
+※ 排名不分先后
+
+---
+
+## 贡献者
+
+[![Contributors](https://contrib.rocks/image?repo=T-Auto/dsh-ops)](https://github.com/T-Auto/dsh-ops)
 
 ## Star 趋势
 

@@ -3,7 +3,7 @@
   "manifestVersion": "0.15",
   "id": "dsh-ops.native",
   "name": "dsh-ops",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "license": "MIT AND Apache-2.0",
   "facets": {
     "host": {
@@ -23,12 +23,12 @@
     {
       "name": "dsh-ops.process.spawn",
       "scope": "subprocess",
-      "reason": "Start fixed trusted native file operations through DSH subprocess and policy checks, or confined Bash/PTC execution; FastCtx background is explicitly opt-in and full-access-only."
+      "reason": "Start fixed trusted native file operations through DSH subprocess and policy checks, or confined Bash/PTC execution."
     },
     {
       "name": "dsh-ops.fs.read",
       "scope": "filesystem-read",
-      "reason": "Read the native worker executable and runtime provenance, plus the optional FastCtx background runtime."
+      "reason": "Read the native worker executable and runtime provenance."
     },
     {
       "name": "dsh-ops.fs.write",
@@ -39,9 +39,9 @@
   "contributes": {
     "x-display": [
       {
-        "icon": "./icon.png",
+        "icon": "./docs/assets/icon.png",
         "title": "dsh-ops",
-        "description": "Provides bash, PowerShell 7, and a suite of high-performance tools written in Rust for Windows DSH to enhance token efficiency",
+        "description": "Provides optional Bash and native Rust tools for DSH to improve token efficiency; PowerShell remains host-managed",
         "locales": [
           "locale/en.json",
           "locale/zh.json"
@@ -57,12 +57,12 @@
       {
         "name": "dsh-ops:repository-tooling:shell",
         "order": 3251,
-        "summary": "Prefer bash, use bundled PowerShell 7 for Windows-native functionality; removed when shell component is off."
+        "summary": "Prefer bash; use visible host PowerShell for Windows-native functionality without overriding its executor; removed when the shell component is off."
       },
       {
-        "name": "dsh-ops:repository-tooling:background",
+        "name": "dsh-ops:repository-tooling:ptc",
         "order": 3252,
-        "summary": "Owned background tasks only; absent by default."
+        "summary": "Scoped progressive PTC SDK guidance; absent in Native/both presentation."
       }
     ],
     "x-tool-namespaces": [
@@ -75,22 +75,21 @@
           "inspect_local_file",
           "grep",
           "glob",
-          "replace"
+          "replace",
+          "write_file",
+          "edit_file",
+          "diff",
+          "stat",
+          "copy",
+          "move",
+          "remove",
+          "read_files",
+          "read_table",
+          "read_docx",
+          "read_pdf",
+          "result"
         ],
         "shellPermission": "Per-call DSH sandbox policy and native subprocess"
-      },
-      {
-        "serverName": "fastctx",
-        "transport": "stdio",
-        "source": "optional FastCtx background backend",
-        "publicPrefix": "ops_",
-        "tools": [
-          "run_background",
-          "job_output",
-          "job_list",
-          "job_kill"
-        ],
-        "shellPermission": "background component enabled AND enableShellTools AND per-session sandboxPolicy danger-full-access"
       },
       {
         "serverName": "dsh-ops",
@@ -107,28 +106,62 @@
       {
         "id": "dsh-ops-ptc",
         "entry": "dsh-ops/ptc",
-        "defaultEnabled": false,
-        "platforms": ["win32"],
-        "architectures": ["x64"],
-        "presentation": "PTC-only",
-        "runtime": "independent native Rust file worker; no FastCtx dependency",
-        "tools": ["ops_batch", "ops_result"],
+        "defaultEnabled": true,
+        "platforms": ["win32", "linux", "darwin"],
+        "architectures": ["x64", "arm64"],
+        "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
+        "presentation": "PTC-only; reader/result/SDK loader resident, other APIs become visible on the next agent step",
+        "runtime": "independent native Rust file worker",
+        "tools": ["ops_inspect_local_file","ops_grep","ops_glob","ops_replace","ops_write_file","ops_edit_file","ops_diff","ops_stat","ops_copy","ops_move","ops_remove","ops_read_files","ops_read_table","ops_read_docx","ops_read_pdf","ops_batch","ops_result","ops_load_sdk"],
         "permissions": "Per-call original DSH sandboxPolicy and sandbox.confine (host full/partial enforcement reported); full access bypasses confinement and permits explicit operation roots; subprocess owns cancellation and credential scrub"
       },
       {
         "id": "dsh-ops-shell",
         "entry": "dsh-ops/shell",
-        "defaultEnabled": true
+        "defaultEnabled": true,
+        "platforms": ["win32", "linux", "darwin"],
+        "targets": ["win32-x64", "linux-x64", "darwin-arm64"]
       },
       {
         "id": "dsh-ops-file",
         "entry": "dsh-ops/file",
-        "defaultEnabled": true
+        "defaultEnabled": true,
+        "platforms": ["win32", "linux", "darwin"],
+        "targets": ["win32-x64", "linux-x64", "darwin-arm64"]
       },
       {
-        "id": "dsh-ops-background",
-        "entry": "dsh-ops/background",
-        "defaultEnabled": false
+        "id": "dsh-ops-discovery",
+        "entry": "dsh-ops/discovery",
+        "defaultEnabled": true,
+        "platforms": ["win32", "linux", "darwin"],
+        "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
+        "presentation": "Native scopes; activation on the next admitted model step",
+        "tools": ["ops_discover_tools"]
+      },
+      {
+        "id": "dsh-ops-panel",
+        "entry": "dsh-ops/panel",
+        "defaultEnabled": false,
+        "presentation": "Disabled by default; enabling the row captures subsequent events. Explicit legacy capture:false stays off until changed.",
+        "platforms": ["win32", "linux", "darwin"],
+        "targets": ["win32-x64", "linux-x64", "darwin-arm64"],
+        "tools": []
+      },
+      {
+        "id": "dsh-ops-tui",
+        "entry": "dsh-ops/tui",
+        "defaultEnabled": false,
+        "presentation": "Optional read-only dsh-TUI panel API v1",
+        "tools": []
+      },
+      {
+        "id": "dsh-ops-hide-official",
+        "entry": "dsh-ops/hide-official",
+        "defaultEnabled": false,
+        "platforms": ["win32", "linux", "darwin"],
+        "replaceTools": [],
+        "retainedOfficialCommand": { "win32": "pwsh", "linux": "bash", "darwin": "bash" },
+        "readiness": "Opt-in per-tool read/glob/grep alternatives, selected by replaceTools (default empty). Only selected official tools are hidden after their OPS counterparts are registered in the same scope. Missing selected counterparts block that scope; unselected tools stay visible without warning lists."
       }
     ]
   },

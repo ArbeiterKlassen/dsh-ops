@@ -5,7 +5,7 @@
       "type": "stdio",
       "command": "node",
       "args": [
-        "./scripts/start-fastctx.mjs"
+        "./scripts/native-mcp.mjs"
       ]
     }
   }

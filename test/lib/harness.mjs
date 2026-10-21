@@ -15,7 +15,8 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -34,7 +35,31 @@ if (home === '' || !path.resolve(home).startsWith(path.resolve(tmpdir()))) {
 }
 
 /** The throwaway DSH home this suite may write into. */
-export const TEST_HOME = path.resolve(home)
+export const TEST_HOME = canonical(path.resolve(home))
+
+/**
+ * Canonicalize a fixture path.
+ *
+ * A fixture must hand the code under test a path that names the directory
+ * without any symlink hop the platform forced on us: on macOS `os.tmpdir()` is
+ * under `/var`, which is a symlink to `/private/var`, so a raw fixture path and
+ * a path the same code resolved itself (through `fs.realpath` or
+ * `require.resolve`) never compare equal — and a workspace root reached through
+ * that hop is refused as a junction. Every temporary directory below
+ * {@link TEST_HOME} is canonical for the same reason.
+ *
+ * A path that cannot be resolved (it does not exist) is returned unchanged: the
+ * caller's own assertion is the place that has to notice.
+ * @param {string} file - the path to canonicalize.
+ * @returns {string} the canonical path, or the input when it cannot be resolved.
+ */
+export function canonical(file) {
+  try {
+    return realpathSync.native(file)
+  } catch {
+    return file
+  }
+}
 
 let failures = 0
 const names = []
@@ -66,8 +91,23 @@ export { assert }
  * @param {(dir: string) => unknown | Promise<unknown>} body - the work.
  * @returns {Promise<unknown>} whatever the body returned.
  */
+let fixtureOwner
+export function ownWindowsFixture(directory) {
+  if (process.platform !== 'win32') return
+  const system32 = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32')
+  if (!fixtureOwner) {
+    const probe = spawnSync(path.join(system32, 'whoami.exe'), ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8' })
+    fixtureOwner = probe.stdout?.match(/S-1-5-[0-9-]+/)?.[0]
+    if (!fixtureOwner) throw new Error(`Cannot identify fixture owner: ${probe.stderr}`)
+  }
+  // Elevated hosted runners default to Administrators as owner. Change only the
+  // directory this test created; never repair a user's workspace to make a test pass.
+  const result = spawnSync(path.join(system32, 'icacls.exe'), [directory, '/setowner', `*${fixtureOwner}`], { encoding: 'utf8' })
+  if (result.status !== 0) throw new Error(`Cannot set fixture owner: ${result.stdout}${result.stderr}`)
+}
 export async function withTempDir(prefix, body) {
-  const dir = mkdtempSync(path.join(TEST_HOME, `${prefix}-`))
+  const dir = canonical(mkdtempSync(path.join(TEST_HOME, `${prefix}-`)))
+  ownWindowsFixture(dir)
   try {
     return await body(dir)
   } finally {
@@ -131,9 +171,10 @@ export const SUITE_SKIPPED_EXIT = 77
 /**
  * Skip the whole suite, visibly, before any check has run.
  *
- * The caller decides when a suite cannot answer here — `mount.test.mjs` uses it
- * when no FastCtx runtime is resolvable — and the reason travels to the
- * summary, so "nothing ran" is never mistaken for "everything passed".
+ * The caller decides when a suite cannot answer here — `test/lib/boundary.mjs`
+ * uses it when no native worker is built, and POSIX-only suites use it on
+ * Windows — and the reason travels to the summary, so "nothing ran" is never
+ * mistaken for "everything passed".
  * @param {string} label - the suite label used in the summary line.
  * @param {string} reason - why this suite cannot run in this environment.
  * @returns {never} does not return.

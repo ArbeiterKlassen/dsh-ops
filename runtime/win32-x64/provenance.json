@@ -1,7 +1,0 @@
-{
-  "version": "0.3.0",
-  "target": "win32-x64",
-  "executable": "dsh-ops-worker.exe",
-  "sha256": "7e98a8acc1a1cf62ae71b3b8e4853ca761c9bc3dae879bb62ce9b8390d8988b9",
-  "source": "native/Cargo.lock + native/src; original MIT Rust core"
-}

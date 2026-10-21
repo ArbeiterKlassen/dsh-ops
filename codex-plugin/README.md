@@ -1,73 +1,79 @@
 # dsh-ops Codex plugin
 
-This folder adapts the dsh-ops FastCtx runtime to Codex.
+This folder adapts the `dsh-ops@0.4.1` native Rust worker to Codex.
 
-The adapter uses the fact that FastCtx is already an MCP stdio server. It adds three things:
+The 0.4.1 worker is a one-shot JSON process, not an MCP server. The adapter
+supplies a small MCP bridge, the upstream tool schemas, and the packaged Windows
+x64 worker. It does not use FastCtx and does not require bash.
 
-- A launcher that resolves and starts `fastctx.exe`.
-- A bootstrap that installs the Windows FastCtx runtime into `%CODEX_HOME%\dsh-ops\fastctx\0.2.1`.
-- Codex skill instructions for file, search, replacement, and optional background work.
+## Tool surface
 
-## Scope
+The MCP server exposes:
 
-File tools are the default:
+- Read and search: `inspect_local_file`, `read_files`, `glob`, `grep`, `stat`,
+  `diff`
+- Revision-checked mutations: `replace`, `write_file`, `edit_file`, `copy`,
+  `move`, `remove`
+- Documents: `read_table`, `read_docx`, `read_pdf`
+- References: `result`
 
-- `glob`
-- `grep`
-- `inspect_local_file`
-- `replace`
+The document readers are bounded. `read_table` handles CSV/TSV only,
+`read_docx` reads main-body paragraphs, and `read_pdf` supports a restricted
+classic-xref text layer. These are not general Office or OCR converters.
 
-Shell and background tools are opt-in:
-
-- `run`
-- `run_background`
-- `job_output`
-- `job_list`
-- `job_kill`
-
-Codex already has its own shell and patch tools. The adapter keeps FastCtx shell tools off unless `DSH_OPS_ENABLE_SHELL=1` is set and a bash executable is available.
-
-## Setup
+## Verify
 
 From this folder:
 
 ```powershell
-node scripts/bootstrap-fastctx.mjs
+node scripts/bootstrap-native.mjs
 node scripts/smoke-mcp.mjs
 ```
 
-The bootstrap uses npm pack to fetch `@dsh-ops/fastctx-win32-x64@0.2.1` and installs it under `%CODEX_HOME%\dsh-ops\fastctx\0.2.1`.
-
-If npm cannot reach the registry:
-
-```powershell
-node scripts/bootstrap-fastctx.mjs --registry https://registry.npmmirror.com
-node scripts/bootstrap-fastctx.mjs --from-tarball <path-to-tgz>
-```
+The first command verifies the bundled worker's SHA-256 provenance receipt and
+version. The second starts the real MCP server, lists all 16 tools, and calls
+`glob` plus `stat`.
 
 ## Direct MCP configuration
 
-Use `config.example.toml` as a starting point for a project or user `config.toml` that points at:
+Use `config.example.toml` as a starting point for a project or user
+`config.toml`. The server command is:
 
 ```text
-<repository-root>\codex-plugin\scripts\start-fastctx.mjs
+node <repository-root>\codex-plugin\scripts\native-mcp.mjs
 ```
 
 The plugin form uses `.mcp.json` and the manifests in this folder.
 
-## Shell opt-in
+## Runtime selection
 
-Set `DSH_OPS_ENABLE_SHELL=1` before starting Codex. If bash is not on PATH, set `DSH_OPS_BASH_PATH` to Git Bash:
+The worker resolves in this order:
 
-```powershell
-$env:DSH_OPS_ENABLE_SHELL = "1"
-$env:DSH_OPS_BASH_PATH = "C:\Program Files\Git\bin\bash.exe"
-```
+1. `DSH_OPS_WORKER_BIN`
+2. `%CODEX_HOME%\dsh-ops\native\0.4.1\dsh-ops-worker.exe`
+3. `codex-plugin\worker\win32-x64\dsh-ops-worker.exe`
+4. `dsh-ops-worker.exe` on `PATH`
 
-The launcher writes one diagnostic line to stderr. It never writes non-JSON data to stdout.
+The bundled copy makes a normal Codex plugin installation self-contained.
 
-## Limitations
+## Safety controls
 
-- Windows x64 only, matching the upstream FastCtx platform package.
-- The DSH-specific bash and PowerShell payloads are not bundled. Git Bash is the default shell fallback for opt-in shell tools.
-- Codex tool approval policy is controlled in `config.toml`, not by this plugin.
+- Pass absolute paths. `DSH_OPS_WORKSPACE_ROOT` sets the base for relative
+  paths in direct MCP mode.
+- Set `DSH_OPS_WRITE_ROOT` to one absolute directory to confine workspace
+  writes to that tree.
+- Set `DSH_OPS_READ_ONLY=1` to reject every mutation.
+- Credential directories and private-key paths are denied by the adapter and
+  worker.
+- Codex approval policy remains authoritative. Use the mutation approval
+  entries in `config.example.toml`.
+
+## Limits
+
+- This build carries a Windows x64 worker. Other platforms can use a matching
+  worker through `DSH_OPS_WORKER_BIN`.
+- PTC `run_code`, DSH host shell integration, the DSH panel, and the DSH TUI are
+  not exposed through this MCP adapter.
+- References use session-bound worker storage in DSH. This adapter does not
+  provide trusted storage, so calls return bounded inline output rather than
+  creating new result references.

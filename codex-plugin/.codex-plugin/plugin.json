@@ -1,26 +1,26 @@
 {
   "name": "dsh-ops-codex",
-  "version": "0.3.0",
-  "description": "Codex adapter for dsh-ops FastCtx file, search, and background tools on Windows.",
+  "version": "0.4.1",
+  "description": "Codex adapter for the dsh-ops 0.4.1 native file and document worker.",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "onboardingSkill": "./skills/setup/SKILL.md",
   "interface": {
     "displayName": "dsh-ops for Codex",
-    "shortDescription": "Fast local file, search, and background tools",
-    "longDescription": "Adapts the dsh-ops FastCtx runtime to Codex through a local stdio MCP server. File tools work without bash. Shell and background tools require an explicit opt-in and a bash executable.",
+    "shortDescription": "Native file, search, edit, and document tools",
+    "longDescription": "Bridges the packaged dsh-ops 0.4.1 one-shot Rust worker to Codex through MCP. It exposes bounded search, reads, edits, file operations, CSV/TSV, DOCX, PDF, and result pagination without FastCtx or a system bash.",
     "developerName": "ArbeiterKlassen",
     "category": "Productivity",
     "capabilities": [
       "Read files",
       "Search files",
-      "Batch replace",
-      "Background jobs"
+      "Edit files",
+      "Read documents"
     ],
     "defaultPrompt": [
-      "Search this repository with dsh-ops.",
-      "Inspect these large files with dsh-ops.",
-      "Set up the dsh-ops Codex runtime."
+      "Search this repository with the dsh-ops native worker.",
+      "Inspect these large files with bounded dsh-ops reads.",
+      "Verify the dsh-ops Codex worker installation."
     ]
   }
 }

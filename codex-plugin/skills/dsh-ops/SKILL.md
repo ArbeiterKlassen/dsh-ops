@@ -1,57 +1,67 @@
 ---
 name: dsh-ops
-description: Use the Codex dsh-ops MCP server for fast local file inspection, globbing, ripgrep-style search, batch replacement, and optionally managed background jobs. Triggers when Codex should use FastCtx file tools or dsh-ops MCP tools instead of generic filesystem reads.
+description: Use the Codex dsh-ops native worker for bounded local file inspection, globbing, ripgrep-style search, revision-checked edits, file operations, CSV/TSV, DOCX, and restricted PDF text reads.
 ---
 
-# dsh-ops FastCtx tools
+# dsh-ops native tools
 
-Use the dsh-ops MCP server when it is available and the task is local file work.
-
-The server usually exposes these tools:
-
-- `glob` for paging large path inventories.
-- `grep` for Rust-regex search with count, summary, and context modes.
-- `inspect_local_file` for text ranges, encoding-aware reads, PDF text, and hex inspection.
-- `replace` for deliberate batch edits with dry-run and replacement guards.
-
-When shell tools are enabled, it can also expose `run`, `run_background`, `job_output`, `job_list`, and `job_kill`.
-
-## Operating rules
-
-- Pass plain absolute local filesystem paths. If a reference is URI-shaped, convert it to the equivalent local absolute path.
-- Prefer `glob` and `grep` over ad hoc recursive shell commands when the server is connected.
-- Inspect before editing. Use `replace` with `dry_run: true` for large or uncertain edits.
-- Use Codex's normal edit tool for small, precise patches. Use `replace` when the same change must hit many files.
-- Treat `replace` as a write action. Keep the target inside the current workspace unless the user asked for a broader path.
-- Do not assume shell tools exist. They require `DSH_OPS_ENABLE_SHELL=1` and a usable bash executable.
-- For background jobs, keep the returned `job_id` and use `job_output` before deciding that a job failed.
-- If an MCP tool is unavailable, fall back to Codex's built-in file and shell tools.
+The plugin exposes the `dsh-ops@0.4.1` native Rust worker through MCP. Each
+call starts one bounded worker process. The worker never executes model code.
 
 ## Tool selection
 
-Use `inspect_local_file` for:
+Use `glob` for large path inventories with exclusions, sorting, and paging.
 
-- Large files that should be read in ranges.
-- Known non-UTF-8 encodings.
-- PDF text extraction.
-- Hex inspection of binary files.
-- Batch reads of several files in one call.
+Use `grep` for Rust-regex search with file filters, counts, summaries, context,
+and explicit scan-completeness facts.
 
-Use `grep` for:
+Use `inspect_local_file` for bounded UTF-8 line ranges or hex views.
 
-- File lists that match a pattern.
-- Per-file match counts.
-- Global summaries without dumping every match.
-- Context around matching lines.
+Use `read_files` for up to 32 independent file ranges in one call.
 
-Use `glob` for:
+Use `replace` for deliberate literal replacement across files. Run it with
+`dryRun: true` first when the match set is uncertain.
 
-- Large path inventories.
-- Exclusion patterns.
-- Modified-time sorting.
+Use `edit_file` for one precise UTF-8 file edit set. Every `oldText` must occur
+exactly once and `expectedRevision` is required.
 
-Use `replace` for:
+Use `stat` before `write_file`, `edit_file`, `copy`, `move`, or `remove`.
+These mutations require the current SHA-256 revision. Missing revision means
+create-only for `write_file`; it is not an overwrite wildcard.
 
-- Repeated replacements across many files.
-- Dry-run previews.
-- Guarded writes with `max_replacements`.
+Use `read_table` for CSV/TSV lexical cells, `read_docx` for DOCX main-body
+paragraphs, and `read_pdf` for the restricted PDF text-layer subset.
+
+Use `result` only to page or release a `ref://` reference returned by an
+earlier call. Native MCP runs without trusted result storage, so ordinary
+bounded output is returned inline and no new reference is normally created.
+
+## Operating rules
+
+- Pass absolute local filesystem paths. Convert `file://` references to local
+  absolute paths first.
+- The worker refuses credential stores and private-key paths. Do not attempt
+  to bypass that fence.
+- Treat `status: "error"` or `status: "rejected"` as a structured failure, not
+  as a successful empty result.
+- Check `scanComplete`, `pageComplete`, `truncated`, `nextOffset`, and
+  `continuation`. Narrow an incomplete search instead of assuming zero
+  results.
+- Check `effectState` before retrying a mutation. Never blindly repeat a
+  mutation after a transport or cancellation error.
+- Compare `revision` values when combining pages from repeated reads.
+- Prefer Codex's normal patch tool for a small exact edit when no revision
+  workflow is needed. Use dsh-ops when its bounded read or revision-checked
+  mutation adds value.
+
+## Documents
+
+The document readers are intentionally narrow.
+
+- `read_table`: CSV/TSV only, no spreadsheet formulas or type coercion.
+- `read_docx`: main-body paragraphs only, not rendered layout or headers.
+- `read_pdf`: classic-xref PDFs and a restricted standard-font text layer,
+  with no OCR, images, forms, or arbitrary embedded fonts.
+
+Report an unsupported-document error as a scope limit. Do not silently replace
+it with an unverified text extraction.

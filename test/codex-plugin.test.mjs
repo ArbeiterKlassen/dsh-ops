@@ -1,51 +1,45 @@
 /**
- * The Codex adapter's runtime gate.
- *
- * The adapter is a separate MCP surface, so it gets its own handshake check.
- * The suite skips when no FastCtx binary is resolvable, matching the upstream
- * lifecycle and mount suites. Set DSH_OPS_FASTCTX_BIN to force the check.
+ * The Codex adapter is a separate MCP surface over the packaged native worker.
  */
 
+import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import {
   PACKAGE_ROOT,
   assert,
   report,
-  skipSuite,
   test,
 } from './lib/harness.mjs'
-import { resolveBinary } from '../lib/binary.js'
-import { McpStdioClient } from '../lib/handshake.js'
 
-let runtime
-try {
-  runtime = resolveBinary({ packageRoot: PACKAGE_ROOT })
-} catch {
-  skipSuite('codex-plugin', 'no FastCtx executable found')
-}
+const script = path.join(
+  PACKAGE_ROOT,
+  'codex-plugin',
+  'scripts',
+  'smoke-mcp.mjs',
+)
 
-const launcher = path.join(PACKAGE_ROOT, 'codex-plugin', 'scripts', 'start-fastctx.mjs')
-const pluginRoot = path.join(PACKAGE_ROOT, 'codex-plugin')
-
-test('the Codex launcher exposes exactly the default file tools', async () => {
-  const client = McpStdioClient.start({
-    file: process.execPath,
-    args: [launcher],
-    cwd: pluginRoot,
-    env: { ...process.env, DSH_OPS_FASTCTX_BIN: runtime.file },
-    timeoutMs: 60_000,
+test('the Codex adapter performs a native-worker MCP round trip', () => {
+  const result = spawnSync(process.execPath, [script], {
+    cwd: PACKAGE_ROOT,
+    encoding: 'utf8',
+    timeout: 60_000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      DSH_OPS_WORKSPACE_ROOT: PACKAGE_ROOT,
+    },
   })
-  try {
-    const init = await client.initialize('codex-plugin-test')
-    assert.equal(init.serverInfo?.name, 'fastctx')
-    const tools = await client.listTools()
-    assert.deepEqual(
-      tools.map(tool => tool.name).sort(),
-      ['glob', 'grep', 'inspect_local_file', 'replace'],
-    )
-  } finally {
-    await client.close()
-  }
+
+  assert.equal(
+    result.status,
+    0,
+    `smoke-mcp failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+  )
+  assert.match(result.stdout, /"name": "dsh-ops"/)
+  assert.match(result.stdout, /"version": "0.4.1"/)
+  assert.match(result.stdout, /"read_docx"/)
+  assert.match(result.stdout, /glob: \d+ MCP files/)
+  assert.match(result.stdout, /stat: [0-9a-f]{12}/)
 })
 
 report('codex-plugin')

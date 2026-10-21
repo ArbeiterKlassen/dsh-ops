@@ -1,17 +1,15 @@
-# Native PTC enhancement — 0.3.0 Windows x64
+# Native PTC enhancement — Windows x64, Linux x64, Apple Silicon
+
+0.4.0 PTC callers use [Outcome contracts](ptc-outcomes.md) / [PTC 结果契约](PTC结果契约.md).
+The historical worker/recovery details below remain applicable; SDK results now wrap canonical facts in `data`.
 
 Issues: [#3](https://github.com/T-Auto/dsh-ops/issues/3), [#8](https://github.com/T-Auto/dsh-ops/issues/8).
-The file and PTC components use an independent Rust worker. FastCtx remains only
-behind the explicitly enabled background component.
+The file and PTC components use an independent Rust worker. The FastCtx-backed
+background component has been removed.
 
 ## Runtime-bearing installation and original DSH permission linkage
 
-0.3.0 ships Windows x64 only: `runtime/win32-x64/dsh-ops-worker.exe`, its
-version/checksum receipt, and Bash IPC compatibility proxies. Package os/cpu,
-manifest and release checks agree on that scope. `npm run verify:release`
-rejects missing/corrupt worker or proxy artifacts. Linux/macOS/ARM64 are not
-supported by this release. No postinstall download/build or binaryPath override
-is required. Source builds use `npm run build:ptc` and `npm run build:bash-ipc`.
+0.3.1 ships native workers for `win32-x64`, `linux-x64` and `darwin-arm64`, each with a version/checksum receipt, plus the Windows Bash IPC proxies. Formal `verify:release` requires all three target pairs and validates every PE/ELF/Mach-O worker and the Windows IPC binary/source closure. Local `check --staged` verifies only local development outputs. Intel Mac and Windows/Linux ARM64 are not supported. The Windows Bash payload remains a Windows-only optional dependency; PowerShell is host-managed. POSIX uses host Bash. There is no postinstall download/build. Source builds use `npm run build:ptc`, plus `npm run build:bash-ipc` on Windows.
 
 PTC/Bash use original per-call sandboxPolicy and sandbox.confine, reporting the
 host's full/partial enforcement honestly. Read-only permits existing result pages
@@ -27,7 +25,7 @@ Real Windows provider and pure PTC SDK acceptance is covered in the release gate
 
 The fixed file component follows DSH fs-sandbox's trusted-operation policy fence,
 not arbitrary-code isolation; shell and PTC code still require confinement.
-Only Windows x64 runtime/proxy binaries are shipped and claimed by 0.3.0.
+Runtime binaries target Windows x64, Linux x64 and macOS Apple Silicon; IPC proxies remain Windows x64 only.
 
 In `workspace-write`, native batch/result operations and their audit records are
 permitted under the selected workspace root through DSH confinement. Read-only
@@ -55,16 +53,22 @@ Rust >=1.88 is required. Build uses `cargo build --release --locked` against
 `native/Cargo.toml`. No install scripts download binaries. On Windows, enable the
 session toolchain before building; do not add multi-version toolchains to global PATH.
 
-Enable the opt-in `dsh-ops/ptc` bundle row. Its only config keys are `required`
-(default false) and an optional absolute `binaryPath`. `DSH_OPS_WORKER_BIN` can
+The `dsh-ops/ptc` bundle row is enabled by default after #170; existing explicit
+profile disablement is preserved. Config accepts `required` (default false), an optional
+absolute `binaryPath`, `allowedTools`, and `alwaysLoaded`; see [SDK loading](ptc-sdk-loading.md). `DSH_OPS_WORKER_BIN` can
 select a build; otherwise the component uses `runtime/<platform>-<arch>/dsh-ops-worker[.exe]` before `native/target/release`.
-The component remains opt-in. Published 0.3.0 packages include Windows x64 runtime bytes; source checkouts stage them explicitly. There is no automatic compilation or download during installation.
+Published 0.3.1 packages include the runtime bytes
+of every supported platform; source checkouts stage them explicitly with
+`node bin/native-runtime.mjs stage --platform <target>`. There is no automatic
+compilation or download during installation.
 
 The session must already use DSH's **PTC-only** presentation. The component does
 not force presentation, replace the registry, or create a REPL. It recognizes the
 host's public prompt assembly (`tools:ptc-only` section plus the reserved-only wire
 schema), not private `modeFor`, run_code existence alone or a guessed session key.
-Standard/native and hybrid/both scopes expose neither tool nor extra prompt.
+This PTC row publishes its independent SDK only in PTC-only scopes, with inspect/result and the
+loader initially resident. Other APIs require next-step activation or `alwaysLoaded`. It adds
+no bindings or extra prompt in Native/both scopes. The file row independently supplies Native ops_result page/release; see [result budgets](result-budgets.md#native-and-ptc-reference-pages). 文件组件独立提供 Native 引用分页/释放，详见[结果预算](结果预算.md#native-与-ptc-引用分页)。
 The host generates SDK declarations from the same tool schemas; no duplicate guide
 or dynamic plan IDs are added to the system prefix.
 
@@ -87,42 +91,110 @@ turning skipped children into a whole-operation failure. Root access failures
 return `ACCESS_DENIED`; outside-workspace failures return `POLICY_DENIED` with
 the active workspace root in the message. Results are bounded and UTF-8-first.
 
+### Update-lock sidecars
+
+Every mutating file operation serialises cooperating writers on a hidden sidecar
+next to the target: `.dsh-ops-update-<sha256 of the lowercased basename>.lock`,
+created mode 0600 when the lock is first needed and **removed when the writer that
+holds it is done** (#319). Single-file operations validate a snapshot before
+locking: stale revisions, edit conflicts and existing destinations are refused
+without a sidecar. `write_file` and `edit_file` dry runs never acquire this lock.
+
+Removing the artifact on release used to be considered unsafe (#240 P5): a waiter
+that had already opened the old inode could lock it after the unlink, while the
+next writer created and locked a fresh file under the same name — two writers, one
+target. Two rules close that window without leaving anything in the operator's
+directory:
+
+- **Bind before publishing.** After taking the exclusive lock, the holder reopens
+the name and compares the `(device, inode)` identity of that handle with the inode
+it locked. A name that no longer leads to the locked inode means the previous
+holder finished and removed the sidecar while this writer was opening it: the
+handle is dropped and the acquisition starts over. Only a bound holder publishes.
+- **Unlink while the lock is still held, and only the bound inode.** The same
+identity check runs first, so a sidecar that someone removed out of band and
+another writer has since re-created is left alone.
+
+What this means for a directory: a published write leaves nothing behind, and a
+request refused *after* the lock leaves nothing behind either — including
+`ops_replace`, which locks every file its `glob` selects before it counts a match,
+so a fenced directory-wide replace no longer leaves a sidecar beside each
+candidate. A writer killed between locking and release (`SIGKILL`, power loss)
+cannot run a cleanup path, so it can leave a zero-byte sidecar; it is not a stuck
+lock — the next writer of that name binds to it, publishes under it and removes it.
+`test/lock-sidecar.test.mjs` checks refusals, dry runs, published writes and that
+reuse; `native/crates/ops-files/src/file_update_lock.rs` is the protocol and its
+unit tests.
+
+Because the name is derived from the target's basename rather than its bytes, the
+walker's hidden-component rule keeps it out of `ops_glob`, `ops_grep` and a
+directory-wide `ops_replace`, and `ops_batch` resolves its operations from the
+request rather than from a walk — the artifact is never a result, never a
+replacement target and never a batch item.
+
+### `ops_glob` details and ordering
+
+`outputMode: "details"` reports `bytes` (the on-disk size) and `modified`, a real
+modification time in **milliseconds since the Unix epoch** — the same quantity
+and unit `ops_stat` reports as `modifiedMs`, and `null` when the filesystem
+cannot report one. `sort: "modified"` orders newest first and is stable, so equal
+timestamps (a coarse clock, a preserved copy, two writes inside one second) keep
+the walk's path order; `sort: "path"` and an omitted `sort` keep that order. The
+timestamp is read without following links, and a link, junction or reparse entry
+is refused before it can become a candidate, so no `ops_glob` item is a link;
+`ops_stat` reports the opened file's time for a path reached through one.
+
 The native schemas deliberately do not expose `root`, `workspace`, `cwd`, or
-`file_path` aliases. `ops_bash` accepts the host-compatible optional
-`description` field but remains foreground-only; it does not accept
-`run_in_background` or create job IDs.
+`file_path` aliases. `ops_bash` requires `description`, uses the host foreground/background/promoted result contract, and exposes `run_in_background` when host jobs are available. See the bilingual shell contract in [component-reference.md](component-reference.md) / [组件参考.md](组件参考.md).
 
+Their important fields are (paths resolve relative to the DSH session cwd):
 
-The legacy `ops_glob`, `ops_grep`, `ops_inspect_local_file` and `ops_replace`
-interfaces are not the new Rust PTC core. Their relative-path base is FastCtx's
-own session cwd, which can be the Desktop profile directory rather than DSH's
-agent workspace. For deterministic comparisons, pass absolute paths. Do not pass
-`path: "."` as a workspace shorthand; the legacy server may reject it or resolve
-it against the wrong cwd.
+- `ops_glob`: required `pattern: string[]`, optional `path`, `sort`
+  (`path` | `modified`) and `outputMode: "details"` (on-disk `bytes`,
+  epoch-millisecond `modified`); at least one positive glob is required.
+- `ops_grep`: required regex `pattern`, optional `path` and array `glob` filter.
+  Use `summary` for aggregate file/match totals, `count` for per-file counts,
+  `content` for matching text (default). Item pages default to 100, with 0-based
+  `offset` and `nextOffset`. Every page scans candidates to count totals, but only
+  materializes the requested window. `complete:false` means more results or an
+  incomplete scan; `truncated`/`failed` scans are not exhaustive. Totals exclude
+  non-UTF-8 and oversized files (`skippedFiles`); read errors increment `failed`.
+  Bounds and traversal filters still apply; this is not a persistent scan cursor.
+- `ops_inspect_local_file`: one optional `path` (session cwd by default; a directory
+  is rejected), `offset` (1-based line or 16-byte hex row, default 1; legacy 0
+  also reads the first unit), `limit`
+  (1-10000, default 200), `encoding: "utf-8"`, `view: "text" | "hex"`.
+  No multiple-file, PDF, arbitrary-encoding or `pages` interface is exposed.
+- `ops_replace`: required literal `pattern` and `replacement`, optional `path`,
+  `glob`, `maxReplacements` (1-100000, default 100) and `dryRun`.
 
-Their important fields are:
-
-- `ops_glob`: `pattern: string[]`, optional absolute `path`;
-- `ops_grep`: required regex `pattern`, optional absolute `path`, optional `glob`;
-- `ops_inspect_local_file`: exactly one of `file_path` or `files`, with optional
-  `offset`, `limit`, `pages`, `encoding`, `view`;
-- `ops_replace`: required `path`, `pattern` and `replacement`, plus its optional
-  replacement controls.
-
-Malformed arguments from these legacy MCP tools can be raised as `ToolCallError`
-instead of becoming a value. In PTC code, wrap every legacy call independently:
+File tools, `ops_batch` and `ops_result` return failures as values, not thrown
+exceptions: check `status` and `error.code`/`error.nextAction`. A `try/catch`
+alone misses these failures. For example:
 
 ```ts
-const safeLegacy = async (name, args) => {
-  try { return { ok: true, value: await tools[name](args) } }
-  catch (error) { return { ok: false, name, error: String(error) } }
-};
+const result = await tools.ops_grep({ path: "src", pattern: "TODO", outputMode: "summary" });
+if (result.status === "completed") {
+  console.log({ files: result.data.files, matches: result.data.matches });
+} else if (result.status === "partial") {
+  console.log({ coverage: result.coverage, continuation: result.continuation });
+} else {
+  console.log({ status: result.status, error: result.error });
+}
 ```
 
-`ops_batch` and `ops_result` use the new canonical structured error value instead;
-they do not make legacy schemas uniform. For filesystem modifications in the
-new PTC workflow, prefer `ops_batch` or host native edit/write, not legacy
-`ops_replace`.
+File parameter bounds are described in the host-compatible SDK schema and enforced
+by the native worker, even for direct PTC calls. Required fields, enums, nested
+edit shapes and strict unknown-field rejection remain discoverable.
+Native file rendering uses `=== FILE: path (Lines a-b of n) ===` and `N | text`,
+with concise mutation receipts and explicit paging/effect/retry notices. PTC wraps the unchanged canonical
+execution data in a typed Outcome envelope. Content blocks are capped at
+64 KiB after JSON escaping; clipped displays instruct the caller to recover
+undisplayed content without blindly advancing a cursor or repeating a write.
+Physical LF defines line counts across projections; bare CR/control separators
+are escaped for display. Invalid text encoding returns `ERR_INVALID_ENCODING`
+with document/binary-reader guidance. Use hex byte rows to read beyond an in-line
+cut. See [usage](usage.md#native-file-results) / [使用指南](使用指南.md#native-文件结果).
 
 ## Plan and execution semantics
 
@@ -131,7 +203,10 @@ no-effect manifest and returns a `detailsRef`/job id. It does **not** convert in
 an executable `run` request. Execute that exact planned manifest with:
 
 ```ts
-await tools.ops_batch({ action: "resume", id: plan.id });
+if (plan.status === "completed") {
+  const execution = await tools.ops_batch({ action: "resume", id: plan.data.id });
+  console.log(execution); // inspect its status before reading execution.data
+}
 ```
 
 `action: "run"` is a separate immediate path and requires the operations again;
@@ -152,8 +227,8 @@ const result = await tools.ops_batch({
     { op: "remove", path: "cache/explicitly-approved-target" }
   ]
 });
-console.log({status: result.status, done: result.done, failed: result.failed,
-  unknown: result.unknown, detailsRef: result.detailsRef});
+console.log({ status: result.status, receipt: result.data,
+  error: result.status === "completed" || result.status === "partial" ? undefined : result.error });
 ```
 
 Workspace authority comes only from `sandboxPolicy.resolve({session})`.
@@ -184,12 +259,16 @@ preflight and current DSH policy checks run again.
 
 ```ts
 // Small data is better processed directly in JavaScript.
-const stored = await tools.ops_result({action: "put", items: operationRows});
-const batch = await tools.ops_batch({action: "run", operationsRef: stored.id});
-const page = await tools.ops_result({action: "page", id: batch.detailsRef,
-  offset: 0, limit: 64, maxBytes: 16384, fields: ["operation", "state", "error"]});
-console.log(page.items.filter(row => row.state !== "completed"));
-await tools.ops_result({action: "release", id: stored.id});
+const stored = await tools.ops_result({ action: "put", items: operationRows });
+if (stored.status !== "completed") return stored;
+const batch = await tools.ops_batch({ action: "run", operationsRef: stored.data.id });
+if (batch.data?.detailsRef) {
+  const page = await tools.ops_result({ action: "page", id: batch.data.detailsRef,
+    offset: 0, limit: 64, maxBytes: 16384, fields: ["operation", "state", "error"] });
+  console.log(page); // partial pages include an explicit continuation
+}
+const released = await tools.ops_result({ action: "release", id: stored.data.id });
+console.log({ batch, released });
 ```
 
 put stores object rows; page supports top-level equality and field selection,
@@ -216,7 +295,7 @@ input is bounded stdin JSON, never a shell command or argv-sized path list. Unlo
 aborts and waits for in-flight work. Authority downgrade aborts active workers.
 If host jobs/controller admission is available, batch foreground work uses that
 registry's owner, cancel and progress surfaces, waits once, then removes its own
-collected terminal record. Otherwise it remains a 5-minute bounded foreground call.
+collected terminal record. Otherwise it remains a bounded foreground call; the shared host ceiling is 30 seconds.
 No second background scheduler, detached-job polling tool or cloned REPL is created.
 Progress is currently preflight/settlement only, not per-file live reporting.
 
@@ -279,16 +358,17 @@ all `native/src` and `lib/ptc` business code:
 
 Windows x64: release build, clippy `-D warnings`, full `npm run verify` and original
 DSH process sandbox acceptance executed.
-macOS/Linux: `cargo check --locked` passes for Linux x64
-(`x86_64-unknown-linux-gnu`) and macOS arm64 (`aarch64-apple-darwin`), using the
-Windows Rust toolchain's target standard libraries. These checks compile the
-platform-specific code but do not link or execute binaries. Actual on-platform
-run and real sandbox denial tests **still required before release**. This machine's
-WSL lacks cargo/rustc/node; no WSL environment was silently installed.
+Linux x64 (`x86_64-unknown-linux-gnu`): release build, `cargo test`, full
+`npm run verify` (every suite that does not need a FastCtx runtime, i.e. 28 passed
+and 2 skipped) and the native worker scenarios executed on the platform, including
+the DSH local sandbox's workspace/temporary-area policy fence.
+macOS arm64 (`aarch64-apple-darwin`) is `cargo check --locked` only: compiling the
+platform-specific code is not a run, and macOS is not a release claim. Actual
+on-platform macOS run and real sandbox denial tests **still required before release**.
 No fixed token/time saving percentage, actual model-turn benchmark,
 live Desktop upgrade, npm release or GitHub push is claimed.
 
 Architecture: `native/src/{contract,paths,batch,store,results}.rs` is the shared
 Rust operation core; `main.rs` is bounded single-call JSON transport;
 `lib/ptc/{contract,worker,index}.js` is only DSH registration/authority/transport.
-Tests do not enter published business code; FastCtx sources are untouched.
+Tests do not enter published business code.

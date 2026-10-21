@@ -3,17 +3,43 @@
 
 [mcp_servers.dsh_ops]
 command = "node"
-args = ["./codex-plugin/scripts/start-fastctx.mjs"]
+args = ["./codex-plugin/scripts/native-mcp.mjs"]
 cwd = "."
 startup_timeout_sec = 60
 tool_timeout_sec = 300
 default_tools_approval_mode = "prompt"
-enabled_tools = ["glob", "grep", "inspect_local_file", "replace"]
+enabled_tools = [
+  "inspect_local_file",
+  "grep",
+  "glob",
+  "replace",
+  "write_file",
+  "edit_file",
+  "diff",
+  "stat",
+  "copy",
+  "move",
+  "remove",
+  "read_files",
+  "read_table",
+  "read_docx",
+  "read_pdf",
+  "result",
+]
+
+[mcp_servers.dsh_ops.tools.edit_file]
+approval_mode = "approve"
 
 [mcp_servers.dsh_ops.tools.replace]
 approval_mode = "approve"
 
-# To enable FastCtx shell and background tools:
-# 1. Set DSH_OPS_ENABLE_SHELL=1 in the environment that starts Codex.
-# 2. Optionally set DSH_OPS_BASH_PATH to a trusted bash executable.
-# 3. Add run, run_background, job_output, job_list, and job_kill to enabled_tools.
+[mcp_servers.dsh_ops.tools.write_file]
+approval_mode = "approve"
+
+[mcp_servers.dsh_ops.tools.remove]
+approval_mode = "approve"
+
+# Optional safety controls:
+# DSH_OPS_READ_ONLY=1 rejects mutations.
+# DSH_OPS_WRITE_ROOT=C:\path restricts workspace-write calls to that tree.
+# DSH_OPS_WORKSPACE_ROOT=C:\path resolves relative paths in direct MCP mode.
