@@ -26,6 +26,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - 修复 Linux 宿主沙箱走 bwrap 时 `ref://` 结果引用不可用（#337）：bwrap 给 workspace-write 子进程挂了私有 tmpfs `/tmp`，`ops_result` 背后的 PTC worker 看不到宿主放在 `tmpdir()` 下的会话缓存，于是每次分页都报 `REFERENCE_EXPIRED`，会话清理也悄悄把缓存留在原地。现在 worker 的 argv 只把这一个私有（0700、校验属主）缓存目录重新绑定进去，分页/写入和会话清理都覆盖。Landlock、Seatbelt、Windows 与只读 bwrap 行为不变。
 - Classify Native file and `ops_result` outcomes in the OPS TUI sidebar from bounded, replayable presentation metadata rather than compact model text. Preserve PTC child JSON handling and exclude paths, content and error messages from the metadata; cover the producer and consumer in always-on tests and the real dsh-TUI host loop (#339).
 - OPS TUI 侧栏通过有界、可重放的展示元数据识别 Native 文件工具和 `ops_result` 的业务结果，不再尝试解析面向模型的精简文本。保留 PTC 子调用的 JSON 处理，元数据不含路径、正文和错误消息；补充 CI 必跑的生产/消费回归及真实 dsh-TUI 宿主闭环测试（#339）。
+- Distinguish ordinary nonzero Bash exits (`failure.code: EXIT_CODE`, `retry: after-input-change`) from interrupted or unavailable execution. Keep failed command status and unknown side effects, but let callers inspect output and correct inputs instead of categorically forbidding another command. Timeout, cancellation, signal death and execution refusals retain their existing retry guidance (#331).
+- 将 Bash 正常结束但退出码非零（`failure.code: EXIT_CODE`、`retry: after-input-change`）与执行中断或执行器不可用区分开。保留失败状态和副作用未知，不再一概禁止再次调用，而是指导先检查输出并修改输入；超时、取消、信号终止和执行拒绝的重试语义不变（#331）。
 
 ## [0.4.1] — 2026-10-20 — Update locks stop leaving files behind
 

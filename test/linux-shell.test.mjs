@@ -149,6 +149,18 @@ await test('ops_bash runs a real command through the host bash', async () => {
       const value = await definition.execute({ description: 'Check confined Bash execution', command: 'echo dsh-ops-linux-bash' }, { agent, signal: new AbortController().signal })
       assert.equal(value.sandbox?.mode, 'danger-full-access', JSON.stringify(value.sandbox))
       assert.match(String(value.stdout?.text ?? ''), /dsh-ops-linux-bash/, `the host bash must have run: ${JSON.stringify(value)}`)
+      const failed = await definition.execute({
+        description: 'Keep real command effects on a normal nonzero exit',
+        command: 'printf kept > effect.txt; printf diagnostic >&2; exit 3',
+      }, { agent, signal: new AbortController().signal })
+      assert.equal(failed.status, 'failed')
+      assert.equal(failed.exitCode, 3)
+      assert.equal(failed.failure.code, 'EXIT_CODE')
+      assert.equal(failed.failure.retry, 'after-input-change')
+      assert.equal(failed.failure.effectState, 'unknown')
+      assert.match(failed.stderr.text, /diagnostic/)
+      assert.equal(fs.readFileSync(path.join(workspace, 'effect.txt'), 'utf8'), 'kept')
+      assert.doesNotMatch(definition.output.render({}, failed)[0].text, /Do not repeat the command/)
       // The resolved executable is the machine's own bash, not a plugin-owned copy.
       const resolved = resolveShells({}).bash
       assert.equal(resolved.source, 'path', JSON.stringify(resolved))
