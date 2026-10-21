@@ -46,6 +46,8 @@ export const ERROR_POLICIES: Readonly<Record<string, ErrorPolicy>> = Object.free
   CALL_LIMIT: policy('error', 'after-state-change'),
   CANCELLED: settled,
   METADATA_UNSUPPORTED: settled,
+  LOCK_UNSUPPORTED: settled,
+  PATH_CHANGED: changed,
   IO_ERROR: settled,
   SYNC_FAILED: settled,
   CLEANUP_FAILED: settled,

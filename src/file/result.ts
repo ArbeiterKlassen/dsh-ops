@@ -6,12 +6,13 @@ import { publicToolName } from '../policy.js'
 import { OUTPUT } from '../capabilities/ptc.js'
 import { invoke, failure } from '../ptc/worker.js'
 import { renderNative } from '../modes/native/render.js'
+import { presentationMeta } from '../kernel/presentation-outcome.js'
 export function resultDefinition(execute: ToolDefinition['execute']): ToolDefinition {
   const entry = capability('result')
   if (!entry || !('nativeProjection' in entry) || !entry.nativeProjection) throw new Error('Native result projection is missing')
   return { name: publicToolName(entry.rawName), description: entry.nativeProjection.description,
     parameters: entry.nativeProjection.parameters, execute,
-    output: { schema: OUTPUT, render: (args, value) => [{ type: 'text', text: renderNative('result', args, value) }] } }
+    output: { schema: OUTPUT, render: (args, value) => [{ type: 'text', text: renderNative('result', args, value) }], presentationMeta } }
 }
 type Execution = Parameters<ToolDefinition['execute']>[1]
 export async function invokeResult(ctx: Parameters<typeof invoke>[0], file: string, args: unknown,

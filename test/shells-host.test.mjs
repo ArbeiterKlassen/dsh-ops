@@ -81,7 +81,8 @@ await test('host foreground calls validate and render the host result contract',
 
 await test('host descriptions are required and timeout overrides cap at ten minutes', async () => {
   const f = fixture()
-  for (const args of [{ command: 'true' }, { command: 'true', description: 'x', timeoutMs: NaN }]) {
+  for (const args of [{ command: 'true' }, { command: 'true', description: '' },
+    { command: 'true', description: '   ' }, { command: 'true', description: 'x', timeoutMs: NaN }]) {
     const invalid = await f.definition.execute(args, f.exec)
     assert.equal(invalid.status, 'failed'); assert.equal(invalid.failure.code, 'INVALID_BASH_ARGUMENT')
     assert.equal(invalid.failure.effectState, 'none'); assert.equal(invalid.failure.retry, 'after-input-change')
@@ -147,6 +148,10 @@ await test('timeout promotion returns the same job and consumes output exactly o
   const jobs = jobRegistry({ promote: true }), f = fixture({ jobs, settle: false })
   const value = await f.definition.execute({ command: 'true', description: 'Promote a long running command', timeoutMs: 1 }, f.exec)
   assert.equal(value.kind, 'promoted'); assert.equal(value.jobId, 'bash-1')
+  assert.equal(jobs.declaration.label, 'Promote a long running command')
+  assert.equal(value.label, jobs.declaration.label)
+  assert.deepEqual(validateJsonSchemaValue(f.definition.output.schema, value, 'value'), [])
+  assert.ok(f.definition.output.render({}, value)[0].text.includes(JSON.stringify(value.label)))
   assert.equal(value.output, 'ok\n[stderr]\nwarning')
   assert.equal(jobs.read('bash-1', f.exec.agent.id).chunks.every(chunk => chunk.text === ''), true)
   jobs.kill('bash-1', f.exec.agent.id, 'stop test')
@@ -156,8 +161,15 @@ await test('timeout promotion returns the same job and consumes output exactly o
 
 await test('background returns a host job id and cancellation stops work', async () => {
   const jobs = jobRegistry(), f = fixture({ jobs, settle: false })
-  const value = await f.definition.execute({ command: 'true', description: 'Start a cancellable background job', run_in_background: true }, f.exec)
+  const description = 'Run "quoted" tests\n验证后台任务'
+  const value = await f.definition.execute({ command: 'true', description, run_in_background: true }, f.exec)
   assert.equal(value.kind, 'background')
+  assert.equal(jobs.declaration.label, description)
+  assert.equal(value.label, description)
+  assert.deepEqual(validateJsonSchemaValue(f.definition.output.schema, value, 'value'), [])
+  const rendered = f.definition.output.render({}, value)[0].text
+  assert.ok(rendered.includes(JSON.stringify(description)))
+  assert.equal(rendered.split('\n').length, 1, 'a multiline label stays quoted on one result line')
   jobs.kill(value.jobId, f.exec.agent.id, 'stop test')
   await jobs.hooks.done
   assert.equal(jobs.outcome.status, 'killed')
@@ -254,6 +266,17 @@ await test('job cancellation before asynchronous preparation prevents the starte
   jobs.kill(attached.id, f.exec.agent.id, 'cancel before preparation')
   await jobs.hooks.done
   assert.equal(starts, 0); assert.equal(jobs.outcome.status, 'killed')
+})
+
+await test('job labels retain command, script and generic fallbacks without a description', async () => {
+  for (const [args, expected] of [[{ command: 'echo fallback' }, 'echo fallback'],
+    [{ script_path: 'fallback.sh' }, 'fallback.sh'], [{}, 'Bash']]) {
+    const jobs = jobRegistry(), f = fixture()
+    const attached = startBashJob(jobs, args, f.exec, () => { throw new Error('must not start') })
+    jobs.kill(attached.id, f.exec.agent.id, 'cancel before preparation')
+    await jobs.hooks.done
+    assert.equal(jobs.declaration.label, expected)
+  }
 })
 
 await test('an expiring pending preparation is stopped and never promoted', async () => {

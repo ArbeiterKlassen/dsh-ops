@@ -44,6 +44,18 @@ export function windowsCacheLocation(argv: readonly string[]): Location | undefi
     || match.slice(1).some(part => Number(part) > 1073741823)) return undefined
   return { root, windowsWriteSid: sid }
 }
+/**
+ * bwrap gives workspace-write children a private tmpfs over /tmp, which hides the host-created
+ * cache below tmpdir(). Re-expose exactly that one private directory; every other runner, and
+ * read-only bwrap (no tmpfs), already sees it and is returned unchanged.
+ */
+export function exposePosixCache(argv: readonly string[], storage: WorkerStorage | undefined): string[] {
+  const separator = argv.indexOf('--')
+  if (!storage || storage.windowsWriteSid !== undefined || separator < 1 || path.basename(argv[0]) !== 'bwrap'
+    || !argv.slice(1, separator).some(option => option === '--tmpfs' || option.startsWith('--tmpfs='))
+    || !path.isAbsolute(storage.root)) return [...argv]
+  return [...argv.slice(0, separator), '--bind', storage.root, storage.root, ...argv.slice(separator)]
+}
 function posixCacheLocation(key: string, create: boolean): Location | undefined {
   const parent = fs.realpathSync(tmpdir()), root = path.join(parent, `dsh-ops-results-${key}`)
   // Only one fresh leaf under the canonical temp root. No recursive mkdir through caller paths.
@@ -76,7 +88,7 @@ async function purge(ctx: StorageHost, session: ResultSession, file: string, sto
       const confined = await ctx.get('sandbox')?.confine(argv, { ...policy, mode: 'workspace-write' }, controller.signal)
       if (!confined || !['full', 'partial'].includes(confined.enforcement) || !confined.argv.length) throw new Error('Cleanup confinement unavailable')
       if (process.platform === 'win32' && windowsCacheLocation(confined.argv)?.root !== storage.root) throw new Error('Cleanup cache grant changed')
-      argv = confined.argv
+      argv = exposePosixCache(confined.argv, storage)
     }
     const latest = policyService?.resolve({ session })
     if (latest?.mode !== policy.mode || latest?.workspaceRoot !== policy.workspaceRoot) throw new Error('Cleanup authority changed')

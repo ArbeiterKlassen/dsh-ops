@@ -67,6 +67,8 @@ Native emits a file header, numbered escaped source lines and revision/continuat
 
 ### `ops_glob`
 
+The discovered file-tool schemas include concise field-level help. `pattern` here is a JSON array of quoted strings, unlike the single regex string accepted by `ops_grep` or the literal strings accepted by `ops_replace`. Search defaults, output modes and preview flags are described on the corresponding fields; validation constraints are unchanged.
+
 Find regular files below `path`. `pattern` is an **array** of globs matched segment by segment against paths relative to `path` (ASCII case-insensitive), e.g. `["**/*.md","!vendor/**"]`: `*.md` matches the top level only and `**/*.md` any depth; a `!` prefix excludes, and at least one positive entry is required. A bare string is rejected; there is no `include` field.
 
 `outputMode: "details"` adds `bytes` (the on-disk size) and `modified`, a real modification time in **milliseconds since the Unix epoch** — the same quantity and unit `ops_stat` reports as `modifiedMs`, and `null` when the filesystem cannot report one. `sort: "modified"` orders newest first and is stable: equal timestamps keep the walk's path order. `sort: "path"` and an omitted `sort` both keep that walk order.
@@ -101,6 +103,8 @@ Use `summary` for aggregate file/match totals, `count` for per-file counts, `con
 ### `ops_replace`
 
 Perform a deterministic UTF-8 replacement under `path`. `pattern` is **literal text, not a regex**; `glob` works as in `ops_grep`. `dryRun` observes only; writes use revision checks and atomic replacement. Read-only sessions are rejected.
+
+Each proposed file is limited to **32 MiB of UTF-8 bytes**, including in `dryRun`. The complete plan is checked with overflow-safe arithmetic before replacement content is constructed or any file is published. If any file would exceed the bound, the whole call returns `OUTPUT_LIMIT` with no file changes; narrow `path`/`glob` or reduce the replacement size. `maxReplacements` remains a separate match-count ceiling, not a truncation setting.
 
 Cooperating writers serialise on a hidden update-lock sidecar beside each target (`.dsh-ops-update-<sha256 of the lowercased name>.lock`). It is created before the target is read and removed by the writer that holds it, so a refused call leaves nothing behind; see [Update-lock sidecars](native-ptc.md#update-lock-sidecars) for the binding rule that makes removal safe and for the one residue a killed writer can leave.
 
@@ -173,7 +177,7 @@ On Windows x64 the install carries the pinned Bash payload as an optional depend
 - `ops_bash`: the preferred general command executor. Use `command` for short commands and `script_path` for long scripts.
   Cancellation also stops pending sandbox preparation; a late preparation result cannot start the command. When cancellation races a timeout, the first cause is reported.
   Relative `workdir` paths (including `.`) resolve against the calling session's workspace, not the host process directory. Omitting `workdir` or passing a blank string uses that workspace; absolute paths remain absolute. Missing or non-directory targets are rejected before execution, with the resolved path in the error.
-  On Windows, `\child` uses the session's drive; a drive-relative path such as `C:child` on a different drive must be written as an absolute path.
+  On Windows, `\child` uses the session's drive; a drive-relative path such as `C:child` on a different drive must be written as an absolute path. A POSIX-style absolute path names its drive as `/d/…` (bash's own spelling for `D:\…`) and is mapped onto the Windows form before validation; a `/`-rooted path with no usable drive letter (`/`, `/tmp/x`) is refused, because Windows would read it against the host process's current drive.
 - Host `pwsh`: Windows-native operations, using the host-selected PowerShell.
 
 `ops_bash` requires a non-empty `description` and keeps the host Bash fields and result kinds: `foreground`, `background`, or `promoted`. Its default timeout is 120 seconds and the cap is 600 seconds. When the host jobs service is available, `run_in_background: true` returns a job ID immediately; a foreground timeout promotes the same running job. Use the host `job_output` and `job_kill` tools to collect or stop it. Without host jobs, the background parameter is absent and a foreground timeout stops the command. Unknown arguments return a failed foreground value before execution. The compatible string `error` remains; `failure` adds stable code, effect state and retry guidance. Invalid arguments have no command effects and require input changes. An ordinary nonzero exit keeps `status: failed` and unknown effects, but reports `failure.code: EXIT_CODE` with `retry: after-input-change`: inspect the exit code and output, then correct the command or its inputs before retrying; prior effects may remain. Timeouts, cancellation, signal termination and execution failures retain their conservative retry guidance. If job admission fails after accepting its run hook, the queued starter is cancelled and no foreground retry occurs.

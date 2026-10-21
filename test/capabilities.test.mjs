@@ -42,6 +42,10 @@ await test('metadata separates the Native resident core from discoverable capabi
   }
 })
 
+// Parameter help evolves independently; preserve all structural validation constraints (#328).
+const withoutDescriptions = value => Array.isArray(value) ? value.map(withoutDescriptions)
+  : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)
+    .filter(([key]) => key !== 'description').map(([key, item]) => [key, withoutDescriptions(item)])) : value
 const snapshot = (names, definition) => names.map(name => {
   const d = definition(name, async () => null)
   // Reference metadata was added in6d; preserve the earlier business argument/output snapshot.
@@ -49,16 +53,21 @@ const snapshot = (names, definition) => names.map(name => {
   for (const key of ['reference', 'referenceRoot', 'root', 'source', 'storageError', 'nextAction']) {
     if (definition === fileDefinition) delete d.output.schema.properties[key]
   }
-  return { name: d.name, description: d.description, parameters: d.parameters, output: d.output.schema,
+  return { name: d.name, description: d.description, parameters: withoutDescriptions(d.parameters), output: d.output.schema,
     concurrent: d.isConcurrencySafe?.({}) ?? false, timeoutMs: d.timeoutMs ?? null }
 })
 await test('business file and batch definitions retain their original serialized contracts', () => {
   // Captured before this migration, covering every argument/output contract and published description.
   const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-  assert.equal(hash(snapshot(FILE_TOOLS.filter(name => !['glob', 'grep', 'read_files', 'edit_file', 'read_table', 'read_docx', 'read_pdf'].includes(name)), fileDefinition)), '177dfec3b7eea8f6760ede65f14c9434ccf19e678d29fcf29b4c8d0de5be3683')
+  assert.equal(hash(snapshot(FILE_TOOLS.filter(name => !['glob', 'grep', 'read_files', 'edit_file', 'read_table', 'read_docx', 'read_pdf'].includes(name)), fileDefinition)), '0297e7d3f819dc90dcc296a5e4ee1af88c37b742ed7ca06c77c54a477c52eb4b')
   const batch = ptcDefinition('batch', async () => null)
   assert.equal(batch.parameters, ptcParameters.batch); assert.ok(batch.description.startsWith(ptcDescriptions.batch)); assert.match(batch.description, /PTC returns Outcome/)
   assert.ok(batch.output.schema.oneOf.every(branch => branch.properties.status))
+})
+
+await test('file parameter help changes no structural schema constraints', () => {
+  const hash = createHash('sha256').update(JSON.stringify(withoutDescriptions(fileParameters))).digest('hex')
+  assert.equal(hash, '572d173fa3ca83606448134b591f4aa8b40b225f236b68a47b011ae177863590')
 })
 
 await test('native registration consumes the catalogue while execute values stay unchanged', async () => {

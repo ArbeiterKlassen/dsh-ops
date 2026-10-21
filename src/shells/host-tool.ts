@@ -65,12 +65,12 @@ export function hostBashDefinition(ctx: ShellContext, base: ShellBase, createExe
         }
         if (jobs) {
           let attached
-          try { attached = startBashJob(jobs, args as { command?: string; script_path?: string }, exec, start) }
+          try { attached = startBashJob(jobs, args as { description: string; command?: string; script_path?: string }, exec, start) }
           catch (error) {
             if (run_in_background || attempted || error instanceof BashJobAdmissionError && error.runInvoked) throw error
             ctx.logger?.warn?.(`Bash job admission refused; using the foreground deadline: ${errorMessage(error)}`)
           }
-          if (attached) return run_in_background ? { kind: 'background', jobId: attached.id } : await waitOnBashJob(jobs, attached, exec, timeoutMs)
+          if (attached) return run_in_background ? { kind: 'background', jobId: attached.id, label: attached.label } : await waitOnBashJob(jobs, attached, exec, timeoutMs)
         } else if (run_in_background) return hostFailure('EXECUTOR_UNAVAILABLE: the host job registry is unavailable.', timeoutMs)
         const execution = await start(exec, {})
         const result = await execution.result()

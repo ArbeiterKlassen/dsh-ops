@@ -9,7 +9,8 @@ use std::fs::{self};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
+/// Shared bound for file reads and proposed write/replacement content.
+pub const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
 /// Ceiling for one worker response. The host collects worker stdout with
 /// `maxBytes: 128 * 1024` and turns a lossy read into `OUTPUT_LIMIT` plus
 /// `effectState: "unknown"`, so a response that overflows is reported to the model
