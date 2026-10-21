@@ -67,6 +67,8 @@ Native emits a file header, numbered escaped source lines and revision/continuat
 
 ### `ops_glob`
 
+The discovered file-tool schemas include concise field-level help. `pattern` here is a JSON array of quoted strings, unlike the single regex string accepted by `ops_grep` or the literal strings accepted by `ops_replace`. Search defaults, output modes and preview flags are described on the corresponding fields; validation constraints are unchanged.
+
 Find regular files below `path`. `pattern` is an **array** of globs matched segment by segment against paths relative to `path` (ASCII case-insensitive), e.g. `["**/*.md","!vendor/**"]`: `*.md` matches the top level only and `**/*.md` any depth; a `!` prefix excludes, and at least one positive entry is required. A bare string is rejected; there is no `include` field.
 
 `outputMode: "details"` adds `bytes` (the on-disk size) and `modified`, a real modification time in **milliseconds since the Unix epoch** — the same quantity and unit `ops_stat` reports as `modifiedMs`, and `null` when the filesystem cannot report one. `sort: "modified"` orders newest first and is stable: equal timestamps keep the walk's path order. `sort: "path"` and an omitted `sort` both keep that walk order.

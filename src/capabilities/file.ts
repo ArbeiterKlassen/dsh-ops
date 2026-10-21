@@ -13,8 +13,12 @@ const bounded = (properties: Record<string, JsonSchemaNode>, required: string[] 
 // the native worker remains authoritative for validation, including raw PTC calls.
 const revision: JsonSchemaNode = { type: 'string', description: '64 lowercase hex SHA-256 revision returned by inspect/stat; absent is create-only, never an overwrite wildcard.' }
 const existingRevision: JsonSchemaNode = { type: 'string', description: '64 lowercase hex SHA-256 revision returned by inspect/stat; absent is not accepted.' }
+const filePath: JsonSchemaNode = { ...string, description: 'File path; relative to session cwd.' }
+const searchPath: JsonSchemaNode = { ...string, description: 'Search root; relative to session cwd, default ".".' }
+const globFilter: JsonSchemaNode = { type: 'array', description: 'Relative glob ARRAY, e.g. ["**/*.ts","!vendor/**"]; omitted means all eligible files.', items: string }
+const dryRun: JsonSchemaNode = { type: 'boolean', description: 'Preview without writing; default false.' }
 
-const edits = bounded({ path: string, expectedRevision: existingRevision, edits: { type: 'array', description: '1-100 nonoverlapping edits against the same original bytes.', items: bounded({ oldText: { ...string, description: 'Nonempty text that occurs exactly once in the original.' }, newText: string }, ['oldText', 'newText']) }, dryRun: { type: 'boolean' } }, ['path', 'expectedRevision', 'edits'])
+const edits = bounded({ path: filePath, expectedRevision: existingRevision, edits: { type: 'array', description: '1-100 nonoverlapping edits against the same original bytes.', items: bounded({ oldText: { ...string, description: 'Nonempty text that occurs exactly once in the original.' }, newText: { ...string, description: 'Literal replacement text; empty deletes the matched text.' } }, ['oldText', 'newText']) }, dryRun }, ['path', 'expectedRevision', 'edits'])
 
 export const PARAMETERS = Object.freeze({
   ...DOCUMENT_PARAMETERS,
@@ -22,49 +26,49 @@ export const PARAMETERS = Object.freeze({
     path: string, offset: { type: 'integer', description: 'Line >=1; default 1.' }, limit: range(1, 10000, 'Default 200.'),
   }, ['path']) } }, ['files']),
   inspect_local_file: bounded({
-    path: string,
+    path: filePath,
     offset: { type: 'integer', description: '1-based line or 16-byte hex row; default 1. Legacy 0 also reads the first unit.' },
     limit: range(1, 10000, 'Default 200.'),
-    encoding: { type: 'string', enum: ['utf-8'] },
-    view: { type: 'string', enum: ['text', 'hex'] },
+    encoding: { type: 'string', enum: ['utf-8'], description: 'Text encoding; only utf-8 is supported.' },
+    view: { type: 'string', enum: ['text', 'hex'], description: 'Text lines (default) or 16-byte hex rows.' },
   }),
   glob: bounded({
-    path: string,
-    pattern: { type: 'array', description: 'At least one positive glob is required.', items: string },
-    outputMode: { type: 'string', enum: ['paths', 'details'] },
-    sort: { type: 'string', enum: ['path', 'modified'] },
+    path: searchPath,
+    pattern: { type: 'array', description: 'Glob ARRAY, e.g. ["**/*.md","!vendor/**"]; at least one positive entry is required.', items: string },
+    outputMode: { type: 'string', enum: ['paths', 'details'], description: 'Paths (default) or paths with byte sizes and modification times.' },
+    sort: { type: 'string', enum: ['path', 'modified'], description: 'Path order (default) or newest modification first.' },
     offset: integer,
     limit: range(1, 10000, 'Default 100.'),
     continuation: { ...string, description: 'Opaque cursor from a complete scan. Keep query options unchanged; omit offset or use nextOffset. SEARCH_STALE requires a fresh query.' },
   }, ['pattern']),
   grep: bounded({
-    path: string,
-    pattern: string,
-    glob: { type: 'array', items: string },
-    outputMode: { type: 'string', enum: ['files_with_matches', 'content', 'count', 'summary'] },
-    caseInsensitive: { type: 'boolean' },
-    lineNumbers: { type: 'boolean' },
-    beforeContext: range(0, 32),
-    afterContext: range(0, 32),
-    multiline: { type: 'boolean' },
+    path: searchPath,
+    pattern: { ...string, description: 'One Rust regex STRING, e.g. "TODO|FIXME".' },
+    glob: globFilter,
+    outputMode: { type: 'string', enum: ['files_with_matches', 'content', 'count', 'summary'], description: 'Matching text (default), file paths, per-file counts or aggregate totals.' },
+    caseInsensitive: { type: 'boolean', description: 'Ignore case; default false.' },
+    lineNumbers: { type: 'boolean', description: 'Include 1-based line numbers; default true.' },
+    beforeContext: range(0, 32, 'Lines before each match; default 0.'),
+    afterContext: range(0, 32, 'Lines after each match; default 0.'),
+    multiline: { type: 'boolean', description: 'Search whole-file text instead of individual lines; default false.' },
     offset: integer,
     limit: range(1, 10000, 'Default 100.'),
     continuation: { ...string, description: 'Opaque cursor from a complete scan. Keep query options unchanged; omit offset or use nextOffset. SEARCH_STALE requires a fresh query.' },
   }, ['pattern']),
-  stat: bounded({ path: string }, ['path']),
-  diff: bounded({ path: string, content: string, offset: integer, limit: range(1, 1000, 'Default 100.') }, ['path', 'content']),
-  write_file: bounded({ path: string, content: string, expectedRevision: revision, dryRun: { type: 'boolean' } }, ['path', 'content', 'expectedRevision']),
+  stat: bounded({ path: filePath }, ['path']),
+  diff: bounded({ path: filePath, content: { ...string, description: 'Complete proposed UTF-8 file content.' }, offset: integer, limit: range(1, 1000, 'Default 100.') }, ['path', 'content']),
+  write_file: bounded({ path: filePath, content: { ...string, description: 'Complete UTF-8 file content; empty writes an empty file.' }, expectedRevision: revision, dryRun }, ['path', 'content', 'expectedRevision']),
   edit_file: edits,
-  copy: bounded({ path: string, to: string, expectedRevision: existingRevision }, ['path', 'to', 'expectedRevision']),
-  move: bounded({ path: string, to: string, expectedRevision: existingRevision }, ['path', 'to', 'expectedRevision']),
-  remove: bounded({ path: string, expectedRevision: existingRevision }, ['path', 'expectedRevision']),
+  copy: bounded({ path: filePath, to: { ...string, description: 'Absent destination file; relative to session cwd. Parents must exist.' }, expectedRevision: existingRevision }, ['path', 'to', 'expectedRevision']),
+  move: bounded({ path: filePath, to: { ...string, description: 'Absent destination file on the same filesystem; relative to session cwd.' }, expectedRevision: existingRevision }, ['path', 'to', 'expectedRevision']),
+  remove: bounded({ path: filePath, expectedRevision: existingRevision }, ['path', 'expectedRevision']),
   replace: bounded({
-    path: string,
-    pattern: string,
-    replacement: string,
-    glob: { type: 'array', items: string },
+    path: searchPath,
+    pattern: { ...string, description: 'Nonempty literal STRING, not a regex.' },
+    replacement: { ...string, description: 'Literal replacement text; empty deletes matches.' },
+    glob: globFilter,
     maxReplacements: range(1, 100000, 'Default 100.'),
-    dryRun: { type: 'boolean' },
+    dryRun,
   }, ['pattern', 'replacement']),
 })
 
