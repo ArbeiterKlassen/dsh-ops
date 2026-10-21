@@ -80,14 +80,19 @@ await test('only a bwrap private /tmp gains a bind for the one session cache, be
   assert.deepEqual(exposePosixCache(bwrap, undefined), bwrap)
   assert.deepEqual(exposePosixCache(bwrap, { ...storage, windowsWriteSid: 'S-1-4-1-2-1' }), bwrap)
   assert.deepEqual(exposePosixCache(bwrap, { ...storage, root: 'relative' }), bwrap)
+  // The single-token form mounts the same private tmpfs and must gain the same bind.
+  assert.deepEqual(exposePosixCache(['/usr/bin/bwrap', '--tmpfs=/tmp', '--', 'worker'], storage),
+    ['/usr/bin/bwrap', '--tmpfs=/tmp', '--bind', storage.root, storage.root, '--', 'worker'])
 })
 
 // Windows has no bwrap runner and keeps its cache in the runner's own --temp grant (checked above).
-if (process.platform !== 'win32') await test('a bwrap-style private /tmp still sees the session cache for put, page and session purge', async () => {
+if (process.platform !== 'win32') await test('the worker argv binds the session cache before the wrapped program', async () => {
   await withTempDir('storage-bwrap', async root => {
     const runner = path.join(root, 'runner'), log = path.join(runner, 'argv.log'), shim = path.join(runner, 'bwrap')
     fs.mkdirSync(runner)
-    // Records each runner argv, then runs the wrapped program like bwrap would after its own options.
+    // Records each runner argv, then runs the wrapped program after the separator. The shim does not
+    // reproduce bwrap's private tmpfs, so this asserts the argv composition bwrap needs (the cache bind
+    // last, before the separator), not in-sandbox visibility.
     fs.writeFileSync(shim, `#!/bin/sh\nfor a in "$@"; do printf '%s\\037' "$a"; done >> '${log}'\necho >> '${log}'\n`
       + 'while [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n', { mode: 0o755 })
     const { ctx } = await bootHost(), session = { id: 'bwrap-private-tmp', header: { cwd: root } }
