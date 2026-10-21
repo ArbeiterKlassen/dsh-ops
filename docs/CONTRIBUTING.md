@@ -121,14 +121,15 @@ What a skip means locally:
   `node test/run.mjs mount file-operations`.
 
 How to read the gate and the expected numbers per host: [verify-locally.md](verify-locally.md).
-CI runs on every pull request and every push to `main`, `0.3.2` and `release/0.4.0`; a PR must be green on all three platforms.
+CI runs on every pull request and every push to `main`, `0.3.2` and `release/0.4.0`. The two POSIX legs (`validate-posix`: Linux x64, macOS arm64) block a merge; the Windows x64 leg (`validate-windows`) still runs on every event but is non-blocking — a red Windows run is a defect to fix, not a reason to hold the merge (#316).
 
 ## One CI run per pull request
 
 Every pull request must show one run of the [Cross-platform validation](https://github.com/T-Auto/dsh-ops/blob/main/.github/workflows/ci.yml)
 workflow that its **own `pull_request` event** triggered. The aggregate job **`CI required`**
-summarises the Windows x64, Linux x64 and macOS arm64 legs; that job's run URL is what the pull
-request template asks for.
+summarises the two blocking POSIX legs (Linux x64, macOS arm64); the non-blocking Windows x64 leg
+runs alongside it and is deliberately not waited on. That job's run URL is what the pull request
+template asks for.
 
 - **What triggers it.** `ci.yml` runs on `pull_request` targeting `main`, `0.3.2` and
   `release/0.4.0` (and on `push` to the same branches, plus `merge_group`). GitHub reads the

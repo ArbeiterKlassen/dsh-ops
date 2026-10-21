@@ -75,15 +75,40 @@ if (!ci) {
     check(triggers?.[event]?.branches?.includes('release/0.4.0'), `ci.yml: ${event} includes the 0.4.0 staging branch`)
   }
   const jobs = ci.doc.jobs ?? {}
-  checkPluginBuild('ci.yml', jobs, ['validate', 'node-floor', 'tools-trial', 'bench-smoke'])
+  checkPluginBuild('ci.yml', jobs, ['validate-posix', 'validate-windows', 'node-floor', 'tools-trial', 'bench-smoke'])
   const entry = Object.entries(jobs).find(([, job]) => job?.name === 'CI required')
   check(entry !== undefined, 'ci.yml: exposes one aggregate check named "CI required"')
   if (entry) {
     const [id, job] = entry
     const needs = [].concat(job.needs ?? [])
     const others = Object.keys(jobs).filter((name) => name !== id)
-    const missing = others.filter((name) => !needs.includes(name))
-    check(missing.length === 0, `ci.yml: "CI required" depends on every other job (missing: ${missing.join(', ') || 'none'})`)
+    // A job blocks a merge unless it opts out explicitly with the literal boolean `true`. An
+    // expression (`${{ ... }}`) is not accepted here: it cannot be evaluated statically, so it
+    // would let a job look non-blocking to this lint while blocking in practice.
+    const blocking = others.filter((name) => jobs[name]?.['continue-on-error'] !== true)
+    const nonBlocking = others.filter((name) => jobs[name]?.['continue-on-error'] === true)
+    const missing = blocking.filter((name) => !needs.includes(name))
+    check(missing.length === 0, `ci.yml: "CI required" depends on every blocking job (missing: ${missing.join(', ') || 'none'})`)
+    // Waiting on a non-blocking job is the same as blocking on it: the required check stays pending
+    // until that job finishes, whatever its result, so the merge queue waits for the slowest leg.
+    // The aggregate therefore neither needs nor reports such a job.
+    const waited = nonBlocking.filter((name) => needs.includes(name))
+    check(waited.length === 0, `ci.yml: "CI required" depends on no continue-on-error job (waited on: ${waited.join(', ') || 'none'})`)
+    // Escape is explicit or not at all: a job outside the aggregate must say `continue-on-error:
+    // true` itself. An `if:` that merely skips it on a pull request is the silent escape this check
+    // exists to catch, so it does not count as non-blocking.
+    const escaped = others.filter((name) => !needs.includes(name) && jobs[name]?.['continue-on-error'] !== true)
+    check(escaped.length === 0, `ci.yml: every job outside the aggregate sets continue-on-error: true explicitly (implicit: ${escaped.join(', ') || 'none'})`)
+    // Depending on a job is not judging it: a blocking job left in `needs` but dropped from the
+    // failure loop would let the aggregate report success without reading its result. The loop's
+    // job list must therefore be exactly the blocking set, in both directions.
+    const scripts = (job.steps ?? []).map((step) => String(step.run ?? '')).join('\n')
+    const loops = [...scripts.matchAll(/\bfor\s+job\s+in\s+([^\n;]+?)\s*;\s*do\b/g)]
+    const loopJobs = loops.length === 1 ? loops[0][1].trim().split(/\s+/).filter(Boolean) : []
+    check(loops.length === 1, 'ci.yml: "CI required" judges the blocking jobs in exactly one loop')
+    const unjudged = blocking.filter((name) => !loopJobs.includes(name))
+    const phantom = loopJobs.filter((name) => !blocking.includes(name))
+    check(unjudged.length === 0 && phantom.length === 0, `ci.yml: "CI required" failure loop covers exactly the blocking jobs (unjudged: ${unjudged.join(', ') || 'none'}; not blocking: ${phantom.join(', ') || 'none'})`)
     check(job.if === 'always()', 'ci.yml: "CI required" runs even when a dependency fails, so the result is reported')
   }
 }
