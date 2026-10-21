@@ -18,8 +18,9 @@ The MCP server exposes:
 - References: `result`
 
 The document readers are bounded. `read_table` handles CSV/TSV only,
-`read_docx` reads main-body paragraphs, and `read_pdf` supports a restricted
-classic-xref text layer. These are not general Office or OCR converters.
+`read_docx` reads main-body paragraphs, and `read_pdf` supports classic xref,
+xref streams, object streams, incremental revisions, and a restricted
+standard-font text layer. These are not general Office or OCR converters.
 
 ## Verify
 

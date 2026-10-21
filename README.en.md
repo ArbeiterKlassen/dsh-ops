@@ -45,7 +45,8 @@ strict TypeScript, compiled to the existing JavaScript package paths.
   provider request.
 - The PTC SDK catalogue has 18 APIs: 15 file/document tools, batch, result references and its loader.
   Only the configured resident or selected APIs are exposed. Native and PTC use separate outputs.
-- Discover bounded CSV/TSV, DOCX main-body paragraphs and a restricted PDF text layer. Binary DOC,
+- Discover bounded CSV/TSV, DOCX main-body paragraphs and a restricted PDF text layer. PDF
+  containers support classic xref, xref streams, object streams and incremental `Prev` chains. Binary DOC,
   OCR, general PDF rendering, web search and HTML crawling are not implemented. Read the
   [document-format limits](docs/native-kernel.md) before choosing a reader.
 - Seven independently toggled rows preserve saved profile IDs and settings. Per-tool official

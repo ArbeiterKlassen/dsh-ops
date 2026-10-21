@@ -236,18 +236,19 @@ reference pages retains the declared main-body scope independently of stored-row
 
 ## PDF parser foundation (15c/16)
 
-The internal PDF container parser accepts a restricted PDF 1.0-1.7 subset: one classic
-xref table, an exact final startxref/EOF footer, unique dictionary keys and object
-identities, and directly declared stream lengths. Every active xref offset must point
-exactly at its object header. Objects cannot overlap; gaps must contain only whitespace
-or comments. This deliberately rejects incremental updates, encryption, object/xref
-streams, recovery scans and ambiguous duplicate data, including decoded forbidden names.
+The internal PDF container parser accepts PDF 1.0-1.7 classic xref tables and
+FlateDecode xref streams. Xref streams support direct, free and compressed object
+entries, `/Index`, bounded `/W` fields and PNG predictors 10-15 on `DecodeParms`.
+`/Prev` chains merge revisions newest-first, and `/ObjStm` streams expand compressed
+dictionary objects. Every active direct offset must point exactly at its object
+header. Encryption, recovery scans and ambiguous duplicate data remain rejected.
 
 Bounds are checked before indexed allocation: 16 MiB per input, 10,000 xref entries,
 100,000 metadata values, depth 64, 4,096 keys per dictionary, 256 bytes per name/token,
 and 1 MiB per string or encoded/decoded stream. Reference chains have cycle detection
-and a depth bound. Streams support no filter or one FlateDecode only; external streams,
-filter chains and DecodeParms are declined. Actual decompression stops at the decoded
+and a depth bound. Ordinary and object streams support no filter or one FlateDecode
+only; external streams and filter chains are declined. Xref streams additionally
+accept the bounded PNG predictor forms used by conforming writers. Actual decompression stops at the decoded
 limit plus one byte and requires a valid checksum, zlib terminator and exact consumption
 of the input. No size advertised by a PDF author bypasses these limits.
 
@@ -271,7 +272,7 @@ forms/images, marked content or external graphics state is a gap, even when it a
 supported text. Blank absent/null/empty/comment-only content yields an empty page;
 nonempty graphics without a supported text layer is explicitly unsupported.
 
-The supported text subset is PDF 1.3–1.7 with the foundation's classic xref container,
+The supported text subset is PDF 1.3–1.7 with the foundation's classic xref or xref-stream container,
 standard Helvetica/Courier/Times Type1 families, built-in StandardEncoding printable
 characters (including its curly quote glyphs), or named WinAnsiEncoding. The WinAnsi
 bullet/space/hyphen aliases are explicit; unknown/control codes are refused without

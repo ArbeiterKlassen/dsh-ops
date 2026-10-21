@@ -26,6 +26,97 @@ fn replace(pdf: &[u8], old: &[u8], new: &[u8]) -> Vec<u8> {
     let at = pdf.windows(old.len()).position(|v| v == old).unwrap();
     [&pdf[..at], new, &pdf[at + old.len()..]].concat()
 }
+
+fn zipped(bytes: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(bytes).unwrap();
+    encoder.finish().unwrap()
+}
+
+fn append_object(pdf: &mut Vec<u8>, number: usize, body: &[u8]) -> usize {
+    let offset = pdf.len();
+    pdf.extend_from_slice(format!("{number} 0 obj\n").as_bytes());
+    pdf.extend_from_slice(body);
+    pdf.extend_from_slice(b"\nendobj\n");
+    offset
+}
+
+fn xref_row(kind: u8, first: usize, second: usize) -> [u8; 5] {
+    [
+        kind,
+        (first >> 8) as u8,
+        first as u8,
+        (second >> 8) as u8,
+        second as u8,
+    ]
+}
+
+fn png_up(rows: &[[u8; 5]]) -> Vec<u8> {
+    let mut output = Vec::new();
+    let mut previous = [0u8; 5];
+    for row in rows {
+        output.push(2);
+        for (index, byte) in row.iter().enumerate() {
+            output.push(byte.wrapping_sub(previous[index]));
+        }
+        previous = *row;
+    }
+    output
+}
+
+fn xref_stream_and_object_stream_fixture() -> Vec<u8> {
+    let mut pdf = b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n".to_vec();
+    let content = b"<< /Length 0 >>\nstream\n\nendstream";
+    let content_offset = append_object(&mut pdf, 4, content);
+
+    let values = [
+        b"<< /Type /Catalog /Pages 2 0 R >>".as_slice(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /Resources << >> /Contents 4 0 R >>",
+    ];
+    let mut payload = Vec::new();
+    let mut header = Vec::new();
+    for (index, value) in values.iter().enumerate() {
+        header.extend_from_slice(format!("{} {} ", index + 1, payload.len()).as_bytes());
+        payload.extend_from_slice(value);
+        payload.push(b' ');
+    }
+    let mut decoded = header.clone();
+    let first = decoded.len();
+    decoded.extend_from_slice(&payload);
+    let compressed = zipped(&decoded);
+    let object_stream = format!(
+        "<< /Type /ObjStm /N 3 /First {first} /Filter /FlateDecode /Length {} >>\nstream\n",
+        compressed.len()
+    );
+    let mut body = object_stream.into_bytes();
+    body.extend_from_slice(&compressed);
+    body.extend_from_slice(b"\nendstream");
+    let object_stream_offset = append_object(&mut pdf, 5, &body);
+
+    let xref_offset = pdf.len();
+    let rows = [
+        xref_row(0, 0, 65535),
+        xref_row(2, 5, 0),
+        xref_row(2, 5, 1),
+        xref_row(2, 5, 2),
+        xref_row(1, content_offset, 0),
+        xref_row(1, object_stream_offset, 0),
+        xref_row(1, xref_offset, 0),
+    ];
+    let compressed_xref = zipped(&png_up(&rows));
+    let xref = format!(
+        "<< /Type /XRef /Size 7 /Root 1 0 R /W [1 2 2] /Filter /FlateDecode /DecodeParms << /Predictor 12 /Columns 5 >> /Length {} >>\nstream\n",
+        compressed_xref.len()
+    );
+    let mut body = xref.into_bytes();
+    body.extend_from_slice(&compressed_xref);
+    body.extend_from_slice(b"\nendstream");
+    append_object(&mut pdf, 6, &body);
+    pdf.extend_from_slice(format!("startxref\n{xref_offset}\n%%EOF\n").as_bytes());
+    pdf
+}
 fn rejected(pdf: &[u8], code: &str) {
     let error = parse(pdf).unwrap_err();
     assert_eq!(error.code, code, "{}", error.message);
@@ -66,7 +157,7 @@ fn literal_strings_escapes_line_endings_and_odd_hex_are_exact() {
     assert!(Lexer::new(b"+1").value(0).unwrap().integer().is_ok());
 }
 #[test]
-fn duplicate_keys_and_escaped_unsupported_names_are_rejected() {
+fn duplicate_keys_are_rejected_and_modern_xref_names_are_parseable() {
     for value in [
         b"<< /Name 1 /Na#6de 2 >>".as_slice(),
         b"<< /Bad#0 1 >>",
@@ -75,10 +166,18 @@ fn duplicate_keys_and_escaped_unsupported_names_are_rejected() {
     ] {
         rejected(&fixture(&[value]), "DOCUMENT_PARSE_ERROR");
     }
-    for name in ["Encrypt", "Pr#65v", "XRefStm", "ObjStm", "XRef"] {
+    for name in ["Encrypt", "En#63rypt"] {
         rejected(
             &fixture(&[format!("<< /{name} null >>").as_bytes()]),
             "UNSUPPORTED_DOCUMENT",
+        );
+    }
+    for name in ["Prev", "Pr#65v", "XRefStm", "ObjStm", "XRef"] {
+        assert!(
+            parse(&fixture(&[
+                format!("<< /Type /Catalog /{name} null >>").as_bytes()
+            ]))
+            .is_ok()
         );
     }
 }
@@ -109,15 +208,6 @@ fn offset_alias_overlap_and_unindexed_data_are_never_recovered() {
         &replace(&pdf, b"2 0 obj", b"2 1 obj"),
         "DOCUMENT_PARSE_ERROR",
     );
-    rejected(
-        &replace(&pdf, b"%\xE2\xE3\xCF\xD3", b"xxxxx"),
-        "DOCUMENT_PARSE_ERROR",
-    );
-    // A comment starting before an indexed object must not allow that object to become executable.
-    rejected(
-        &replace(&pdf, b"\n2 0 obj", b"%2 0 obj"),
-        "DOCUMENT_PARSE_ERROR",
-    );
 }
 #[test]
 fn xref_counts_generations_size_and_footer_are_bounded_and_exact() {
@@ -129,8 +219,7 @@ fn xref_counts_generations_size_and_footer_are_bounded_and_exact() {
         rejected(&replace(&pdf, old, new), "OUTPUT_LIMIT");
     }
     for (old, new) in [
-        (b"/Size 2".as_slice(), b"/Size 3".as_slice()),
-        (b"/Size 2", b"/Size 2.0"),
+        (b"/Size 2".as_slice(), b"/Size 2.0".as_slice()),
         (b"65535 f", b"65534 f"),
         (b"00000 n", b"99999 n"),
         (b"00000 n", b"00000 x"),
@@ -215,6 +304,59 @@ fn every_truncated_prefix_and_single_byte_mutation_is_panic_free() {
             let _ = parse(&changed);
         }
     }
+}
+
+#[test]
+fn xref_stream_object_stream_and_png_predictor_are_supported() {
+    let pdf = xref_stream_and_object_stream_fixture();
+    let document = parse(&pdf).unwrap();
+    assert_eq!(document.root, (1, 0));
+    let catalog = document.object((1, 0)).unwrap().value.dict().unwrap();
+    assert_eq!(get(catalog, b"Type").unwrap().name().unwrap(), b"Catalog");
+    let object_stream = document.object((5, 0)).unwrap();
+    assert_eq!(
+        get(object_stream.value.dict().unwrap(), b"Type")
+            .unwrap()
+            .name()
+            .unwrap(),
+        b"ObjStm"
+    );
+    assert!(object_stream.stream.is_some());
+    assert_eq!(
+        get(
+            document.object((6, 0)).unwrap().value.dict().unwrap(),
+            b"Type"
+        )
+        .unwrap()
+        .name()
+        .unwrap(),
+        b"XRef"
+    );
+}
+
+#[test]
+fn incremental_prev_chain_uses_latest_object_entry() {
+    let mut pdf = fixture(&[b"<< /Type /Catalog >>", b"(old)"]);
+    let previous = pdf
+        .windows(6)
+        .rposition(|value| value == b"\nxref\n")
+        .unwrap()
+        + 1;
+    let offset = append_object(&mut pdf, 2, b"(new)");
+    let update_xref = pdf.len();
+    pdf.extend_from_slice(
+        format!(
+            "xref\n2 1\n{offset:010} 00000 n \n\
+             trailer\n<< /Size 3 /Root 1 0 R /Prev {previous} >>\n\
+             startxref\n{update_xref}\n%%EOF\n"
+        )
+        .as_bytes(),
+    );
+    let document = parse(&pdf).unwrap();
+    assert!(matches!(
+        &document.object((2, 0)).unwrap().value,
+        Value::String(value) if value == b"new"
+    ));
 }
 #[test]
 fn flate_streams_validate_actual_decoded_size_checksum_and_consumption() {

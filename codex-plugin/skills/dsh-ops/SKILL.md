@@ -60,8 +60,9 @@ The document readers are intentionally narrow.
 
 - `read_table`: CSV/TSV only, no spreadsheet formulas or type coercion.
 - `read_docx`: main-body paragraphs only, not rendered layout or headers.
-- `read_pdf`: classic-xref PDFs and a restricted standard-font text layer,
-  with no OCR, images, forms, or arbitrary embedded fonts.
+- `read_pdf`: classic xref, xref streams, object streams and incremental
+  `Prev` chains, with a restricted standard-font text layer. It provides no
+  OCR, images, forms, or arbitrary embedded fonts.
 
 Report an unsupported-document error as a scope limit. Do not silently replace
 it with an unverified text extraction.

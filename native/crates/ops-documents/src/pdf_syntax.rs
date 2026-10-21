@@ -213,13 +213,8 @@ impl<'a> Lexer<'a> {
                 return Err(limit("PDF name exceeds 256 bytes"));
             }
         }
-        if matches!(
-            name.as_slice(),
-            b"Encrypt" | b"Prev" | b"XRefStm" | b"ObjStm" | b"XRef"
-        ) {
-            return Err(unsupported(
-                "Encrypted, incremental, object-stream and xref-stream PDFs are unsupported",
-            ));
+        if name.as_slice() == b"Encrypt" {
+            return Err(unsupported("Encrypted PDFs are unsupported"));
         }
         Ok(name)
     }

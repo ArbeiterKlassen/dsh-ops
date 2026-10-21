@@ -4,7 +4,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { assert, test, report, withTempDir } from './lib/harness.mjs'
 import { callWorker, request, envelopeOf, requireWorker } from './lib/boundary.mjs'
-import { pdf, stream, show, textPdf } from './lib/pdf-fixture.mjs'
+import { pdf, stream, show, textPdf, xrefStreamTextPdf } from './lib/pdf-fixture.mjs'
 requireWorker('pdf-worker')
 const fileAt = (root, value, name = 'document.pdf') => { const file = path.join(root, name); fs.writeFileSync(file, value); return file }
 async function run(root, args, options = {}) {
@@ -34,6 +34,15 @@ await test('raw and Flate PDF pages preserve literal/hex/TJ runs and exact WinAn
     assert.equal(aliases.items[0].text, '•••••• -Ÿ')
     const standard = await run(root, { path: fileAt(root, textPdf([show("'quote" + String.fromCharCode(96))], { encoding: null })) })
     assert.equal(standard.items[0].text, '’quote‘')
+  })
+})
+await test('xref streams, PNG predictors and object streams reach the text extractor', async () => {
+  await withTempDir('pdf-xref-stream', async root => {
+    const body = await run(root, { path: fileAt(root, xrefStreamTextPdf([show('modern xref')])) })
+    assert.equal(body.error, undefined)
+    assert.equal(body.status, 'completed')
+    assert.equal(body.scope, 'page-text-layer-content-order')
+    assert.deepEqual(body.items, [{ page: 1, text: 'modern xref', runs: ['modern xref'] }])
   })
 })
 await test('page offsets have complete-scan totals, ten-page default and honest blank/empty documents', async () => {
