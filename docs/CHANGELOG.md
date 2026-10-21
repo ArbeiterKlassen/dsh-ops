@@ -7,12 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-work/316-windows-nonblocking
 - Make the Windows CI leg non-blocking while keeping it running on every event (#316): split `validate` into blocking `validate-posix` (Linux x64, macOS arm64) and `continue-on-error` `validate-windows`, and keep `ci-required` from depending on any `continue-on-error` job, so the aggregate neither waits for nor fails with the slowest leg. On `main` after #307 the Windows leg takes 527 / 529 s — up from 482 s before #307, because `npm ci` now downloads the 411 MB Windows Bash payload — against 136–139 s (Linux) and 168–182 s (macOS). `scripts/check-workflows.mjs` now enforces "every blocking job in the aggregate, no non-blocking job in it" and that the aggregate's failure loop names exactly the blocking jobs, so a job cannot stay in `needs` but escape judgement; the Windows result is a signal to act on, not a merge gate.
 - 将 CI 的 Windows 腿改为非阻塞、但仍每次触发都运行（#316）：把 `validate` 拆成阻塞的 `validate-posix`（Linux x64、macOS arm64）与 `continue-on-error` 的 `validate-windows`，并让 `ci-required` 不依赖任何 `continue-on-error` job，聚合既不等待也不随最慢的一腿失败。`main` 在 #307 合入后实测 Windows 腿 527 / 529 秒（#307 之前 482 秒，因为 `npm ci` 现在要拉 411 MB 的 Windows Bash 载荷），Linux 136–139 秒、macOS 168–182 秒。`scripts/check-workflows.mjs` 现在强制“每个阻塞 job 都在聚合里、聚合里没有非阻塞 job”，并要求失败判定循环里的 job 集合与阻塞集合完全相等，避免 job 留在 `needs` 却逃过判定；Windows 结果是待处理的信号，不是合并门禁。
 
-=======
-=======
 ## [0.4.1] — 2026-10-20 — Update locks stop leaving files behind
 
 - Stop the update lock from leaving `.dsh-ops-update-*.lock` sidecars behind (#319). The writer that takes the lock removes it on release, and only after proving the name still leads to the inode it locked, so a waiter that opened the old inode can never publish under it. A published write, a request refused after the lock and a directory-wide `replace` now leave the directory exactly as they found it; a sidecar left by a killed writer is not a stuck lock — the next write of that name binds to it, publishes under it and removes it.
@@ -21,10 +18,8 @@ work/316-windows-nonblocking
 - Restore `ops_bash` background jobs. The tool read the host `jobs` registry at definition time and then required `ctx.get('jobs')` to be identity-equal at call time; a tracked Cordis service returns a fresh traceable proxy on every read, so the comparison could never hold and every `run_in_background` call failed with `EXECUTOR_UNAVAILABLE` while the schema still advertised the parameter, and a foreground timeout killed the command instead of promoting it. Bind the registry once through `ctx.inject(['jobs'], …)`, exactly as the host's own bash tool does, and pass it into the definition; re-register when the service mounts or unloads. Regression tests cover the tracked-service proxy, background admission, and timeout promotion.
 - 恢复 `ops_bash` 的后台任务能力。原实现定义工具时读取一次宿主 `jobs` 注册表，执行时要求 `ctx.get('jobs')` 与它身份相等；Cordis 的被跟踪服务每次读取都返回新的 traceable proxy，比较永远不成立，于是 schema 声明了 `run_in_background` 却必然报 `EXECUTOR_UNAVAILABLE`，前台超时也只会杀进程而不会转后台。改为像宿主自带 bash 一样经 `ctx.inject(['jobs'], …)` 只绑定一次注册表并传入工具定义，服务挂载/卸载时重新注册；补了被跟踪服务代理、后台受理与超时升级的回归测试。
 
-main
 - Stop inventing audit references for new batch validation failures that occur before a job is saved, and for synchronous failures before worker creation. Preserve worker-provided references, existing resume identities and recovery ids for interrupted or ambiguous execution; no additional worker calls are made (#78).
 - 新批次在审计记录创建前发生已确认的校验失败，或工作进程创建前同步失败时，不再返回不存在的审计引用。保留 worker 返回的引用、已有 resume 标识，以及执行中断或状态不明时的恢复标识；不增加 worker 调用（#78）。
-main
 - Validate the selected profile CLI before both dry-run and execution (#100): reject missing or unusable launchers and missing Node bin targets, preserve PATH lookup and Windows PATHEXT/batch launchers, and apply Windows command-script path checks during preview. Dry-run never executes the candidate or changes the profile.
 - 在安装/卸载的预演与实际执行前共用 CLI 静态检查（#100）：拒绝缺失或不可用的启动文件及缺失的 Node bin 入口，保留 PATH 查找与 Windows PATHEXT/命令脚本，并在预演时同样检查 Windows 命令脚本路径。预演不启动候选程序、不修改 profile。
 
