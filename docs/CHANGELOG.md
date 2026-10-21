@@ -15,6 +15,11 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Windows 会话上的 POSIX 风格绝对 `workdir` 现在正确锚定（#318）。bash 自身把 `D:\…` 写作 `/d/…`，模型也沿用这种写法；但 `/` 开头的形态躲过了 `sessionWorkdir` 里为 `\child` 设的 `driveRooted` 分支，原样到达执行器后被 Node 的 `fs` 按**宿主进程当前盘**解读：那里没有目录时，明明存在的路径被报成 `must be an existing directory`；那里恰有同名目录时，命令会在错误的目录里 exit 0 静默执行。现在带盘符的写法（`/d/x`、`/d`）会映射为 `D:\x`，与其它绝对路径走同样的锚定与校验；无盘符的 POSIX 绝对路径（`/`、`/tmp/x`）被显式拒绝并说明原因与可接受写法，不再静默落到无关盘符。正斜杠 UNC（`//server/share`）维持原样透传，`\child` 与 `D:child` 保留 #180 的锚定语义，POSIX 会话行为不变。
 - Add concise, field-level help to discoverable core file-tool input schemas, including quoted glob-array examples, regex/literal distinctions, search defaults and preview semantics. Keep resident `read_files`, validation constraints and runtime behavior unchanged; improved guidance does not guarantee model-generated JSON correctness (#328).
 - 为按需发现的核心文件工具输入 schema 补充简短字段说明，包括带引号的 glob 数组示例、正则与字面量的区别、搜索默认值和预览语义。常驻 `read_files`、校验约束和运行时行为不变；改善指引不代表保证模型生成的 JSON 一定正确（#328）。
+- Report unsupported update locks as `LOCK_UNSUPPORTED` instead of a misleading `REVISION_CONFLICT`; actual writes on filesystems without the required lock support remain refused (#326).
+- 文件系统不支持所需更新锁时返回 `LOCK_UNSUPPORTED`，不再误报 `REVISION_CONFLICT`；此类文件系统上的实际写入仍然被拒（#326）。
+
+- Restore UNC directory enumeration for `ops_glob`, `ops_grep` and directory-level `ops_replace`: enumerate through the validated display path, verify before and after that it still names the opened directory, and report `PATH_CHANGED` instead of a possibly complete empty result (#326).
+- 恢复 `ops_glob`、`ops_grep` 与目录级 `ops_replace` 的 UNC 目录枚举：通过已校验的 display 路径枚举，并在枚举前后校验它仍指向已打开的目录；目录被替换时返回 `PATH_CHANGED`，避免将替换后的目录误报为完整结果（#326）。
 
 ## [0.4.1] — 2026-10-20 — Update locks stop leaving files behind
 

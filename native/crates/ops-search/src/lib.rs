@@ -7,6 +7,8 @@ use ops_protocol::{Failure, Request, Result};
 use ops_files::{file_path, target, relative_display, read_bytes, result, lock_and_read_for_update, atomic_write, MAX_OUTPUT_BYTES, MAX_FILE_BYTES};
 use ops_files as publication;
 use cap_fs_ext::DirExt;
+#[cfg(windows)]
+use cap_fs_ext::MetadataExt;
 use regex::RegexBuilder;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -71,19 +73,19 @@ fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: us
         *truncated = true;
         return Ok(());
     }
-    let mut names = Vec::new();
     // A directory can change while it is being read. A broken child directory
     // is skipped, while failure to enumerate the requested root remains visible.
-    let entries = match directory.entries() {
+    let mut entries = match read_entries(&directory, display) {
         Ok(entries) => entries,
-        Err(error) if depth == 0 => return Err(error.into()),
+        Err(error) if depth == 0 => return Err(error),
         Err(_) => return Ok(()),
     };
-    for entry in entries {
-        let Ok(entry) = entry else { continue };
-        let Ok(name) = entry.file_name().into_string() else { continue };
-        names.push(name);
+    let mut names = Vec::new();
+    while let Some(name) = entries.next_name() {
+        if let Ok(name) = name { names.push(name); }
     }
+    #[cfg(windows)]
+    if unc_display(display) { unchanged_directory(&directory, display)?; }
     names.sort();
     for name in names {
         if crate::file_path::validate_name(&name).is_err() || name == ".git" { continue; }
@@ -112,6 +114,76 @@ fn visit_dir(root: &Path, display: &Path, directory: cap_std::fs::Dir, depth: us
     }
     Ok(())
 }
+
+/// Entry names of one directory. The caller sorts them.
+///
+/// cap-std's Windows enumerator maps the open handle back to a path, strips a
+/// four-character `\\?\` prefix and joins `.`. For the verbatim
+/// `\\?\UNC\server\share` form that leaves the relative `UNC\server\share`, so
+/// `Dir::entries` fails with `ERROR_PATH_NOT_FOUND` on every UNC directory
+/// (cap-std issue #348). The walk only needs names here: every candidate is
+/// still checked and opened through the no-follow handle, so a UNC directory is
+/// enumerated through its absolute path while the handle keeps driving the
+/// traversal. cap-std's own Windows enumerator is path-based after mapping the
+/// handle, so this adds no path step it did not already take.
+pub(crate) enum DirectoryEntries {
+    #[cfg(windows)]
+    Ambient(std::fs::ReadDir),
+    Handle(cap_std::fs::ReadDir),
+}
+impl DirectoryEntries {
+    fn next_name(&mut self) -> Option<std::io::Result<String>> {
+        match self {
+            #[cfg(windows)]
+            Self::Ambient(entries) => entries.next().map(|entry| entry.and_then(|entry| entry.file_name().into_string().map_err(|_| non_utf8_name()))),
+            Self::Handle(entries) => entries.next().map(|entry| entry.and_then(|entry| entry.file_name().into_string().map_err(|_| non_utf8_name()))),
+        }
+    }
+}
+fn non_utf8_name() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, "Non-UTF8 path")
+}
+pub(crate) fn read_entries(directory: &cap_std::fs::Dir, display: &Path) -> Result<DirectoryEntries> {
+    #[cfg(not(windows))]
+    let _ = display;
+    #[cfg(windows)]
+    if unc_display(display) {
+        unchanged_directory(directory, display)?;
+        return Ok(DirectoryEntries::Ambient(fs::read_dir(display)?));
+    }
+    Ok(DirectoryEntries::Handle(directory.entries()?))
+}
+
+/// Fail when `display` no longer resolves to the directory `directory` holds.
+///
+/// The UNC enumeration reads names through the display path while every
+/// per-entry check uses the opened handle. A rename plus a new directory at the
+/// old path would mix those two views and could report a complete empty scan.
+#[cfg(windows)]
+fn unchanged_directory(directory: &cap_std::fs::Dir, display: &Path) -> Result<()> {
+    let current = cap_std::fs::Dir::open_ambient_dir(display, cap_std::ambient_authority())?;
+    let held = directory.dir_metadata()?;
+    let current = current.dir_metadata()?;
+    if held.dev() != current.dev() || held.ino() != current.ino() {
+        return Err(Failure::new(
+            "PATH_CHANGED",
+            "The directory changed while it was being enumerated; no complete result is available. Restart the query.",
+        ));
+    }
+    Ok(())
+}
+
+/// Whether `display` names a UNC share: `\\server\share`, `//server/share`, or
+/// the verbatim `\\?\UNC\server\share` form.
+#[cfg(windows)]
+fn unc_display(display: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    matches!(
+        display.components().next(),
+        Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::UNC(..) | Prefix::VerbatimUNC(..))
+    )
+}
+
 fn positive_patterns(patterns: &[String]) -> impl Iterator<Item = &String> { patterns.iter().filter(|p| !p.starts_with('!')) }
 fn matches_any(root: &Path, file: &Path, patterns: &[String]) -> bool {
     let name = relative_display(root, file);
@@ -231,6 +303,78 @@ fn replace(request: &Request) -> Result<Value> {
 mod tests {
     use super::*;
     use std::time::{Duration, UNIX_EPOCH};
+
+    #[cfg(windows)]
+    #[test]
+    fn unc_shares_use_absolute_enumeration() {
+        for unc in [r"\\server\share\dir", r"\\?\UNC\server\share\dir", "//server/share/dir"] {
+            assert!(unc_display(Path::new(unc)), "{unc} names a UNC share");
+        }
+        for local in [r"C:\dir", r"\\?\C:\dir", r"\\?\Volume{b75e2c83-0000-0000-0000-602f00000000}\dir"] {
+            assert!(!unc_display(Path::new(local)), "{local} does not name a UNC share");
+        }
+    }
+
+    /// The UNC workaround enumerates by display path but checks entries through
+    /// the opened handle; a replacement directory at the old path must not be
+    /// mistaken for the one held open.
+    #[cfg(windows)]
+    #[test]
+    fn moved_directory_is_not_the_directory_held_open() {
+        let fixture = Fixture::new("moved-directory");
+        let live = fixture.root.join("live");
+        std::fs::create_dir(&live).unwrap();
+        let held = {
+            use std::os::windows::fs::OpenOptionsExt;
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(7)
+                .custom_flags(0x02000000)
+                .open(&live)
+                .unwrap();
+            cap_std::fs::Dir::from_std_file(file)
+        };
+        unchanged_directory(&held, &live).unwrap();
+        std::fs::rename(&live, fixture.root.join("moved")).unwrap();
+        std::fs::create_dir(&live).unwrap();
+        let error = unchanged_directory(&held, &live).unwrap_err();
+        assert_eq!(error.code, "PATH_CHANGED");
+    }
+
+    /// Run against a real share with `DSH_OPS_UNC_TEST_ROOT` pointing at a
+    /// writable UNC directory. cap-std's handle-to-path round trip used to turn
+    /// this into a relative `UNC\...` path and fail with `ERROR_PATH_NOT_FOUND`.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires DSH_OPS_UNC_TEST_ROOT to name a writable UNC directory"]
+    fn unc_directory_is_walked_for_glob_grep_and_replace() {
+        let root = std::env::var("DSH_OPS_UNC_TEST_ROOT").expect("set DSH_OPS_UNC_TEST_ROOT to a writable UNC directory");
+        let fixture = PathBuf::from(&root).join(format!("dsh-ops-unc-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&fixture).unwrap();
+        std::fs::write(fixture.join("a.txt"), b"alpha\n").unwrap();
+        std::fs::write(fixture.join("b.txt"), b"alpha\n").unwrap();
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        }
+        let _cleanup = Cleanup(fixture.clone());
+        let fixture = fixture.to_str().unwrap().to_string();
+        let run = |tool: &str, args: serde_json::Value| {
+            let request = serde_json::from_value(json!({"root": root, "scope": "unc-test", "tool": tool, "args": args})).unwrap();
+            dispatch(&request).unwrap()
+        };
+        let glob = run("glob", json!({"path": fixture, "pattern": ["*"]}));
+        assert_eq!(glob["status"], "completed", "{glob}");
+        assert_eq!(glob["items"].as_array().map(Vec::len), Some(2), "{glob}");
+        let grep = run("grep", json!({"path": fixture, "pattern": "alpha", "glob": ["*.txt"]}));
+        assert_eq!(grep["status"], "completed", "{grep}");
+        assert_eq!(grep["matched"], 2, "{grep}");
+        let replace = run("replace", json!({"path": fixture, "pattern": "alpha", "replacement": "beta",
+            "glob": ["*.txt"], "dryRun": true}));
+        assert_eq!(replace["status"], "completed", "{replace}");
+        assert_eq!(replace["dryRun"], true, "{replace}");
+        assert_eq!(replace["matched"], 2, "{replace}");
+    }
 
     #[test]
     fn replacement_byte_budget_handles_boundary_shrink_and_checked_arithmetic() {
