@@ -135,9 +135,10 @@ export function toVerifyChecks(outcome) {
 
 /**
  * A streaming fold of the event stream into the schema's `metrics` fields, deliberately
- * narrow: steps, tool calls, the five usage buckets, the all-or-nothing `usageReported`
- * and the last turn's end reason. Prompt-shape analysis belongs to the aggregate slice;
- * this keeps its invariant — one step without usage makes the totals a lower bound.
+ * narrow: steps, tool calls, tool errors, the five usage buckets, the all-or-nothing
+ * `usageReported` and the last turn's end reason. Prompt-shape analysis belongs to the
+ * aggregate slice; this keeps its invariant — one step without usage makes the totals a
+ * lower bound.
  * @returns {{push(line: string): void, finish(): object}} the fold.
  */
 function createFold() {
@@ -145,6 +146,7 @@ function createFold() {
     steps: 0,
     stepsWithUsage: 0,
     toolCalls: 0,
+    toolErrors: 0,
     toolCallsByName: Object.create(null),
     usage: emptyUsage(),
     turnEndReason: null,
@@ -175,13 +177,16 @@ function createFold() {
         state.toolCalls += 1
         const name = typeof event.tool === 'string' && event.tool !== '' ? event.tool : '<unknown>'
         state.toolCallsByName[name] = (state.toolCallsByName[name] ?? 0) + 1
+        return
       }
+      if (event.type === 'tool_result' && event.status === 'error') state.toolErrors += 1
     },
     finish() {
       return {
         steps: state.steps,
         stepsWithUsage: state.stepsWithUsage,
         toolCalls: state.toolCalls,
+        toolErrors: state.toolErrors,
         toolCallsByName: { ...state.toolCallsByName },
         usage: { ...state.usage },
         usageReported: state.steps > 0 && state.stepsWithUsage === state.steps,
@@ -306,6 +311,7 @@ export async function runSession(spec, options = {}) {
       timedOut: facts.timedOut,
       steps: 0,
       toolCalls: 0,
+      toolErrors: 0,
       usage: emptyUsage(),
       usageReported: false,
       toolCallsByName: {},
@@ -481,6 +487,7 @@ export async function runSession(spec, options = {}) {
       timedOut: facts.timedOut,
       steps: counted.steps,
       toolCalls: counted.toolCalls,
+      toolErrors: counted.toolErrors,
       usage: counted.usage,
       usageReported: counted.usageReported,
       toolCallsByName: counted.toolCallsByName,

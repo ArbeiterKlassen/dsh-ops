@@ -67,7 +67,7 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 | --- | --- | --- |
 | `setup` | `bench/setup.mjs` | 自检 + 幂等准备两侧 profile(`bench-base` / `bench-ops`),打印跑 sweep 的那一条命令 |
 | `ab` | `bench/run.mjs` → `bench/compare.mjs` | 先基线、再候选、再比较,三步共用**一个** `bench/runs/benchmark-test-NN` 组目录 |
-| `report` | `bench/compare.mjs` | 从已封存的 `run.json` 渲染 `report.md` |
+| `report` | `bench/compare.mjs` | 从已封存的 `run.json` 渲染报告(`DSH-OPS Benchmark Report <UTC>.md`) |
 | `panel` | `bench/report/panel.mjs` | 生成/打开一个只读 `run.json` 的 `panel.html` |
 | `tools` | `bench/tools/index.mjs` | 无模型的工具级确定性对比 |
 
@@ -91,6 +91,12 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 `--task <id>`(可重复)、`--repeat <N>`、`--folder <name>`、`--base <label>` / `--cand <label>`
 (默认 `bench-base` / `bench-ops`)、`--show`,其余旗标原样交给 runner。
 
+每次 dsh 调用默认带上 `bench/llm.patch.yml`:换文件用 `--llm-patch <path>`,确实不要 overlay(两侧各跑
+各自 profile 自带的路由)用 `--no-llm-patch`,sweep 会把"两侧不共享任何路由"这句说出口。默认 overlay
+不存在、又没给 `--no-llm-patch` 时,runner 在 spawn 之前退 `2` 并点名文件和两条出路 —— 静默换一条路由
+开跑的代价是:两臂一模一样,报告里根本看不出来。默认 overlay 是隐式选中的,所以归档的 `argv` 会把
+`--llm-patch <path>` 补进去,免得一份说不清走了哪条路由的 summary 被当成证据。
+
 `--show` 打印将执行的三条命令并立刻退出(纯函数,不写任何东西、不跑任何会话)。组号在这里**只分配一次**:
 如果每侧各自按时间戳分配目录,两侧会落进不同的组,最后什么都配对不上。
 
@@ -98,7 +104,12 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 
 两侧各自可以是 label(`bench/runs/*-<label>`,含一层组目录,最新时间戳优先)、一个 run 目录、或一个
 `run.json` / 旧版 `summary.json` 路径。`--folder` 限定组,`--runs` 换根,`--aggregate median|min`,
-`--json` 输出比较文档而不是报告,`--out <file>`(`-` 只到 stdout;默认 `<cand 目录>/report.md`)。
+`--json` 输出比较文档而不是报告,`--out <file>`(`-` 只到 stdout)。默认落点是**当次跑的组目录**,
+文件名带写入时刻:一次 `bench/runs/<组>/<stamp>-<label>` 里的跑,报告写成
+`bench/runs/<组>/DSH-OPS Benchmark Report <UTC>.md`(UTC 与目录名同形,冒号换横线,如
+`2026-10-20T12-36-38Z`),所以 `full-sweep-4` 的报告就在 `bench/runs/full-sweep-4/`,不在某个 arm 目录里;
+重跑一次就是一份新报告,不覆盖上一份。不在组目录下的跑(直接挂在 `bench/runs/` 下)没有可上提的组,
+报告留在自己的 run 目录里。
 
 ### `panel`
 
@@ -112,21 +123,30 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 `--temp-dir`、`--scale`、`--timeout-ms`(这套旗标沿用 #103 的参数面,随接线片一并落地)。预热 1 次 +
 5 轮交替配对,同二进制两侧时它只证明"harness 没坏、输出可重复",**不是**性能基准。
 
-## 如何读 `report.md`
+## 如何读报告(`DSH-OPS Benchmark Report <UTC>.md`)
 
-按这个顺序读,不要跳:
+按这个顺序读,不要跳(报告正文与标题都是英文,小节名照英文读):
 
-1. **结论**:结论条一行给通过率、配对 token Δ、噪声底、方向与门禁,顺序就是判决顺序;
-2. **每任务配对**:`task | base | cand | Δ% | 配对/考虑 | 排除 | pass(base→cand) | 方向`;`TOTAL` 行后还有
-   一行**几何均值 Δ**(每任务等权);
-3. **被排除的配对(成本不统计)**:多少对因至少一侧未通过被排除,以及 base / cand / 两侧各占多少 ——
-   通过率一变,这里就是成本口径的地基;
-4. **A/A 噪声带**:半宽、区间、方法(`measured` 来自 `--noise`,或 `provided` 来自 `--noise-floor-pct`)、
-   配对数与任务样本;未知时这一段直接说明"方向一律弃权";
-5. **token 归因(诊断,不改判决)** 与 **每任务 bucket 明细** / **usage 拆分** / **工具调用**:都是诊断,
-   把 Δ 拆成固定开销 / 额外步数 / 残差,或按 input / output / cacheRead 分桶;
-6. **警告**与**证据**:前者列出无法支撑结论的行(如某侧丢了 `step_end.usage`),后者给出 `run.json` 与
-   归档路径。
+1. **`Per-task pairs`**:`task | base | cand(Δ%) | steps base→cand(Δ%) | tool calls base→cand(Δ%) | tool errors | pass`;
+   数值单元格自带括号 Δ%,不单列;steps / tool calls 取该侧全部 repeat 的中位数(`--aggregate min` 时取最小值),
+   tool errors 与 pass 统计全部 repeat,配对可用数/排除数不再进这张表(它们留在 JSON 与门禁理由里);
+   表格以 `TOTAL` 行收尾,没有单独的 geomean 行(几何均值仍在 JSON 里);
+2. **`Tool calls (per-side overlap counts)`**:紧跟第一个表 —— 每个工具一行,`base` / `cand` 是整轮合计,
+   后面每个 task 一列,格子写成 `base → cand`;`ops_*` 工具计数上升标绿、下降标红,
+   其它工具相反(下降绿、上升红);两侧都没调用的格子写 `—`,相等不标色;
+3. **`Per-task bucket detail`** / **`usage split`** / **`steps and tool calls`**(都是诊断,不改判决):
+   按 input / output / cacheRead 分桶看 Δ,或给出每任务的步数与工具调用数;
+4. **`Warnings`**与**`Evidence`**:前者列出无法支撑结论的行(如某侧丢了 `step_end.usage`),后者给出 `run.json` 与
+   归档路径;
+5. **`Conclusion`**(报告的最后一段):通过率、配对 token Δ、噪声底、方向、门禁与判定理由,顺序就是判决顺序。
+
+标题下没有汇总行:判决只写在结尾的 **`Conclusion`** 里,标题之后直接进数据。
+
+所有百分数按方向着色:**小于等于 0 绿、大于 0 红**(与 `panel.html` 同一套色,写成行内 `style`)。
+着色只是包一层 `<span>`,数字本身不被改写;GitHub 会剥掉 `style`,在那边退化成纯文本。
+
+**工具调用**表的颜色看"采用方向",不是数字本身的涨跌:`ops_*` 工具计数上升是绿(插件工具接住了),下降是红;
+其它工具上升是红(候选仍在伸手够插件没覆盖的工具),下降是绿。计数相等不标色,两侧都没调用写 `—`。
 
 ## 面板怎么读(五个标签)
 
@@ -221,7 +241,7 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
   所以绿只说明"harness 还能驱动真实 worker、worker 两次答得一样",**不构成任何性能结论**;
 - **不阻塞**:该作业 `continue-on-error: true`,不进必需状态检查,聚合门禁不计它;
 - **artifact**:证据以 `bench-smoke-report` 上传(沿用 `tools-trial-report` 的命名),含 `bench/runs/smoke/**`
-  以及存在时的 `run.json` / `report.md` / `panel.html`;
+  以及存在时的 `run.json` / `DSH-OPS Benchmark Report <UTC>.md` / `panel.html`;
 - **模型驱动的 sweep 绝不在 CI 跑**:它要断言成本方向,那是本地的人类判断。
 
 ## 为什么 bench 不随包发布

@@ -92,7 +92,7 @@ function rig({ tokens = () => 100, pass = () => true, fail = null, onCall = null
     running += 1
     high = Math.max(high, running)
     const index = calls.length
-    calls.push({ taskId: spec.task.id, repeatIndex: spec.repeatIndex, arm: spec.arm, profile: options.profile, outDir: options.outDir })
+    calls.push({ taskId: spec.task.id, repeatIndex: spec.repeatIndex, arm: spec.arm, profile: options.profile, outDir: options.outDir, llmPatch: options.llmPatch ?? null })
     await tick()
     running -= 1
     if (onCall) await onCall({ spec, options, index, calls })
@@ -135,6 +135,13 @@ function tasksDir(root, repeat = 2) {
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'csv-sum.task.json'), JSON.stringify(task('csv-sum', repeat)))
   return dir
+}
+
+/** An overlay file inside a temp root: what `setup` would have created for a real sweep. */
+function overlayIn(root, name = 'llm.patch.yml') {
+  const file = path.join(root, name)
+  fs.writeFileSync(file, '- id: agent-default-model\n  config:\n    provider: bench-server\n')
+  return file
 }
 
 await test('armOrder flips with the parity of the repeat, and rejects a repeat of zero', () => {
@@ -394,7 +401,7 @@ await test('main: --show prints the flip without running; a missing seal refuses
     const tasks = tasksDir(root)
     const runsDir = path.join(root, 'runs')
     const scripted = rig()
-    const base = { tasksDir: tasks, runsDir, runSession: scripted.runSession, installSignals: false, now: NOW }
+    const base = { tasksDir: tasks, runsDir, runSession: scripted.runSession, installSignals: false, now: NOW, llmOverlay: overlayIn(root) }
 
     const out = sink()
     assert.equal(await main(['--show'], { ...base, ...out }), EXIT.ok)
@@ -425,11 +432,13 @@ await test('main: a sealed A/A sweep exits 0 with the measured floor; a broken o
     const tasks = tasksDir(root, 2)
     const runsDir = path.join(root, 'runs')
     const aaOut = sink()
+    const overlay = overlayIn(root)
     const scripted = rig({ tokens: (spec) => (spec.arm === 'bench-base-aa' && spec.repeatIndex === 1 ? 120 : 100) })
     const code = await main(['--aa', '--repeat', '2'], {
       ...aaOut,
       tasksDir: tasks,
       runsDir,
+      llmOverlay: overlay,
       runSession: scripted.runSession,
       resolveEntry: () => ENTRY,
       installSignals: false,
@@ -447,6 +456,7 @@ await test('main: a sealed A/A sweep exits 0 with the measured floor; a broken o
       ...brokenOut,
       tasksDir: tasks,
       runsDir,
+      llmOverlay: overlay,
       runSession: broken.runSession,
       resolveEntry: () => ENTRY,
 
@@ -469,6 +479,7 @@ await test('main: Ctrl-C during a session stops the sweep, reports it, and exits
       ...out,
       tasksDir: tasks,
       runsDir: path.join(root, 'runs'),
+      llmOverlay: overlayIn(root),
       runSession: scripted.runSession,
       resolveEntry: () => ENTRY,
       interrupt,
@@ -490,6 +501,7 @@ await test('main --no-seal runs anyway and says out loud that no run.json was wr
       ...out,
       tasksDir: tasksDir(root, 1),
       runsDir: path.join(root, 'runs'),
+      llmOverlay: overlayIn(root),
       runSession: scripted.runSession,
       resolveEntry: () => ENTRY,
       installSignals: false,
@@ -498,6 +510,68 @@ await test('main --no-seal runs anyway and says out loud that no run.json was wr
     assert.equal(code, EXIT.ok)
     assert.match(out.text(), /no — run\.json was not written/)
     assert.equal(scripted.calls.length, 2, 'both arms still ran')
+  })
+})
+
+await test('main: the sweep injects the operator overlay by default, records it, and refuses without one', async () => {
+  await withTempDir('bench-main-overlay', async (root) => {
+    const runner = { tasksDir: tasksDir(root, 1), runsDir: path.join(root, 'runs'), resolveEntry: () => ENTRY, installSignals: false, now: NOW }
+    const overlay = overlayIn(root)
+
+    // The default is the file `setup` creates, every session is handed it, and the archived
+    // command line names it — the operator never typed the flag that made the run valid.
+    const seeded = sink()
+    const scripted = rig()
+    let sealed = null
+    const code = await main(['--repeat', '1'], {
+      ...runner, ...seeded, runSession: scripted.runSession, llmOverlay: overlay,
+      seal: (context) => { sealed = context; return { path: 'run.json' } },
+    })
+    assert.equal(code, EXIT.ok)
+    assert.deepEqual(scripted.calls.map((call) => call.llmPatch), [overlay, overlay], 'both arms get the overlay')
+    assert.deepEqual(sealed.meta.argv.slice(-2), ['--llm-patch', overlay], 'the summary records the overlay the operator did not type')
+    assert.match(seeded.text(), /\[ab\] patch   : .*llm\.patch\.yml/)
+
+    // `--no-llm-patch` is how an operator says the profiles' own routes are what they mean.
+    const optedOut = sink()
+    const noPatch = rig()
+    assert.equal(await main(['--repeat', '1', '--no-llm-patch'], {
+      ...runner, ...optedOut, runSession: noPatch.runSession, llmOverlay: overlay, seal: () => ({}),
+    }), EXIT.ok)
+    assert.deepEqual(noPatch.calls.map((call) => call.llmPatch), [null, null], 'no overlay is injected')
+    assert.match(optedOut.text(), /none \(--no-llm-patch\)/)
+
+    // No overlay and no opt-out: refused before anything is spawned, naming both ways out.
+    const missing = sink()
+    const untouched = rig()
+    const absent = path.join(root, 'nope.yml')
+    assert.equal(await main(['--repeat', '1'], {
+      ...runner, ...missing, runSession: untouched.runSession, llmOverlay: absent, seal: () => ({}),
+    }), EXIT.usage)
+    assert.match(missing.both(), /there is no .*nope\.yml/)
+    assert.match(missing.both(), /--no-llm-patch/)
+    assert.equal(untouched.calls.length, 0, 'a refused sweep spends no token')
+
+    // The two flags contradict, and an overlay named by the operator has to exist.
+    const both = sink()
+    assert.equal(await main(['--llm-patch', overlay, '--no-llm-patch'], { ...runner, ...both, seal: () => ({}) }), EXIT.usage)
+    assert.match(both.both(), /pass one of them/)
+    const ghost = sink()
+    assert.equal(await main(['--llm-patch', path.join(root, 'ghost.yml')], { ...runner, ...ghost, seal: () => ({}) }), EXIT.usage)
+    assert.match(ghost.both(), /does not exist/)
+
+    // `--show` still prints a plan, and says out loud when that plan cannot run as it stands.
+    const plan = sink()
+    assert.equal(await main(['--show'], { ...runner, ...plan, llmOverlay: absent }), EXIT.ok)
+    assert.match(plan.text(), /\[ab\] patch   : none/)
+    assert.match(plan.text('err'), /cannot run as it stands/)
+    // A flag the operator typed wrong is a usage error even in that plan-only mode.
+    const planClash = sink()
+    assert.equal(await main(['--show', '--llm-patch', overlay, '--no-llm-patch'], { ...runner, ...planClash }), EXIT.usage)
+    assert.match(planClash.both(), /pass one of them/)
+    const planGhost = sink()
+    assert.equal(await main(['--show', '--llm-patch', path.join(root, 'ghost.yml')], { ...runner, ...planGhost }), EXIT.usage)
+    assert.match(planGhost.both(), /does not exist/)
   })
 })
 

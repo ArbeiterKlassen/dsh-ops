@@ -158,6 +158,7 @@ function failedRow(arm, pair, error, clock, spec) {
     timedOut: false,
     steps: 0,
     toolCalls: 0,
+    toolErrors: 0,
     usage: null,
     usageReported: false,
     toolCallsByName: {},

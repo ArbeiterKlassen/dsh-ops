@@ -177,6 +177,7 @@ await test('archive + metrics + trace: NDJSON appended verbatim, usage folded, t
       { type: 'status', phase: 'step_end', step: 1, turn: 1, usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 2, cacheWriteTokens: 1 } },
       { type: 'tool_call', tool: 'read', input: { path: 'src' } },
       { type: 'tool_result', status: 'ok', result: 'ok' },
+      { type: 'tool_result', status: 'error', result: 'boom' },
       { type: 'status', phase: 'step_end', step: 2, turn: 1 },
       { type: 'status', phase: 'turn_end', turn: 1, reason: { kind: 'completed' } },
       { type: 'final', text: 'done' },
@@ -198,6 +199,7 @@ await test('archive + metrics + trace: NDJSON appended verbatim, usage folded, t
 
     assert.equal(row.steps, 2)
     assert.equal(row.toolCalls, 1)
+    assert.equal(row.toolErrors, 1, 'a tool result whose status is error is counted as a tool error')
     assert.deepEqual(row.toolCallsByName, { read: 1 })
     assert.deepEqual(row.usage, { inputTokens: 10, outputTokens: 5, cacheReadTokens: 2, cacheWriteTokens: 1, reasoningTokens: 0 })
     assert.equal(row.usageReported, false, 'one step without usage degrades the whole row instead of understating it')

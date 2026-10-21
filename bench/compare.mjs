@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 /**
- * The comparison report: two archived runs in, one `report.md` out.
+ * The comparison report: two archived runs in, one timestamped markdown file out.
+ *
+ * The artifact lands where a reviewer looks for a sweep, not inside the arm directory
+ * that measured half of it: a run in `bench/runs/<group>/<stamp>-<label>` writes
+ * `bench/runs/<group>/DSH-OPS Benchmark Report <UTC>.md`, and a run with no group folder
+ * above it keeps the report in its own directory. The file name carries the write
+ * instant (the same UTC shape as a run directory) so a second comparison never
+ * overwrites the first; the rendered text stays clock-free and diffable.
  *
  * The verdict is *not* computed here. `lib/compare-core.mjs` owns every rule — pass
  * rate first, cost only over pairs that passed on both sides, and a direction only
@@ -8,14 +15,15 @@
  * the two sides, calls it, and renders what it returned. With no noise floor the
  * report says so and abstains from every cost direction (`noise-floor-unknown`).
  *
- * The report leads with the 结论条 a reviewer reads first (pass rate, paired token Δ,
- * the noise band and whether a direction is readable), then the per-task paired
- * table, the pairs a failed side forced out of the cost statistics, the A/A band,
- * and the diagnostic sections #183 carried — per-task bucket detail, the usage-bucket
- * split and the token attribution — which say *why* the number moved (a bigger
- * per-request prompt is a tool-schema cost, extra steps are a model-behaviour cost,
- * fatter tool results are a context cost; the fixes are opposite, so the report has
- * to say which one it was). None of the diagnostics can change the gate.
+ * The report opens with its fixed title and then the evidence a reviewer works
+ * through — the per-task paired table, the pairs a failed side forced out of the cost
+ * statistics, the A/A band, and the diagnostic sections #183 carried (per-task bucket
+ * detail, the usage-bucket split and the token attribution), which say *why* the
+ * number moved (a bigger per-request prompt is a tool-schema cost, extra steps are a
+ * model-behaviour cost, fatter tool results are a context cost; the fixes are
+ * opposite, so the report has to say which one it was) — and closes with the conclusion:
+ * pass rate, paired token Δ, the noise band, whether a direction is readable and the
+ * gate. None of the diagnostics can change the gate.
  *
  * Time is evidence only: the comparison never reads `durationMs`, and nothing here
  * turns a duration into a verdict.
@@ -44,6 +52,13 @@ const SEALED_RUN = 'run.json'
 const LEGACY_SUMMARY = 'summary.json'
 /** The summary document's format tag. */
 const SUMMARY_FORMAT = 'dsh-ops-bench-summary-v1'
+/** The report's fixed title; the two sides are named in Evidence, not in the heading. */
+const REPORT_TITLE = '# DSH-OPS Benchmark Report'
+/** The file name stem: the title's words, so the artifact is recognizable in a folder listing. */
+const REPORT_STEM = 'DSH-OPS Benchmark Report'
+/** The panel's palette: the report and `panel.html` must agree on what green and red mean. */
+const GREEN = '#3fb950'
+const RED = '#f85149'
 
 /**
  * Exit codes, kept in step with `EXIT` in `bench/cli.mjs` (which forwards whatever
@@ -69,7 +84,9 @@ const USAGE = `usage: node bench/compare.mjs <base> <cand> [options]
                      direction is withheld (noise-floor-unknown)
   --noise <a> <b>    measure the A/A noise floor from two baseline runs
   --json             print the comparison document as JSON instead of the report
-  --out <file>       where the rendered artifact goes (default <cand dir>/report.md;
+  --out <file>       where the rendered artifact goes (default: the sweep's group
+                     folder, named "DSH-OPS Benchmark Report <UTC>.md" — a run with no
+                     group folder above it keeps the report in its own directory;
                      "-" is stdout only). With --json the file carries the JSON.
   --help             this text
 
@@ -307,6 +324,18 @@ function number(value) {
   return formatNumber(value)
 }
 
+/**
+ * A step or tool-call count: an integer, or one decimal when an even repeat count
+ * halves the median. Rounding 12.5 → 13 would print "13 → 13 (+4.0%)", a cell that
+ * contradicts its own Δ%.
+ * @param {number|null} value - the count.
+ * @returns {string} the display form.
+ */
+function count(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a'
+  return Number.isInteger(value) ? formatNumber(value) : value.toFixed(1)
+}
+
 /** A signed integer delta with grouping, for the diagnostic tables. */
 function signed(value) {
   if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a'
@@ -314,23 +343,46 @@ function signed(value) {
   return `${rounded > 0 ? '+' : rounded < 0 ? MINUS : ''}${Math.abs(rounded).toLocaleString('en-US')}`
 }
 
-/** A signed percent at the module's reporting precision. */
-function percent(value) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a'
-  return `${value > 0 ? '+' : value < 0 ? MINUS : ''}${Math.abs(value).toFixed(1)}%`
+/**
+ * Paint every percent inside a string the core produced. Gate reasons and warnings are
+ * quoted verbatim — the digits stay the core's, only the colour is added — so they read
+ * in the same two colours as the percents this module formats itself.
+ * @param {string} text - the core's string.
+ * @returns {string} the same text, percents wrapped.
+ */
+function paintPercents(text) {
+  return text.replace(/[+-]?\d+(?:\.\d+)?%/g, (whole) => color(whole, Number.parseFloat(whole)))
 }
 
-/** The short verdict name for one task's cost conclusion. */
-function directionLabel(cost, regressed) {
-  if (regressed) return '⚠ 回归'
-  switch (cost?.conclusion) {
-    case 'cheaper': return '更省'
-    case 'costlier': return '更贵'
-    case 'within-noise': return '噪声内'
-    case 'noise-floor-unknown': return '弃权(噪声底未知)'
-    case 'incomparable': return '不可比'
-    default: return '无变化'
-  }
+/**
+ * Paint one rendered value: a drop (or no change) is green, a rise is red — the same
+ * two colours `panel.html` uses, inline because a markdown file cannot carry a
+ * stylesheet. A value with no number behind it is returned unwrapped.
+ * @param {string} text - the rendered value.
+ * @param {number|null} value - the signed number behind it.
+ * @returns {string} the HTML span, or `text`.
+ */
+function color(text, value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return text
+  return `<span style="color:${value > 0 ? RED : GREEN}">${text}</span>`
+}
+
+/** A signed percent at the module's reporting precision, painted by its sign. */
+function percent(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a'
+  return color(`${value > 0 ? '+' : value < 0 ? MINUS : ''}${Math.abs(value).toFixed(1)}%`, value)
+}
+
+/**
+ * A percent the core stated as a bare number — a band half-width, a tolerance, a share
+ * of the delta. Printed verbatim (no sign is invented) and painted like every other
+ * percent in the report.
+ * @param {number|null} value - the number, with `%` appended as-is.
+ * @returns {string} the painted text.
+ */
+function rawPercent(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'n/a'
+  return color(`${value}%`, value)
 }
 
 /**
@@ -341,177 +393,77 @@ function directionLabel(cost, regressed) {
  */
 function directionSentence(cost) {
   if (cost.conclusion === 'incomparable') {
-    return '方向:没有两侧都通过、且 usage 完整的配对 ⇒ 成本不可比(incomparable),不读方向'
+    return 'Direction: no pair passed on both sides with complete usage ⇒ cost is incomparable; no direction is read'
   }
   if (cost.conclusion === 'noise-floor-unknown') {
-    return `方向:Δ ${percent(cost.pct)},但噪声底未知 ⇒ 弃权,不读方向(noise-floor-unknown);用 --noise-floor-pct N 或 --noise <base> <cand> 提供噪声底`
+    return `Direction: Δ ${percent(cost.pct)}, but the noise floor is unknown ⇒ abstaining, no direction is read (noise-floor-unknown); supply one with --noise-floor-pct N or --noise <base> <cand>`
   }
   if (cost.conclusion === 'within-noise') {
-    return `方向:Δ ${percent(cost.pct)} 落在噪声带 ±${cost.noiseFloorPct}% 内 ⇒ 只报区间,不读方向(within-noise)`
+    return `Direction: Δ ${percent(cost.pct)} sits inside the noise band ±${rawPercent(cost.noiseFloorPct)} ⇒ interval only, no direction is read (within-noise)`
   }
   if (cost.conclusion === 'cheaper' || cost.conclusion === 'costlier') {
-    const name = cost.conclusion === 'cheaper' ? '更省(cheaper)' : '更贵(costlier)'
-    return `方向:Δ ${percent(cost.pct)},超过噪声底 ±${cost.noiseFloorPct}% ⇒ 可读方向:${name}`
+    return `Direction: Δ ${percent(cost.pct)}, beyond the noise floor ±${rawPercent(cost.noiseFloorPct)} ⇒ readable direction: ${cost.conclusion}`
   }
-  return `方向:Δ ${percent(cost.pct)},无可读方向(${cost.conclusion ?? 'no-change'})`
+  return `Direction: Δ ${percent(cost.pct)}, no readable direction (${cost.conclusion ?? 'no-change'})`
 }
 
 /**
- * The 结论条: pass rate, paired token Δ, noise floor, direction and gate, in that order.
+ * The conclusion that closes the report: pass rate, paired token Δ, noise floor, direction
+ * and gate, in that order, plus the reasons the gate gave. It ends the document, so a
+ * reviewer meets the verdict after the evidence instead of before it.
  * @param {object} comparison - the comparison structure.
  * @returns {string[]} the section lines.
  */
 function verdictSection(comparison) {
   const { gate, totals, verdict, noiseFloor } = comparison
   const passes = `${totals.basePasses}/${totals.baseRuns} → ${totals.candPasses}/${totals.candRuns}`
-  const passLine = gate.passDropFailed
-    ? `❌ 通过率下降 ${passes}`
-    : totals.candPassRate > totals.basePassRate
-      ? `✅ 通过率上升 ${passes}`
-      : `✅ 通过率持平 ${passes}`
   const pairs = `${gate.usablePairs}/${gate.usablePairs + gate.excludedPairs}`
   const tokenLine = gate.tokensComparable && gate.costComparable
-    ? `💰 token(配对 ${pairs}):${number(totals.baseGrandTotal)} → ${number(totals.candGrandTotal)},Δ ${percent(totals.grandTotalPct)}`
-    : `💰 token:不可比(${gate.tokensComparable ? `没有两侧都通过的配对,${gate.excludedPairs} 对被排除` : '至少一侧 usage 不完整'})`
-  const noiseLine = noiseFloor.comparable
-    ? `🔬 噪声底(A/A):±${noiseFloor.pct}%(${noiseFloor.method})`
-    : '🔬 噪声底(A/A):未知'
+    ? `💰 tokens (paired ${pairs}): ${number(totals.baseGrandTotal)} → ${number(totals.candGrandTotal)}, Δ ${percent(totals.grandTotalPct)}`
+    : `💰 tokens: incomparable (${gate.tokensComparable ? `no pair passed on both sides, ${gate.excludedPairs} pair(s) excluded` : 'usage incomplete on at least one side'})`
+  const gateLine = gate.fail ? `🚦 failed (${gate.primary})` : '🚦 passed'
   const lines = [
-    `# bench compare: ${comparison.base.label ?? 'base'} → ${comparison.cand.label ?? 'cand'}`,
+    '## Conclusion',
     '',
-    `${passLine} · ${tokenLine} · ${noiseLine} · 🚦 ${gate.fail ? `门禁失败(${gate.primary})` : '门禁通过'}`,
-    '',
-    '## 结论',
-    '',
-    `- 通过率:${passes}${gate.passDropFailed ? '(下降,先于成本裁决)' : totals.candPassRate > totals.basePassRate ? '(上升)' : '(持平)'}`,
+    `- pass rate: ${passes}${gate.passDropFailed ? ' (drop; decided before cost)' : totals.candPassRate > totals.basePassRate ? ' (up)' : ' (flat)'}`,
     `- ${tokenLine.replace('💰 ', '')}`,
-    `- 噪声底(A/A):${noiseFloor.comparable ? `±${noiseFloor.pct}%,方法 \`${noiseFloor.method}\`` : '未知(noise-floor-unknown)'}`,
+    `- noise floor (A/A): ${noiseFloor.comparable ? `±${rawPercent(noiseFloor.pct)}, method \`${noiseFloor.method}\`` : 'unknown (noise-floor-unknown)'}`,
     `- ${directionSentence(verdict.cost)}`,
-    `- 门禁:\`--fail-on ${gate.failOn}\` · 回归口径 \`${gate.regressionScope}\` · 容差 ${gate.tolerancePct}% · 成本基准 \`${gate.costBasis}\``,
-    `- 口径:${comparison.aggregate} · profile ${comparison.base.profile ?? '?'} → ${comparison.cand.profile ?? '?'} · model ${comparison.base.model ?? '?'} → ${comparison.cand.model ?? '?'}`,
+    `- gate: ${gateLine} · \`--fail-on ${gate.failOn}\` · regression scope \`${gate.regressionScope}\` · tolerance ${rawPercent(gate.tolerancePct)} · cost basis \`${gate.costBasis}\``,
+    `- basis: ${comparison.aggregate} · profile ${comparison.base.profile ?? '?'} → ${comparison.cand.profile ?? '?'} · model ${comparison.base.model ?? '?'} → ${comparison.cand.model ?? '?'}`,
   ]
-  for (const reason of gate.reasons) lines.push(`- 判定理由:${reason}`)
+  for (const reason of gate.reasons) lines.push(`- reason: ${paintPercents(reason)}`)
   return lines
 }
 
 /**
- * The per-task paired table: cost plus the pass migration a reviewer scans for.
+ * The per-task paired table: cost, the behaviour behind it (steps, tool calls, tool
+ * errors) and the pass migration, all on the row a reviewer reads first.
  * @param {object} comparison - the comparison structure.
  * @returns {string[]} the section lines.
  */
 function taskSection(comparison) {
-  const { gate, totals } = comparison
+  const { totals } = comparison
+  const useMin = comparison.aggregate === 'min'
+  const keys = { steps: useMin ? 'stepsMin' : 'stepsMedian', toolCalls: useMin ? 'toolCallsMin' : 'toolCallsMedian', toolErrors: useMin ? 'toolErrorsMin' : 'toolErrorsMedian' }
+  // The change rides inside the cell it belongs to (`1,050 (+5.0%)`, `4 → 3 (−25%)`):
+  // one number per row, with its Δ% in parentheses rather than a column of its own.
+  const candCell = (value, pct) => `${number(value)}${Number.isFinite(pct) ? ` (${percent(pct)})` : ''}`
+  const deltaCell = (baseValue, candValue, pct) => `${count(baseValue)} → ${count(candValue)}${Number.isFinite(pct) ? ` (${percent(pct)})` : ''}`
+  const countCell = (baseValue, candValue) => `${count(baseValue)} → ${count(candValue)}`
+  const passCell = (side) => `${side.base.passed}/${side.base.repeats}→${side.cand.passed}/${side.cand.repeats}`
   const lines = [
-    '## 每任务配对',
+    '## Per-task pairs',
     '',
-    '成本只统计两侧都通过的对(`paired-both-passed`);Δ% 是配对成本的变化,不是全部重复的平均。',
-    '',
-    '| task | base | cand | Δ% | 配对 可用/计入 | 被排除 | pass base→cand | 方向 |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| task | base | cand (Δ%) | steps base→cand (Δ%) | tool calls base→cand (Δ%) | tool errors | pass |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
   ]
   for (const task of comparison.tasks) {
     const pair = task.paired
-    const name = task.inBase && task.inCand ? task.id : `${task.id}${task.inBase ? '(仅 base)' : '(仅 cand)'}`
-    lines.push(`| ${name} | ${number(pair.baseValue)} | ${number(pair.candValue)} | ${percent(pair.pct)} | ${pair.pairs}/${pair.considered} | ${pair.excluded.total} | ${task.base.passed}/${task.base.repeats}→${task.cand.passed}/${task.cand.repeats} | ${directionLabel(task.cost, task.regressed)} |`)
+    const name = task.inBase && task.inCand ? task.id : `${task.id}${task.inBase ? '(base only)' : '(cand only)'}`
+    lines.push(`| ${name} | ${number(pair.baseValue)} | ${candCell(pair.candValue, pair.pct)} | ${deltaCell(task.base[keys.steps], task.cand[keys.steps], task.delta.stepsPct)} | ${deltaCell(task.base[keys.toolCalls], task.cand[keys.toolCalls], task.delta.toolCallsPct)} | ${countCell(task.base[keys.toolErrors], task.cand[keys.toolErrors])} | ${passCell(task)} |`)
   }
-  const totalPairs = `${gate.usablePairs}/${gate.usablePairs + gate.excludedPairs}`
-  lines.push(`| **TOTAL** | ${number(totals.baseGrandTotal)} | ${number(totals.candGrandTotal)} | ${percent(totals.grandTotalPct)} | ${totalPairs} | ${gate.excludedPairs} | ${totals.basePasses}/${totals.baseRuns}→${totals.candPasses}/${totals.candRuns} | ${directionLabel(comparison.verdict.cost, false)} |`)
-  lines.push(`| **几何均值 Δ** | — | — | ${percent(totals.grandTotalGeomeanPct)} | — | — | — | 每任务等权 |`)
-  return lines
-}
-
-/**
- * The pairs a failed side forced out of the cost statistics — the count the issue
- * requires to be visible, so a run cannot shrink its own denominator quietly.
- * @param {object} comparison - the comparison structure.
- * @returns {string[]} the section lines.
- */
-function excludedSection(comparison) {
-  const { excluded } = comparison.pairing
-  const lines = ['## 被排除的配对(成本不统计)', '']
-  if (excluded.total === 0) {
-    lines.push('没有被排除的配对:两侧都通过的配对全部参与了成本统计。')
-  } else {
-    lines.push(`共 ${excluded.total} 对因至少一侧未通过被排除:base 失败 ${excluded.baseFailed} · cand 失败 ${excluded.candFailed} · 两侧都失败 ${excluded.bothFailed}。`, '')
-    lines.push('| task | 被排除 | base 失败 | cand 失败 | 两侧失败 |', '| --- | --- | --- | --- | --- |')
-    for (const task of comparison.tasks) {
-      const counts = task.paired.excluded
-      if (counts.total === 0) continue
-      lines.push(`| ${task.id} | ${counts.total} | ${counts.baseFailed} | ${counts.candFailed} | ${counts.bothFailed} |`)
-    }
-  }
-  const counts = comparison.pairing.counts
-  lines.push(
-    '',
-    `配对合并:键 ${counts.pairs} · 缺 base ${counts.missingBase} · 缺 cand ${counts.missingCand} · 重复键 ${counts.duplicates} · 标签不符 ${counts.labelMismatches} · 行无效 ${counts.invalid};合并${comparison.pairing.complete ? '完整' : '不完整'}。`,
-  )
-  return lines
-}
-
-/**
- * The A/A band: what "nothing changed" looked like, or an explicit statement that
- * it is unknown and every direction is therefore withheld.
- * @param {object} comparison - the comparison structure.
- * @returns {string[]} the section lines.
- */
-function noiseSection(comparison) {
-  const noise = comparison.noiseFloor
-  const lines = ['## A/A 噪声带', '']
-  if (!noise.comparable) {
-    lines.push(
-      '噪声底未知 ⇒ 没有可读的区间,成本方向一律弃权(`noise-floor-unknown`);报告只给测到的 Δ,不给方向。',
-      '',
-      '提供方式:`--noise-floor-pct N` 固定一个已测量的噪声底,或 `--noise <base> <cand>` 用两次基线运行现测。',
-    )
-    return lines
-  }
-  lines.push(
-    `半宽 ±${noise.pct}% · 区间 [${percent(noise.band.low)}, ${percent(noise.band.high)}] · 方法 \`${noise.method}\` · 配对 ${noise.pairs} · 任务样本 ${noise.samples}${noise.medianAbsPct === null ? '' : ` · 中位幅度 ${noise.medianAbsPct}%`}`,
-    '',
-    'Δ 只有超过这个半宽才读方向;带内一律只报区间。',
-  )
-  if (noise.method === 'provided') lines.push('', '来源是外部提供(`--noise-floor-pct`),不是本次测量。')
-  if (noise.perTask.length > 0) {
-    lines.push('', '| task | base | cand | Δ% | 配对 |', '| --- | --- | --- | --- | --- |')
-    for (const entry of noise.perTask) lines.push(`| ${entry.id} | ${number(entry.base)} | ${number(entry.cand)} | ${percent(entry.pct)} | ${entry.pairs} |`)
-  }
-  return lines
-}
-
-/**
- * The token attribution: how the TOTAL delta splits into the per-request fixed cost,
- * the extra steps, and what neither explains. Diagnostic only — it never fails a run.
- * @param {object} comparison - the comparison structure.
- * @returns {string[]} the section lines.
- */
-function attributionSection(comparison) {
-  const overhead = comparison.overhead
-  const lines = ['## token 归因(诊断,不改判决)', '']
-  if (!overhead.comparable) {
-    lines.push('Skipped:至少一侧没有 prompt 采集(`metrics.prompt`),无法把 Δ 拆成固定开销 / 额外步数 / 残差。')
-    return lines
-  }
-  lines.push(
-    `可归因任务 ${overhead.comparableTasks}/${overhead.tasks}(首步 prompt 是唯一不带历史的请求,固定开销按它计)。`,
-    '',
-    `归因覆盖全部 ${overhead.tasks} 个有 prompt 采集的任务(含未进入成本统计的配对),所以它的合计与配对 token Δ 可能相差被排除任务的量。`,
-    '',
-    '| 项 | tokens Δ | 读法 |',
-    '| --- | --- | --- |',
-    `| 每请求固定开销 | ${signed(overhead.fixedOverheadTokens)} | 首步 prompt Δ × cand 步数:工具 schema / 提示策略 |`,
-    `| 额外步数 | ${signed(overhead.extraStepsTokens)} | Δ步数 × base 首步 prompt:模型行为 |`,
-    `| 残差 | ${signed(overhead.residualTokens)} | 上下文增长 / 工具返回等前两项未解释的部分 |`,
-    `| 输出 | ${signed(overhead.outputDelta)} | 模型输出 |`,
-    `| 合计(prompt + 输出) | ${signed(overhead.totalDelta)} | 与配对 token Δ 同向、同量级(差额来自被排除的任务) |`,
-  )
-  const rows = comparison.tasks.filter((task) => task.overhead?.comparable === true)
-  if (rows.length > 0) {
-    lines.push('', '### 每任务归因', '', '| task | 固定开销 Δ | 额外步数 Δ | 残差 Δ | 输出 Δ | 合计 Δ |', '| --- | --- | --- | --- | --- | --- |')
-    for (const task of rows) {
-      const entry = task.overhead
-      lines.push(`| ${task.id} | ${signed(entry.fixedOverheadTokens)} | ${signed(entry.extraStepsTokens)} | ${signed(entry.residualTokens)} | ${signed(entry.outputDelta)} | ${signed(entry.totalDelta)} |`)
-    }
-  }
+  lines.push(`| **TOTAL** | ${number(totals.baseGrandTotal)} | ${candCell(totals.candGrandTotal, totals.grandTotalPct)} | ${deltaCell(totals.baseSteps, totals.candSteps, percentChange(totals.baseSteps, totals.candSteps))} | ${deltaCell(totals.baseToolCalls, totals.candToolCalls, percentChange(totals.baseToolCalls, totals.candToolCalls))} | ${countCell(totals.baseToolErrors, totals.candToolErrors)} | ${totals.basePasses}/${totals.baseRuns}→${totals.candPasses}/${totals.candRuns} |`)
   return lines
 }
 
@@ -525,9 +477,7 @@ function bucketSection(comparison) {
   const keys = { input: useMin ? 'inputMin' : 'inputMedian', output: useMin ? 'outputMin' : 'outputMedian', cacheRead: useMin ? 'cacheReadMin' : 'cacheReadMedian' }
   const cell = (baseValue, candValue) => `${number(baseValue)} → ${number(candValue)} (${percent(percentChange(baseValue, candValue))})`
   const lines = [
-    `## 每任务 bucket 明细(${comparison.aggregate})`,
-    '',
-    '每格是该侧配对样本的统计量;TOTAL 行对配对求和,与每任务表"各任务统计量之和"的口径不同(重复数不等时两者不相等,判决只用后者)。',
+    `## Per-task bucket detail (${comparison.aggregate})`,
     '',
     '| task | input base→cand (Δ%) | output base→cand (Δ%) | cache read base→cand (Δ%) |',
     '| --- | --- | --- | --- |',
@@ -550,16 +500,14 @@ function bucketSection(comparison) {
  */
 function usageSplitSection(comparison) {
   const buckets = comparison.totals.buckets
-  const lines = [`## usage 拆分(TOTAL,${comparison.aggregate})`, '']
+  const lines = [`## usage split (TOTAL, ${comparison.aggregate})`, '']
   if (!buckets.comparable) {
-    lines.push('Skipped:至少一侧丢了 `step_end.usage`,per-bucket 的 Δ 会是"下界被当成测量值"。')
+    lines.push('Skipped: at least one side lost `step_end.usage`, so per-bucket Δs would present a lower bound as a measurement.')
     return lines
   }
-  const row = (label, bucket) => `| ${label} | ${number(bucket.base)} | ${number(bucket.cand)} | ${signed(bucket.delta)} (${percent(percentChange(bucket.base, bucket.cand))}) | ${bucket.sharePct === null ? 'n/a' : `${bucket.sharePct}%`} |`
+  const row = (label, bucket) => `| ${label} | ${number(bucket.base)} | ${number(bucket.cand)} | ${signed(bucket.delta)} (${percent(percentChange(bucket.base, bucket.cand))}) | ${rawPercent(bucket.sharePct)} |`
   lines.push(
-    '三个 bucket 相加是总数;Δ 落在 cache read 和落在 uncached input 是两张完全不同的账单。本节对配对求和(与每任务表的合计口径不同),判决仍只看配对的 token Δ。',
-    '',
-    '| bucket | base | cand | Δ (Δ%) | 占 Δ 的份额 |',
+    '| bucket | base | cand | Δ (Δ%) | share of Δ |',
     '| --- | --- | --- | --- | --- |',
     row('uncached input', buckets.input),
     row('output', buckets.output),
@@ -570,32 +518,84 @@ function usageSplitSection(comparison) {
 }
 
 /**
- * Tool adoption, summed over every repeat on each side: a tool called once and never
- * again is still evidence it was published and reached for, and a built-in the
- * candidate kept reaching for is the number this table exists to surface.
+ * The behaviour behind the token delta: steps and tool calls, per task and summed.
+ * The extra-steps term in token attribution is this table's Δ steps at the baseline's prompt
+ * size, so a cost move can be read against the behaviour that produced it. Neither
+ * count can change the gate.
+ * @param {object} comparison - the comparison structure.
+ * @returns {string[]} the section lines.
+ */
+function stepsSection(comparison) {
+  const useMin = comparison.aggregate === 'min'
+  const keys = { steps: useMin ? 'stepsMin' : 'stepsMedian', toolCalls: useMin ? 'toolCallsMin' : 'toolCallsMedian' }
+  const cell = (baseValue, candValue, pct) => `${count(baseValue)} → ${count(candValue)} (${percent(pct)})`
+  const lines = [
+    `## steps and tool calls (${comparison.aggregate})`,
+    '',
+    '| task | steps base→cand (Δ%) | tool calls base→cand (Δ%) |',
+    '| --- | --- | --- |',
+  ]
+  for (const task of comparison.tasks) {
+    lines.push(`| ${task.id} | ${cell(task.base[keys.steps], task.cand[keys.steps], task.delta.stepsPct)} | ${cell(task.base[keys.toolCalls], task.cand[keys.toolCalls], task.delta.toolCallsPct)} |`)
+  }
+  const totals = comparison.totals
+  lines.push(`| **TOTAL** | ${cell(totals.baseSteps, totals.candSteps, percentChange(totals.baseSteps, totals.candSteps))} | ${cell(totals.baseToolCalls, totals.candToolCalls, percentChange(totals.baseToolCalls, totals.candToolCalls))} |`)
+  return lines
+}
+
+/**
+ * Tool adoption, per tool and per task: a tool called once and never again is still
+ * evidence it was published and reached for. The `base` and `cand` columns keep the
+ * sweep-wide sums; each task column splits them by task, so a call can be read against
+ * the task whose Δ it explains.
+ *
+ * Colour follows adoption, not the sign: an `ops_*` tool rising is green (the plugin's
+ * tool replaced a built-in), while any other tool rising is red (the candidate kept
+ * reaching past the plugin); falling is green for a built-in and red for an `ops_*`
+ * tool. Equal counts are not painted.
+ *
+ * It renders directly under the per-task pair table: that table prices the Δ, this
+ * one shows the calls it was spent on, so the reader meets the two together.
  * @param {object} comparison - the comparison structure.
  * @returns {string[]} the section lines.
  */
 function toolSection(comparison) {
   const totals = new Map()
-  for (const task of comparison.tasks) {
+  const perTask = comparison.tasks.map((task) => {
+    const counts = new Map()
     for (const side of ['base', 'cand']) {
-      for (const [name, count] of Object.entries(task[side].toolCallsByName ?? {})) {
+      for (const [name, value] of Object.entries(task[side].toolCallsByName ?? {})) {
         const entry = totals.get(name) ?? { base: 0, cand: 0 }
-        entry[side] += count
+        entry[side] += value
         totals.set(name, entry)
+        const own = counts.get(name) ?? { base: 0, cand: 0 }
+        own[side] += value
+        counts.set(name, own)
       }
     }
-  }
-  const lines = ['## 工具调用(每侧重合计数)', '']
+    return { id: task.id, counts }
+  })
+  const lines = ['## Tool calls (per-side overlap counts)', '']
   if (totals.size === 0) {
-    lines.push('Skipped:两侧都没有记录 `toolCallsByName`。')
+    lines.push('Skipped: neither side recorded `toolCallsByName`.')
     return lines
   }
   const own = (name) => name.startsWith('ops')
+  const cand = (name, counts) => {
+    if (counts.cand === counts.base) return number(counts.cand)
+    const good = own(name) ? counts.cand > counts.base : counts.cand < counts.base
+    return `<span style="color:${good ? GREEN : RED}">${number(counts.cand)}</span>`
+  }
+  const cell = (name, counts) => (counts ? `${number(counts.base)} → ${cand(name, counts)}` : '—')
   const rows = [...totals.entries()].sort((left, right) => (Number(own(right[0])) - Number(own(left[0]))) || (right[1].cand - left[1].cand) || left[0].localeCompare(right[0]))
-  lines.push('| tool | base | cand |', '| --- | --- | --- |')
-  for (const [name, counts] of rows) lines.push(`| ${name} | ${number(counts.base)} | ${number(counts.cand)} |`)
+  lines.push(
+    `| tool | base | cand | ${comparison.tasks.map((task) => task.id).join(' | ')} |`,
+    `| --- | --- | --- | ${comparison.tasks.map(() => '---').join(' | ')} |`,
+  )
+  for (const [name, counts] of rows) {
+    const tasks = perTask.map((task) => cell(name, task.counts.get(name))).join(' | ')
+    lines.push(`| ${name} | ${number(counts.base)} | ${cand(name, counts)} | ${tasks} |`)
+  }
   return lines
 }
 
@@ -606,12 +606,13 @@ function toolSection(comparison) {
  * @returns {string[]} the section lines.
  */
 function warningSection(comparison) {
-  if (comparison.warnings.length === 0) return ['## 警告', '', '没有警告。']
-  return ['## 警告', '', ...comparison.warnings.map((warning) => `- ${warning}`)]
+  if (comparison.warnings.length === 0) return ['## Warnings', '', 'No warnings.']
+  return ['## Warnings', '', ...comparison.warnings.map((warning) => `- ${paintPercents(warning)}`)]
 }
 
 /**
- * Render the comparison as `report.md`.
+ * Render the comparison as the report document — the text `reportFileName` names and
+ * `main` writes.
  *
  * Pure: same comparison and sources in, byte-identical text out. No timestamps are
  * written, so the report is reproducible and diffable.
@@ -621,46 +622,87 @@ function warningSection(comparison) {
  */
 export function renderReport(comparison, sources = {}) {
   const lines = [
-    ...verdictSection(comparison),
+    REPORT_TITLE,
     '',
     ...taskSection(comparison),
     '',
-    ...excludedSection(comparison),
-    '',
-    ...noiseSection(comparison),
-    '',
-    ...attributionSection(comparison),
+    ...toolSection(comparison),
     '',
     ...bucketSection(comparison),
     '',
     ...usageSplitSection(comparison),
     '',
-    ...toolSection(comparison),
+    ...stepsSection(comparison),
     '',
     ...warningSection(comparison),
     '',
-    '## 证据',
+    '## Evidence',
     '',
     `- base:${sources.base?.file ?? '?'}(spec \`${sources.base?.spec ?? '?'}\`,${sources.base?.kind ?? '?'})`,
     `- cand:${sources.cand?.file ?? '?'}(spec \`${sources.cand?.spec ?? '?'}\`,${sources.cand?.kind ?? '?'})`,
-    `- 文档:format \`${comparison.format}\` · aggregate \`${comparison.aggregate}\` · 容差 ${comparison.tolerancePct}%`,
+    `- document: format \`${comparison.format}\` · aggregate \`${comparison.aggregate}\` · tolerance ${rawPercent(comparison.tolerancePct)}`,
     '',
-    `时间字段只作证据:本报告的成本口径是配对的 token,对比不读取时长的判决(${COMPARE_FORMAT} 不含时间统计)。`,
+    `Time fields are evidence only: the cost basis of this report is paired tokens, and the comparison does not read duration into the verdict (${COMPARE_FORMAT} carries no time statistics).`,
+    '',
+    ...verdictSection(comparison),
   ]
   return lines.join('\n')
+}
+
+/**
+ * The write instant in the shape a run directory carries it: `2026-10-20T12-36-38Z`.
+ * Colons and dots become dashes so the name is legal on every filesystem, and the
+ * seconds are UTC so two comparisons never share a name across time zones.
+ * @param {number|Date} [now] - the instant; defaults to the wall clock.
+ * @returns {string} the stamp.
+ */
+export function reportStamp(now = Date.now()) {
+  return `${new Date(now).toISOString().replace(/[:.]/g, '-').slice(0, 19)}Z`
+}
+
+/**
+ * The report's file name: the title's words plus the write instant, so a folder of
+ * sweeps reads as reports rather than as `report.md` repeated.
+ * @param {number|Date} [now] - the instant; defaults to the wall clock.
+ * @returns {string} the file name, `.md` included.
+ */
+export function reportFileName(now = Date.now()) {
+  return `${REPORT_STEM} ${reportStamp(now)}.md`
+}
+
+/**
+ * The directory the report belongs to: the group folder a sweep shares, not the arm
+ * directory that measured half of it. A comparison is about the sweep, so a reviewer
+ * opening `bench/runs/full-sweep-4/` should find the report there.
+ *
+ * Only the shape this harness writes is promoted — a run directory one level below the
+ * runs root. A run directly under the root has no group folder to promote to, and
+ * anything deeper is some other layout, so both keep the report beside `run.json`.
+ * @param {Options} options - the parsed options.
+ * @param {{dir: string}} cand - the resolved candidate side.
+ * @returns {string} the absolute directory.
+ */
+function reportDir(options, cand) {
+  const runsDir = path.resolve(options.runsDir ?? RUNS_DIR)
+  const dir = path.resolve(cand.dir)
+  const parent = path.dirname(dir)
+  const group = path.relative(runsDir, parent)
+  const nested = group !== '' && !group.startsWith('..') && !path.isAbsolute(group) && !/[\\/]/.test(group)
+  return nested ? parent : dir
 }
 
 /**
  * Where the rendered artifact goes.
  * @param {Options} options - the parsed options.
  * @param {{dir: string}} cand - the resolved candidate side.
+ * @param {number} now - the instant the default file name carries.
  * @returns {string|null} the absolute path, or null to write no file.
  */
-function reportPath(options, cand) {
+function reportPath(options, cand, now) {
   if (options.out === '-') return null
   if (options.out !== null) return path.resolve(options.out)
   if (options.json) return null
-  return path.join(cand.dir, 'report.md')
+  return path.join(reportDir(options, cand), reportFileName(now))
 }
 
 /**
@@ -670,12 +712,14 @@ function reportPath(options, cand) {
  * and maps the gate to an exit code. A cost gate that could not run (no noise floor,
  * incomplete usage, no both-passed pair) abstains — it does not fail the run.
  * @param {string[]} argv - the arguments after the script name.
- * @param {{out?: Function, err?: Function}} [io] - output sinks; defaults to the console.
+ * @param {{out?: Function, err?: Function, now?: Function}} [io] - output sinks and the
+ *   clock the default file name reads; defaults to the console and the wall clock.
  * @returns {Promise<number>} the process exit code.
  */
 export async function main(argv, io = {}) {
   const out = io.out ?? ((line) => console.log(line))
   const err = io.err ?? ((line) => console.error(line))
+  const now = io.now ?? (() => Date.now())
   let options
   try {
     options = parseArgs(argv)
@@ -720,7 +764,7 @@ export async function main(argv, io = {}) {
     : `${renderReport(comparison, sources)}\n`
   out(payload)
 
-  const target = reportPath(options, cand)
+  const target = reportPath(options, cand, now())
   if (target !== null) {
     try {
       fs.mkdirSync(path.dirname(target), { recursive: true })
@@ -737,9 +781,9 @@ export async function main(argv, io = {}) {
     return EXIT.failure
   }
   if (options.failOn !== 'none') {
-    if (!comparison.gate.tokensComparable) err('compare: 成本门禁未运行(至少一侧 usage 不完整);只跑了 pass-drop。')
-    else if (!comparison.gate.costComparable) err(`compare: 成本门禁未运行(没有两侧都通过的配对,${comparison.gate.excludedPairs} 对被排除);只跑了 pass-drop。`)
-    else if (!comparison.noiseFloor.comparable) err('compare: 噪声底未知 ⇒ 成本方向弃权(noise-floor-unknown);用 --noise-floor-pct 或 --noise 提供。')
+    if (!comparison.gate.tokensComparable) err('compare: cost gate did not run (usage incomplete on at least one side); only the pass-drop gate ran.')
+    else if (!comparison.gate.costComparable) err(`compare: cost gate did not run (no pair passed on both sides; ${comparison.gate.excludedPairs} pair(s) excluded); only the pass-drop gate ran.`)
+    else if (!comparison.noiseFloor.comparable) err('compare: noise floor unknown ⇒ cost direction withheld (noise-floor-unknown); supply one with --noise-floor-pct or --noise.')
   }
   return EXIT.ok
 }
