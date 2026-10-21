@@ -41,7 +41,9 @@ artifact), the optional `@fastctx/darwin-arm64` dependency, and the CLI commands
 that resolved, built or provisioned FastCtx. No FastCtx code or binary is part of
 this distribution any more. FastCtx's Apache License 2.0 text and upstream notice
 are kept in `licenses/fastctx/`, and its required attribution is kept verbatim in
-`NOTICE` and the READMEs; the composite license statement is unchanged.
+`NOTICE` and the READMEs for the earlier versions that carried it. The current
+distribution is MIT; the composite `MIT AND Apache-2.0` statement applies only to
+those earlier FastCtx-containing releases.
 
 The sections below are records of the releases they name. Where they describe
 FastCtx, `vendor/fastctx/`, the background component, or the FastCtx payload
@@ -326,8 +328,9 @@ While FastCtx was vendored, `vendor/fastctx/UPSTREAM.md` recorded the exact
 upstream revision and `vendor/fastctx/FORK.md` every difference from it — the
 distribution machinery removed, the standalone-only code removed, and every source
 file this fork touched (each carried its own Apache-2.0 §4(b) notice at the top).
-Both remain in the repository history. The composite licensing statement is in
-`NOTICE`.
+Both remain in the repository history. Current releases are MIT-licensed; the
+composite `MIT AND Apache-2.0` statement and FastCtx's attribution apply to the
+earlier releases that carried FastCtx and are preserved in `NOTICE`.
 
 ## Distribution and binary sources
 
@@ -365,6 +368,10 @@ obtains them under.
 | `@dsh-ops/bash-win32-x64` | [Git for Windows](https://github.com/git-for-windows/git) | `v2.56.0.windows.2` | `2.56.0.2` | `PortableGit-2.56.0.2-64-bit.7z.exe` — fetched by the user, not redistributed here | 60,027,568 | `075e158ef8e1f0ab80b347e245405d3eca735c2dc88fd8e032e137d0ca61f61b` | GPL-2.0-only |
 | `@dsh-ops/pwsh-win32-x64` | [PowerShell](https://github.com/PowerShell/PowerShell) | `v7.6.6` | `7.6.6` | `PowerShell-7.6.6-win-x64.zip` — fetched by the user, not redistributed here | 106,328,873 | `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c860` | MIT |
 
+The `@dsh-ops/fastctx-win32-x64` row records the 0.2.6 payload from the releases
+that carried FastCtx; that package is no longer published. The two shell pins
+below are current.
+
 The pin values live in one table — `SHELL_UPSTREAM_PINS` in `lib/shells.js`, which
 `dsh-ops provision-shells` downloads from and the release build imports when it
 publishes the pinned facts beside the packages it assembles — and the release's
@@ -382,15 +389,17 @@ that payload or pin.
 
 ### The licence each pin points at
 
-The plugin's composite statement is `MIT AND Apache-2.0`, and it covers the plugin
-alone. The two shell pins point at someone else's distribution:
+The plugin is MIT-licensed, and the current distribution contains no FastCtx
+code. The shell pins point at someone else's distribution:
 
-- **`fastctx` — this fork's Apache-2.0, plus upstream's notice.** The payload is
-  built here from `vendor/fastctx/`, so it ships `vendor/fastctx/LICENSE-APACHE` and
-  `vendor/fastctx/NOTICE`, and every source file this fork touched already carries
-  its own §4(b) change notice (`vendor/fastctx/FORK.md` is the enumeration).
-  FastCtx's required attribution is reproduced verbatim in `NOTICE` and in both
-  READMEs; that text is reproduced, never edited.
+- **`fastctx` — a historical Apache-2.0 dependency, removed in 0.3.2.** Earlier
+  releases vendored FastCtx in `vendor/fastctx/` and shipped this fork's build;
+  those releases carried FastCtx's Apache-2.0 text, upstream's notice and this
+  fork's §4(b) change notices, and every source file they touched had its own
+  §4(b) notice (`vendor/fastctx/FORK.md` is the enumeration). The FastCtx source
+  and binary are no longer part of this distribution; `licenses/fastctx/` keeps
+  the license text and upstream notice, and `NOTICE` keeps the required
+  attribution for those earlier releases.
 - **`bash` — Git for Windows' GPL-2.0.** The pin names the upstream archive and its
   digest; the download, the extraction, and the resulting copy on disk are the
   user's, and the GPL-2.0 terms (and the corresponding source, published by the Git

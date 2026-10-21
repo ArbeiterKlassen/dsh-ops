@@ -225,8 +225,9 @@ catalogue, retry rules and positive/negative TypeScript contracts. Node declarat
 
 ## License and attribution
 
-Everything outside `licenses/fastctx/` is MIT; FastCtx is Apache-2.0. The upstream acknowledgement
-reproduced in `NOTICE` and the READMEs **must stay verbatim** — do not "polish" it.
+Current releases are MIT-licensed. FastCtx was removed in 0.3.2; the releases that shipped it were
+`MIT AND Apache-2.0`. FastCtx's Apache-2.0 text, upstream notice and the acknowledgement reproduced
+in `NOTICE` remain for those releases **and must stay verbatim** — do not "polish" it.
 
 Native build and acceptance details: [native-ptc.md](native-ptc.md) and
 [manual-validation.md](manual-validation.md).

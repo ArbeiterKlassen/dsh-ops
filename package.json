@@ -29,7 +29,7 @@
     "deepseek-harness",
     "repository-tools"
   ],
-  "license": "MIT AND Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
