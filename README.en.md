@@ -124,13 +124,13 @@ Enable the `dsh-ops/tui` row in dsh-TUI and restart to add the OPS sidebar witho
 
 ## License
 
-Plugin source is distributed under **`MIT AND Apache-2.0`**: everything outside `licenses/fastctx/` is MIT; FastCtx is Apache-2.0. See [NOTICE](NOTICE), `licenses/fastctx/LICENSE-APACHE`, and `licenses/fastctx/NOTICE`.
+The current dsh-ops source is distributed under the **MIT License**; see [LICENSE](LICENSE). Versions before 0.3.2 bundled Apache-2.0-licensed FastCtx source; that source was removed together with the background component, and no FastCtx code or binary is part of the current distribution. FastCtx's license text and upstream notice are retained in `licenses/fastctx/`, and its historical attribution is preserved in [NOTICE](NOTICE).
 
 The separate Windows Bash payload package (the npm optional dependency `@dsh-ops/bash-win32-x64`) is distributed under its upstream components' licenses: Git for Windows includes GPL-2.0 and other licensed components, whose original licenses, notices and provenance records are kept with the payload. PowerShell stays host-managed and is distributed under Microsoft's MIT and third-party component licenses. The plugin's MIT license does not replace those licenses. See [PROVENANCE.md](docs/PROVENANCE.md).
 
 ## Acknowledgements
 
-The Rust tools are based on [yc-duan](https://github.com/yc-duan)'s Codex plugin FastCtx and use its source code. Vendor marking and deletion-only distribution changes were recorded in `vendor/fastctx/FORK.md` and `vendor/fastctx/UPSTREAM.md`, which remain in the repository history and in earlier published versions; the vendored source itself was removed with the background component. The FastCtx notice that must be reproduced follows:
+Versions before 0.3.2 bundled and distributed [yc-duan](https://github.com/yc-duan)'s Codex plugin FastCtx and used its source code to provide the Rust tool surface. FastCtx's source was removed with the background component; the current `native/` Rust core is original MIT-licensed dsh-ops code. FastCtx's license text and the notice that must be reproduced remain in `licenses/fastctx/` and [NOTICE](NOTICE) as attribution for those earlier versions:
 
 > This product includes FastCtx
 > (https://github.com/yc-duan/fastctx), Copyright (c) 2026 yc-duan,

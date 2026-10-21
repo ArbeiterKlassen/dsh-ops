@@ -4,7 +4,7 @@
   "id": "dsh-ops.native",
   "name": "dsh-ops",
   "version": "0.4.1",
-  "license": "MIT AND Apache-2.0",
+  "license": "MIT",
   "facets": {
     "host": {
       "entry": "lib/index.js",

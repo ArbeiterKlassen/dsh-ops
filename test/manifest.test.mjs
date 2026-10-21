@@ -117,12 +117,12 @@ await test('the declared prompt sections are the registered ones', () => {
   assert.equal(raw.contributes['x-components'].some((component) => component.entry === 'dsh-ops/background'), false)
 })
 
-await test('the manifest license states the composite this repository ships', () => {
-  assert.equal(raw.license, 'MIT AND Apache-2.0')
+await test('the manifest license matches the package and is MIT', () => {
+  assert.equal(raw.license, 'MIT')
   assert.equal(pkg.license, raw.license)
   assert.ok(fs.existsSync(path.join(PACKAGE_ROOT, 'LICENSE')))
   assert.ok(fs.existsSync(path.join(PACKAGE_ROOT, 'NOTICE')))
-  // The FastCtx attribution is kept with its license text, outside the removed vendor tree.
+  // FastCtx's license text and attribution are kept for the earlier releases that shipped it.
   assert.ok(fs.existsSync(path.join(PACKAGE_ROOT, 'licenses', 'fastctx', 'LICENSE-APACHE')))
   assert.ok(fs.existsSync(path.join(PACKAGE_ROOT, 'licenses', 'fastctx', 'NOTICE')))
   assert.ok(pkg.files.includes('licenses'), 'the license texts ship in the package')

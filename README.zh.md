@@ -104,13 +104,13 @@ npx --yes dsh-ops@latest uninstall --profile desktop
 
 ## 许可证
 
-插件源码分发采用 **`MIT AND Apache-2.0`**：`licenses/fastctx/` 之外为 MIT；FastCtx 为 Apache-2.0。见 [NOTICE](NOTICE)、`licenses/fastctx/LICENSE-APACHE` 与 `licenses/fastctx/NOTICE`。
+当前 `dsh-ops` 源码以 **MIT** 许可分发，见 [LICENSE](LICENSE)。`0.3.2` 之前的版本曾内置以 Apache-2.0 许可的 FastCtx 源码；该源码随后台组件一并移除，当前发行版不再包含任何 FastCtx 代码或二进制。FastCtx 的许可文本与上游声明保留在 `licenses/fastctx/`，历史归属见 [NOTICE](NOTICE)。
 
 独立的 Windows bash 载荷包（npm 可选依赖 `@dsh-ops/bash-win32-x64`）另按上游组件许可证分发：Git for Windows 包含 GPL-2.0 等许可组件，其原始许可证、声明及来源记录随载荷保留；PowerShell 由宿主管理，按其 MIT 与第三方组件许可分发。插件的 MIT 许可不替代这些许可。详见 [PROVENANCE.md](docs/PROVENANCE.md)。
 
 ## 致谢
 
-Rust 工具基于 [yc-duan](https://github.com/yc-duan) 的 Codex 插件 FastCtx 并使用其源代码。vendor 标识与删除型分发改动曾记在 `vendor/fastctx/FORK.md` 和 `vendor/fastctx/UPSTREAM.md`，它们保留在仓库历史和早期发布版本中；vendored 源码本身已随后台组件一并移除。需要转载的 FastCtx 声明如下：
+早期版本（`0.3.2` 之前）曾内置并分发 [yc-duan](https://github.com/yc-duan) 的 Codex 插件 FastCtx，并使用其源代码提供 Rust 工具面。FastCtx 源码随后台组件一并移除，当前 `native/` 的 Rust 核心为 dsh-ops 原创的 MIT 代码；FastCtx 的许可文本与需要转载的声明仍保留在 `licenses/fastctx/` 与 [NOTICE](NOTICE) 中，作为对历史版本的归属：
 
 > This product includes FastCtx
 > (https://github.com/yc-duan/fastctx), Copyright (c) 2026 yc-duan,
