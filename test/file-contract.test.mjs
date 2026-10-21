@@ -38,6 +38,31 @@ await test('every file tool states that failures are values, not thrown errors',
   assert.match(PTC_DESCRIPTIONS.result, /not thrown errors/)
 })
 
+await test('discoverable core file fields have concise help and distinguish glob arrays from text', () => {
+  // Keep resident read_files unchanged: more advanced help is paid only after discovery.
+  const core = ['inspect_local_file', 'glob', 'grep', 'stat', 'diff',
+    'write_file', 'edit_file', 'copy', 'move', 'remove', 'replace']
+  const visit = (schema, where) => {
+    for (const [key, field] of Object.entries(schema.properties ?? {})) {
+      assert.equal(typeof field.description, 'string', `${where}.${key}`)
+      assert.ok(field.description.length > 0 && field.description.length <= 200, `${where}.${key}`)
+      visit(field, `${where}.${key}`)
+    }
+    if (schema.items) visit(schema.items, `${where}[]`)
+  }
+  for (const name of core) visit(PARAMETERS[name], name)
+  assert.match(PARAMETERS.glob.properties.pattern.description, /ARRAY.*\["\*\*\/\*\.md","!vendor\/\*\*"\]/)
+  assert.match(PARAMETERS.glob.properties.pattern.description, /positive entry/)
+  assert.match(PARAMETERS.grep.properties.pattern.description, /regex STRING/)
+  assert.match(PARAMETERS.replace.properties.pattern.description, /literal STRING, not a regex/)
+  for (const name of ['grep', 'replace']) {
+    assert.match(PARAMETERS[name].properties.glob.description, /ARRAY/)
+    assert.doesNotMatch(PARAMETERS[name].properties.glob.description, /positive entry/)
+  }
+  assert.match(PARAMETERS.glob.properties.sort.description, /newest modification first/)
+  assert.match(PARAMETERS.grep.properties.lineNumbers.description, /default true/)
+})
+
 await test('current component routing does not advertise removed inspect capabilities', () => {
   for (const name of ['component-reference.md', '组件参考.md']) {
     const doc = fs.readFileSync(new URL(`../docs/${name}`, import.meta.url), 'utf8')

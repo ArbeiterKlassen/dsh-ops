@@ -10,7 +10,7 @@ import { record, errorText } from '../worker-boundary.js'
 import { workerEnvelope } from '../worker-protocol.js'
 import { withCallBudget, CallBudgetError } from '../kernel/call-budget.js'
 import { withResultSession } from '../kernel/result-lifecycle.js'
-import { resultStorage } from '../kernel/result-storage.js'
+import { exposePosixCache, resultStorage } from '../kernel/result-storage.js'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -106,6 +106,7 @@ async function invokeTrusted(ctx: Context, file: string, tool: string, args: unk
     if (tool === 'result' && (args?.action === 'put' || String(args?.id ?? '').startsWith('ref://')) && !storage) {
       return failure('EXECUTOR_UNAVAILABLE', 'Session result storage is unavailable under current host authority.')
     }
+    if (confined) argv = exposePosixCache(argv, storage)
     const envelope = workerEnvelope('ptc', { root: operationRoot, scope: String(session.id), tool, args: workerArgs, read_only: readOnly, deny_roots: denyRoots, deny_credential_names: (config?.denyCredentialReads ?? true) !== false, ...(jobId ? { job_id: jobId } : {}) }, undefined, storage)
     const input = JSON.stringify(envelope)
     if (Buffer.byteLength(input) > 2 * 1024 * 1024) return failure('OUTPUT_LIMIT', 'Request exceeds the 2 MiB byte budget.')

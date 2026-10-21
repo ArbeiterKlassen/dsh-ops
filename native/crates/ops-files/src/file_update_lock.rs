@@ -79,7 +79,9 @@ impl UpdateLock {
     /// `contention` is the caller's own refusal text, so a losing writer keeps
     /// reporting the same `REVISION_CONFLICT` contract it always did.
     pub fn acquire(parent: &Dir, name: &str, contention: &str) -> Result<Self> {
-        Self::acquire_with(parent, name, contention, publication::open_update_lock)
+        Self::acquire_with(parent, name, contention, |parent, name| {
+            publication::open_update_lock(parent, name, contention)
+        })
     }
 
     /// [`acquire`](Self::acquire) with the sidecar opener as a parameter.
@@ -97,7 +99,7 @@ impl UpdateLock {
             let lock = open(parent, name)?;
             // Non-blocking on purpose: a busy path is reported, never waited on.
             FileExt::try_lock_exclusive(&lock)
-                .map_err(|_| Failure::new("REVISION_CONFLICT", contention))?;
+                .map_err(|error| publication::lock_error(error, contention))?;
             let lock = Self {
                 handle: cap_std::fs::File::from_std(lock.try_clone()?),
                 lock,
@@ -263,13 +265,13 @@ mod tests {
         std::fs::write(fixture.root.join(&name), b"").unwrap();
         let mut raced = false;
         let lock = UpdateLock::acquire_with(&fixture.dir, &name, "busy", |parent, name| {
-            let opened = publication::open_update_lock(parent, name)?;
+            let opened = publication::open_update_lock(parent, name, "busy")?;
             if !raced {
                 raced = true;
                 // A finishing holder removes the sidecar, and the next writer creates
                 // a new one, while this writer is still holding the old handle.
                 parent.remove_file(name)?;
-                publication::open_update_lock(parent, name)?;
+                publication::open_update_lock(parent, name, "busy")?;
             }
             Ok(opened)
         })
