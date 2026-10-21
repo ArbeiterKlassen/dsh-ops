@@ -198,21 +198,19 @@ pub(super) fn authorize_write(request: &Request, raw: &str) -> Result<PathBuf> {
     }
     Ok(checked.display)
 }
-/// Same persistent sidecar identity as legacy replace, including absent targets.
-fn lock_single(raw: &str) -> Result<std::fs::File> {
+/// Same per-name update lock as [`lock_and_read_for_update`], returned as the
+/// caller's guard so the sidecar lives exactly as long as the write it protects.
+fn lock_single(raw: &str) -> Result<UpdateLock> {
     let checked = crate::file_path::checked_leaf(raw, true)?;
     let key = format!(
         "{:x}",
         Sha256::digest(checked.name.to_lowercase().as_bytes())
     );
-    let file = publication::open_update_lock(&checked.parent, &format!(".dsh-ops-update-{key}.lock"))?;
-    FileExt::try_lock_exclusive(&file).map_err(|_| {
-        Failure::new(
-            "REVISION_CONFLICT",
-            "Another writer holds this path; inspect before retrying",
-        )
-    })?;
-    Ok(file)
+    UpdateLock::acquire(
+        &checked.parent,
+        &format!(".dsh-ops-update-{key}.lock"),
+        "Another writer holds this path; inspect before retrying",
+    )
 }
 fn optional_bytes(raw: &str) -> Result<Option<Vec<u8>>> {
     let checked = crate::file_path::checked_leaf(raw, true)?;

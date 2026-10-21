@@ -25,10 +25,12 @@ import { spawn } from 'node:child_process'
 export const CHECK_TYPES = ['fileExists', 'fileMissing', 'fileEquals', 'fileContains', 'fileLines', 'countFiles', 'contentHashes', 'command']
 
 /**
- * The persistent update-lock sidecar `ops_replace` writes beside every file it edits:
- * `.dsh-ops-update-<sha256 of the target's name>.lock`, created on first use and never
- * unlinked (`native/src/file.rs` — a cooperative path lock, not debris, because
- * publication is an atomic rename and the lock must outlive the target's inode).
+ * The update-lock sidecar `ops_replace` takes beside every file it edits:
+ * `.dsh-ops-update-<sha256 of the target's name>.lock` (`native/crates/ops-files/src/file_update_lock.rs`
+ * — a cooperative path lock, not workspace content, because publication is an atomic rename and the
+ * lock must outlive the target's inode). The writer that holds it removes it on release (#319), so a
+ * normal run leaves none; one is still tolerated because a writer killed between locking and release
+ * cannot run a cleanup path.
  *
  * It is tooling state, not workspace content, so `contentHashes` ignores it: the task
  * still fails on every file the model changed, added or removed, but a candidate that

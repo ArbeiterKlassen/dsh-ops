@@ -221,6 +221,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # gh infers the repository from the working directory; without a checkout the
+      # release step failed with "fatal: not a git repository".
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
       - uses: actions/download-artifact@v8
         with:
           name: release-dist

@@ -283,26 +283,33 @@ mod tests {
         }
     }
 
-    /// #240 P5, declared behavior: the update lock creates the persistent hidden
-    /// sidecar before the target is read, so a refusal after the lock already
-    /// left it behind; it is one empty file per target name and is reused, never
-    /// accumulated, and a later successful write keeps using the same inode.
+    /// #319: the update lock used to leave a permanent 0-byte sidecar beside the
+    /// target. It is still taken before the target is read — a refused request
+    /// therefore runs under the lock — but releasing it now removes the sidecar.
+    /// A leftover from a killed writer is reused instead of ignored, and removed by
+    /// the writer that finishes under it.
     #[test]
-    fn the_update_lock_sidecar_is_created_once_and_reused() {
+    fn the_update_lock_is_taken_before_the_read_and_leaves_no_sidecar() {
         let fixture = Fixture::new("update-lock");
         let target = fixture.file("notes.txt", b"one", 1_600_000_000_000);
         let sidecar = fixture.sidecar("notes.txt");
         assert!(!sidecar.exists(), "no sidecar before the first update attempt");
-        drop(lock_and_read_for_update(&target).unwrap());
-        assert!(sidecar.is_file(), "the lock is a persistent sibling, not the target");
-        assert_eq!(fs::metadata(&sidecar).unwrap().len(), 0, "the sidecar carries no payload");
-        drop(lock_and_read_for_update(&target).unwrap());
-        // A refused read is the shape #240 reports: the sidecar is already there
-        // when the target itself cannot be read; a stale-revision write refuses the
-        // same way, after the same lock.
+        {
+            let (guard, bytes) = lock_and_read_for_update(&target).unwrap();
+            assert_eq!(bytes, b"one", "the lock is taken before the target is read");
+            assert!(sidecar.is_file(), "the lock exists while it is held");
+            assert_eq!(fs::metadata(&sidecar).unwrap().len(), 0, "the sidecar carries no payload");
+            drop(guard);
+        }
+        assert!(!sidecar.exists(), "releasing the lock removes the sidecar");
+        // A refusal decided from the bytes happens under the lock and leaves no trace.
         let missing = fixture.root.join("missing.txt");
         assert_eq!(lock_and_read_for_update(&missing).unwrap_err().code, "NOT_FOUND");
-        assert!(fixture.sidecar("missing.txt").is_file(), "a refused operation still leaves the declared sidecar");
-        assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), 3, "one target and two sidecars, never more");
+        assert!(!fixture.sidecar("missing.txt").exists(), "a refused operation leaves no sidecar");
+        assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), 1, "one target and no artifacts");
+        // A sidecar a killed writer left behind is reused and then removed.
+        fs::write(&sidecar, b"").unwrap();
+        drop(lock_and_read_for_update(&target).unwrap());
+        assert!(!sidecar.exists(), "a later write cleans up the leftover it reused");
     }
 }

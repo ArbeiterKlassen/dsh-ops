@@ -7,10 +7,23 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-10-20 — Update locks stop leaving files behind
+
+- Stop the update lock from leaving `.dsh-ops-update-*.lock` sidecars behind (#319). The writer that takes the lock removes it on release, and only after proving the name still leads to the inode it locked, so a waiter that opened the old inode can never publish under it. A published write, a request refused after the lock and a directory-wide `replace` now leave the directory exactly as they found it; a sidecar left by a killed writer is not a stuck lock — the next write of that name binds to it, publishes under it and removes it.
+- 更新锁不再在目录里遗留 `.dsh-ops-update-*.lock`（#319）：持锁的写者在释放时删除它，并且先确认名字仍指向自己锁住的 inode，因此打开过旧 inode 的等待者不会在它上面发布。成功写入、拿锁之后被拒的请求、整目录 `replace` 都不再留下痕迹；被硬杀的写者留下的边车不是死锁——下一个同名写入会锁定它、用它发布并删除它。
+
+- Restore `ops_bash` background jobs. The tool read the host `jobs` registry at definition time and then required `ctx.get('jobs')` to be identity-equal at call time; a tracked Cordis service returns a fresh traceable proxy on every read, so the comparison could never hold and every `run_in_background` call failed with `EXECUTOR_UNAVAILABLE` while the schema still advertised the parameter, and a foreground timeout killed the command instead of promoting it. Bind the registry once through `ctx.inject(['jobs'], …)`, exactly as the host's own bash tool does, and pass it into the definition; re-register when the service mounts or unloads. Regression tests cover the tracked-service proxy, background admission, and timeout promotion.
+- 恢复 `ops_bash` 的后台任务能力。原实现定义工具时读取一次宿主 `jobs` 注册表，执行时要求 `ctx.get('jobs')` 与它身份相等；Cordis 的被跟踪服务每次读取都返回新的 traceable proxy，比较永远不成立，于是 schema 声明了 `run_in_background` 却必然报 `EXECUTOR_UNAVAILABLE`，前台超时也只会杀进程而不会转后台。改为像宿主自带 bash 一样经 `ctx.inject(['jobs'], …)` 只绑定一次注册表并传入工具定义，服务挂载/卸载时重新注册；补了被跟踪服务代理、后台受理与超时升级的回归测试。
+
+- Stop inventing audit references for new batch validation failures that occur before a job is saved, and for synchronous failures before worker creation. Preserve worker-provided references, existing resume identities and recovery ids for interrupted or ambiguous execution; no additional worker calls are made (#78).
+- 新批次在审计记录创建前发生已确认的校验失败，或工作进程创建前同步失败时，不再返回不存在的审计引用。保留 worker 返回的引用、已有 resume 标识，以及执行中断或状态不明时的恢复标识；不增加 worker 调用（#78）。
 - Validate the selected profile CLI before both dry-run and execution (#100): reject missing or unusable launchers and missing Node bin targets, preserve PATH lookup and Windows PATHEXT/batch launchers, and apply Windows command-script path checks during preview. Dry-run never executes the candidate or changes the profile.
 - 在安装/卸载的预演与实际执行前共用 CLI 静态检查（#100）：拒绝缺失或不可用的启动文件及缺失的 Node bin 入口，保留 PATH 查找与 Windows PATHEXT/命令脚本，并在预演时同样检查 Windows 命令脚本路径。预演不启动候选程序、不修改 profile。
+
 - Fix the generated `ops_load_sdk` declaration (the builder still keyed on the pre-rename `sdk` name), cover the rename alias plus the `select:` and SDK request paths with tests, and align the catalogue facts in the current docs (20/18/15, 242 tokens/1101 bytes) with a docs guard (#302).
 - 修复生成的 `ops_load_sdk` 声明（构建脚本仍按改名前的 `sdk` 判定）、为改名别名与 `select:`/SDK 请求路径补测试，并把当前文档的目录事实（20/18/15、242 tokens/1101 bytes）对齐并加守护（#302）。
+- Account for existing append-log and new-session header bytes before admitting queued panel events, with bounded pending data and physical-stop behavior. Recover persisted caps without appending further events or duplicate markers. If opening the log fails, stop that capture without appending or replacing existing output. JSON parse losses now mark capture degraded and usage incomplete while preserving valid records and totals.
+- 面板恢复先计入已有追加日志或新会话头部的字节，再接纳排队事件，保留有界待写数据与实际停止语义；恢复已封顶日志时不再追加事件或重复的封顶标记。日志初始化失败后停止该会话的采集，不再追加或替换已有输出。JSON 解析丢失的记录现在会标记采集降级、用量不完整，同时保留有效记录及其合计。
 - Add `dsh-ops panel [--serve] [dir] [--port <n>]`: serve one capture directory and the shipped viewer on loopback, preselect the newest valid report, offer the other valid reports for switching, refuse malformed reports and paths outside the directory, and document the capture-directory `.gitignore` and drag-and-drop fallback (#257).
 - 新增 `dsh-ops panel [--serve] [dir] [--port <n>]`：在回环地址上服务一个采集目录与随包查看器，默认选中最新有效报告并列出其它有效报告供切换，拒绝格式错误报告与目录外路径，并补充采集目录的 `.gitignore` 与拖拽回退说明（#257）。
 

@@ -138,8 +138,8 @@ $f = "$env:TEMP\w1g.txt"; "one two" | Set-Content -NoNewline $f
 ```
 
 Check: `completed` with `changed: 1`, the file reads `one three`, no
-`.w1g.txt.dsh-ops-<uuid>` debris, a `.dsh-ops-update-<64 hex>.lock` sidecar appears
-**beside it** (see W1h) — and, with two writers racing the same file, exactly one
+`.w1g.txt.dsh-ops-<uuid>` debris, and **no** `.dsh-ops-update-<64 hex>.lock` left
+beside it (see W1h) — and, with two writers racing the same file, exactly one
 reports a change while the losers each receive a structured `REVISION_CONFLICT`,
 not a bare `IO_ERROR`.
 
@@ -147,7 +147,8 @@ not a bare `IO_ERROR`.
 
 The lock is taken on a **stable sidecar beside the target**, never on the target:
 `.dsh-ops-update-<sha256 of the target's name>.lock` in the target's directory,
-created on first use and never unlinked. It must be stable because publication is
+created on first use and removed by the writer that holds it (#319). It must be
+stable because publication is
 an atomic rename: a waiter that locked the target's inode would be holding the
 *old* inode while the path already names a new one, so the next writer would lock a
 different object under the same name. It must be off-target because a byte-range
@@ -164,7 +165,9 @@ $f = "$env:TEMP\w1h.txt"; "one two" | Set-Content -NoNewline $f
 ```
 
 Check: the reader answers normally (no `os error 33`); the sidecar
-`.dsh-ops-update-<64 hex>.lock` exists next to the target; and neither `ops_glob`
+`.dsh-ops-update-<64 hex>.lock` exists next to the target **while the write is in
+flight** and is gone once it returns (a timing-dependent positive check, hence the
+manual step); and neither `ops_glob`
 nor `ops_grep` nor a directory-wide `ops_replace` ever reports it as one of its
 files (it is a dotfile, so the walker's hidden-component rule already keeps it out —
 asserted by `linux-args.test.mjs` on every platform, and by the sweep, which only
