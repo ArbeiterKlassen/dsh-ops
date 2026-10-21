@@ -91,6 +91,12 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 `--task <id>`(可重复)、`--repeat <N>`、`--folder <name>`、`--base <label>` / `--cand <label>`
 (默认 `bench-base` / `bench-ops`)、`--show`,其余旗标原样交给 runner。
 
+每次 dsh 调用默认带上 `bench/llm.patch.yml`:换文件用 `--llm-patch <path>`,确实不要 overlay(两侧各跑
+各自 profile 自带的路由)用 `--no-llm-patch`,sweep 会把"两侧不共享任何路由"这句说出口。默认 overlay
+不存在、又没给 `--no-llm-patch` 时,runner 在 spawn 之前退 `2` 并点名文件和两条出路 —— 静默换一条路由
+开跑的代价是:两臂一模一样,报告里根本看不出来。默认 overlay 是隐式选中的,所以归档的 `argv` 会把
+`--llm-patch <path>` 补进去,免得一份说不清走了哪条路由的 summary 被当成证据。
+
 `--show` 打印将执行的三条命令并立刻退出(纯函数,不写任何东西、不跑任何会话)。组号在这里**只分配一次**:
 如果每侧各自按时间戳分配目录,两侧会落进不同的组,最后什么都配对不上。
 

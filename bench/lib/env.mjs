@@ -20,6 +20,14 @@ export const BENCH_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url
 /** The repository root this checkout is, `bench/`'s parent. */
 export const REPO_ROOT = path.dirname(BENCH_DIR)
 /**
+ * The LLM overlay every dsh call is given, and the committed template it is filled in from.
+ * The filled-in file is gitignored: it names the operator's bench server and model. `setup`
+ * creates it and the runner injects it, and both read this one definition — the same path
+ * spelled in two modules is how the runner came to inject nothing while `setup` promised it.
+ */
+export const LLM_OVERLAY = path.join(BENCH_DIR, 'llm.patch.yml')
+export const LLM_OVERLAY_EXAMPLE = path.join(BENCH_DIR, 'llm.patch.example.yml')
+/**
  * The `<platform>-<arch>` tag the run contract records and reports key on.
  * @param {string} [platform] - the platform to tag (default the host).
  * @param {string} [arch] - the architecture to tag (default the host).

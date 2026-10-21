@@ -51,7 +51,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { BENCH_DIR, REPO_ROOT } from '../lib/env.mjs'
+import { LLM_OVERLAY, LLM_OVERLAY_EXAMPLE, REPO_ROOT } from '../lib/env.mjs'
 
 /** The plugin under test — the only package this module ever installs, and the name every
  * install failure has to carry so "failed" never means "something, somewhere". */
@@ -72,9 +72,9 @@ export const PERMISSION_MODES = ['danger-full-access', 'workspace-write', 'read-
  * profile after one would make `--from-default-profile` read its own output. */
 export const SHIPPED_PROFILES = ['headless', 'web', 'tui', 'acp', 'sdk', 'sdk-minimal', 'dsh-tui']
 /** The overlay every dsh call is given, and the committed template it is filled in from.
- * The filled-in file is gitignored: it names the operator's bench server. */
-export const LLM_OVERLAY = path.join(BENCH_DIR, 'llm.patch.yml')
-export const LLM_OVERLAY_EXAMPLE = path.join(BENCH_DIR, 'llm.patch.example.yml')
+ * The filled-in file is gitignored: it names the operator's bench server. Defined next to
+ * the other shared paths, because the runner injects the very file this module creates. */
+export { LLM_OVERLAY, LLM_OVERLAY_EXAMPLE }
 
 /** The `setup` help text for the flags this half owns; setup B appends its own. */
 export const USAGE = `usage: node bench/cli.mjs setup [options]

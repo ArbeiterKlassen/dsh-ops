@@ -24,12 +24,13 @@
  * @module dsh-ops/bench/run
  */
 
+import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 import { EXIT, UsageError, planAb } from './cli.mjs'
-import { REPO_ROOT, resolveDshEntry } from './lib/env.mjs'
+import { LLM_OVERLAY, REPO_ROOT, resolveDshEntry } from './lib/env.mjs'
 import { TASKS_DIR, loadTasks, selectTasks } from './lib/tasks.mjs'
 import { RUNS_DIR } from './lib/next-folder.mjs'
 import { DEFAULT_REPEAT, armOrder, createInterrupt, planPairs, planSessions, repeatsById, runSweep } from './run/schedule.mjs'
@@ -64,7 +65,10 @@ export function abUsage() {
     '  --stall-ms N         per-session silence that escalates a warning (default 60000)',
     '  --timeout MS         override each task\'s timeoutMs',
     '  --dsh <path>         dsh\'s JS entry (lib/bin.js); default: resolved from PATH',
-    '  --llm-patch <path>   overlay the session injects with --patch',
+    '  --llm-patch <path>   the overlay every dsh call is given with --patch',
+    '                       (default: bench/llm.patch.yml, the file `setup` creates)',
+    '  --no-llm-patch       run on the profiles\' own routes instead of the overlay;',
+    '                       the two sides then share no route and the sweep says so',
     '  --model <id>         model id recorded for the run',
     '  --keep               keep each temporary workspace',
     '  --verbose            narrate every event line',
@@ -106,6 +110,7 @@ export function parseRunArgs(argv, context = {}) {
     verbose: false,
     keep: false,
     noSeal: false,
+    noLlmPatch: false,
     sleepMs: 0,
     out: null,
     heartbeatMs: null,
@@ -121,6 +126,7 @@ export function parseRunArgs(argv, context = {}) {
     else if (flag === '--verbose' || flag === '-v') options.verbose = true
     else if (flag === '--keep') options.keep = true
     else if (flag === '--no-seal') options.noSeal = true
+    else if (flag === '--no-llm-patch') options.noLlmPatch = true
     else if (flag === '--label' || flag === '--profile') {
       throw new UsageError(`${flag} named one arm of a per-process run; \`ab\` runs both arms itself — use --base/--cand`)
     } else if (VALUE_FLAGS.includes(flag)) {
@@ -150,6 +156,40 @@ export function buildArms(options) {
       ? { side: 'cand', label: `${options.base}-aa`, profile: options.base }
       : { side: 'cand', label: options.cand, profile: options.cand },
   ]
+}
+
+/**
+ * Which LLM overlay this sweep hands to every dsh call.
+ *
+ * The overlay is the one file naming the bench server, the model and the environment
+ * variable holding the key, and `setup` is what creates it. A sweep that quietly ran
+ * without it would exercise the profiles' own routes instead — identical on both sides,
+ * so the report could not show the difference and the run would still look complete. The
+ * default is therefore the overlay, `--no-llm-patch` is how an operator says the profiles'
+ * own routes are what they mean, and anything else is refused before a token is spent.
+ * @param {{llmPatch: string|null, noLlmPatch: boolean}} options - the parsed flags.
+ * @param {{overlay?: string, exists?: (file: string) => boolean}} [context] - the default
+ *   overlay and the existence probe; injectable so a suite never reads the real file.
+ * @returns {{path: string|null, implicit: boolean}} the overlay to inject — null when the
+ *   sweep runs without one — and whether it came from the default rather than the flags.
+ * @throws {UsageError} when the two flags contradict, when a named overlay is missing, or
+ *   when there is no overlay to default to and `--no-llm-patch` did not say that is fine.
+ */
+export function resolveLlmPatch(options, context = {}) {
+  const overlay = context.overlay ?? LLM_OVERLAY
+  const exists = context.exists ?? ((file) => fs.existsSync(file))
+  if (options.llmPatch !== null && options.noLlmPatch) {
+    throw new UsageError('--llm-patch names the overlay to inject and --no-llm-patch removes it; pass one of them')
+  }
+  if (options.llmPatch !== null) {
+    if (!exists(options.llmPatch)) throw new UsageError(`--llm-patch names a file that does not exist: ${options.llmPatch}`)
+    return { path: options.llmPatch, implicit: false }
+  }
+  if (options.noLlmPatch) return { path: null, implicit: false }
+  if (!exists(overlay)) {
+    throw new UsageError(`there is no ${overlay}, so both arms would run on their profiles' own routes — run "node bench/cli.mjs setup" to create it, or pass --no-llm-patch to run that way on purpose`)
+  }
+  return { path: overlay, implicit: true }
 }
 
 /** The `<UTC stamp>-<label>` run directories, one per arm, under the sweep's group. */
@@ -260,6 +300,24 @@ export async function main(argv, io = {}) {
     out(abUsage())
     return EXIT.ok
   }
+  // Resolved before the seal guard and before any spawn: both are conditions under which a
+  // sweep would measure, or record, something other than what the operator asked for.
+  let patch
+  try {
+    patch = resolveLlmPatch(options, { overlay: io.llmOverlay, exists: io.overlayExists })
+  } catch (error) {
+    if (!(error instanceof UsageError)) throw error
+    // A contradictory or absent *named* overlay is a usage error whatever else is asked for;
+    // only a missing default is something `--show` may still print a plan around, because
+    // that plan is exactly how an operator sees that `setup` has not run yet.
+    const operatorNamed = options.llmPatch !== null || options.noLlmPatch
+    if (operatorNamed || options.show !== true) {
+      err(`bench ab: ${error.message}`)
+      err(abUsage())
+      return EXIT.usage
+    }
+    patch = { path: null, implicit: false, refused: error.message }
+  }
   if (!options.show && options.noSeal !== true && typeof io.seal !== 'function') {
     err('bench ab: sealing is not wired in this slice yet — P8a\'s bench/run/seal.mjs must be injected as io.seal.')
     err('Nothing was spawned and no token was spent. Pass --no-seal to run an unsealed sweep (no run.json), or --show to just print the plan.')
@@ -282,6 +340,7 @@ export async function main(argv, io = {}) {
 
   out(`[ab] base    : ${arms[0].label} (profile ${arms[0].profile})`)
   out(`[ab] cand    : ${arms[1].label} (profile ${arms[1].profile})${options.aa ? '  [A/A: the baseline run twice]' : ''}`)
+  out(`[ab] patch   : ${patch.path ?? 'none (--no-llm-patch) — the two sides share no route'}`)
   out(`[ab] pairs   : ${pairs.length} pair(s) = ${sessions.length} session(s), serial, AB/BA-interleaved${options.repeatExplicit ? ` (--repeat ${options.repeat})` : ' (per-task repeat budgets)'}`)
   if (options.out === null) out(`[ab] group   : bench/runs/${options.folder}${options.allocated ? ' [auto]' : ''}`)
   out(`[ab] out     : ${sweepDir}`)
@@ -290,6 +349,7 @@ export async function main(argv, io = {}) {
     for (const [index, pair] of pairs.entries()) {
       out(`[ab] ${String(index + 1).padStart(3)}/${pairs.length} ${pair.task.id} r${pair.repeatIndex}: ${armOrder(pair.repeatIndex, arms).map((arm) => arm.label).join(' → ')}`)
     }
+    if (patch.refused !== undefined) err(`[ab] patch   : ${patch.refused} — this plan cannot run as it stands`)
     out(`[ab] show only: nothing was spawned.`)
     return EXIT.ok
   }
@@ -305,6 +365,9 @@ export async function main(argv, io = {}) {
   const interrupt = io.interrupt ?? createInterrupt()
   const uninstall = (io.installSignals ?? true) === false ? () => {} : installSignals(interrupt, err, io)
   const log = (level, line) => (level === 'warn' ? err : out)(line)
+  // The recorded command line names the overlay when the operator did not: a summary that
+  // cannot say which route ran is not evidence of anything.
+  const recordedArgv = patch.implicit ? ['bench/run.mjs', ...argv, '--llm-patch', patch.path] : ['bench/run.mjs', ...argv]
   let result
   try {
     result = await (io.sweep ?? runSweep)({
@@ -315,10 +378,10 @@ export async function main(argv, io = {}) {
       dirs,
       folder: options.out === null ? options.folder : null,
       entry,
-      llmPatch: options.llmPatch,
+      llmPatch: patch.path,
       timeoutMs: options.timeoutMs,
       model: options.model,
-      argv: ['bench/run.mjs', ...argv],
+      argv: recordedArgv,
     }, {
       seal: options.noSeal === true ? undefined : io.seal,
       runSession: io.runSession,

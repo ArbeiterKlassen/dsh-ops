@@ -7,7 +7,11 @@
 #      密钥只放环境变量或 $DSH_HOME/.credentials.yaml，**绝不写进本文件**；
 #   4) node bench/run.mjs 会自动把它以 --patch 传给每次 dsh 调用
 #      （含 dump-config 存档）→ bench-base / bench-ops 两侧
-#      provider/model 一致性由构造保证（PLAN §2.7）。
+#      provider/model 一致性由构造保证（PLAN §2.7）；
+#      换别的 overlay 用 --llm-patch <path>；确实不想用 overlay（两侧各跑
+#      各自 profile 自带的路由）用 --no-llm-patch，sweep 会把"两侧不共享
+#      任何路由"这句话说出口。文件不存在又没给 --no-llm-patch 时，
+#      runner 在 spawn 之前就拒绝（退 2），不会静默换一条路由开跑。
 #
 # 注意：
 #   - 路由名 bench-server 可自定，但 llm-pi-ai 与 agent-default-model
