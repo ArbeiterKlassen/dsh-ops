@@ -18,6 +18,12 @@ await test('quarantine rename retries only transient sharing errors, a bounded n
   calls=0
   assert.throws(()=>renameWithRetry('a','b',{delays:[1,2],wait:()=>{},rename:()=>{calls+=1; throw eperm()}}),error=>error.code==='EPERM')
   assert.equal(calls,3,'bounded: the first attempt plus one per delay, never more')
+  // The configured budget must stay above the worst window measured in #352 (1639 ms); the
+  // delays also fix the attempt count, so a shortened budget turns this assertion red.
+  const budget=RENAME_RETRY_DELAYS_MS.reduce((sum,ms)=>sum+ms,0)
+  assert.equal(RENAME_RETRY_DELAYS_MS.length,5,'five waits, i.e. six attempts including the first')
+  assert.equal(budget,2500,'the cumulative budget is the documented 2.5 s')
+  assert.ok(budget>1639,'the budget covers the worst measured recovery window from #352')
   calls=0
   assert.throws(()=>renameWithRetry('a','b',{delays:[1,2],wait:()=>{},rename:()=>{calls+=1; throw Object.assign(new Error('ENOENT: no such file'),{code:'ENOENT'})}}))
   assert.equal(calls,1,'an error that will not change is surfaced immediately')
