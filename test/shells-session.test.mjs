@@ -14,6 +14,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import Subprocess from '@deepseek-ai/dsh-subprocess-local'
+import LocalJobs from '@deepseek-ai/dsh-jobs-local'
 import { Service } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { assert, report, scenarioDir, skipSuite, test, waitFor, withTempDir } from './lib/harness.mjs'
@@ -225,6 +226,43 @@ await test('host jobs mount and teardown update the scoped background schema', a
         assert.equal((await registry.records[0].hooks.done).status, 'completed')
         await jobs.dispose()
         await waitFor(() => current()?.parameters.properties.run_in_background === undefined, { what: 'background Bash schema removal' })
+      } finally { await scope.dispose() }
+    })
+  } finally { await shutdown(ctx) }
+})
+
+await test('real background and promoted jobs expose their description in the host list and result (#322)', async () => {
+  const { ctx } = await bootHost()
+  try {
+    await withTempDir('shells-session-labels', async workspace => {
+      const { agent, scope } = await publishOpsBash(ctx, 'shells-session-labels', workspace)
+      let jobs
+      try {
+        // Only session lookup is a fixture; jobs, subprocesses, schemas and rendering are real.
+        await ctx.plugin(inner => inner.provide('agents', { get: id => id === agent.id ? agent : undefined }))
+        await ctx.plugin(LocalJobs, {})
+        await ctx.plugin(inner => { jobs = inner.get('jobs'); jobs.attachController('shells-session-labels') })
+        await waitFor(() => ctx.get('tools').get('ops_bash', agent)?.parameters.properties.run_in_background !== undefined,
+          { what: 'real host jobs publication' })
+        for (const background of [true, false]) {
+          const description = background ? '后台 "测试" task' : 'Wait for a promoted test task'
+          const result = await ctx.get('tools').execute({
+            name: 'ops_bash', callId: `shells-session-label-${background}`, agent, signal: signal(),
+            arguments: { command: 'printf LABEL_READY; sleep 30', description,
+              ...(background ? { run_in_background: true } : { timeoutMs: 500 }) },
+          })
+          assert.equal(result.isError, false, JSON.stringify(result))
+          assert.equal(result.value.kind, background ? 'background' : 'promoted', JSON.stringify(result.value))
+          assert.equal(result.value.label, description)
+          const job = jobs.list(agent.id).find(job => job.id === result.value.jobId)
+          assert.equal(job.label, description)
+          const tool = ctx.get('tools').get('ops_bash', agent)
+          assert.ok(tool.output.render({}, result.value)[0].text.includes(JSON.stringify(description)))
+          jobs.kill(job.id, agent.id, 'label test completed')
+          const settled = await jobs.wait(job.id, 10000, agent.id)
+          assert.ok(['completed', 'failed', 'killed'].includes(settled.status))
+          jobs.remove(job.id, agent.id)
+        }
       } finally { await scope.dispose() }
     })
   } finally { await shutdown(ctx) }
