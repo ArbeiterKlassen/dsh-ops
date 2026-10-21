@@ -37,12 +37,13 @@ concurrency:
   # because a half-built release branch is worse than a queued one.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  validate:
+  # The POSIX legs are the gate: a red Linux or macOS run fails `ci-required` and blocks the merge.
+  # Windows is split into its own, non-blocking job directly below (#316).
+  validate-posix:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { runner: windows-latest, target: win32-x64 }
           - { runner: ubuntu-24.04, target: linux-x64 }
           - { runner: macos-latest, target: darwin-arm64 }
     runs-on: ${{ matrix.runner }}
@@ -82,12 +83,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y acl
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
-      # An optionalDependency that npm silently skipped (bad pin, a registry without the
-      # version, --omit=optional) must fail here, not be papered over by a download.
-      - name: The declared Windows Bash payload must be installed
-        if: matrix.target == 'win32-x64'
-        shell: bash
-        run: node -e "const fs=require('fs'),p=require('./package.json');const v=p.optionalDependencies?.['@dsh-ops/bash-win32-x64'];if(!v)throw Error('package.json lost the pinned Bash payload');if(!fs.existsSync('node_modules/@dsh-ops/bash-win32-x64/bin/bash.exe'))throw Error('npm ci did not install @dsh-ops/bash-win32-x64@'+v)"
       # The gate, not `npm run verify`: it runs the same suites with `DSH_OPS_REQUIRE_RUNTIME=1`
       # on POSIX (a runtime-absence skip is a failure, not a pass), refuses any skip outside this
       # platform's known set, fails when a suite file on disk was never collected, and checks the
@@ -108,10 +103,96 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Windows still runs on every push, pull request and merge group — it is never skipped — but its
+  # result is a **signal, not a gate**. The job is `continue-on-error: true`, and `ci-required` does
+  # not list it in `needs`, so the aggregate neither waits for it nor fails with it. That is what
+  # makes the gate non-blocking end to end: a job that is merely `continue-on-error` but still in
+  # `needs` keeps the required check pending until it finishes. On `main` after #307 this leg took
+  # 527 / 529 s (482 s before #307, because `npm ci` now downloads the 411 MB Windows Bash payload);
+  # the POSIX legs took 136–139 s (Linux) and 168–182 s (macOS). Splitting it into shards was
+  # measured at 1.5–2.4× the runner minutes and still stayed above 300 s on a slow runner (#316). A
+  # red Windows leg is still a defect to fix — see docs/ci.md.
+  validate-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, target: win32-x64 }
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: true
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '3'
+      # Runners are shared and sometimes loaded: give each suite more headroom than a workstation
+      # needs, and let a deadline be retried once — a timeout is the environment answering, and the
+      # retry prints, so a green summary still shows it happened.
+      DSH_OPS_SUITE_TIMEOUT_MS: '300000'
+      DSH_OPS_RETRY_TIMEOUTS: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The provenance regression verifies exact blobs from the pinned 0.3.1 commit.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Verify runner identity
+        run: node -e "if(process.platform+'-'+process.arch!=='${{ matrix.target }}')throw Error('Unexpected runner'); console.log(process.platform,process.arch)"
+      - name: Set up pinned Rust
+        shell: bash
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+      - name: Reuse exact locked Rust build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/target
+          key: ops-031-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/Cargo.lock') }}
+          # A changed lockfile must not throw the whole cache away: fall back to the previous one.
+          restore-keys: ops-031-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+      # An optionalDependency that npm silently skipped (bad pin, a registry without the
+      # version, --omit=optional) must fail here, not be papered over by a download.
+      - name: The declared Windows Bash payload must be installed
+        if: matrix.target == 'win32-x64'
+        shell: bash
+        run: node -e "const fs=require('fs'),p=require('./package.json');const v=p.optionalDependencies?.['@dsh-ops/bash-win32-x64'];if(!v)throw Error('package.json lost the pinned Bash payload');if(!fs.existsSync('node_modules/@dsh-ops/bash-win32-x64/bin/bash.exe'))throw Error('npm ci did not install @dsh-ops/bash-win32-x64@'+v)"
+      # The gate, not `npm run verify`: it runs the same suites with `DSH_OPS_REQUIRE_RUNTIME=1`
+      # on POSIX (a runtime-absence skip is a failure, not a pass), refuses any skip outside this
+      # platform's known set, fails when a suite file on disk was never collected, and checks the
+      # packed artifact. It builds the plugin before its CLI, then builds/tests the worker and
+      # Windows IPC proxies using the pinned Bash payload installed by npm ci (or DSH_OPS_TEST_BASH). Build success is not behaviour.
+      - name: Functional gate (skips, suite inventory, packed artifact)
+        shell: bash
+        run: node scripts/verify-gate.mjs --skip-install
+      # The UNC enumeration path needs a real UNC share. The Windows runner's
+      # system drive is reachable through the C$ administrative share, so the
+      # otherwise opt-in Rust regression runs in CI instead of staying local-only.
+      - name: UNC directory regression
+        if: matrix.target == 'win32-x64'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path 'C:\dsh-ops-unc' | Out-Null
+          $env:DSH_OPS_UNC_TEST_ROOT = '\\localhost\C$\dsh-ops-unc'
+          cargo test --locked --manifest-path native/Cargo.toml -p ops-search unc_directory -- --ignored --nocapture
+      - name: Verify native staged closure
+        run: node bin/native-runtime.mjs check --platform ${{ matrix.target }}
+      - name: Check shell payload platform filtering
+        shell: bash
+        run: node -e "const fs=require('fs');if(process.platform!=='win32'){for(const n of ['bash','pwsh'])if(fs.existsSync('node_modules/@dsh-ops/'+n+'-win32-x64'))throw Error('Windows shell installed on POSIX')}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.target }}
+          path: runtime/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 7
+
   # The tools trial: one platform is enough, because it exercises the tool surface itself rather
   # than the platform. It is deliberately **not** required — `continue-on-error` keeps the run green
   # — so a tool that breaks shows up in its own job and in the uploaded report without blocking a
-  # merge, while the `validate` matrix above stays the gate.
+  # merge, while `validate-posix` above stays the gate.
   tools-trial:
     runs-on: ubuntu-24.04
     continue-on-error: true
@@ -158,7 +239,8 @@ jobs:
 
   # The bench smoke: `workflow_dispatch` only, off by default, and informational (like `tools-trial`
   # above). One platform is enough, because it exercises the harness rather than the platform — the
-  # three-OS matrix in `validate` is the gate. Both sides are the *same* staged worker, so the run
+  # `validate-posix` matrix is the gate and `validate-windows` its non-blocking counterpart. Both
+  # sides are the *same* staged worker, so the run
   # proves only what a harness self-check can prove: the corpus builds and is removed, the worker
   # answers identically twice, and every query lands on `MATCH` or a declared `EXPECTED_*`. It cannot
   # produce a performance verdict: `compare()` derives its state from output hashes, error codes and
@@ -296,17 +378,18 @@ jobs:
         shell: bash
         run: node scripts/verify-gate.mjs --skip-install
 
-  # One check for a maintainer to require. Branch protection names individual job results, and the
-  # matrix above expands into one check per platform, so requiring the gate means keeping three names
-  # in sync — and silently losing the gate when a runner label changes. This job collapses them, and
-  # it reports the deliberately non-blocking `tools-trial` and `bench-smoke` without letting either
-  # fail the run. `bench-smoke` is listed in `needs` only so that this aggregate always accounts for
-  # every job; it is deliberately absent from the loop below, which is the whole of its non-blocking
-  # guarantee.
+  # One check for a maintainer to require. Branch protection names individual job results, and each
+  # matrix above expands into one check per platform, so requiring the gate by hand means keeping the
+  # names in sync — and silently losing the gate when a runner label changes. This job collapses them.
+  #
+  # It waits **only** on blocking jobs. Every `continue-on-error: true` job — `validate-windows`,
+  # `tools-trial`, `bench-smoke` — is deliberately absent from `needs` and from the loop below:
+  # listing one here would keep the required check pending until that job finished, which is a gate
+  # in everything but name. `scripts/check-workflows.mjs` enforces both halves of that rule.
   ci-required:
     name: CI required
     if: always()
-    needs: [validate, workflow-lint, source-size, node-floor, tools-trial, bench-smoke]
+    needs: [validate-posix, workflow-lint, source-size, node-floor]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -315,9 +398,9 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
-          for job in validate workflow-lint source-size node-floor; do
+          for job in validate-posix workflow-lint source-size node-floor; do
             case "$job" in
-              validate) result='${{ needs.validate.result }}' ;;
+              validate-posix) result='${{ needs.validate-posix.result }}' ;;
               workflow-lint) result='${{ needs.workflow-lint.result }}' ;;
               source-size) result='${{ needs.source-size.result }}' ;;
               node-floor) result='${{ needs.node-floor.result }}' ;;
@@ -325,8 +408,9 @@ jobs:
             echo "${job}: ${result}"
             [ "$result" = success ] || failed=1
           done
-          echo "tools-trial: ${{ needs.tools-trial.result }} — informational: a broken tool shows up in its own job and report, it does not block a merge"
-          echo "bench-smoke: ${{ needs.bench-smoke.result }} — informational: opt-in via the 'bench' dispatch input (skipped on push/pull_request/merge_group), it does not block a merge"
+          # Not in `needs` on purpose: this check must never wait for them, so their result is not
+          # available here. Read them on their own jobs; a red one is a signal, not a merge blocker.
+          echo "validate-windows, tools-trial, bench-smoke: non-blocking (continue-on-error), not waited on by this check"
           if [ "$failed" != 0 ]; then
             echo "::error::a blocking job did not succeed; read the failing job above"
             exit 1

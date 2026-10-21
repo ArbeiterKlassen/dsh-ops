@@ -20,21 +20,20 @@
 
 # dsh-ops
 
-OPS 为 DSH 增加有界文件与文档工具。Native 模式返回紧凑、带行号的文本；PTC 代码从同一个按调用启动的 Rust worker 获取类型化 Outcome。宿主集成使用严格 TypeScript，编译后保持已有 JavaScript 包路径。
+以提高token效率为目的，提供新增的ops系列工具并隐藏部分官方工具为方案的插件，低改动面，低侵入性，与其他插件广泛兼容。
 
-> [!IMPORTANT]
-> 本分支是 **0.4.0 发布候选**，尚未发布。已批准的验收范围为：BM-01 相比 OPS 0.3.x 输出减少至少 40%，官方读取另列对照；BM-03 对文件/发现 schema 执行 400 token 上限，同时保留 Bash 启动常驻并单列完整总数。最终实测证据与功能 CI 缺一不可。
-> 详情见[发布状态与限制](docs/0.4.0发布候选.md)。下方 `@latest` 命令安装已发布版本；评估候选版本需自行构建本检出目录并打包。
+- （仅windows平台）启用与dsh原生bash行为一致的ops_bash，并可选禁用powershell
+- 启用 DSH 预留的 `tools_addition` 动态工具加载，并提供渐进式纰漏的工具，作为高级功能（如pdf、word读取、超多文件批量修改）的加载平台，大大减少常见特定场景的token消耗量，且不会导致系统提示词膨胀
+- 为 Native 模式提供返回紧凑、带行号和更好错误回馈的工具以遏制报错循环，减少调用轮次
+- 为 PTC 模式提供一些返回结构化 JSON 值的工具以降低 ai 在 ptc 模式下编写 TypeScript 代码的token总量和心智负担
+- PTC SDK 目录包含 18 个 API：15 个文件/文档工具，加批处理、结果引用和加载器。
 
-- Native 默认提供 `ops_read_files` 与 `ops_discover_tools`；三个平台的默认 profile 都启用 shell 行并提供 `ops_bash`。高级工具在所属 agent 的下一次供应商请求中激活。
-- PTC SDK 目录包含 18 个 API：15 个文件/文档工具，加批处理、结果引用和加载器。仅暴露配置为常驻或已选择的 API；Native 与 PTC 分别提供自己的输出形式。
-- 可按需发现有界 CSV/TSV、DOCX 主体段落与受限 PDF 文本层读取。尚不支持二进制 DOC、OCR、通用 PDF 渲染、网页搜索或 HTML 抓取；使用前请查看[文档格式限制](docs/原生内核.md)。
-- 七个组件独立启停，保留已有 profile ID 与配置。逐工具官方替换默认关闭。[设置](docs/配置参考.md)提供严格校验的内置表单；可选浏览器页面需显式执行离线承载行迁移。
-- shell 组件在三个平台默认开启：Windows 使用主包声明的固定 bash 载荷——`optionalDependencies` 中的 `@dsh-ops/bash-win32-x64@0.2.1`，npm 安装时自动拉取 ops 自带的独立 **bash 5.3.15**（PortableGit `v2.56.0.windows.2`），也可用 `bashPath` 把 `ops_bash` 指向 git bash；Linux/macOS 使用发行版自带 bash，可用 `config.bashPath` 覆盖。`dsh-ops bash-runtime install` 保留为安装/修复与选择受管理副本的路径。PowerShell 仍由宿主管理；升级命令先预览标准安装，仅加 `--yes` 才执行。
-
-OPS 只发布自身作用域内的工具与可选路由提示，不改写共享工具注册表。每次调用均检查权限与取消状态。Windows 受限 Bash 仍存在文档注明的部分约束与运行时兼容性限制。
-
-历史 token 节省说法不能证明本候选版本通过发布门禁。ops 指广义 operations（运行操作），并非运维/SRE 产品。
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/8238e4cd-61aa-4740-83bf-3aa6dd61291b" height="300" alt="dsh token 效率">
+  &nbsp;&nbsp;&nbsp;
+  <img src="https://github.com/user-attachments/assets/a0c0fdfe-337a-43d5-8ca2-326d9287bfea" height="300" alt="第二张图">
+</p>
+<p align="center"><em>左：deepseek-v4.1-flash-1017在各harness的跑分与开销<br>右：ops在自用benchmark上取得的的成绩。完整benchmark将随后续更新发布<br>dsh-ops团队将致力于持续优化dsh的token效率，以更低的成本更好地完成同样的任务</em></p>
 
 ## 安装、更新、卸载
 
