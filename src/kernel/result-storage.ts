@@ -52,7 +52,8 @@ export function windowsCacheLocation(argv: readonly string[]): Location | undefi
 export function exposePosixCache(argv: readonly string[], storage: WorkerStorage | undefined): string[] {
   const separator = argv.indexOf('--')
   if (!storage || storage.windowsWriteSid !== undefined || separator < 1 || path.basename(argv[0]) !== 'bwrap'
-    || !argv.slice(1, separator).includes('--tmpfs') || !path.isAbsolute(storage.root)) return [...argv]
+    || !argv.slice(1, separator).some(option => option === '--tmpfs' || option.startsWith('--tmpfs='))
+    || !path.isAbsolute(storage.root)) return [...argv]
   return [...argv.slice(0, separator), '--bind', storage.root, storage.root, ...argv.slice(separator)]
 }
 function posixCacheLocation(key: string, create: boolean): Location | undefined {
