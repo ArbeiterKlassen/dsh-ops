@@ -11,7 +11,8 @@ export class BashJobAdmissionError extends Error {
 
 const running = (view: ShellJobView): boolean => ['running', 'stopping'].includes(view.status)
 
-export function startBashJob(jobs: ShellJobs, args: { command?: string; script_path?: string }, exec: ShellCall, start: StartShell) {
+export function startBashJob(jobs: ShellJobs, args: { description?: string; command?: string; script_path?: string }, exec: ShellCall, start: StartShell) {
+  const label = args.description ?? args.command ?? args.script_path ?? 'Bash'
   let process: ShellExecution | undefined
   let stopped: string | undefined
   let runInvoked = false
@@ -22,7 +23,7 @@ export function startBashJob(jobs: ShellJobs, args: { command?: string; script_p
     read: (offset: number) => process?.observed[stream].readFrom(offset) ?? { text: '', nextOffset: offset, lossy: false },
   }))
   let id: string
-  try { id = jobs.start({ kind: 'bash', label: args.command ?? args.script_path ?? 'Bash',
+  try { id = jobs.start({ kind: 'bash', label,
     ...(exec.agent ? { owner: exec.agent.id } : {}), output,
     run: () => {
       runInvoked = true
@@ -46,7 +47,7 @@ export function startBashJob(jobs: ShellJobs, args: { command?: string; script_p
     process?.kill('job admission failed')
     throw new BashJobAdmissionError(error, runInvoked)
   }
-  return { id, process: () => process, stopped: () => stopped,
+  return { id, label, process: () => process, stopped: () => stopped,
     effects: (): 'none' | 'unknown' => process ? (process.started ? 'unknown' : 'none') : attempted ? 'unknown' : 'none' }
 }
 
@@ -72,7 +73,7 @@ export async function waitOnBashJob(jobs: ShellJobs, attached: ReturnType<typeof
     const text = stdout + (stderr ? `${stdout && !stdout.endsWith('\n') ? '\n' : ''}[stderr]\n${stderr}` : '')
     const loss = read.lossy ? '\n[some output was dropped from memory; full output: '
       + ((read.job.output.spillPaths ?? []).join(', ') || '(unavailable)') + ']' : ''
-    return { kind: 'promoted', jobId: attached.id, timeoutMs, output: text + loss }
+    return { kind: 'promoted', jobId: attached.id, label: attached.label, timeoutMs, output: text + loss }
   }
   jobs.remove(attached.id, owner)
   const process = attached.process()

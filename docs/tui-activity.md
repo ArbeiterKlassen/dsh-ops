@@ -20,7 +20,7 @@ Snapshots are immutable and referentially stable until that session changes. Sub
 
 ## Native result diagnostics
 
-For the four native file tools and two PTC tools only, `result.js` parses a single JSON text envelope of at most 64 KiB (serialized UTF-8 bytes). It retains only known outcome categories, safe nonnegative counters, boolean flags and a bounded uppercase error code. Raw text, items, paths and error messages are discarded. Host failure cannot be upgraded to confirmed success. Shell prose and spilled/malformed output remain business-unconfirmed. Explicit unknown effects are distinguished from merely unavailable business status. No result reference is followed and no progress percentage or token saving is inferred.
+For OPS file and PTC tools only, `result.js` reads outcome facts from one of two sources. A Native top-level result carries them in the host's replayable presentation metadata (`meta.opsOutcome`, produced by `presentationMeta` in `src/kernel/presentation-outcome.ts`), because Native model text is compact prose rather than JSON. A PTC child result is a single JSON text envelope of at most 64 KiB (serialized UTF-8 bytes). It retains only known outcome categories, safe nonnegative counters, boolean flags and a bounded uppercase error code. Raw text, items, paths and error messages are discarded. Host failure cannot be upgraded to confirmed success. Shell prose and spilled/malformed output remain business-unconfirmed. Explicit unknown effects are distinguished from merely unavailable business status. No result reference is followed and no progress percentage or token saving is inferred.
 
 ## Verification
 

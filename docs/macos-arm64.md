@@ -35,7 +35,7 @@ Bash is a **Windows-only optional npm payload** of the main package; PowerShell 
 - PTC tools publish only in pure PTC presentation. `batch.root` must be absolute when supplied; result paging of a batch audit must use the same root when it differs from the session root.
 - macOS `/tmp` and `/var` are system aliases. The file bridge canonicalizes the **parent chain**, preserving the final entry for no-follow checks. Descendants of those aliases work; directly naming a symlink still fails closed. Canonical write-root checks remain in force.
 - `replace` on macOS requires APFS clone support to preserve extended ACL metadata. Unsupported clone operations fail before publication rather than dropping a deny entry. Ordinary mode/owner/xattrs are restored before the final fsync and rename.
-- Hidden `.dsh-ops-update-*.lock` sidecars are stable cooperative path locks, not temporary debris. Do not delete them while writers may be active.
+- Hidden `.dsh-ops-update-*.lock` sidecars are cooperative path locks, removed by the writer that holds one. A sidecar left by a killed writer is reused and removed by the next write of that name; it is never a stuck lock.
 
 ## Verification evidence
 

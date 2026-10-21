@@ -2,7 +2,7 @@
 /** Host-compatible consumer over an OPS-owned executor; host services stay scoped and borrowed. */
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
-import type { ShellContext, ShellBase, ShellCall, ShellPolicy, CreateShellExecution, StartShell, ShellExecution, HostBashResult, HostShellDefinition } from './types.js'
+import type { ShellContext, ShellBase, ShellCall, ShellPolicy, CreateShellExecution, StartShell, ShellExecution, ShellJobs, HostBashResult, HostShellDefinition } from './types.js'
 import { errorMessage } from './types.js'
 import { BashArgumentError, isBashArgumentError } from './argument-error.js'
 import { approveBashPolicy } from './approval.js'
@@ -12,8 +12,12 @@ import { BashJobAdmissionError, startBashJob, waitOnBashJob } from './jobs.js'
 export const HOST_MAX_BASH_TIMEOUT_MS = 600_000
 
 export function hostBashDefinition(ctx: ShellContext, base: ShellBase, createExecution: CreateShellExecution,
-  resolveWorkdir: (args: Record<string, unknown>, session: NonNullable<ShellCall['agent']>['session'] | undefined) => unknown): HostShellDefinition {
-  const jobs = ctx.get('jobs')
+  resolveWorkdir: (args: Record<string, unknown>, session: NonNullable<ShellCall['agent']>['session'] | undefined) => unknown,
+  jobs?: ShellJobs): HostShellDefinition {
+  // The registry arrives already bound by the component (`ctx.inject(['jobs'], …)`), exactly as the
+  // host's own bash tool does it. Re-reading a tracked service at call time returns a fresh traceable
+  // proxy, so an identity comparison against the definition-time value can never hold and must not
+  // decide whether background work is available.
   const parameters: JsonSchemaNode & { properties: Record<string, JsonSchemaNode> } = { ...base.parameters, required: ['description'], properties: {
     ...base.parameters.properties,
     description: { type: 'string', description: 'Required: clear active-voice description of this command, 5–10 words.' },
@@ -59,14 +63,14 @@ export function hostBashDefinition(ctx: ShellContext, base: ShellBase, createExe
           process = await createExecution(local, execution, standing, approvedPolicy, dshEnv, options)
           return process
         }
-        if (jobs && ctx.get('jobs') === jobs) {
+        if (jobs) {
           let attached
-          try { attached = startBashJob(jobs, args as { command?: string; script_path?: string }, exec, start) }
+          try { attached = startBashJob(jobs, args as { description: string; command?: string; script_path?: string }, exec, start) }
           catch (error) {
             if (run_in_background || attempted || error instanceof BashJobAdmissionError && error.runInvoked) throw error
             ctx.logger?.warn?.(`Bash job admission refused; using the foreground deadline: ${errorMessage(error)}`)
           }
-          if (attached) return run_in_background ? { kind: 'background', jobId: attached.id } : await waitOnBashJob(jobs, attached, exec, timeoutMs)
+          if (attached) return run_in_background ? { kind: 'background', jobId: attached.id, label: attached.label } : await waitOnBashJob(jobs, attached, exec, timeoutMs)
         } else if (run_in_background) return hostFailure('EXECUTOR_UNAVAILABLE: the host job registry is unavailable.', timeoutMs)
         const execution = await start(exec, {})
         const result = await execution.result()

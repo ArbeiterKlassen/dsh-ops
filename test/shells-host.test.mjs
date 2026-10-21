@@ -4,6 +4,7 @@ import { hostBashDefinition } from '../lib/shells/host-tool.js'
 import { startSessionBash } from '../lib/shells/session-execution.js'
 import { startBashJob, waitOnBashJob } from '../lib/shells/jobs.js'
 import { sessionWorkdir } from '../lib/session-shells.js'
+import { hostForeground } from '../lib/shells/host-contract.js'
 import { assert, report, test, TEST_HOME } from './lib/harness.mjs'
 
 function fixture({ mode = 'danger-full-access', jobs, approval, settle = true, exitCode = 0, file = process.execPath } = {}) {
@@ -19,11 +20,17 @@ function fixture({ mode = 'danger-full-access', jobs, approval, settle = true, e
       return { done: pending.promise, collected: { stdout: stream('ok'), stderr: stream('warning') } }
     } },
   }
-  const ctx = { get: name => services[name], logger: { warn() {} } }
+  // A tracked Cordis service hands out a fresh traceable proxy on every read, so the definition
+  // must never consult `ctx.get('jobs')` again: jobs are bound explicitly, exactly as the component
+  // binds them through `ctx.inject(['jobs'], …)`. Throwing here keeps a regression loud.
+  const ctx = { get: name => {
+    if (name === 'jobs') throw new Error('the bash definition must not re-read the jobs service')
+    return services[name]
+  }, logger: { warn() {} } }
   const bash = { file, source: 'config' }
   const base = bashToolDefinition({ ...bash, subprocess: services.subprocess })
   const definition = hostBashDefinition(ctx, base, (args, exec, standing, policy, env, options) =>
-    startSessionBash({ ctx, bash, active: () => true }, args, exec, standing, policy, env, options), sessionWorkdir)
+    startSessionBash({ ctx, bash, active: () => true }, args, exec, standing, policy, env, options), sessionWorkdir, jobs)
   const exec = { agent, callId: 'shell-call', signal: new AbortController().signal }
   return { definition, exec, services, calls, pending, setMode: next => { mode = next } }
 }
@@ -74,7 +81,8 @@ await test('host foreground calls validate and render the host result contract',
 
 await test('host descriptions are required and timeout overrides cap at ten minutes', async () => {
   const f = fixture()
-  for (const args of [{ command: 'true' }, { command: 'true', description: 'x', timeoutMs: NaN }]) {
+  for (const args of [{ command: 'true' }, { command: 'true', description: '' },
+    { command: 'true', description: '   ' }, { command: 'true', description: 'x', timeoutMs: NaN }]) {
     const invalid = await f.definition.execute(args, f.exec)
     assert.equal(invalid.status, 'failed'); assert.equal(invalid.failure.code, 'INVALID_BASH_ARGUMENT')
     assert.equal(invalid.failure.effectState, 'none'); assert.equal(invalid.failure.retry, 'after-input-change')
@@ -140,6 +148,10 @@ await test('timeout promotion returns the same job and consumes output exactly o
   const jobs = jobRegistry({ promote: true }), f = fixture({ jobs, settle: false })
   const value = await f.definition.execute({ command: 'true', description: 'Promote a long running command', timeoutMs: 1 }, f.exec)
   assert.equal(value.kind, 'promoted'); assert.equal(value.jobId, 'bash-1')
+  assert.equal(jobs.declaration.label, 'Promote a long running command')
+  assert.equal(value.label, jobs.declaration.label)
+  assert.deepEqual(validateJsonSchemaValue(f.definition.output.schema, value, 'value'), [])
+  assert.ok(f.definition.output.render({}, value)[0].text.includes(JSON.stringify(value.label)))
   assert.equal(value.output, 'ok\n[stderr]\nwarning')
   assert.equal(jobs.read('bash-1', f.exec.agent.id).chunks.every(chunk => chunk.text === ''), true)
   jobs.kill('bash-1', f.exec.agent.id, 'stop test')
@@ -149,8 +161,27 @@ await test('timeout promotion returns the same job and consumes output exactly o
 
 await test('background returns a host job id and cancellation stops work', async () => {
   const jobs = jobRegistry(), f = fixture({ jobs, settle: false })
-  const value = await f.definition.execute({ command: 'true', description: 'Start a cancellable background job', run_in_background: true }, f.exec)
+  const description = 'Run "quoted" tests\n验证后台任务'
+  const value = await f.definition.execute({ command: 'true', description, run_in_background: true }, f.exec)
   assert.equal(value.kind, 'background')
+  assert.equal(jobs.declaration.label, description)
+  assert.equal(value.label, description)
+  assert.deepEqual(validateJsonSchemaValue(f.definition.output.schema, value, 'value'), [])
+  const rendered = f.definition.output.render({}, value)[0].text
+  assert.ok(rendered.includes(JSON.stringify(description)))
+  assert.equal(rendered.split('\n').length, 1, 'a multiline label stays quoted on one result line')
+  jobs.kill(value.jobId, f.exec.agent.id, 'stop test')
+  await jobs.hooks.done
+  assert.equal(jobs.outcome.status, 'killed')
+})
+
+await test('the bound registry serves background work even when a re-read would not be identity-equal', async () => {
+  // This is the regression that made `ops_bash` refuse background work in the real host: the
+  // registry is a tracked service, so `ctx.get('jobs')` returns a new proxy each call. The fixture
+  // throws on that read, so only a definition that uses the bound registry can pass.
+  const jobs = jobRegistry(), f = fixture({ jobs, settle: false })
+  const value = await f.definition.execute({ command: 'true', description: 'Use the bound job registry', run_in_background: true }, f.exec)
+  assert.equal(value.kind, 'background'); assert.equal(value.jobId, 'bash-1')
   jobs.kill(value.jobId, f.exec.agent.id, 'stop test')
   await jobs.hooks.done
   assert.equal(jobs.outcome.status, 'killed')
@@ -200,8 +231,31 @@ await test('nonzero exit completes the host job but preserves the failed command
   const value = await f.definition.execute({ command: 'exit 7', description: 'Report a nonzero command exit' }, f.exec)
   assert.equal(jobs.outcome.status, 'completed'); assert.equal(jobs.outcome.detail, 'exit code: 7')
   assert.equal(value.exitCode, 7); assert.equal(value.status, 'failed')
-  assert.equal(value.failure.effectState, 'unknown'); assert.equal(value.failure.retry, 'never')
+  assert.equal(value.failure.effectState, 'unknown'); assert.equal(value.failure.retry, 'after-input-change')
+  assert.equal(value.failure.code, 'EXIT_CODE')
+  const text = f.definition.output.render({}, value)[0].text
+  assert.match(text, /correct the command or its inputs before retrying/)
+  assert.match(text, /Prior side effects may remain/)
+  assert.doesNotMatch(text, /Do not repeat the command/)
   assert.deepEqual(validateJsonSchemaValue(f.definition.output.schema, value, 'value'), [])
+})
+
+await test('only an ordinary nonzero exit permits a corrected command after input changes', () => {
+  const base = { exitCode: 2, signal: null, timedOut: false, timeoutMs: 1000,
+    stdout: { text: '', truncated: false }, stderr: { text: 'usage error', truncated: false } }
+  for (const extra of [{ timedOut: true }, { cancelled: true }, { signal: 'SIGTERM' },
+    { error: 'SPAWN_FAILED: unavailable' }, { restriction: { code: 'POLICY_DENIED', message: 'denied' } },
+    { permission: { code: 'PERMISSION_DENIED', message: 'denied' } }, { exitCode: null }]) {
+    const value = hostForeground({ ...base, ...extra })
+    assert.notEqual(value.failure.code, 'EXIT_CODE', JSON.stringify(extra))
+    assert.equal(value.failure.retry, 'never', JSON.stringify(extra))
+    assert.equal(value.failure.effectState, 'unknown')
+  }
+  assert.equal(hostForeground({ ...base, exitCode: 0 }).failure, undefined)
+  const normal = hostForeground(base)
+  assert.equal(normal.failure.code, 'EXIT_CODE')
+  assert.equal(normal.failure.retry, 'after-input-change')
+  assert.equal(normal.failure.effectState, 'unknown')
 })
 
 await test('job cancellation before asynchronous preparation prevents the starter from running', async () => {
@@ -212,6 +266,17 @@ await test('job cancellation before asynchronous preparation prevents the starte
   jobs.kill(attached.id, f.exec.agent.id, 'cancel before preparation')
   await jobs.hooks.done
   assert.equal(starts, 0); assert.equal(jobs.outcome.status, 'killed')
+})
+
+await test('job labels retain command, script and generic fallbacks without a description', async () => {
+  for (const [args, expected] of [[{ command: 'echo fallback' }, 'echo fallback'],
+    [{ script_path: 'fallback.sh' }, 'fallback.sh'], [{}, 'Bash']]) {
+    const jobs = jobRegistry(), f = fixture()
+    const attached = startBashJob(jobs, args, f.exec, () => { throw new Error('must not start') })
+    jobs.kill(attached.id, f.exec.agent.id, 'cancel before preparation')
+    await jobs.hooks.done
+    assert.equal(jobs.declaration.label, expected)
+  }
 })
 
 await test('an expiring pending preparation is stopped and never promoted', async () => {

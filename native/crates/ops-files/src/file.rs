@@ -2,7 +2,6 @@
 //! this module never invokes a shell and never follows links.
 use crate::contract::{Failure, Request, Result};
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
-use fs2::FileExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -10,7 +9,8 @@ use std::fs::{self};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
+/// Shared bound for file reads and proposed write/replacement content.
+pub const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
 /// Ceiling for one worker response. The host collects worker stdout with
 /// `maxBytes: 128 * 1024` and turns a lossy read into `OUTPUT_LIMIT` plus
 /// `effectState: "unknown"`, so a response that overflows is reported to the model
@@ -235,56 +235,32 @@ impl PreservedMetadata {
     }
 }
 
-/// Lock the stable per-path sidecar before reading the current target.
+/// Lock the update sidecar for this target's name before reading the target.
 ///
 /// Target-inode locks are insufficient across atomic rename: a waiter can retain
 /// the old inode while the path already names a new one. Cooperating writers all
-/// use this persistent lock inode, held until publication and directory sync.
+/// lock one stable sidecar per target *name* beside the target and hold it until
+/// publication and directory sync; the guard removes the sidecar when it drops.
 /// Non-cooperating writers remain outside this advisory serialization contract.
 ///
-/// The sidecar is created *before* the target is read, so an operation refused
-/// after the lock was taken leaves it behind. That is the declared behavior
-/// (#240 P5), not an accident, and it cannot be removed: unlinking the sidecar
-/// on release would let a waiter that already opened the old inode hold a lock
-/// on an inode the path no longer names, while the next writer locks a fresh
-/// file under the same name — two writers on one target. A zero-byte artifact
-/// that can be named, counted and documented is strictly better than that hole.
+/// The lock is taken *before* the target is read, so a refusal decided from the
+/// bytes (a stale `expectedRevision`, an edit conflict, a missing target) happens
+/// under the lock. Nothing is left behind by any of those paths: the guard in
+/// [`UpdateLock`] removes the sidecar it locked on release, and its identity
+/// check keeps a name that a finishing holder already replaced.
 ///
-/// Which refusals have already taken the lock (and so leave the sidecar): a
-/// stale `expectedRevision` on write/edit/copy/move/remove, an ambiguous or
-/// overlapping `edit_file` edit, and a copy/move refused because the
-/// destination exists. `replace` is the broad one: it locks every file its
-/// `glob` selects before it knows whether a file holds a match, so a refusal
-/// there — the `maxReplacements` ceiling, a `write_roots` fence, a revision
-/// conflict while publishing — leaves a sidecar beside every candidate, matching
-/// or not, and only a narrower `glob` bounds that. Refusals decided before the
-/// lock — read-only mode, the credential fence, path validation — leave nothing.
-///
-/// Declared lifecycle:
-///
-/// - One file per distinct target *name* (lowercased), beside the target:
-///   `.dsh-ops-update-<sha256(name)>.lock`, created mode 0600. Later operations
-///   on the same name reuse that inode, so sidecars do not accumulate; one write
-///   may leave at most one per file it locked.
-/// - Nothing removes it automatically, and nothing should while a `dsh-ops`
-///   writer may be active: deleting it is what re-opens the race above. An
-///   operator may delete sidecars in a directory no writer is using; the next
-///   write recreates whatever it needs.
-/// - It stays invisible to every selection tool. The name starts with `.`, and
-///   the walker drops any path with a hidden component (`hidden`) before a glob
-///   can match it, so `ops_glob`, `ops_grep` and a directory-wide `ops_replace`
-///   never return, count or rewrite one; `ops_batch` resolves its operations
-///   from the request, never from a walk.
-pub fn lock_and_read_for_update(file: &Path) -> Result<(std::fs::File, Vec<u8>)> {
+/// The sidecar stays invisible to every selection tool. The name starts with `.`,
+/// and the walker drops any path with a hidden component (`hidden`) before a glob
+/// can match it, so `ops_glob`, `ops_grep` and a directory-wide `ops_replace`
+/// never return, count or rewrite one; `ops_batch` resolves its operations from
+/// the request, never from a walk.
+pub fn lock_and_read_for_update(file: &Path) -> Result<(UpdateLock, Vec<u8>)> {
     let raw = file.to_str().ok_or_else(|| Failure::new("INVALID_ARGUMENT", "Non-UTF8 path"))?;
     let checked = crate::file_path::checked_leaf(raw, true)?;
-    // The lock inode must survive replacement of the target inode. Keep a
-    // persistent, hidden sidecar per path; unlinking it after unlock would let
-    // another process lock a different inode under the same lock name.
+    // The lock inode must survive replacement of the target inode, so it is a
+    // sidecar next to it, keyed by the target's name and not by its bytes.
     let key = format!("{:x}", Sha256::digest(checked.name.to_lowercase().as_bytes()));
-    let lock_name = format!(".dsh-ops-update-{key}.lock");
-    let lock = publication::open_update_lock(&checked.parent, &lock_name)?;
-    FileExt::try_lock_exclusive(&lock).map_err(|_| Failure::new("REVISION_CONFLICT", "another writer is updating this path; nothing was changed, retry"))?;
+    let lock = UpdateLock::acquire(&checked.parent, &format!(".dsh-ops-update-{key}.lock"), "another writer is updating this path; nothing was changed, retry")?;
     let bytes = read_bytes(file)?;
     Ok((lock, bytes))
 }
@@ -376,6 +352,10 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Option<(Value, Vec<Stri
 
 #[path = "file_publication.rs"]
 mod publication;
+
+#[path = "file_update_lock.rs"]
+mod update_lock;
+pub use update_lock::UpdateLock;
 
 #[path = "file_single.rs"]
 mod single;

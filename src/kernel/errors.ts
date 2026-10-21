@@ -24,6 +24,18 @@ export const ERROR_POLICIES: Readonly<Record<string, ErrorPolicy>> = Object.free
   ERR_INVALID_ENCODING: invalid,
   TABLE_PARSE_ERROR: invalid,
   DOCUMENT_PARSE_ERROR: invalid,
+  // Explicit exception, documented here because the Bash contract differs from the generic rule:
+  // a command that ran to completion and exited nonzero keeps `effectState: 'unknown'` (a write
+  // may have succeeded before the exit) yet reports `retry: 'after-input-change'` (inspect the
+  // exit code and output, correct the command or its inputs, then run it again). The producer is
+  // `src/shells/failure.ts`, which applies the exception when it emits `EXIT_CODE`; this entry
+  // records the code's intended advice so it stays discoverable and cannot be reclassified by
+  // accident. The exception is narrow: timeouts, cancellation, signal death, permission/policy
+  // refusals and spawn/runtime failures keep their own codes and never become `EXIT_CODE`.
+  // Effects still dominate inside `errorPolicy`, so an `EXIT_CODE` lookup with
+  // `effectState: 'unknown'` still answers `unknown`/`never`; only the Bash failure payload
+  // carries the exception.
+  EXIT_CODE: invalid,
   UNSUPPORTED_DOCUMENT: settled,
   FILE_CHANGED: changed,
   REFERENCE_EXPIRED: changed,
@@ -34,6 +46,8 @@ export const ERROR_POLICIES: Readonly<Record<string, ErrorPolicy>> = Object.free
   CALL_LIMIT: policy('error', 'after-state-change'),
   CANCELLED: settled,
   METADATA_UNSUPPORTED: settled,
+  LOCK_UNSUPPORTED: settled,
+  PATH_CHANGED: changed,
   IO_ERROR: settled,
   SYNC_FAILED: settled,
   CLEANUP_FAILED: settled,

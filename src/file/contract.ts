@@ -6,6 +6,7 @@ import { PARAMETERS, DESCRIPTIONS, OUTPUT, fileOutput } from '../capabilities/fi
 export { FILE_TOOLS } from '../capabilities/registry.js'
 export { PARAMETERS, DESCRIPTIONS, OUTPUT }
 import { renderNative } from '../modes/native/render.js'
+import { presentationMeta } from '../kernel/presentation-outcome.js'
 
 /** Drop unused empty placeholders strict adapters send for optional fields; never mutate the caller's object. */
 export function normalizeArguments(rawName: string, args: unknown): unknown {
@@ -33,7 +34,7 @@ export function definition(rawName: FileToolName, execute: ToolDefinition['execu
     description: DESCRIPTIONS[rawName],
     parameters: PARAMETERS[rawName],
     ...(capability(rawName)?.concurrencySafe ? { isConcurrencySafe: () => true } : {}),
-    output: { schema: fileOutput(rawName), render: (args, value) => [{ type: 'text', text: renderNative(rawName, args, value) }] },
+    output: { schema: fileOutput(rawName), render: (args, value) => [{ type: 'text', text: renderNative(rawName, args, value) }], presentationMeta },
     execute,
   }
 }

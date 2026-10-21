@@ -27,8 +27,8 @@ export interface ShellResult {
 }
 export type SettledShellResult = ShellResult & { status: 'completed' | 'failed' }
 export type HostForeground = SettledShellResult & { kind: 'foreground'; exitCode: number | null; signal: string | null; aborted: boolean }
-export type HostBashResult = HostForeground | { kind: 'background'; jobId: string }
-  | { kind: 'promoted'; jobId: string; timeoutMs: number; output: string }
+export type HostBashResult = HostForeground | { kind: 'background'; jobId: string; label: string }
+  | { kind: 'promoted'; jobId: string; label: string; timeoutMs: number; output: string }
 export interface ShellExecution {
   status: 'running' | 'completed' | 'killed'
   readonly started: boolean

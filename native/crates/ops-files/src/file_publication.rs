@@ -3,8 +3,10 @@
 use super::*;
 use cap_std::fs::{Dir, File, OpenOptions};
 
-pub(super) fn open_update_lock(parent: &Dir, name: &str) -> Result<std::fs::File> {
+pub(super) fn open_update_lock(parent: &Dir, name: &str, conflict: &str) -> Result<std::fs::File> {
     crate::file_path::validate_name(name)?;
+    #[cfg(not(windows))]
+    let _ = conflict;
     #[cfg(unix)]
     let file = {
         // A single validated sibling beneath an already-held no-follow directory.
@@ -26,9 +28,46 @@ pub(super) fn open_update_lock(parent: &Dir, name: &str) -> Result<std::fs::File
         File::from_std(std::fs::File::from(fd))
     };
     #[cfg(windows)]
-    let file = parent.open_with(name, OpenOptions::new().read(true).write(true).create(true).follow(FollowSymlinks::No))?;
+    let file = parent
+        .open_with(
+            name,
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .follow(FollowSymlinks::No),
+        )
+        .map_err(|error| lock_failure(error, conflict))?;
     crate::file_path::regular(&file.metadata()?, false)?;
     Ok(file.into_std())
+}
+
+pub(super) fn lock_error(error: std::io::Error, conflict: &str) -> Failure {
+    #[cfg(windows)]
+    if lock_unsupported(&error) {
+        return Failure::new(
+            "LOCK_UNSUPPORTED",
+            "This filesystem does not support exclusive file locks; nothing was changed. Use a local drive or the shell for this filesystem.",
+        );
+    }
+    let _ = error;
+    Failure::new("REVISION_CONFLICT", conflict)
+}
+
+/// A filesystem without byte-range locks reports `ERROR_INVALID_FUNCTION`
+/// (WSL 9p), `ERROR_NOT_SUPPORTED`, or `ERROR_CALL_NOT_IMPLEMENTED`.
+#[cfg(windows)]
+fn lock_unsupported(error: &std::io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(1 | 50 | 120))
+}
+
+/// Another handle already holds the sidecar, or its byte-range lock.
+#[cfg(windows)]
+fn lock_failure(error: std::io::Error, conflict: &str) -> Failure {
+    if matches!(error.raw_os_error(), Some(32 | 33)) {
+        return Failure::new("REVISION_CONFLICT", conflict);
+    }
+    Failure::from(error)
 }
 
 pub fn check_revision(bytes: Option<&[u8]>, expected: &str) -> Result<()> {
@@ -57,6 +96,7 @@ pub fn authorize_write(request: &Request, raw: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fs2::FileExt;
     #[test]
     fn simultaneous_lock_creators_keep_one_live_inode() {
         let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("ops-lock-test-{}", uuid::Uuid::new_v4()));
@@ -67,7 +107,7 @@ mod tests {
             std::thread::spawn(move || {
                 let parent = Dir::open_ambient_dir(root, cap_std::ambient_authority()).unwrap();
                 barrier.wait();
-                open_update_lock(&parent, ".dsh-ops-lock-test.lock").unwrap()
+                open_update_lock(&parent, ".dsh-ops-lock-test.lock", "held").unwrap()
             })
         }).collect();
         let files: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
@@ -86,6 +126,19 @@ mod tests {
         assert_eq!(check_revision(None, &hash).unwrap_err().code, "REVISION_CONFLICT");
         assert_eq!(check_revision(Some(b"new"), &hash).unwrap_err().code, "REVISION_CONFLICT");
         assert_eq!(check_revision(Some(b"old"), &hash.to_uppercase()).unwrap_err().code, "INVALID_ARGUMENT");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn unsupported_lock_errors_are_classified_apart_from_contention() {
+        for code in [1, 50, 120] {
+            assert!(lock_unsupported(&std::io::Error::from_raw_os_error(code)), "raw {code} means the filesystem cannot lock");
+            assert_eq!(lock_error(std::io::Error::from_raw_os_error(code), "held").code, "LOCK_UNSUPPORTED");
+        }
+        for code in [32, 33] {
+            assert!(!lock_unsupported(&std::io::Error::from_raw_os_error(code)), "raw {code} means another holder, not a filesystem limit");
+            assert_eq!(lock_error(std::io::Error::from_raw_os_error(code), "held").code, "REVISION_CONFLICT");
+        }
     }
 }
 
