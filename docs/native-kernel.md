@@ -49,6 +49,11 @@ Any envelope marker selects strict v1 decoding: partial envelopes, unknown field
 unsupported components/versions and unusable budgets are rejected before filesystem effects.
 Request IDs do not change result hashes. Automatic output spill is described below.
 
+## Filesystem error codes
+
+- `LOCK_UNSUPPORTED` — the filesystem cannot provide the update lock a write path requires. Nothing was changed, and retrying cannot add lock support: use a local drive or the shell for that filesystem.
+- `PATH_CHANGED` — a directory's identity changed while it was enumerated. No complete or partial result is available; restart the query. UNC shares are enumerated through the validated display path, so a share directory replaced during the walk fails the whole call instead of returning a possibly empty result reported as complete.
+
 ## Session snapshot references (6a/16)
 
 The worker accepts optional trusted envelope metadata `storage: { root, authorityId, allowedTools,

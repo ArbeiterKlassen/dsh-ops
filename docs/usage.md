@@ -196,6 +196,8 @@ Use `ops_bash`'s `command` for short commands and pipelines. For scripts longer 
 
 `ops_bash` requires a non-empty `description` and keeps the host Bash fields and result kinds: `foreground`, `background`, or `promoted`. Its default timeout is 120 seconds and the cap is 600 seconds. When the host jobs service is available, `run_in_background: true` returns a job ID immediately; a foreground timeout promotes the same running job. Use the host `job_output` and `job_kill` tools to collect or stop it. Without host jobs, the background parameter is absent and a foreground timeout stops the command. Unknown arguments are rejected before execution.
 
+The host job list and waiting view use `description` as the task label. Both `background` and `promoted` results include that same `label` beside `jobId`, and the rendered result quotes it. When migrating from the old `ops_run_background` / `ops_job_output` / `ops_job_kill` tools, start work with `ops_bash`'s `run_in_background` (or let a foreground call promote), then use the host `job_output` / `job_kill` with the returned ID. Keep `description` concise so the job is recognizable while waiting.
+
 `sandbox_permissions` plus `justification` can request a strictly wider mode through the host approval service. An allowed-once grant applies to that command only; rejection never executes it or changes the session mode. Authority is checked again after approval and sandbox preparation. Windows confinement reports the host provider’s actual enforcement (including `partial`); incompatible Bash runtimes fail closed.
 
 `script_path` (instead of `command`), `graceMs`, and `includeDiagnostics` remain explicit OPS compatibility extensions. They do not change the host command contract or its timeout limits.

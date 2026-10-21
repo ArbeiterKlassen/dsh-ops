@@ -80,19 +80,24 @@ impl Scan {
     where F: FnMut(&Path, &cap_std::fs::Metadata, &mut Self) -> Result<()> {
         if !self.running() { return Ok(()); }
         if depth > MAX_DEPTH { self.stopped = Some(TruncatedBy::ScanBudget); return Ok(()); }
-        let entries = match directory.entries() {
+        let mut entries = match read_entries(&directory, display) {
             Ok(entries) => entries,
-            Err(error) if depth == 0 => return Err(error.into()),
+            Err(error) if depth == 0 => return Err(error),
             Err(_) => { self.skip("unreadable-directory", false, true); return Ok(()); }
         };
         let mut names = Vec::new();
-        for entry in entries {
+        while let Some(entry) = entries.next_name() {
             if !self.running() { break; }
             self.entries += 1;
             if self.entries > MAX_WALK_ENTRIES { self.stopped = Some(TruncatedBy::ScanBudget); break; }
-            let entry = match entry { Ok(entry) => entry, Err(_) => { self.skip("unreadable-entry", false, true); continue; } };
-            match entry.file_name().into_string() { Ok(name) => names.push(name), Err(_) => self.skip("non-utf8-path", false, true) }
+            match entry {
+                Ok(name) => names.push(name),
+                Err(error) if error.kind() == std::io::ErrorKind::InvalidData => self.skip("non-utf8-path", false, true),
+                Err(_) => self.skip("unreadable-entry", false, true),
+            }
         }
+        #[cfg(windows)]
+        if unc_display(display) { unchanged_directory(&directory, display)?; }
         names.sort();
         for name in names {
             if !self.running() { break; }
