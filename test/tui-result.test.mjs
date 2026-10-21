@@ -2,6 +2,8 @@ import { createActivityStore } from '../lib/tui/activity.js'
 import { resultDetails } from '../lib/tui/result.js'
 import { activityLines } from '../lib/tui/panel.js'
 import { call, result, dispatch } from './lib/activity-events.mjs'
+import { definition } from '../lib/file/contract.js'
+import { resultDefinition } from '../lib/file/result.js'
 import { assert, report, test } from './lib/harness.mjs'
 const inspect = value => resultDetails('ops_grep', result(2, 'a', value).data, false)
 
@@ -17,6 +19,40 @@ await test('normal transport returns distinguish native success, refusal and ope
   assert.equal(store.snapshot('one').returned, 1)
   assert.equal(store.snapshot('one').errors, 0)
   assert.equal(store.snapshot('one').business.rejected, 1)
+})
+await test('Native results classify from their presentation metadata, never from model text', () => {
+  const replace = definition('replace', async () => ({})).output
+  const native = (seq, id, value, output = replace) => ({ type: 'tool/result', seq, time: seq * 10,
+    data: { turn: 1, step: 1, message: { role: 'tool', toolCallId: id, source: { kind: 'tool', callId: id }, isError: false,
+      content: output.render({}, value) }, meta: output.presentationMeta({}, value) } })
+  for (const [value, outcome] of [[{ status: 'completed', changed: 1 }, 'completed'], [{ status: 'completed', dryRun: true }, 'planned'],
+    [{ status: 'rejected', error: { code: 'POLICY_DENIED', effectState: 'none', message: 'read-only' } }, 'rejected'],
+    [{ status: 'error', error: { code: 'NOT_FOUND', effectState: 'none', message: 'missing' } }, 'error'],
+    [{ status: 'error', error: { code: 'RESULT_UNKNOWN', effectState: 'unknown', message: 'interrupted' } }, 'unknown']]) {
+    const { data } = native(2, 'a', value)
+    assert.equal(data.message.content[0].text.startsWith('{'), false, 'Native model text is not a JSON envelope')
+    assert.equal(resultDetails('ops_replace', data, false).outcome, outcome, JSON.stringify(value))
+    // The same Native text without metadata stays unconfirmed: prose is never parsed into an outcome.
+    assert.equal(resultDetails('ops_replace', { ...data, meta: undefined }, false).outcome, 'unconfirmed')
+  }
+  const page = resultDefinition(async () => ({})).output
+  assert.equal(resultDetails('ops_result', native(2, 'a', { status: 'completed', complete: false, nextOffset: 4 }, page).data, false).complete, false)
+  const store = createActivityStore()
+  store.observe('one', call(1, 'a', 'ops_replace'))
+  store.observe('one', native(2, 'a', { status: 'rejected', error: { code: 'POLICY_DENIED', effectState: 'none', message: 'read-only' } }))
+  assert.equal(store.snapshot('one').business.rejected, 1); assert.equal(store.snapshot('one').recent[0].errorCode, 'POLICY_DENIED')
+  const failed = native(2, 'a', { status: 'completed' }); failed.data.message.isError = true
+  assert.equal(resultDetails('ops_replace', failed.data, false).outcome, 'unconfirmed')
+  const nested = { content: [{ type: 'text', text: 'not json' }], meta: { opsOutcome: { status: 'completed' } } }
+  assert.equal(resultDetails('ops_glob', nested, true).outcome, 'unconfirmed', 'PTC children carry JSON, not metadata')
+})
+await test('presentation metadata keeps only bounded status, error code/effect and counters', () => {
+  const meta = definition('grep', async () => ({})).output.presentationMeta({}, { status: 'partial', done: 2, total: 3, failed: 1,
+    omitted: -1, complete: false, dryRun: 'yes', path: '/private/x', items: [{ path: '/private/x', text: 'PRIVATE' }],
+    error: { code: 'NOT_FOUND', effectState: 'none', message: '/private/x', nextAction: 'retry' } })
+  assert.deepEqual(meta, { opsOutcome: { status: 'partial', done: 2, total: 3, failed: 1, complete: false, error: { code: 'NOT_FOUND', effectState: 'none' } } })
+  assert.deepEqual(definition('grep', async () => ({})).output.presentationMeta({}, { status: 'Bad Status', error: { code: 'lower', effectState: 'maybe' } }),
+    { opsOutcome: { error: {} } })
 })
 await test('unknown effects outrank other outcomes and never imply safe automatic retry', () => {
   assert.equal(inspect({ status: 'completed', unknown: 1 }).outcome, 'unknown')

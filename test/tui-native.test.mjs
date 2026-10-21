@@ -52,14 +52,17 @@ const run = async (agent, name, args, mode = 'danger-full-access') => {
   modes.set(agent.id, mode)
   scripts.set(agent.id, [[{ id: callId, name, args }], []])
   const before = modelCalls
-  agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Run the scripted fixture.' }] }))
+  // DSH 0.2.1 loops classify queued input by source; a user turn must say it is one.
+  agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Run the scripted fixture.' }], source: { kind: 'user' } }))
   await agent.whenIdle()
   assert.deepEqual(failures, [])
   assert.equal(modelCalls, before + 2, 'one scripted tool response and one final response')
   assert.equal(scripts.get(agent.id).length, 0)
   const result = events.find(event => event.type === 'tool/result' && event.data.message.source.callId === callId)
   assert.ok(result, 'the real loop must commit a tool result')
-  return JSON.parse(result.data.message.content[0].text)
+  // Native text is for the model; the panel reads the replayable presentation facts instead.
+  assert.equal(result.data.message.content[0].text.startsWith('{'), false)
+  return result.data.meta.opsOutcome
 }
 try {
   await root.plugin(Loader, { baseUrl: pathToFileURL(join(composition, 'cordis.yml')).href })
