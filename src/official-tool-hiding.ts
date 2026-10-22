@@ -12,11 +12,16 @@ export { resolveHidingConfig } from './config.js'
 import { OFFICIAL_REPLACEMENTS } from './official-tool-catalog.js'
 import { safeDispose } from './teardown.js'
 
-interface Entry { context: Context; lifts: (() => void)[]; cleanupError?: string; error?: string; reported?: string }
+interface Entry { context: Context; lifts: (() => void)[]; cleanupError?: string; error?: string; reported?: string
+  /** Set from the assembled surface: this scope presents one program entry, so its
+   * selected official names are not native duplicates and must stay dispatchable. */
+  collapsed?: boolean }
 interface Plan { deny: string[]; failure?: string }
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error)
 
 export const name = 'dsh-ops-hide-official'
+/** The host's reserved PTC transport: the only tool a collapsed scope may call. */
+const RUN_CODE = 'run_code'
 const blocked = (detail: string): string => `READINESS_BLOCKED (EXECUTOR_UNAVAILABLE): dsh-ops hide-official cannot verify selected replacements: ${detail}. Restore the selected OPS tools, remove the selection from replaceTools, or disable the dsh-ops-hide-official row.`
 
 export function apply(root: Context, raw?: unknown): void {
@@ -131,8 +136,12 @@ export function apply(root: Context, raw?: unknown): void {
       if (!exec?.agent?.ctx) return blocked('calling agent scope unavailable')
       attach(exec.agent)
       reconcile() // Authority is live, not a startup snapshot.
-      return entries.get(exec.agent)?.error
-        ?? (hideable(exec.name) ? blocked(`official tool ${exec.name} is selected for replacement`) : undefined)
+      const entry = entries.get(exec.agent)
+      if (entry?.error) return entry.error
+      // A collapsed scope keeps the selected official tools visible on purpose, so
+      // refusing their dispatch would contradict what the model was just given.
+      return hideable(exec.name) && !entry?.collapsed
+        ? blocked(`official tool ${exec.name} is selected for replacement`) : undefined
     }
     ctx.on('tools/pre-execute', async (exec, next) => {
       const reason = refusal(exec)
@@ -145,14 +154,23 @@ export function apply(root: Context, raw?: unknown): void {
       if (!context.scope || isPresentationProbe(context)) return next()
       attach(context.scope)
       reconcile()
-      const entry = entries.get(context.scope)
-      const error = entry ? entry.error : blocked('agent scope cannot be verified')
-      if (error) throw new Error(error)
       let result
       try { result = await next() }
       catch (error) { throw block(context.scope, `agent prompt assembly could not be verified: ${message(error)}`) }
       reconcile()
-      if (entry?.error) throw new Error(entry.error)
+      const wire = Array.isArray(result?.tools) ? result.tools.map(schema => schema.name) : []
+      // A collapsed scope receives one program entry and nothing else: its selected
+      // official tools are not native duplicates there, and their OPS counterparts can
+      // only ever be SDK functions, so readiness is unprovable by construction. Fail
+      // closed on the assembled surface instead: a scope that really kept a selected
+      // official tool still throws, while a run_code scope owns no mask and no error.
+      const collapsed = wire.length > 0 && wire.every(name => name === RUN_CODE)
+      const entry = entries.get(context.scope)
+      if (entry) entry.collapsed = collapsed
+      if (entry?.error) {
+        if (!collapsed) throw new Error(entry.error)
+        clear(entry); entry.error = undefined
+      }
       if (!Array.isArray(result?.tools)) throw block(context.scope, 'assembled tool schemas unavailable')
       const leaked = result.tools.map(schema => schema.name).filter(hideable)
       if (leaked.length) throw block(context.scope, `assembled surface still contains hidden official tools: ${leaked.join(', ')}`)
