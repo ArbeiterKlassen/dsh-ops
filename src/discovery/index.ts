@@ -69,6 +69,24 @@ export function apply(root: Context, raw: unknown): void {
     }
     const ptcOnly = (assembly: PromptAssembly): boolean => assembly.sections.some(section => section.name === 'tools:ptc-only' && Boolean(section.text.trim()))
     const native = (agent: Agent): Promise<boolean> => isNativePresentation(prompt, agent)
+    /**
+     * Probe result memo keyed by the agent's visible tool names.
+     *
+     * A presentation probe assembles the whole prompt, so probing every tracked agent on
+     * every reconcile made one session's tool change cost more as sessions accumulated.
+     * The verdict only depends on which tools the scope publishes; a different set of names
+     * re-probes, and an agent nobody references drops out with its entry.
+     */
+    const probed = new WeakMap<Agent, { surface: string; native: boolean }>()
+    const surfaceOf = (agent: Agent): string => tools.schemas(agent).map(schema => schema.name).join('\u0000')
+    const settledNative = async (agent: Agent): Promise<boolean> => {
+      const surface = surfaceOf(agent)
+      const memo = probed.get(agent)
+      if (memo !== undefined && memo.surface === surface) return memo.native
+      const verdict = await native(agent).catch(() => false)
+      probed.set(agent, { surface, native: verdict })
+      return verdict
+    }
     const own = async (agent: Agent, entry: Entry, tool: ToolDefinition): Promise<void> => {
       if (!entry.ctx) return
       const execute = tool.execute
@@ -92,7 +110,7 @@ export function apply(root: Context, raw: unknown): void {
       chain = chain.then(async () => {
         if (stopped || version !== epoch) return
         const ready: [Agent, Entry][] = []
-        for (const [agent, entry] of entries) if (entry.ctx && ownership?.owns(agent) && permitted(agent) && await native(agent).catch(() => false)) ready.push([agent, entry])
+        for (const [agent, entry] of entries) if (entry.ctx && ownership?.owns(agent) && permitted(agent) && await settledNative(agent)) ready.push([agent, entry])
         if (stopped || version !== epoch) return
         mutating = true; ownership?.begin()
         try {
