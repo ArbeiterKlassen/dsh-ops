@@ -47,7 +47,7 @@ export function apply(root: Context, rawConfig: unknown): void {
     mountResultLifecycle(ctx)
     const entries = new Map<Agent, Entry>()
     const active = new Map<AbortController, { owner: Agent; promise: Promise<unknown> }>()
-    let stopped = false, mutating = false, epoch = 0, chain = Promise.resolve()
+    let stopped = false, mutating = false, epoch = 0, published = 0, chain = Promise.resolve()
     let settled = chain
     const drain = async () => {
       let current: Promise<void>
@@ -76,6 +76,8 @@ export function apply(root: Context, rawConfig: unknown): void {
     let ownership: Awaited<ReturnType<typeof ownPtcScopes>> | undefined
     const execute = (agent: Agent, entry: Entry, tool: ApiName | 'load_sdk'): ToolDefinition['execute'] => async (args, exec) => {
       await chain
+      // A call reads the live epoch: any later reconcile invalidates it, whether or not that
+      // pass ended up publishing.
       const version = epoch
       const available = () => !stopped && entries.get(agent) === entry && ownership?.owns(agent) && exec.agent === agent && entry.ptc && entry.owned.has(publicToolName(tool))
       if (!available() || !await ptcOnly(agent, exec.signal).catch(() => false) || !available() || version !== epoch) {
@@ -118,6 +120,11 @@ export function apply(root: Context, rawConfig: unknown): void {
         // A republish re-registers every agent's definitions. It is only owed when some
         // agent's published surface or PTC verdict actually moved; `force` asks for a
         // fresh probe of the selected agents, not for an unconditional rewrite.
+        // Probed surfaces stay pending until the republish that consumes them runs. A pass
+        // a later reconcile supersedes publishes nothing, so recording its surfaces would
+        // leave the next pass reading an unpublished surface as already current and
+        // returning early forever.
+        const surfaces = new Map<Agent, string>()
         let dirty = false
         for (const [agent, entry] of entries) {
           if (stopped || version !== epoch) return
@@ -126,15 +133,16 @@ export function apply(root: Context, rawConfig: unknown): void {
           const surface = surfaceOf(agent)
           if (!force && entry.surface === surface) { if (entry.ptc) ready.add(agent); continue }
           if (entry.surface !== surface) dirty = true
-          entry.surface = surface
+          surfaces.set(agent, surface)
           const next = await ptcOnly(agent).catch(() => false)
           if (next !== entry.ptc) dirty = true
           if (next) ready.add(agent)
         }
         if (stopped || version !== epoch) return
         if (!dirty && !force && !republishAnyway) return
-        mutating = true; ownership?.begin()
+        mutating = true; ownership?.begin(); published = version
         try {
+          for (const [agent, surface] of surfaces) { const entry = entries.get(agent); if (entry) entry.surface = surface }
           for (const entry of entries.values()) clear(entry)
           // Snapshot exact Native visibility only after all our masks/overrides have lifted.
           const native = new Map([...entries].map(([agent, entry]) => [agent, nativeProviders(entry.ctx ?? ctx, agent, true)]))
@@ -158,9 +166,9 @@ export function apply(root: Context, rawConfig: unknown): void {
               const def = provider.definition
               if (provider.scope === agent || tools.get(def.name, agent) === def) continue
               const shadow: ToolDefinition = { ...def, execute: async (args, exec) => {
-                const version = epoch
+                const version = published
                 if (stopped || !provider.active || entries.get(agent) !== entry || exec.agent !== agent || await ptcOnly(agent, exec.signal).catch(() => true)
-                  || stopped || !provider.active || version !== epoch) return failure('POLICY_DENIED', 'Native projection or owning scope is unavailable.')
+                  || stopped || !provider.active || version !== published) return failure('POLICY_DENIED', 'Native projection or owning scope is unavailable.')
                 return def.execute(args, exec)
               } }
               entry.disposers.push(entry.ctx.tools.register(shadow), trackNativeShadow(entry.ctx, agent, shadow, provider)); entry.owned.set(def.name, shadow)

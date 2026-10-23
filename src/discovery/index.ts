@@ -47,7 +47,7 @@ export function apply(root: Context, raw: unknown): void {
     const entries = new Map<Agent, Entry>()
     mountResultLifecycle(ctx)
     let ownership: Awaited<ReturnType<typeof ownScopes>> | undefined
-    let stopped = false, mutating = false, epoch = 0, chain = Promise.resolve()
+    let stopped = false, mutating = false, epoch = 0, published = 0, chain = Promise.resolve()
     let settled = chain
     const drain = async () => {
       let current: Promise<void>
@@ -92,9 +92,12 @@ export function apply(root: Context, raw: unknown): void {
       const execute = tool.execute
       const registration: ToolDefinition = { ...tool, execute: async (args, exec) => {
         await chain
-        const version = epoch
+        // The probe below assembles the prompt, which reconciles other scopes; `epoch` would
+        // therefore invalidate this call for changes that never republished this one. What
+        // retires a registration is a republish, so the guard compares `published`.
+        const version = published
         const available = () => ownership?.owns(agent) && !stopped && entries.get(agent) === entry && exec.agent === agent && entry.owned.has(tool.name)
-        if (!available() || !await native(agent).catch(() => false) || !available() || version !== epoch) {
+        if (!available() || !await native(agent).catch(() => false) || !available() || version !== published) {
           return failure('POLICY_DENIED', 'Discovery capability belongs to a different or inactive scope.')
         }
         return execute(args, exec)
@@ -112,7 +115,7 @@ export function apply(root: Context, raw: unknown): void {
         const ready: [Agent, Entry][] = []
         for (const [agent, entry] of entries) if (entry.ctx && ownership?.owns(agent) && permitted(agent) && await settledNative(agent)) ready.push([agent, entry])
         if (stopped || version !== epoch) return
-        mutating = true; ownership?.begin()
+        mutating = true; ownership?.begin(); published = version
         try {
           for (const [agent, entry] of entries) {
             if (!ownership?.owns(agent)) { clear(entry); entry.releaseSelection?.(); entry.releaseSelection = undefined; continue }
