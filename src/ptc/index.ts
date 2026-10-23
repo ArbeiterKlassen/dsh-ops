@@ -18,6 +18,7 @@ import { PTC_RESIDENT_TOOLS } from './config.js'
 import type { ApiName } from './config.js'
 import { sdkDefinition, requestedApis } from './sdk.js'
 import { ownPtcScopes } from './ownership.js'
+import { surfaceOf as toolSurface } from '../surface.js'
 import { monitoredInvoke } from './invoke.js'
 export { resolvePtcConfig } from '../config.js'
 export const name = 'dsh-ops-ptc'
@@ -27,7 +28,15 @@ const ptcDefinitions = new WeakSet<ToolDefinition>()
 interface Entry {
   ctx?: Context; fiber?: Fiber; ready: Promise<void>; disposers: (() => void)[]
   selected: Set<ApiName>; pending: Set<ApiName>; owned: Map<string, ToolDefinition>; ptc: boolean
-  /** Tool names this agent published when `ptc` was last probed; a change re-probes. */
+  /**
+   * Tool names this agent published when `ptc` was last probed; a change re-probes.
+   *
+   * Names are the whole memo key, and `isPtc` reads more than names: it also asks whether
+   * the `tools:ptc-only` section is non-empty. A verdict that flips without the name set
+   * moving is missed here. Both self-heal on the next step — the assemble-withdraw handler
+   * re-probes a scope whose assembly stopped being PTC-only, and `discovery` re-probes on
+   * every step — so the stale verdict costs one pass, never a permanently wrong surface.
+   */
   surface?: string
 }
 const isPtc = (assembly: PromptAssembly): boolean => assembly.tools.length === 1 && assembly.tools[0]?.name === 'run_code'
@@ -54,15 +63,7 @@ export function apply(root: Context, rawConfig: unknown): void {
       do { current = chain; await current } while (current !== chain)
       settled = current
     }
-    /**
-     * Visible tool names of one agent, the surface a `ptcOnly` probe reads.
-     *
-     * Names alone decide the probe: `isPtc` only asks whether `run_code` is the sole
-     * tool, so a definition swapped for an equal name cannot flip the verdict. Reading
-     * definitions too would cost one `tools.get` per name, and each of those rebuilds the
-     * whole scope view.
-     */
-    const surfaceOf = (agent: Agent): string => tools.schemas(agent).map(schema => schema.name).join('\u0000')
+    const surfaceOf = (agent: Agent): string => toolSurface(tools, agent)
     const clear = (entry: Entry) => {
       entry.owned.clear()
       for (const dispose of entry.disposers.splice(0)) {
@@ -105,11 +106,15 @@ export function apply(root: Context, rawConfig: unknown): void {
      * has. Publication itself always covers every entry, because the Native snapshot below is
      * exact only once every agent's masks are lifted — a partial pass would read the remaining
      * agents through their live overrides and register a short shadow set.
+     *
+     * An empty set is a probe-free pass, not an absent one: it names no agent to probe
+     * while still asking for the republish a departure owes. `undefined` is the opposite
+     * request — probe every agent — and is what a registry change passes, because the
+     * event does not say which scope moved.
      */
     const reconcile = (force = false, targets?: ReadonlySet<Agent>): Promise<void> => {
       if (stopped || mutating) return chain
-      const selected = targets === undefined || targets.size === 0 ? undefined : targets
-      const probed = (agent: Agent) => selected === undefined || selected.has(agent)
+      const probed = (agent: Agent) => targets === undefined || targets.has(agent)
       // A probe-free pass (agent disposal) still owes the republish: the remaining agents'
       // masks and shadows were computed against the departee's registrations.
       const republishAnyway = targets !== undefined && targets.size === 0

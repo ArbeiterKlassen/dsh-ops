@@ -7,6 +7,7 @@ import { resolveDiscoveryConfig } from '../config.js'
 import { NativeFileTools } from '../file/runtime.js'
 import { nativeProviders, registerNativeProvider, claimNativeSelection } from '../file/result-provider.js'
 import { ownScopes } from '../scoped-ownership.js'
+import { surfaceOf as toolSurface } from '../surface.js'
 import { isNativePresentation, isPresentationProbe } from '../presentation.js'
 import { mountResultLifecycle } from '../kernel/result-lifecycle.js'
 import { failure, resolveWorker } from '../file/worker.js'
@@ -75,10 +76,14 @@ export function apply(root: Context, raw: unknown): void {
      * A presentation probe assembles the whole prompt, so probing every tracked agent on
      * every reconcile made one session's tool change cost more as sessions accumulated.
      * The verdict only depends on which tools the scope publishes; a different set of names
-     * re-probes, and an agent nobody references drops out with its entry.
+     * re-probes, and an agent nobody references drops out with its entry. That is an
+     * assumption about `isNativePresentation`, which reads the `tools:ptc-only` section text
+     * as well as the tool list: a presentation that flips without the names moving is missed
+     * here. The per-step `native()` probe below is unmemoized, so such a scope corrects itself
+     * on its next step.
      */
     const probed = new WeakMap<Agent, { surface: string; native: boolean }>()
-    const surfaceOf = (agent: Agent): string => tools.schemas(agent).map(schema => schema.name).join('\u0000')
+    const surfaceOf = (agent: Agent): string => toolSurface(tools, agent)
     const settledNative = async (agent: Agent): Promise<boolean> => {
       const surface = surfaceOf(agent)
       const memo = probed.get(agent)
