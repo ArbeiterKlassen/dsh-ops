@@ -387,7 +387,7 @@ await test('parseRunArgs reads the runner flags, keeps the CLI validation, and r
   assert.throws(() => parseRunArgs(['--out', 'x', '--folder', 'g'], { runsDir: '/tmp' }), /drop --folder/)
 
   const plain = parseRunArgs([], { runsDir: '/tmp' })
-  assert.equal(plain.repeat, 3)
+  assert.equal(plain.repeat, 1)
   assert.equal(plain.repeatExplicit, false)
   assert.equal(plain.aa, false)
   assert.deepEqual(buildArms(plain).map((arm) => arm.label), ['bench-base', 'bench-ops'])

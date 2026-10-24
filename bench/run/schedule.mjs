@@ -41,7 +41,7 @@ export const SUMMARY_FORMAT = 'dsh-ops-bench-summary-v1'
 /** The sweep document tag this module returns; the seal step turns it into run.json. */
 export const SWEEP_FORMAT = 'dsh-ops-bench-sweep-v1'
 /** Repeats per task when neither `--repeat` nor the task's own `repeat` field says. */
-export const DEFAULT_REPEAT = 3
+export const DEFAULT_REPEAT = 1
 /** The two sides an arm may play. `--aa` uses `base` twice, with distinct labels. */
 export const SIDES = ['base', 'cand']
 

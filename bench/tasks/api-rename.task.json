@@ -10,6 +10,6 @@
     { "type": "contentHashes", "dir": "src", "expect": "final" },
     { "type": "command", "command": "node", "args": ["check.mjs"], "exitCode": 0 }
   ],
-  "repeat": 2,
+  "repeat": 1,
   "timeoutMs": 1800000
 }

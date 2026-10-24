@@ -11,6 +11,6 @@
     { "type": "fileEquals", "path": "answer.txt", "expect": "answer" },
     { "type": "fileEquals", "path": "check.js", "expect": "checkSource", "invariant": true }
   ],
-  "repeat": 2,
+  "repeat": 1,
   "timeoutMs": 2400000
 }
