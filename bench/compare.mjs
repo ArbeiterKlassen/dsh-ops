@@ -40,6 +40,7 @@ import {
   percentChange,
 } from './lib/compare-core.mjs'
 import { RUNS_DIR } from './lib/next-folder.mjs'
+import { environmentLines } from './lib/environment.mjs'
 
 /** The sealed contract document inside a run directory. */
 const SEALED_RUN = 'run.json'
@@ -78,6 +79,7 @@ const USAGE = `usage: node bench/compare.mjs <base> <cand> [options]
   --noise-floor-pct N   pin the A/A noise floor; without a floor every cost
                      direction is withheld (noise-floor-unknown)
   --noise <a> <b>    measure the A/A noise floor from two baseline runs
+  --allow-cross-platform  diagnostics only: allow different platforms, with a warning
   --json             print the comparison document as JSON instead of the report
   --out <file>       where the rendered artifact goes (default: the sweep's group
                      folder, named "DSH-OPS Benchmark Report <UTC>.md" — a run with no
@@ -143,7 +145,10 @@ export function parseArgs(argv) {
         if (index >= argv.length) throw new Error(`${name} needs a value`)
         return argv[index]
       }
-      if (name === '--json') {
+      if (name === '--allow-cross-platform') {
+        if (inline !== null) throw new Error('--allow-cross-platform takes no value')
+        options.allowCrossPlatform = true
+      } else if (name === '--json') {
         if (inline !== null) throw new Error('--json takes no value; the comparison document goes to stdout and --out names a file')
         options.json = true
       } else if (name === '--aggregate') options.aggregate = take()
@@ -516,6 +521,7 @@ export function renderReport(comparison) {
   const lines = [
     REPORT_TITLE,
     '',
+    ...environmentLines(comparison.environment),
     ...taskSection(comparison),
     '',
     ...toolSection(comparison),
@@ -625,14 +631,19 @@ export async function main(argv, io = {}) {
     return EXIT.usage
   }
 
-  const comparison = compareSummaries(base.doc, cand.doc, {
+  let comparison
+  try { comparison = compareSummaries(base.doc, cand.doc, {
+    allowCrossPlatform: options.allowCrossPlatform,
     aggregate: options.aggregate,
     tolerancePct: options.tolerancePct,
     failOn: options.failOn,
     regressionScope: options.regressionScope,
     noiseFloorPct: options.noiseFloorPct ?? undefined,
     noise: noise ?? undefined,
-  })
+  }) } catch (error) {
+    err(`compare: ${String(error?.message ?? error)}`)
+    return EXIT.usage
+  }
   const payload = options.json
     ? `${JSON.stringify(comparison, null, 2)}\n`
     : `${renderReport(comparison)}\n`
