@@ -1,4 +1,4 @@
-# Benchmark
+# Benchmark Manual
 
 ## 测试前的准备
 
@@ -11,12 +11,12 @@ npm run build && npm run build:ptc     # lib/ + 原生 worker
 
 ```console
 npm i -g @deepseek-ai/dsh
-node bench/cli.mjs setup              # 先加 --dry-run 看计划；检查失败会在碰 profile 之前拒绝
+node bench/cli.mjs setup              # 会自动添加 2 个 headless profile（base、dsh），然后在 dsh 上面安装本地代码 build 出来的插件
 ```
 
-### 配 LLM 路由 overlay
+### 配 LLM 链接
 
-跑 `node bench/cli.mjs setup` 会在副本不存在时自动复制一份（存在就一字不改）；想自己重来一份就手动复制，会覆盖已有的：
+跑 `node bench/cli.mjs setup` 会在自动创建；也可以手动创建（会覆盖已有的）：
 
 ```console
 cp bench/llm.patch.example.yml bench/llm.patch.yml           # bash
@@ -37,14 +37,17 @@ cp bench/llm.patch.example.yml bench/llm.patch.yml           # bash
 node bench/cli.mjs ab
 ```
 
-- 会自动取下一个空闲的 `benchmark-YYYY-MM-DD-NN`（按当天日期编号，从 `-00` 起）
-- 跑完自动在组目录写 `DSH-OPS Benchmark Report <UTC>.md`（报告标题带 (beta)）
-
 ## 怎么跑单个 task
 
 ```console
 node bench/cli.mjs ab --task csv-sum
 ```
+
+## 结果在哪看
+
+- 在 bench/runs 文件夹里面可以看到
+- 文件夹名称格式为 `benchmark-YYYY-MM-DD-NN`（按当天日期编号，从 `-00` 起）
+- 跑完自动在组目录写 `DSH-OPS Benchmark Report <UTC>.md`
 
 ## 任务一览
 
