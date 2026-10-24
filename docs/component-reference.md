@@ -208,7 +208,7 @@ The plugin renders routing guidance from what it actually published. The excerpt
 
 ## `dsh-ops/hide-official` — per-tool replacements
 
-Disabled by default, with `replaceTools: []`. Explicit selections switch the model to these reviewed read/search workflows. Their names, arguments and results differ from the host tools; calls are never translated or forwarded under an official name.
+Disabled by default, with `replaceTools: []`. Explicit selections switch the model to these reviewed read/search workflows. Their names, arguments and results differ from the host tools; calls are never translated or forwarded under an official name. A `run_code` presentation (PTC) is never masked: its transport is not gated, while the selected official tools stay refused in that scope. The replacement contract covers native presentation only.
 
 <!-- hide-official-scope:start -->
 | Official tool | OPS alternative | Reviewed purpose |

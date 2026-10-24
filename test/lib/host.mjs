@@ -22,9 +22,10 @@ import { PACKAGE_ROOT } from './harness.mjs'
  * @param {boolean} [options.withTools] - install the tool registry (default true).
  * @param {boolean} [options.withSystemPrompt] - install the prompt registry (default true).
  * @param {boolean} [options.keepLogger] - keep Cordis's console logging (default false).
+ * @param {'native'|'ptc'} [options.toolsMode] - deployment presentation mode (default native).
  * @returns {Promise<{ctx: Context, tools: any, prompt: any}>} the host.
  */
-export async function bootHost({ withTools = true, withSystemPrompt = true, keepLogger = false } = {}) {
+export async function bootHost({ withTools = true, withSystemPrompt = true, keepLogger = false, toolsMode = 'native' } = {}) {
   const ctx = new Context()
   if (!keepLogger) {
     // Cordis logs service and plugin activity at info level; a gate that prints
@@ -37,7 +38,7 @@ export async function bootHost({ withTools = true, withSystemPrompt = true, keep
   }
   if (withTools) {
     const ToolRuntime = (await import('@deepseek-ai/dsh-tools')).default
-    await ctx.plugin(ToolRuntime, { mode: 'native' })
+    await ctx.plugin(ToolRuntime, { mode: toolsMode })
   }
   return { ctx, tools: ctx.get('tools'), prompt: ctx.get('systemPrompt') }
 }
