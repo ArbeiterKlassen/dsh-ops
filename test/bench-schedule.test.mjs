@@ -524,7 +524,7 @@ await test('main: a sweep is unsealed by default and --seal opts in', async () =
       resolveEntry: () => ENTRY,
       installSignals: false,
       now: NOW,
-      dumpProfileConfig: () => { throw new Error('the default must not fingerprint anything') },
+      dumpProfileConfig: () => '- id: dsh-ops-shell\n  disabled: false\n',
       seal: () => { sealed += 1; return {} },
     })
     assert.equal(code, EXIT.ok)
@@ -534,6 +534,9 @@ await test('main: a sweep is unsealed by default and --seal opts in', async () =
     const group = path.join(root, 'runs', fs.readdirSync(path.join(root, 'runs'))[0])
     const armDir = fs.readdirSync(group).find((name) => name.endsWith('bench-base'))
     assert.ok(fs.existsSync(path.join(group, armDir, 'summary.json')), 'the per-arm summary is the artifact the report reads')
+    const summary = JSON.parse(fs.readFileSync(path.join(group, armDir, 'summary.json'), 'utf8'))
+    assert.equal(summary.components.shell, 'enabled', 'unsealed summaries still preserve component configuration')
+    assert.equal(summary.meta.platform, `${process.platform}-${process.arch}`)
     assert.equal(fs.existsSync(path.join(group, 'run.json')), false, 'nothing sealed this sweep')
     const reports = fs.readdirSync(group).filter((name) => name.startsWith('DSH-OPS Benchmark Report') && name.endsWith('.md'))
     assert.equal(reports.length, 1, 'a finished sweep writes its own report into the group folder')
@@ -555,6 +558,7 @@ await test('main: a sweep is unsealed by default and --seal opts in', async () =
       installSignals: false,
       now: NOW,
       seal: () => { throw new Error('--no-seal must never seal') },
+      profileHashes: HASHES,
     }), EXIT.ok)
     assert.match(explicit.text(), /no — not requested/)
   })
@@ -563,7 +567,7 @@ await test('main: a sweep is unsealed by default and --seal opts in', async () =
 await test('main: a finished sweep writes the report by default and --no-report skips it', async () => {
   await withTempDir('bench-main-report', async (root) => {
     const runsRoot = path.join(root, 'runs')
-    const base = { tasksDir: tasksDir(root, 1), runsDir: runsRoot, llmOverlay: overlayIn(root), resolveEntry: () => ENTRY, installSignals: false, now: NOW }
+    const base = { tasksDir: tasksDir(root, 1), runsDir: runsRoot, llmOverlay: overlayIn(root), resolveEntry: () => ENTRY, installSignals: false, now: NOW, profileHashes: HASHES }
     const groups = () => fs.readdirSync(runsRoot)
 
     const out = sink()

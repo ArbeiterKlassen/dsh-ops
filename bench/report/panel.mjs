@@ -377,6 +377,10 @@ function renderConclusion() {
 function renderOverview(node) {
   const condition = obj(RUN.meta).condition
   node.appendChild(el('p', 'mono', 'Condition: ' + (condition === undefined || condition === null ? 'unknown' : j(condition))))
+  const environment = el('div', 'card')
+  environment.appendChild(el('h3', null, 'Platform / component configuration'))
+  environment.appendChild(el('pre', null, JSON.stringify({ platform: obj(RUN.meta).platform || 'unknown', components: Object.fromEntries(Object.entries(obj(RUN.arms)).map(([key, arm]) => [key, obj(arm).components || null])) }, null, 2)))
+  node.appendChild(environment)
   const keys = pairKeys()
   const taskRows = SUMMARY.tasks.map((task) => {
     const base = task.arms[keys[0]]

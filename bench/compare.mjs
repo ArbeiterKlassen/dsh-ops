@@ -30,7 +30,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ConditionError, describeCondition } from './lib/condition.mjs'
+import { describeCondition } from './lib/condition.mjs'
 import { matrixComparisons, renderMatrix } from './lib/matrix.mjs'
 
 import {
@@ -42,6 +42,7 @@ import {
   percentChange,
 } from './lib/compare-core.mjs'
 import { RUNS_DIR } from './lib/next-folder.mjs'
+import { environmentLines } from './lib/environment.mjs'
 
 /** The sealed contract document inside a run directory. */
 const SEALED_RUN = 'run.json'
@@ -81,6 +82,7 @@ const USAGE = `usage: node bench/compare.mjs <base> <cand> [options]
   --noise-floor-pct N   pin the A/A noise floor; without a floor every cost
                      direction is withheld (noise-floor-unknown)
   --noise <a> <b>    measure the A/A noise floor from two baseline runs
+  --allow-cross-platform  diagnostics only: allow different platforms, with a warning
   --json             print the comparison document as JSON instead of the report
   --out <file>       where the rendered artifact goes (default: the sweep's group
                      folder, named "DSH-OPS Benchmark Report <UTC>.md" — a run with no
@@ -147,7 +149,10 @@ export function parseArgs(argv) {
         if (index >= argv.length) throw new Error(`${name} needs a value`)
         return argv[index]
       }
-      if (name === '--json') {
+      if (name === '--allow-cross-platform') {
+        if (inline !== null) throw new Error('--allow-cross-platform takes no value')
+        options.allowCrossPlatform = true
+      } else if (name === '--json') {
         if (inline !== null) throw new Error('--json takes no value; the comparison document goes to stdout and --out names a file')
         options.json = true
       } else if (name === '--aggregate') options.aggregate = take()
@@ -527,6 +532,7 @@ export function renderReport(comparison) {
     '',
     `Condition: ${describeCondition(comparison.condition)}`,
     '',
+    ...environmentLines(comparison.environment),
     ...taskSection(comparison),
     '',
     ...toolSection(comparison),
@@ -649,6 +655,7 @@ export async function main(argv, io = {}) {
 
   let comparison
   try { comparison = compareSummaries(base.doc, cand.doc, {
+    allowCrossPlatform: options.allowCrossPlatform,
     aggregate: options.aggregate,
     tolerancePct: options.tolerancePct,
     failOn: options.failOn,
@@ -656,8 +663,7 @@ export async function main(argv, io = {}) {
     noiseFloorPct: options.noiseFloorPct ?? undefined,
     noise: noise ?? undefined,
   }) } catch (error) {
-    if (!(error instanceof ConditionError)) throw error
-    err(`compare: ${error.message}`)
+    err(`compare: ${String(error?.message ?? error)}`)
     return EXIT.usage
   }
   const payload = options.json

@@ -44,6 +44,7 @@ import { sealRun } from './run/seal.mjs'
 import { renderReport, reportFileName } from './compare.mjs'
 import { reasoningEffort, planConditions, writeConditionPatch, patchArgs, describeCondition, assertEffectiveCondition } from './lib/condition.mjs'
 import { runMatrix } from './lib/matrix.mjs'
+import { componentFacts } from './lib/environment.mjs'
 
 /** The runner-only flags that take a value; `--task`/`--repeat`/`--folder`/`--base`/`--cand` are parsed by the CLI. */
 const VALUE_FLAGS = ['--sleep-ms', '--out', '--heartbeat-ms', '--stall-ms', '--timeout', '--dsh', '--llm-patch', '--model', '--reasoning-effort', '--provider']
@@ -269,6 +270,7 @@ export function profileFingerprints(arms, context = {}) {
       fs.mkdirSync(context.dirs[arm.side], { recursive: true })
       fs.writeFileSync(path.join(context.dirs[arm.side], 'dump-config.txt'), text, { mode: 0o600 })
     }
+    arm.components = componentFacts(text)
   }
   return hashes
 }
@@ -453,7 +455,7 @@ export async function main(argv, io = {}) {
   catch (error) { err(`bench ab: ${error.message}`); return EXIT.usage }
   if (conditions.length > 1) {
     const root = options.out === null ? path.join(io.runsDir ?? RUNS_DIR, options.folder) : path.resolve(options.out)
-    try { return await runMatrix({ conditions, root, argv, options, io, run: main }) }
+    try { return await runMatrix({ conditions, root, argv, options, io: { ...io, interrupt: io.interrupt ?? createInterrupt() }, run: main }) }
     catch (error) { err(`bench matrix: ${error.message}`); return EXIT.failure }
   }
   const condition = conditions[0]
@@ -506,14 +508,14 @@ export async function main(argv, io = {}) {
   // fingerprint, and a sweep that cannot be sealed is not evidence. Refusing here costs
   // nothing; refusing after the sweep would have spent the tokens first.
   let hashes = io.profileHashes ?? null, conditionPatch = null
-  if (condition !== null || hashes === null && seal !== undefined) {
+  if (condition !== null || hashes === null) {
     try {
       conditionPatch = writeConditionPatch(sweepDir, condition)
       hashes = profileFingerprints(arms, { entry, dump: io.dumpProfileConfig, env: io.env,
         llmPatch: patch.path, conditionPatch, condition, dirs })
     } catch (error) {
       err(`bench ab: ${String(error?.message ?? error)}`)
-      err('nothing was spawned and no token was spent; run "node bench/cli.mjs setup" if the profiles are not prepared yet, or pass --no-seal to sweep without sealing.')
+      err('nothing was spawned and no token was spent; run "node bench/cli.mjs setup" if the profiles are not prepared yet. Configuration facts are required even without --seal.')
       return EXIT.failure
     }
   }

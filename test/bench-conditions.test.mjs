@@ -74,6 +74,23 @@ await test('matrix show prints every condition without allocating output or invo
   assert.equal(output.lines.filter(line => line.startsWith('[matrix] ') && /\/2:/.test(line)).length, 2)
 }))
 
+await test('interrupting one sweep stops the remaining matrix conditions', () => withTempDir('conditions-interrupt', async root => {
+  const tasksDir = path.join(root, 'tasks'), out = path.join(root, 'matrix'), output = sink()
+  fs.mkdirSync(tasksDir); fs.writeFileSync(path.join(tasksDir, 'condition.task.json'), JSON.stringify(task))
+  let sweeps = 0
+  const code = await runMain(['--out', out, '--no-llm-patch', '--provider', 'p', '--model', 'a', '--model', 'b', '--no-report'], {
+    ...output, tasksDir, installSignals: false, resolveEntry: () => entry,
+    dumpProfileConfig: (_entry, _profile, context) => fs.readFileSync(context.conditionPatch, 'utf8'),
+    sweep: (_spec, options) => {
+      sweeps++; options.interrupt.stopped = true
+      return { interrupted: true, failures: [], completedSessions: 0, plannedSessions: 2, pairs: 1, noise: null }
+    },
+  })
+  assert.equal(code, 1)
+  assert.equal(sweeps, 1, 'an interrupt applies to the whole matrix, including conditions not yet started')
+  assert.equal(json(path.join(out, 'matrix.json')).groups.length, 1)
+}))
+
 await test('a complete matrix uses identical routing patches in both arms and archives each condition', () => withTempDir('conditions-matrix', async root => {
   const tasksDir = path.join(root, 'tasks'), out = path.join(root, 'matrix'), overlay = path.join(root, 'llm.yml')
   fs.mkdirSync(tasksDir); fs.writeFileSync(path.join(tasksDir, 'condition.task.json'), JSON.stringify(task)); fs.writeFileSync(overlay, overlayText)
@@ -135,6 +152,7 @@ await test('a complete matrix uses identical routing patches in both arms and ar
   assert.equal(await compareMain(['--matrix', out], markdown), 0)
   assert.match(markdown.lines[0], /Cross-condition results are not comparable/)
   assert.equal(markdown.lines[0].match(/^## Condition /gm).length, 4)
+  assert.equal(markdown.lines[0].match(/^# /gm).length, 1)
   const mismatch = sink()
   assert.equal(await compareMain([path.join(out, manifest.groups[0].base), path.join(out, manifest.groups[1].cand)], mismatch), 2)
   assert.match(mismatch.lines.join('\n'), /"reasoningEffort":"low"/)

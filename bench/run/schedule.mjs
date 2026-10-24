@@ -205,6 +205,9 @@ function sessionOptions(arm, pair, spec, options, ctx) {
 /** One arm's summary: the shape `bench/compare.mjs` reads as a side. */
 function buildSummary(arm, rows, ctx) {
   return {
+    meta: { platform: ctx.spec.meta?.platform ?? `${process.platform}-${process.arch}` },
+    profileHash: arm.profileHash ?? null,
+    components: arm.components ?? null,
     format: SUMMARY_FORMAT,
     label: arm.label,
     profile: arm.profile,
@@ -239,6 +242,7 @@ function noiseFor(spec, summaries, arms) {
 /** The arm descriptor the seal step (P8a) lifts into `run.json`'s `arms`. */
 function descriptor(arm) {
   return {
+    components: arm.components ?? null,
     label: arm.label,
     profile: arm.profile,
     profileHash: arm.profileHash ?? null,
