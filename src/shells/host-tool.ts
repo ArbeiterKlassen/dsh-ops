@@ -10,6 +10,8 @@ import { HOST_BASH_OUTPUT_SCHEMA, hostFailure, hostForeground, renderHostBash } 
 import { BashJobAdmissionError, startBashJob, waitOnBashJob } from './jobs.js'
 import { createJsonDigestProjection } from './json-digest.js'
 
+import { bashPresentationMeta, presentBashCall, presentBashResult } from './presentation.js'
+
 export const HOST_MAX_BASH_TIMEOUT_MS = 600_000
 
 export function hostBashDefinition(ctx: ShellContext, base: ShellBase, createExecution: CreateShellExecution,
@@ -34,7 +36,9 @@ export function hostBashDefinition(ctx: ShellContext, base: ShellBase, createExe
     parameters: { ...parameters },
     projectContent: projection.projectContent,
     // The host validates this value against the declared schema before invoking its renderer.
-    output: { schema: HOST_BASH_OUTPUT_SCHEMA, render: (_args, value) => [{ type: 'text', text: renderHostBash(value as unknown as HostBashResult) }] },
+    output: { schema: HOST_BASH_OUTPUT_SCHEMA, render: (_args, value) => [{ type: 'text', text: renderHostBash(value as unknown as HostBashResult) }], presentationMeta: bashPresentationMeta },
+    presentCall: presentBashCall,
+    presentResult: presentBashResult,
     async execute(input: unknown, exec: ShellCall = {}): Promise<HostBashResult> {
       const complete = async (value: HostBashResult) => { await projection.prepare(value, exec); return value }
       let timeoutMs = 120_000
