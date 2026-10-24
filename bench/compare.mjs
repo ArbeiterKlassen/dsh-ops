@@ -25,8 +25,8 @@
  * pass rate, paired token Δ, the noise band, whether a direction is readable and the
  * gate. None of the diagnostics can change the gate.
  *
- * Time is evidence only: the comparison never reads `durationMs`, and nothing here
- * turns a duration into a verdict.
+ * Durations are displayed like any other metric (the per-task table's time column);
+ * the verdict's cost basis remains paired tokens.
  *
  * @module dsh-ops/bench/compare
  */
@@ -445,25 +445,28 @@ function verdictSection(comparison) {
 function taskSection(comparison) {
   const { totals } = comparison
   const useMin = comparison.aggregate === 'min'
-  const keys = { steps: useMin ? 'stepsMin' : 'stepsMedian', toolCalls: useMin ? 'toolCallsMin' : 'toolCallsMedian', toolErrors: useMin ? 'toolErrorsMin' : 'toolErrorsMedian' }
+  const keys = { steps: useMin ? 'stepsMin' : 'stepsMedian', toolCalls: useMin ? 'toolCallsMin' : 'toolCallsMedian', toolErrors: useMin ? 'toolErrorsMin' : 'toolErrorsMedian', duration: useMin ? 'durationMsMin' : 'durationMsMedian' }
   // The change rides inside the cell it belongs to (`1,050 (+5.0%)`, `4 → 3 (−25%)`):
   // one number per row, with its Δ% in parentheses rather than a column of its own.
   const candCell = (value, pct) => `${number(value)}${Number.isFinite(pct) ? ` (${percent(pct)})` : ''}`
   const deltaCell = (baseValue, candValue, pct) => `${count(baseValue)} → ${count(candValue)}${Number.isFinite(pct) ? ` (${percent(pct)})` : ''}`
   const countCell = (baseValue, candValue) => `${count(baseValue)} → ${count(candValue)}`
+  // Time renders like every other metric: same aggregate, same direction colouring.
+  const seconds = (ms) => (Number.isFinite(ms) ? `${(ms / 1000).toFixed(1)}s` : '—')
+  const timeCell = (baseMs, candMs, pct) => `${seconds(baseMs)} → ${seconds(candMs)}${Number.isFinite(pct) ? ` (${percent(pct)})` : ''}`
   const passCell = (side) => `${side.base.passed}/${side.base.repeats}→${side.cand.passed}/${side.cand.repeats}`
   const lines = [
     '## Per-task pairs',
     '',
-    '| task | base | cand (Δ%) | steps base→cand (Δ%) | tool calls base→cand (Δ%) | tool errors | pass |',
-    '| --- | --- | --- | --- | --- | --- | --- |',
+    '| task | base | cand (Δ%) | steps base→cand (Δ%) | tool calls base→cand (Δ%) | time base→cand (Δ%) | tool errors | pass |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
   ]
   for (const task of comparison.tasks) {
     const pair = task.paired
     const name = task.inBase && task.inCand ? task.id : `${task.id}${task.inBase ? '(base only)' : '(cand only)'}`
-    lines.push(`| ${name} | ${number(pair.baseValue)} | ${candCell(pair.candValue, pair.pct)} | ${deltaCell(task.base[keys.steps], task.cand[keys.steps], task.delta.stepsPct)} | ${deltaCell(task.base[keys.toolCalls], task.cand[keys.toolCalls], task.delta.toolCallsPct)} | ${countCell(task.base[keys.toolErrors], task.cand[keys.toolErrors])} | ${passCell(task)} |`)
+    lines.push(`| ${name} | ${number(pair.baseValue)} | ${candCell(pair.candValue, pair.pct)} | ${deltaCell(task.base[keys.steps], task.cand[keys.steps], task.delta.stepsPct)} | ${deltaCell(task.base[keys.toolCalls], task.cand[keys.toolCalls], task.delta.toolCallsPct)} | ${timeCell(task.base[keys.duration], task.cand[keys.duration], task.delta.durationPct)} | ${countCell(task.base[keys.toolErrors], task.cand[keys.toolErrors])} | ${passCell(task)} |`)
   }
-  lines.push(`| **TOTAL** | ${number(totals.baseGrandTotal)} | ${candCell(totals.candGrandTotal, totals.grandTotalPct)} | ${deltaCell(totals.baseSteps, totals.candSteps, percentChange(totals.baseSteps, totals.candSteps))} | ${deltaCell(totals.baseToolCalls, totals.candToolCalls, percentChange(totals.baseToolCalls, totals.candToolCalls))} | ${countCell(totals.baseToolErrors, totals.candToolErrors)} | ${totals.basePasses}/${totals.baseRuns}→${totals.candPasses}/${totals.candRuns} |`)
+  lines.push(`| **TOTAL** | ${number(totals.baseGrandTotal)} | ${candCell(totals.candGrandTotal, totals.grandTotalPct)} | ${deltaCell(totals.baseSteps, totals.candSteps, percentChange(totals.baseSteps, totals.candSteps))} | ${deltaCell(totals.baseToolCalls, totals.candToolCalls, percentChange(totals.baseToolCalls, totals.candToolCalls))} | ${timeCell(totals.baseDurationMs, totals.candDurationMs, percentChange(totals.baseDurationMs, totals.candDurationMs))} | ${countCell(totals.baseToolErrors, totals.candToolErrors)} | ${totals.basePasses}/${totals.baseRuns}→${totals.candPasses}/${totals.candRuns} |`)
   return lines
 }
 
@@ -642,7 +645,7 @@ export function renderReport(comparison, sources = {}) {
     `- cand:${sources.cand?.file ?? '?'}(spec \`${sources.cand?.spec ?? '?'}\`,${sources.cand?.kind ?? '?'})`,
     `- document: format \`${comparison.format}\` · aggregate \`${comparison.aggregate}\` · tolerance ${rawPercent(comparison.tolerancePct)}`,
     '',
-    `Time fields are evidence only: the cost basis of this report is paired tokens, and the comparison does not read duration into the verdict (${COMPARE_FORMAT} carries no time statistics).`,
+    `Time is reported like any other metric: the time column shows each task's wall-clock (${comparison.aggregate}), and the cost basis of the verdict remains paired tokens (${COMPARE_FORMAT}).`,
     '',
     ...verdictSection(comparison),
   ]

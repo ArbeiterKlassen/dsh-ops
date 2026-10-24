@@ -57,6 +57,7 @@ function metrics(taskId, tokens, pass, extra = {}) {
     steps: extra.steps ?? 4,
     toolCalls: extra.toolCalls ?? 6,
     toolErrors: extra.toolErrors ?? 0,
+    durationMs: extra.durationMs ?? 60_000,
     toolCallsByName: extra.toolCallsByName ?? { ops_read: 2, bash: 1 },
     verify: { passed: pass, checks: [] },
     exitCode: 0,
@@ -167,14 +168,14 @@ const assertEnglish = (text) => assert.doesNotMatch(text, /[\u3400-\u4dbf\u4e00-
 
 await test('the same comparison renders byte-identical text twice, and the closing conclusion words each noise outcome', () => {
   const base = summary('bench-base', [metrics('csv-sum', 1000, true), metrics('csv-sum', 1000, true)])
-  const cheaper = summary('bench-ops', [metrics('csv-sum', 926, true), metrics('csv-sum', 926, true)])
+  const cheaper = summary('bench-ops', [metrics('csv-sum', 926, true, { durationMs: 55_000 }), metrics('csv-sum', 926, true, { durationMs: 55_000 })])
   const beyond = compareSummaries(base, cheaper, { noiseFloorPct: 3.1, failOn: 'both' })
   const text = renderReport(beyond, SOURCES)
   assert.equal(renderReport(beyond, SOURCES), text, 'rendering is a pure function of its inputs')
   assertEnglish(text)
   assert.match(text, /^# DSH-OPS Benchmark Report\n\n## Per-task pairs$/m, 'the title leads straight into the data — no summary bar')
-  assert.match(text, /^\| task \| base \| cand \(Δ%\) \| steps base→cand \(Δ%\) \| tool calls base→cand \(Δ%\) \| tool errors \| pass \|$/m, 'the first table carries cost, behaviour and pass: no pairs, exclusion or direction column')
-  assert.ok(text.includes(`| csv-sum | 1,000 | 926 (${green('\u22127.4%')}) | 4 → 4 (${green('0.0%')}) | 6 → 6 (${green('0.0%')}) | 0 → 0 | 2/2→2/2 |`), 'each cell keeps its own Δ% in parentheses, painted like every other percent')
+  assert.match(text, /^\| task \| base \| cand \(Δ%\) \| steps base→cand \(Δ%\) \| tool calls base→cand \(Δ%\) \| time base→cand \(Δ%\) \| tool errors \| pass \|$/m, 'the first table carries cost, behaviour, wall-clock evidence and pass: no pairs, exclusion or direction column')
+  assert.ok(text.includes(`| csv-sum | 1,000 | 926 (${green('\u22127.4%')}) | 4 → 4 (${green('0.0%')}) | 6 → 6 (${green('0.0%')}) | 60.0s → 55.0s (${green('\u22128.3%')}) | 0 → 0 | 2/2→2/2 |`), 'each cell keeps its own Δ% in parentheses, painted like every other percent — time included')
   assert.doesNotMatch(text, /geomean/, 'the table ends at TOTAL: the geomean row is gone')
   assert.doesNotMatch(text, /## Excluded pairs|## A\/A noise band|## Token attribution/, 'the report keeps to cost, calls and the verdict: the three diagnostic sections are gone')
   assert.doesNotMatch(text, /^## (Per-task pairs|Tool calls \(per-side overlap counts\)|Per-task bucket detail \(median\)|usage split \(TOTAL, median\)|steps and tool calls \(median\))\n\n(?!\|)/m, 'a table heading leads straight into its table: no explanatory line')
@@ -184,7 +185,7 @@ await test('the same comparison renders byte-identical text twice, and the closi
   assert.equal(headings[headings.length - 1], '## Conclusion', 'the conclusion closes the report')
   assert.ok(text.includes(`- Direction: Δ ${green('\u22127.4%')}, beyond the noise floor ±${red('3.1%')} ⇒ readable direction: cheaper`), 'a drop beyond the band reads green')
   assert.ok(text.includes(`- noise floor (A/A): ±${red('3.1%')}, method \`provided\``))
-  assert.match(text, /Time fields are evidence only/)
+  assert.match(text, /Time is reported like any other metric/)
 
   // Inside the band: the interval is reported, the direction is not.
   const inside = compareSummaries(base, summary('bench-ops', [metrics('csv-sum', 975, true), metrics('csv-sum', 975, true)]), { noiseFloorPct: 3.1, failOn: 'both' })
@@ -207,7 +208,7 @@ await test('the same comparison renders byte-identical text twice, and the closi
   const worseText = renderReport(worse, SOURCES)
   assert.ok(worseText.includes(`- Direction: Δ ${red('+5.0%')}, beyond the noise floor ±${red('3.1%')} ⇒ readable direction: costlier`), 'a rise beyond the band reads red')
   assert.match(worseText, /- gate: 🚦 failed \(regression\) ·/)
-  assert.ok(worseText.includes(`| csv-sum | 1,000 | 1,050 (${red('+5.0%')}) | 4 → 4 (${green('0.0%')}) | 6 → 6 (${green('0.0%')}) | 0 → 0 | 2/2→2/2 |`))
+  assert.ok(worseText.includes(`| csv-sum | 1,000 | 1,050 (${red('+5.0%')}) | 4 → 4 (${green('0.0%')}) | 6 → 6 (${green('0.0%')}) | 60.0s → 60.0s (${green('0.0%')}) | 0 → 0 | 2/2→2/2 |`))
   assert.ok(worseText.includes(`- reason: token regression: csv-sum 1,050 > 1,020 (base 1,000 + ${red('2%')}; noise ±${red('3.1%')})`), 'a reason quoted from the core is painted too, its digits intact')
   for (const rendered of [insideText, unknownText, worseText]) assertEnglish(rendered)
 })
@@ -239,7 +240,7 @@ await test('the steps and tool calls table pairs each task, sums the totals, and
   const errBase = summary('bench-base', [metrics('csv-sum', 1000, true, { toolErrors: 2 })])
   const errCand = summary('bench-ops', [metrics('csv-sum', 900, true, { toolErrors: 0 })])
   const errText = renderReport(compareSummaries(errBase, errCand, { noiseFloorPct: 3.1, failOn: 'both' }), SOURCES)
-  assert.ok(errText.includes('| 2 → 0 | 1/1→1/1 |'), 'tool errors are counted, not percentaged')
+  assert.ok(errText.includes(`| 60.0s → 60.0s (${green('0.0%')}) | 2 → 0 | 1/1→1/1 |`), 'tool errors are counted, not percentaged')
 })
 
 await test('the tool table keeps the per-side totals, splits them by task, and colours adoption', () => {
@@ -416,7 +417,7 @@ await test('label, directory and file forms resolve to the same comparison', asy
     assert.equal(body(byFile.text()), body(byDir.text()), 'all three forms reach the same comparison')
     assert.match(byLabel.text(), /- base:.*run\.json\(spec `bench-base`,run\)/)
     assert.match(byDir.text(), /- base:.*run\.json\(spec `.*bench-base`,run\)/)
-    assert.ok(byDir.text().includes(`api-rename | 500 | 620 (${red('+24.0%')}) | 2 → 2 (${green('0.0%')}) | 1 → 1 (${green('0.0%')}) | 0 → 0 | 1/1→1/1 |`))
+    assert.ok(byDir.text().includes(`api-rename | 500 | 620 (${red('+24.0%')}) | 2 → 2 (${green('0.0%')}) | 1 → 1 (${green('0.0%')}) | 0.0s → 0.0s (${green('0.0%')}) | 0 → 0 | 1/1→1/1 |`))
 
     // A group is searched with --folder; the flat root is searched without it.
     assert.equal((await invoke(['bench-base', 'bench-ops', '--runs', runs, ...common]).run()), EXIT.ok)

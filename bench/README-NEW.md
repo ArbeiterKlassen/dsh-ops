@@ -19,11 +19,10 @@
 | 脚本验收门禁 | `node bench/cli.mjs gates` | 否（确定性 provider 脚本） | BM-01…BM-05 的固定工作负载：字节、schema token、CAS 冲突、权限拒绝 | `--output <新文件>.json` + 同名 `.md` |
 | 工具级确定性对比 | `node bench/cli.mjs tools` | 否 | 只有 `MATCH` / `EXPECTED_DIFFERENCE` / `EXPECTED_REJECTION` 算通过 | `--out <新文件>.json` |
 
-三条共同底线：
+两条共同底线：
 
-1. **永不裁决时间**。median / 耗时只打印，只作人类证据，进不了任何门禁。
-2. **证据独占创建**。`gates` 的 `--output`、`tools` 的 `--out` 都必须是不存在的文件，重跑不会覆盖上一次的证据。
-3. **失败要响**。`report` / `gates` / `tools` 的退出码就是裁决；弃权（如噪声底未知）明确说出口，不伪装成通过。
+1. **证据独占创建**。`gates` 的 `--output`、`tools` 的 `--out` 都必须是不存在的文件，重跑不会覆盖上一次的证据。
+2. **失败要响**。`report` / `gates` / `tools` 的退出码就是裁决；弃权（如噪声底未知）明确说出口，不伪装成通过。
 
 ### 当前接线状态（这一段能省半小时）
 
@@ -241,8 +240,8 @@ node bench/cli.mjs report bench-base bench-ops --folder full-sweep-34 --json --o
 
 **怎么读报告**（顺序别跳，正文与标题是英文）：
 
-1. `Per-task pairs`：`task | base | cand(Δ%) | steps | tool calls | tool errors | pass`，数值单元格自带括号 Δ%，
-   以 `TOTAL` 行收尾；
+1. `Per-task pairs`：`task | base | cand(Δ%) | steps | tool calls | time | tool errors | pass`，数值单元格自带括号 Δ%，
+   以 `TOTAL` 行收尾。`time` 列（如 `60.0s → 55.0s (−8.3%)`）取同样的聚合（median/min），Δ% 与其它列同一套着色；
 2. `Tool calls (per-side overlap counts)`：每个工具一行，`base`/`cand` 是整轮合计，后面每个任务一列，格子是 `base → cand`。
    **`ops_*` 计数上升标绿、下降标红；其它工具相反**；两侧都没调用写 `—`，相等不标色；
 3. `Per-task bucket detail` / `usage split` / `steps and tool calls`：诊断用，不改判决；
