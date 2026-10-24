@@ -12,13 +12,14 @@ import { publicToolName } from '../policy.js'
 import { resolveWorker, failure } from './worker.js'
 import { mountWorkspacePreparation } from '../workspace-preparation.js'
 import { mountResultLifecycle } from '../kernel/result-lifecycle.js'
-import { nativeProviders, claimPtcSurface, trackNativeShadow } from '../file/result-provider.js'
+import { nativeProviders, nativeProviderRevision, claimPtcSurface, trackNativeShadow } from '../file/result-provider.js'
 import { resolvePtcConfig } from '../config.js'
 import { PTC_RESIDENT_TOOLS } from './config.js'
 import type { ApiName } from './config.js'
 import { sdkDefinition, requestedApis } from './sdk.js'
 import { ownPtcScopes } from './ownership.js'
 import { surfaceOf as toolSurface } from '../surface.js'
+import { toolChangeScopes, withToolChange } from '../tool-changes.js'
 import { monitoredInvoke } from './invoke.js'
 export { resolvePtcConfig } from '../config.js'
 export const name = 'dsh-ops-ptc'
@@ -29,15 +30,12 @@ interface Entry {
   ctx?: Context; fiber?: Fiber; ready: Promise<void>; disposers: (() => void)[]
   selected: Set<ApiName>; pending: Set<ApiName>; owned: Map<string, ToolDefinition>; ptc: boolean
   /**
-   * Tool names this agent published when `ptc` was last probed; a change re-probes.
-   *
-   * Names are the whole memo key, and `isPtc` reads more than names: it also asks whether
-   * the `tools:ptc-only` section is non-empty. A verdict that flips without the name set
-   * moving is missed here. Both self-heal on the next step — the assemble-withdraw handler
-   * re-probes a scope whose assembly stopped being PTC-only, and `discovery` re-probes on
-   * every step — so the stale verdict costs one pass, never a permanently wrong surface.
+   * Committed view identity plus Native source-provider revisions. A prompt-only
+   * change is checked afresh at pre-step/execution and by the assembly withdrawal
+   * guard; background memoization alone never authorizes execution.
    */
   surface?: string
+  published?: number
 }
 const isPtc = (assembly: PromptAssembly): boolean => assembly.tools.length === 1 && assembly.tools[0]?.name === 'run_code'
   && assembly.sections.some(section => section.name === 'tools:ptc-only' && section.text.trim() !== '')
@@ -56,15 +54,17 @@ export function apply(root: Context, rawConfig: unknown): void {
     mountResultLifecycle(ctx)
     const entries = new Map<Agent, Entry>()
     const active = new Map<AbortController, { owner: Agent; promise: Promise<unknown> }>()
-    let stopped = false, mutating = false, epoch = 0, published = 0, chain = Promise.resolve()
+    let stopped = false, mutating = false, epoch = 0, chain = Promise.resolve()
     let settled = chain
     const drain = async () => {
       let current: Promise<void>
       do { current = chain; await current } while (current !== chain)
       settled = current
     }
-    const surfaceOf = (agent: Agent): string => toolSurface(tools, agent)
+    let scopeChainOf: (scope: object) => object[] = scope => [scope]
+    const surfaceOf = (agent: Agent): string => toolSurface(tools, agent) + '\u0002' + nativeProviderRevision(ctx, scopeChainOf(agent))
     const clear = (entry: Entry) => {
+      entry.published = undefined
       entry.owned.clear()
       for (const dispose of entry.disposers.splice(0)) {
         try { dispose() } catch (error) { ctx.logger.warn('dsh-ops: PTC teardown failed; continuing:', error) }
@@ -77,11 +77,9 @@ export function apply(root: Context, rawConfig: unknown): void {
     let ownership: Awaited<ReturnType<typeof ownPtcScopes>> | undefined
     const execute = (agent: Agent, entry: Entry, tool: ApiName | 'load_sdk'): ToolDefinition['execute'] => async (args, exec) => {
       await chain
-      // A call reads the live epoch: any later reconcile invalidates it, whether or not that
-      // pass ended up publishing.
-      const version = epoch
+      const version = entry.published
       const available = () => !stopped && entries.get(agent) === entry && ownership?.owns(agent) && exec.agent === agent && entry.ptc && entry.owned.has(publicToolName(tool))
-      if (!available() || !await ptcOnly(agent, exec.signal).catch(() => false) || !available() || version !== epoch) {
+      if (!available() || !await ptcOnly(agent, exec.signal).catch(() => false) || !available() || version !== entry.published) {
         return failure('POLICY_DENIED', 'The calling scope must own this API in authoritative PTC-only presentation.')
       }
       if (tool === 'load_sdk') {
@@ -98,61 +96,59 @@ export function apply(root: Context, rawConfig: unknown): void {
       try { return await work }
       finally { clearTimeout(timer); active.delete(controller); exec.signal?.removeEventListener('abort', abort) }
     }
-    /**
-     * Republish the PTC surface.
-     *
-     * `targets` narrows only what is *probed*: each agent's `ptcOnly` answer depends on that
-     * agent's own tools and assembly, so an agent outside the set keeps the `ptc` it already
-     * has. Publication itself always covers every entry, because the Native snapshot below is
-     * exact only once every agent's masks are lifted — a partial pass would read the remaining
-     * agents through their live overrides and register a short shadow set.
-     *
-     * An empty set is a probe-free pass, not an absent one: it names no agent to probe
-     * while still asking for the republish a departure owes. `undefined` is the opposite
-     * request — probe every agent — and is what a registry change passes, because the
-     * event does not say which scope moved.
-     */
+    // Lift a connected inheritance family together. This keeps the pre-publication
+    // Native snapshot exact without disturbing independent root sessions. Ancestors
+    // may hold Native claims, so lifting only the leaf would miss their providers.
+    const related = (targets: ReadonlySet<Agent>): Set<Agent> => {
+      const roots = new Set<Agent>()
+      for (const agent of targets) {
+        const ancestors = scopeChainOf(agent).filter(scope => entries.has(scope as Agent)) as Agent[]
+        roots.add(ancestors.at(-1) ?? agent)
+      }
+      return new Set([...entries.keys()].filter(agent => [...roots].some(root => agent === root || scopeChainOf(agent).includes(root))))
+    }
+    /** Probe changed scopes, then rebuild only their inheritance dependency family. */
+    const queued = new Map<Agent, boolean>()
     const reconcile = (force = false, targets?: ReadonlySet<Agent>): Promise<void> => {
       if (stopped || mutating) return chain
-      const probed = (agent: Agent) => targets === undefined || targets.has(agent)
-      // A probe-free pass (agent disposal) still owes the republish: the remaining agents'
-      // masks and shadows were computed against the departee's registrations.
-      const republishAnyway = targets !== undefined && targets.size === 0
+      for (const agent of targets ?? entries.keys()) queued.set(agent, force || queued.get(agent) === true)
+      const changed = new Set<Agent>()
       const version = ++epoch
       chain = chain.then(async () => {
         if (stopped || version !== epoch) return
+        const requests = new Map(queued)
+        const probedBefore = new Set<Agent>()
         const ready = new Set<Agent>()
-        // A republish re-registers every agent's definitions. It is only owed when some
-        // agent's published surface or PTC verdict actually moved; `force` asks for a
-        // fresh probe of the selected agents, not for an unconditional rewrite.
-        // Probed surfaces stay pending until the republish that consumes them runs. A pass
-        // a later reconcile supersedes publishes nothing, so recording its surfaces would
-        // leave the next pass reading an unpublished surface as already current and
-        // returning early forever.
-        const surfaces = new Map<Agent, string>()
+        // Superseded passes keep their requests queued. Commit surfaces only after
+        // publishing the affected family, and retain every unprobed verdict.
         let dirty = false
         for (const [agent, entry] of entries) {
           if (stopped || version !== epoch) return
           if (!entry.ctx || !ownership?.owns(agent)) continue
-          if (!probed(agent)) { if (entry.ptc) ready.add(agent); continue }
+          if (!requests.has(agent)) { if (entry.ptc) ready.add(agent); continue }
           const surface = surfaceOf(agent)
-          if (!force && entry.surface === surface) { if (entry.ptc) ready.add(agent); continue }
-          if (entry.surface !== surface) dirty = true
-          surfaces.set(agent, surface)
+          const fresh = requests.get(agent) === true
+          if (!fresh && entry.surface === surface) { if (entry.ptc) ready.add(agent); continue }
+          if (entry.surface !== surface || fresh) { dirty = true; changed.add(agent) }
+          probedBefore.add(agent)
           const next = await ptcOnly(agent).catch(() => false)
-          if (next !== entry.ptc) dirty = true
+          if (next !== entry.ptc) { dirty = true; changed.add(agent) }
           if (next) ready.add(agent)
         }
         if (stopped || version !== epoch) return
-        if (!dirty && !force && !republishAnyway) return
-        mutating = true; ownership?.begin(); published = version
+        queued.clear()
+        if (!dirty) return
+        const affected = related(changed)
+        const publications = [...entries].filter(([agent]) => affected.has(agent))
+        mutating = true; ownership?.begin()
         try {
-          for (const [agent, surface] of surfaces) { const entry = entries.get(agent); if (entry) entry.surface = surface }
-          for (const entry of entries.values()) clear(entry)
-          // Snapshot exact Native visibility only after all our masks/overrides have lifted.
-          const native = new Map([...entries].map(([agent, entry]) => [agent, nativeProviders(entry.ctx ?? ctx, agent, true)]))
-          for (const [agent, entry] of entries) {
+          withToolChange(publications.map(([agent]) => agent), () => {
+          for (const [, entry] of publications) { clear(entry); entry.published = version }
+          // Every ancestor that could suppress a Native origin is lifted with its family.
+          const native = new Map(publications.map(([agent, entry]) => [agent, nativeProviders(entry.ctx ?? ctx, agent, true)]))
+          for (const [agent, entry] of publications) {
             if (!entry.ctx || !ownership?.owns(agent)) continue
+            if (entry.ptc) { if (!probedBefore.has(agent)) ready.add(agent) }
             entry.ptc = ready.has(agent)
             if (!entry.ptc) { entry.pending.clear(); abortOwner(agent, 'PTC presentation withdrawn'); continue }
             const releaseNative = claimPtcSurface(entry.ctx, agent)
@@ -164,16 +160,17 @@ export function apply(root: Context, rawConfig: unknown): void {
               entry.disposers.push(releaseNative)
             } catch (error) { releaseNative(); throw error }
           }
-          for (const [agent, entry] of entries) {
+          for (const [agent, entry] of publications) {
             if (!entry.ctx || !ownership?.owns(agent)) continue
             if (!entry.ptc) for (const provider of native.get(agent) ?? []) {
               if (!provider.inheritable && provider.scope !== agent) continue
               const def = provider.definition
               if (provider.scope === agent || tools.get(def.name, agent) === def) continue
+              const publication = entry.published
               const shadow: ToolDefinition = { ...def, execute: async (args, exec) => {
-                const version = published
-                if (stopped || !provider.active || entries.get(agent) !== entry || exec.agent !== agent || await ptcOnly(agent, exec.signal).catch(() => true)
-                  || stopped || !provider.active || version !== published) return failure('POLICY_DENIED', 'Native projection or owning scope is unavailable.')
+                const version = entry.published
+                if (publication !== entry.published || stopped || !provider.active || entries.get(agent) !== entry || exec.agent !== agent || await ptcOnly(agent, exec.signal).catch(() => true)
+                  || stopped || !provider.active || version !== entry.published) return failure('POLICY_DENIED', 'Native projection or owning scope is unavailable.')
                 return def.execute(args, exec)
               } }
               entry.disposers.push(entry.ctx.tools.register(shadow), trackNativeShadow(entry.ctx, agent, shadow, provider)); entry.owned.set(def.name, shadow)
@@ -187,8 +184,12 @@ export function apply(root: Context, rawConfig: unknown): void {
             })
             if (deny.length) entry.disposers.push(entry.ctx.tools.restrict({ deny }))
           }
+          // Store the committed view, not the temporary pre-publish overlay. Otherwise
+          // the next unrelated registry event mistakes our own definitions for a change.
+          for (const [agent, entry] of publications) entry.surface = surfaceOf(agent)
+          })
         } catch (error) {
-          for (const entry of entries.values()) clear(entry)
+          for (const [, entry] of publications) { clear(entry); entry.surface = undefined }
           throw error
         } finally { ownership?.end(); mutating = false }
         ownership?.changedBelow()
@@ -217,14 +218,24 @@ export function apply(root: Context, rawConfig: unknown): void {
     })
     ctx.on('agent/disposed', async ({ agent }) => {
       const entry = entries.get(agent); if (!entry) return
+      const affected = related(new Set([agent])); affected.delete(agent)
       entries.delete(agent); ownership?.forget(agent); abortOwner(agent, 'Owning agent disposed'); mutating = true
-      try { clear(entry) } finally { mutating = false }
-      // Other agents' published surfaces are untouched here, so republish none of them.
-      await entry.fiber?.dispose(); await reconcile(true, new Set())
+      try { withToolChange([agent], () => clear(entry)) } finally { mutating = false }
+      // Only a departed scope's inheritance family can depend on its projection.
+      await entry.fiber?.dispose(); await reconcile(true, affected)
     })
     // A registry change only owes a republish when some agent's probed surface moved,
     // so the change listener probes and lets the dirty check decide.
-    ctx.on('tools/change', () => { if (!ownership?.publishing()) void reconcile(false) })
+    ctx.on('tools/change', () => {
+      if (mutating || ownership?.publishing()) return
+      // A foreign ancestor mask can be hidden by our leaf Native shadow. Its
+      // projected surface is unchanged, so revalidate those inheritance families
+      // by lifting only their own overlays; independent root SDKs stay intact.
+      const scopes = toolChangeScopes()
+      const targets = scopes?.length ? new Set([...entries.keys()].filter(agent => scopes.some(scope => scopeChainOf(agent).includes(scope)))) : undefined
+      for (const [agent, entry] of entries) if ((!targets || targets.has(agent)) && !entry.ptc && entry.owned.size) queued.set(agent, true)
+      void reconcile(false, targets)
+    })
     ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
       // The pinned host assembles BEFORE agent/pre-step. Wait for publication
       // queued by the previous committed step, then obtain a fresh public assembly.
@@ -259,6 +270,7 @@ export function apply(root: Context, rawConfig: unknown): void {
       // An unknown session keeps the unqualified (whole-fleet) pass.
       void reconcile(true, affected.size ? affected : undefined)
     })
+    ;({ scopeChainOf } = await import('@deepseek-ai/dsh-scope'))
     ownership = await ownPtcScopes(ctx, () => {
       mutating = true
       try {
