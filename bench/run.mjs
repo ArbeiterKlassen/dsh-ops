@@ -378,13 +378,9 @@ export function sweepReport(result, context = {}) {
   const now = context.now ?? Date.now
   const write = context.writeFile ?? fs.writeFileSync
   const mkdir = context.mkdir ?? fs.mkdirSync
-  const sources = {
-    base: { spec: result.arms[0].label, file: result.summaryFiles.base, kind: 'summary' },
-    cand: { spec: result.arms[1].label, file: result.summaryFiles.cand, kind: 'summary' },
-  }
   const target = path.join(path.dirname(result.dirs.base), reportFileName(now()))
   mkdir(path.dirname(target), { recursive: true })
-  write(target, `${renderReport(result.compare, sources)}\n`, 'utf8')
+  write(target, `${renderReport(result.compare)}\n`, 'utf8')
   return { target, skipped: null }
 }
 
