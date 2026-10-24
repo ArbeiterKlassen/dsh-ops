@@ -33,6 +33,7 @@
  */
 
 import { CORE_BUCKETS, median, minValue, pairMetrics } from './aggregate.mjs'
+import { assertSameCondition } from './condition.mjs'
 
 export { median, minValue }
 
@@ -481,6 +482,7 @@ export function classifyExcluded(pairs, taskId = null) {
  * @returns {object} the noise-floor document; `pct: null` when nothing could be paired.
  */
 export function noiseFloor(baseA, baseB, options = {}) {
+  assertSameCondition(baseA, baseB)
   const aggregate = AGGREGATES.includes(options.aggregate) ? options.aggregate : 'median'
   const merged = pairMetrics(normalizeResults(baseA), normalizeResults(baseB))
   const usablePairs = merged.pairs.filter((pair) => passed(pair.base) && passed(pair.cand))
@@ -547,6 +549,8 @@ export function resolveNoiseFloor(options = {}, base = null, cand = null) {
   }
   const noise = options.noise
   if (noise && typeof noise === 'object' && !Array.isArray(noise) && (noise.base || noise.cand)) {
+    assertSameCondition(base, noise.base ?? base)
+    assertSameCondition(base, noise.cand ?? base)
     return noiseFloor(noise.base ?? base, noise.cand ?? base, { aggregate: options.aggregate })
   }
   return {
@@ -702,6 +706,7 @@ export function formatNumber(value) {
  * @returns {object} the comparison structure, including the gate and the verdict.
  */
 export function compareSummaries(base, cand, options = {}) {
+  const condition = assertSameCondition(base, cand)
   const aggregate = AGGREGATES.includes(options.aggregate) ? options.aggregate : 'median'
   const tolerancePct = isNumber(options.tolerancePct) ? options.tolerancePct : 2
   const failOn = FAIL_ON.includes(options.failOn) ? options.failOn : 'both'
@@ -853,6 +858,7 @@ export function compareSummaries(base, cand, options = {}) {
 
   return {
     format: COMPARE_FORMAT,
+    condition,
     base: { label: sideLabel(base, 'base'), profile: sideProfile(base, 'base'), model: baseModel, dshVersion: sideDshVersion(base, 'base') },
     cand: { label: sideLabel(cand, 'cand'), profile: sideProfile(cand, 'cand'), model: candModel, dshVersion: sideDshVersion(cand, 'cand') },
     aggregate,

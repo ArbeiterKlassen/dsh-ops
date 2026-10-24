@@ -375,6 +375,8 @@ function renderConclusion() {
     : '噪声底(A/A)±' + SUMMARY.noise.pct.toFixed(1) + '% → ' + (SUMMARY.readable ? '超过噪声 ⇒ 可读方向' : '落在噪声内 ⇒ 只报区间,不报方向')
 }
 function renderOverview(node) {
+  const condition = obj(RUN.meta).condition
+  node.appendChild(el('p', 'mono', 'Condition: ' + (condition === undefined || condition === null ? 'unknown' : j(condition))))
   const keys = pairKeys()
   const taskRows = SUMMARY.tasks.map((task) => {
     const base = task.arms[keys[0]]

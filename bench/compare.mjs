@@ -30,6 +30,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ConditionError, describeCondition } from './lib/condition.mjs'
+import { matrixComparisons, renderMatrix } from './lib/matrix.mjs'
 
 import {
   AGGREGATES,
@@ -62,6 +64,7 @@ const RED = '#f85149'
 export const EXIT = { ok: 0, failure: 1, usage: 2 }
 
 const USAGE = `usage: node bench/compare.mjs <base> <cand> [options]
+       node bench/compare.mjs --matrix <group-directory> [options]
 
   <base> <cand>      each side is one of:
                        <label>   a run label, matched against bench/runs/*-<label>
@@ -115,6 +118,7 @@ export function parseArgs(argv) {
   const options = {
     base: null,
     cand: null,
+    matrix: null,
     folder: null,
     runsDir: RUNS_DIR,
     aggregate: 'median',
@@ -159,6 +163,7 @@ export function parseArgs(argv) {
       } else if (name === '--out') options.out = take()
       else if (name === '--folder') options.folder = assertFolderName(take(), '--folder')
       else if (name === '--runs') options.runsDir = path.resolve(take())
+      else if (name === '--matrix') options.matrix = path.resolve(take())
       else throw new Error(`unknown option "${name}"`)
       continue
     }
@@ -173,6 +178,10 @@ export function parseArgs(argv) {
     throw new Error('--noise-floor-pct must be a non-negative number')
   }
   if (options.help) return options
+  if (options.matrix !== null) {
+    if (positional.length || options.folder !== null || options.noise !== null) throw new Error('--matrix takes its groups from matrix.json; do not pass side labels, --folder or --noise')
+    return options
+  }
   if (positional.length !== 2) throw new Error('expected exactly two sides: <base> <cand>')
   options.base = positional[0]
   options.cand = positional[1]
@@ -516,6 +525,8 @@ export function renderReport(comparison) {
   const lines = [
     REPORT_TITLE,
     '',
+    `Condition: ${describeCondition(comparison.condition)}`,
+    '',
     ...taskSection(comparison),
     '',
     ...toolSection(comparison),
@@ -610,6 +621,17 @@ export async function main(argv, io = {}) {
     out(USAGE)
     return EXIT.ok
   }
+  if (options.matrix !== null) {
+    try {
+      const comparisons = matrixComparisons(options.matrix, options, { resolveSide, compare: compareSummaries })
+      const payload = options.json ? JSON.stringify({ format: 'dsh-ops-bench-matrix-report-v1', comparableAcrossConditions: false, comparisons }, null, 2) : renderMatrix(comparisons, renderReport)
+      out(payload)
+      const target = options.out ? path.resolve(options.out) : path.join(options.matrix, reportFileName(now()))
+      fs.writeFileSync(target, payload + '\n')
+      err(`compare matrix: wrote ${target}`)
+      return comparisons.some(value => value.gate.fail) ? EXIT.failure : EXIT.ok
+    } catch (error) { err(`compare matrix: ${error.message}`); return EXIT.usage }
+  }
 
   let base
   let cand
@@ -625,14 +647,19 @@ export async function main(argv, io = {}) {
     return EXIT.usage
   }
 
-  const comparison = compareSummaries(base.doc, cand.doc, {
+  let comparison
+  try { comparison = compareSummaries(base.doc, cand.doc, {
     aggregate: options.aggregate,
     tolerancePct: options.tolerancePct,
     failOn: options.failOn,
     regressionScope: options.regressionScope,
     noiseFloorPct: options.noiseFloorPct ?? undefined,
     noise: noise ?? undefined,
-  })
+  }) } catch (error) {
+    if (!(error instanceof ConditionError)) throw error
+    err(`compare: ${error.message}`)
+    return EXIT.usage
+  }
   const payload = options.json
     ? `${JSON.stringify(comparison, null, 2)}\n`
     : `${renderReport(comparison)}\n`
