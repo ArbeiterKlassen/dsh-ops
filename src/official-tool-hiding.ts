@@ -137,10 +137,12 @@ export function apply(root: Context, raw?: unknown): void {
       attach(exec.agent)
       reconcile() // Authority is live, not a startup snapshot.
       const entry = entries.get(exec.agent)
-      if (entry?.error) return entry.error
-      // A collapsed scope keeps the selected official tools visible on purpose, so
-      // refusing their dispatch would contradict what the model was just given.
-      return hideable(exec.name) && !entry?.collapsed
+      // A collapsed (run_code) scope can never prove native readiness, so its error must
+      // not refuse the transport itself. The selected official names stay refused: the
+      // promise is that they never execute, in any presentation.
+      const transport = entry?.collapsed === true && exec.name === RUN_CODE
+      if (entry?.error && !transport) return entry.error
+      return hideable(exec.name)
         ? blocked(`official tool ${exec.name} is selected for replacement`) : undefined
     }
     ctx.on('tools/pre-execute', async (exec, next) => {

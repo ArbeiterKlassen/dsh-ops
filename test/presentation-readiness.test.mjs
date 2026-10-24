@@ -51,9 +51,7 @@ for (const official of ['read', 'glob']) for (const hidingFirst of [true, false]
     assert.deepEqual((await assemble()).tools.map(tool => tool.name), ['run_code'])
     assert.ok(scopedToolNames(ctx, agent).includes(official), 'a collapsed scope hides nothing')
     const direct = await request(official)
-    assert.equal(direct.isError, true, 'the collapse still refuses a direct official call')
-    assert.equal(JSON.stringify(direct).includes('READINESS_BLOCKED'), false,
-      'a collapsed scope does not refuse the selected official tool it still publishes')
+    assert.equal(direct.isError, true, 'a direct official call stays refused in a collapsed scope')
     await waitFor(() => !scopedToolNames(ctx, agent).includes(publicToolName(raw)))
     lift()
     await waitFor(() => scopedToolNames(ctx, agent).includes(publicToolName(raw)))

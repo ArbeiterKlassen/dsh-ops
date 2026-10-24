@@ -203,11 +203,17 @@ export async function officialToolHidingMountChecks() {
       assert.ok(assembly.tools.some(schema => schema.name === 'run_code'))
       assert.ok(scopedToolNames(ctx, agent).includes('read'), 'nothing is hidden without a native replacement')
       const decision = await ctx.waterfall('tools/pre-execute', { agent, name: 'run_code' }, () => ({ kind: 'allow' }))
-      assert.equal(decision.kind, 'allow', 'a collapsed scope is not blocked')
+      assert.equal(decision.kind, 'allow', 'the transport is not blocked in a collapsed scope')
       for (const name of ['read', 'glob', 'grep']) {
         const refused = await ctx.waterfall('tools/pre-execute', { agent, name }, () => ({ kind: 'allow' }))
-        assert.equal(refused.kind, 'allow', `${name} stays dispatchable in a collapsed scope`)
+        assert.equal(refused.kind, 'deny', `${name} stays refused`)
+        const nestedRefused = await ctx.waterfall('tools/pre-execute', { agent, name, parent: {} }, () => ({ kind: 'allow' }))
+        assert.equal(nestedRefused.kind, 'deny', `${name} stays refused when dispatched from a program`)
       }
+      // A later surface change must not put the transport back behind the readiness gate.
+      ctx.tools.register(tool('post-collapse-probe'))
+      const again = await ctx.waterfall('tools/pre-execute', { agent, name: 'run_code' }, () => ({ kind: 'allow' }))
+      assert.equal(again.kind, 'allow', 'a later tools/change must not re-block the transport')
     } finally { await shutdown(ctx) }
   })
   await test('legacy blanket selections deactivate without guessing replacements or warning', async () => {
