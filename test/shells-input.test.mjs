@@ -39,11 +39,13 @@ await test('Bash receives a closed empty pipe and observes EOF without reading W
       await ctx.plugin(Subprocess)
       const definition = bashToolDefinition({ file: bash, source: 'config', subprocess: ctx.get('subprocess') })
       const result = await definition.execute({
-        command: "if [[ -p /dev/stdin ]]; then printf pipe; else printf device; fi; IFS= read -r line; printf ':%s' \"$?\"",
+        command: "if [[ -p /dev/stdin ]]; then printf pipe; elif [[ -S /dev/stdin ]]; then printf socket; else printf device; fi; IFS= read -r line; printf ':%s' \"$?\"",
         workdir: root, timeoutMs: 10_000,
       })
       assert.equal(result.status, 'completed', JSON.stringify(result))
-      assert.equal(result.stdout.text, 'pipe:1', 'fd 0 must be a pipe already at EOF')
+      // Node's POSIX stdio 'pipe' can be a Unix socket; both are distinct from /dev/null.
+      if (process.platform === 'win32') assert.equal(result.stdout.text, 'pipe:1', 'MSYS fd 0 must be a pipe already at EOF')
+      else assert.match(result.stdout.text, /^(pipe|socket):1$/, 'POSIX batch input must be a stream already at EOF')
       assert.equal(result.stderr.text, '')
       const script = path.join(root, 'empty-input.sh')
       fs.writeFileSync(script, "IFS= read -r line; printf 'eof:%s' \"$?\"\n")
