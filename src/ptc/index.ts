@@ -36,6 +36,7 @@ interface Entry {
    */
   surface?: string
   published?: number
+  revision: number
 }
 const isPtc = (assembly: PromptAssembly): boolean => assembly.tools.length === 1 && assembly.tools[0]?.name === 'run_code'
   && assembly.sections.some(section => section.name === 'tools:ptc-only' && section.text.trim() !== '')
@@ -55,6 +56,7 @@ export function apply(root: Context, rawConfig: unknown): void {
     const entries = new Map<Agent, Entry>()
     const active = new Map<AbortController, { owner: Agent; promise: Promise<unknown> }>()
     let stopped = false, mutating = false, epoch = 0, chain = Promise.resolve(), foreignDuringPublish = false
+    let verifyingForeign = false
     let settled = chain
     const drain = async () => {
       let current: Promise<void>
@@ -77,9 +79,9 @@ export function apply(root: Context, rawConfig: unknown): void {
     let ownership: Awaited<ReturnType<typeof ownPtcScopes>> | undefined
     const execute = (agent: Agent, entry: Entry, tool: ApiName | 'load_sdk'): ToolDefinition['execute'] => async (args, exec) => {
       await chain
-      const version = entry.published
+      const version = entry.published, revision = entry.revision
       const available = () => !stopped && entries.get(agent) === entry && ownership?.owns(agent) && exec.agent === agent && entry.ptc && entry.owned.has(publicToolName(tool))
-      if (!available() || !await ptcOnly(agent, exec.signal).catch(() => false) || !available() || version !== entry.published) {
+      if (!available() || !await ptcOnly(agent, exec.signal).catch(() => false) || !available() || version !== entry.published || revision !== entry.revision) {
         return failure('POLICY_DENIED', 'The calling scope must own this API in authoritative PTC-only presentation.')
       }
       if (tool === 'load_sdk') {
@@ -111,7 +113,11 @@ export function apply(root: Context, rawConfig: unknown): void {
     const queued = new Map<Agent, boolean>()
     const reconcile = (force = false, targets?: ReadonlySet<Agent>): Promise<void> => {
       if (stopped || mutating) return chain
-      for (const agent of targets ?? entries.keys()) queued.set(agent, force || queued.get(agent) === true)
+      for (const agent of targets ?? entries.keys()) {
+        const entry = entries.get(agent)
+        if (entry) ++entry.revision
+        queued.set(agent, force || queued.get(agent) === true)
+      }
       const changed = new Set<Agent>()
       const version = ++epoch
       chain = chain.then(async () => {
@@ -194,14 +200,20 @@ export function apply(root: Context, rawConfig: unknown): void {
           for (const [, entry] of publications) { clear(entry); entry.surface = undefined }
           throw error
         } finally { ownership?.end(); mutating = false }
-        if (foreignDuringPublish) { foreignDuringPublish = false; void reconcile(true) }
+        if (foreignDuringPublish) {
+          foreignDuringPublish = false
+          if (!verifyingForeign) {
+            verifyingForeign = true
+            void reconcile(true).finally(() => { verifyingForeign = false })
+          }
+        }
         ownership?.changedBelow()
       }).catch(error => ctx.logger.warn('dsh-ops: PTC publication failed: ' + String(error)))
       return chain
     }
     const attach = (agent: Agent): Promise<void> => {
       if (stopped || entries.has(agent) || !agent.ctx) return entries.get(agent)?.ready ?? Promise.resolve()
-      const entry: Entry = { agent, disposers: [], selected: new Set(), pending: new Set(), owned: new Map(), ptc: false, ready: Promise.resolve() }
+      const entry: Entry = { agent, revision: 0, disposers: [], selected: new Set(), pending: new Set(), owned: new Map(), ptc: false, ready: Promise.resolve() }
       entries.set(agent, entry); ownership?.track(agent)
       entry.fiber = agent.ctx.plugin({ inject: ['tools'], apply(scoped) { entry.ctx = scoped } })
       entry.ready = Promise.resolve(entry.fiber).then(() => reconcile(true, new Set([agent])))
@@ -245,7 +257,7 @@ export function apply(root: Context, rawConfig: unknown): void {
       // A host presentation change carries no affected scope. Probe every entry
       // because its visible names may stay identical while ptcOnly changes.
       // OPS-owned changes can still be narrowed to their scope descendants.
-      for (const agent of targets ?? entries.keys()) queued.set(agent, true)
+      for (const [agent, entry] of entries) if ((!targets || targets.has(agent)) && !entry.ptc) queued.set(agent, true)
       void reconcile(false, targets)
     })
     ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
