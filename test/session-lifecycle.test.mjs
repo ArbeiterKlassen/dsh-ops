@@ -1,5 +1,5 @@
 import { createScope } from '@deepseek-ai/dsh-scope'
-import { ToolRuntime } from '@deepseek-ai/dsh-tools'
+import { SessionStore } from '@deepseek-ai/dsh-session'
 import { mountSessionBash } from '../lib/session-shells.js'
 import * as ptc from '../lib/ptc/index.js'
 import * as discovery from '../lib/discovery/index.js'
@@ -24,53 +24,59 @@ function mint(ctx, id, mode = 'danger-full-access') {
   return agent
 }
 
-await test('Bash authority events do not write the registry inside the session append window (#386)', async () => {
-  const { ctx, tools } = await setup()
-  let appending = false, rejected = 0
-  const original = ToolRuntime.prototype.register
-  ToolRuntime.prototype.register = function (...args) {
-    if (appending) { rejected++; throw new Error('session append cannot reenter while another append is being published') }
-    return original.apply(this, args)
-  }
+await test('Bash publication and disposal leave the real SessionStore append boundary (#386)', async () => {
+  const { ctx, tools, prompt } = await setup()
+  await ctx.plugin(SessionStore)
+  const warnings = []
+  ctx.logger.warn = message => { warnings.push(String(message)) }
   try {
     const component = await ctx.plugin({ inject: ['tools'], apply(inner) {
       mountSessionBash(inner, { publishBashTool: true }, { bash: { available: true, file: process.execPath, source: 'explicit' } })
     } })
-    const fresh = mint(ctx, 'append-created')
-    appending = true
-    await ctx.serial('agent/created', { agent: fresh })
-    appending = false
-    await flush()
-    assert.equal(rejected, 0, 'agent creation also defers publication')
-    assert.ok(tools.get('ops_bash', fresh))
-    const agent = mint(ctx, 'append-window', 'read-only')
-    await ctx.serial('agent/created', { agent }); await flush()
-    assert.equal(tools.get('ops_bash', agent), undefined)
-    agent.session.mode = 'danger-full-access'
-    appending = true
-    ctx.emit('session/event', agent.session, { type: 'sandbox/mode' })
-    appending = false
-    await flush()
-    assert.equal(rejected, 0, 'publication must happen after session event delivery returns')
-    assert.ok(tools.get('ops_bash', agent), 'the newly authorized session receives Bash without a later unrelated event')
+    const session = ctx.get('sessions').create('append-window', { meta: { cwd: TEST_HOME } })
+    session.mode = 'danger-full-access'
+    const agent = { id: session.id, session }
+    agent.ctx = createScope(ctx, agent).ctx
+    let creation, disposal, writes = 0, retire = false, observer
+    // A real registry notification appends a valid session event, as host
+    // observers can. No register method or SessionStore guard is replaced.
+    ctx.on('tools/change', () => { session.append('turn/start', { turn: ++writes }) })
+    ctx.on('session/event', (seen, event) => {
+      if (seen !== session || event.type !== 'sandbox/mode') return
+      assert.throws(() => session.append('turn/start', { turn: 99 }), /append cannot reenter/)
+      if (!creation) creation = ctx.serial('agent/created', { agent })
+      if (retire) disposal = ctx.serial('agent/disposed', { agent })
+      // Asynchronous observers may outlive publication; the actual host releases
+      // its synchronous guard without awaiting them.
+      observer = new Promise(resolve => setImmediate(resolve))
+      return observer
+    })
+    session.append('sandbox/mode', { mode: session.mode })
+    await creation
     const retained = tools.get('ops_bash', agent)
-    let inside = 0
-    ctx.on('tools/change', () => { if (appending) inside++ })
-    agent.session.mode = 'read-only'
-    appending = true
-    ctx.emit('session/event', agent.session, { type: 'sandbox/mode' })
-    appending = false
+    assert.ok(retained, 'awaited agent creation includes deferred publication')
+    assert.equal(writes, 1, 'the real registry change appends only after the outer mode event completes')
+    session.mode = 'read-only'
+    session.append('sandbox/mode', { mode: session.mode })
     const denied = await retained.execute({ command: 'must not run', description: 'Check deferred withdrawal' }, { agent, signal: new AbortController().signal })
     assert.equal(denied.status, 'failed', 'retained callbacks observe revoked authority before deferred cleanup')
     assert.match(denied.error, /AUTHORITY_CHANGED|EXECUTOR_UNAVAILABLE/)
     await flush()
-    assert.equal(inside, 0, 'withdrawal also writes outside the append window')
     assert.equal(tools.get('ops_bash', agent), undefined)
+    session.mode = 'danger-full-access'
+    session.append('sandbox/mode', { mode: session.mode })
+    const first = await prompt.assemble({ scope: agent })
+    assert.ok(first.tools.some(tool => tool.name === 'ops_bash'), 'the first assembly waits and rebuilds its pre-hook snapshot')
+    retire = true
+    session.append('sandbox/mode', { mode: session.mode })
+    await disposal; await observer; await flush()
+    assert.equal(tools.get('ops_bash', agent), undefined, 'disposal requested by an append observer also defers writes')
+    assert.deepEqual(warnings, [], 'the host reports no contained reentry or lifecycle failure')
     const waiting = mint(ctx, 'unload-before-publication')
-    await ctx.serial('agent/created', { agent: waiting })
-    await component.dispose(); await flush()
+    const created = ctx.serial('agent/created', { agent: waiting })
+    await component.dispose(); await created; await flush()
     assert.equal(tools.get('ops_bash', waiting), undefined, 'unload cancels publication queued by creation')
-  } finally { appending = false; ToolRuntime.prototype.register = original; await shutdown(ctx) }
+  } finally { await shutdown(ctx) }
 })
 
 await test('PTC presentation waterfall accepts sections without pre-attached tools (#387)', async () => {
