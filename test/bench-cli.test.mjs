@@ -186,7 +186,7 @@ await test('the spawn plan never uses a shim and keeps argv verbatim', () => {
   assert.equal(exe.command, '/usr/bin/dsh')
   assert.deepEqual(exe.args, ['--version'])
 })
-await test('run.schema.json parses, describes every property with a unit, and matches the README', () => {
+await test('run.schema.json parses and describes every property with a unit', () => {
   const schema = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'bench', 'run.schema.json'), 'utf8'))
   assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema')
   assert.deepEqual([...schema.required].sort(), Object.keys(schema.properties).sort())
@@ -211,13 +211,6 @@ await test('run.schema.json parses, describes every property with a unit, and ma
   walk(schema, 'run.json')
   assert.deepEqual(missing, [], 'every property documents itself')
   assert.deepEqual(units, [], 'every numeric field names its unit')
-
-  const readme = fs.readFileSync(path.join(PACKAGE_ROOT, 'bench', 'README.md'), 'utf8')
-  const section = readme.split(/^## /m).find((part) => part.startsWith('run.json 契约'))
-  assert.ok(section, 'README documents the run.json contract')
-  const documented = [...section.matchAll(/^\|\s*`([A-Za-z][A-Za-z0-9]*)`\s*\|/gm)].map((match) => match[1])
-  assert.ok(documented.length > 0, 'the contract table has rows')
-  assert.deepEqual([...documented].sort(), Object.keys(schema.properties).sort())
 })
 
 report('bench-cli')

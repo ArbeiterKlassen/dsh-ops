@@ -52,8 +52,8 @@ const SEALED_RUN = 'run.json'
 const LEGACY_SUMMARY = 'summary.json'
 /** The summary document's format tag. */
 const SUMMARY_FORMAT = 'dsh-ops-bench-summary-v1'
-/** The report's fixed title; the two sides are named in Evidence, not in the heading. */
-const REPORT_TITLE = '# DSH-OPS Benchmark Report'
+/** The report's fixed title, marked (beta); the two sides are named in Evidence, not in the heading. */
+const REPORT_TITLE = '# DSH-OPS Benchmark Report (beta)'
 /** The file name stem: the title's words, so the artifact is recognizable in a folder listing. */
 const REPORT_STEM = 'DSH-OPS Benchmark Report'
 /** The panel's palette: the report and `panel.html` must agree on what green and red mean. */
@@ -458,12 +458,12 @@ function taskSection(comparison) {
   const lines = [
     '## Per-task pairs',
     '',
-    '| task | base | cand (Δ%) | steps base→cand (Δ%) | tool calls base→cand (Δ%) | time base→cand (Δ%) | tool errors | pass |',
+    '| task | base | ops (Δ%) | steps base→ops (Δ%) | tool calls base→ops (Δ%) | time base→ops (Δ%) | tool errors | pass |',
     '| --- | --- | --- | --- | --- | --- | --- | --- |',
   ]
   for (const task of comparison.tasks) {
     const pair = task.paired
-    const name = task.inBase && task.inCand ? task.id : `${task.id}${task.inBase ? '(base only)' : '(cand only)'}`
+    const name = task.inBase && task.inCand ? task.id : `${task.id}${task.inBase ? '(base only)' : '(ops only)'}`
     lines.push(`| ${name} | ${number(pair.baseValue)} | ${candCell(pair.candValue, pair.pct)} | ${deltaCell(task.base[keys.steps], task.cand[keys.steps], task.delta.stepsPct)} | ${deltaCell(task.base[keys.toolCalls], task.cand[keys.toolCalls], task.delta.toolCallsPct)} | ${timeCell(task.base[keys.duration], task.cand[keys.duration], task.delta.durationPct)} | ${countCell(task.base[keys.toolErrors], task.cand[keys.toolErrors])} | ${passCell(task)} |`)
   }
   lines.push(`| **TOTAL** | ${number(totals.baseGrandTotal)} | ${candCell(totals.candGrandTotal, totals.grandTotalPct)} | ${deltaCell(totals.baseSteps, totals.candSteps, percentChange(totals.baseSteps, totals.candSteps))} | ${deltaCell(totals.baseToolCalls, totals.candToolCalls, percentChange(totals.baseToolCalls, totals.candToolCalls))} | ${timeCell(totals.baseDurationMs, totals.candDurationMs, percentChange(totals.baseDurationMs, totals.candDurationMs))} | ${countCell(totals.baseToolErrors, totals.candToolErrors)} | ${totals.basePasses}/${totals.baseRuns}→${totals.candPasses}/${totals.candRuns} |`)
@@ -482,7 +482,7 @@ function bucketSection(comparison) {
   const lines = [
     `## Per-task bucket detail (${comparison.aggregate})`,
     '',
-    '| task | input base→cand (Δ%) | output base→cand (Δ%) | cache read base→cand (Δ%) |',
+    '| task | input base→ops (Δ%) | output base→ops (Δ%) | cache read base→ops (Δ%) |',
     '| --- | --- | --- | --- |',
   ]
   for (const task of comparison.tasks) {
@@ -510,7 +510,7 @@ function usageSplitSection(comparison) {
   }
   const row = (label, bucket) => `| ${label} | ${number(bucket.base)} | ${number(bucket.cand)} | ${signed(bucket.delta)} (${percent(percentChange(bucket.base, bucket.cand))}) | ${rawPercent(bucket.sharePct)} |`
   lines.push(
-    '| bucket | base | cand | Δ (Δ%) | share of Δ |',
+    '| bucket | base | ops | Δ (Δ%) | share of Δ |',
     '| --- | --- | --- | --- | --- |',
     row('uncached input', buckets.input),
     row('output', buckets.output),
@@ -535,7 +535,7 @@ function stepsSection(comparison) {
   const lines = [
     `## steps and tool calls (${comparison.aggregate})`,
     '',
-    '| task | steps base→cand (Δ%) | tool calls base→cand (Δ%) |',
+    '| task | steps base→ops (Δ%) | tool calls base→ops (Δ%) |',
     '| --- | --- | --- |',
   ]
   for (const task of comparison.tasks) {
@@ -592,7 +592,7 @@ function toolSection(comparison) {
   const cell = (name, counts) => (counts ? `${number(counts.base)} → ${cand(name, counts)}` : '—')
   const rows = [...totals.entries()].sort((left, right) => (Number(own(right[0])) - Number(own(left[0]))) || (right[1].cand - left[1].cand) || left[0].localeCompare(right[0]))
   lines.push(
-    `| tool | base | cand | ${comparison.tasks.map((task) => task.id).join(' | ')} |`,
+    `| tool | base | ops | ${comparison.tasks.map((task) => task.id).join(' | ')} |`,
     `| --- | --- | --- | ${comparison.tasks.map(() => '---').join(' | ')} |`,
   )
   for (const [name, counts] of rows) {
@@ -642,7 +642,7 @@ export function renderReport(comparison, sources = {}) {
     '## Evidence',
     '',
     `- base:${sources.base?.file ?? '?'}(spec \`${sources.base?.spec ?? '?'}\`,${sources.base?.kind ?? '?'})`,
-    `- cand:${sources.cand?.file ?? '?'}(spec \`${sources.cand?.spec ?? '?'}\`,${sources.cand?.kind ?? '?'})`,
+    `- ops:${sources.cand?.file ?? '?'}(spec \`${sources.cand?.spec ?? '?'}\`,${sources.cand?.kind ?? '?'})`,
     `- document: format \`${comparison.format}\` · aggregate \`${comparison.aggregate}\` · tolerance ${rawPercent(comparison.tolerancePct)}`,
     '',
     `Time is reported like any other metric: the time column shows each task's wall-clock (${comparison.aggregate}), and the cost basis of the verdict remains paired tokens (${COMPARE_FORMAT}).`,

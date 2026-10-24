@@ -497,7 +497,7 @@ export async function main(argv, io = {}) {
   }
 
   const interrupt = io.interrupt ?? createInterrupt()
-  const uninstall = (io.installSignals ?? true) === false ? () => {} : installSignals(interrupt, err, io)
+  const uninstall = (io.installSignals ?? true) === false ? () => { } : installSignals(interrupt, err, io)
   const log = (level, line) => (level === 'warn' ? err : out)(line)
   // The recorded command line names the overlay when the operator did not: a summary that
   // cannot say which route ran is not evidence of anything.
