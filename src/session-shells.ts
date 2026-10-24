@@ -145,6 +145,8 @@ export function mountSessionBash(ctx: Context, config: Pick<ResolvedConfig, 'pub
   let ready = false
   let stopped = false
   let generation = 0
+  let scheduled: NodeJS.Immediate | undefined
+  let refreshPending = false
   // Bound once by the jobs injection below; the host's registry is a tracked service, so every
   // `ctx.get('jobs')` hands out a fresh traceable proxy and cannot be compared by identity.
   let jobs: ShellJobs | undefined
@@ -197,7 +199,7 @@ export function mountSessionBash(ctx: Context, config: Pick<ResolvedConfig, 'pub
       if (!publishable) continue
       const base = bashToolDefinition({ file: bash.file, source: bash.source, subprocess: ctx.get('subprocess') })
       const definition = hostBashDefinition(ctx, base,
-        (args, exec, standing, policy, dshEnv, options) => startSessionBash({ ctx, bash, active: () => ready && !stopped && exec.agent !== undefined && entries.has(exec.agent) },
+        (args, exec, standing, policy, dshEnv, options) => startSessionBash({ ctx, bash, active: () => exec.agent !== undefined && entries.has(exec.agent) && allowed(exec.agent) },
           args, exec, standing, policy, dshEnv, options), sessionWorkdir, jobs)
       publish(entry, definition)
       if (entry.dispose) { entry.published = true; entry.generation = generation }
@@ -210,6 +212,19 @@ export function mountSessionBash(ctx: Context, config: Pick<ResolvedConfig, 'pub
       }
     }
   }
+  // Session events are delivered while the host is publishing an append. Both
+  // register and dispose may append their own events, so leave that window first.
+  // Coalesce a burst and read current authority when the pass actually runs.
+  const scheduleReconcile = (refreshDefinitions = false) => {
+    if (stopped) return
+    refreshPending ||= refreshDefinitions
+    if (scheduled) return
+    scheduled = setImmediate(() => {
+      scheduled = undefined
+      const refresh = refreshPending; refreshPending = false
+      if (!stopped) reconcile(refresh)
+    })
+  }
   const attach = (agent: Agent) => {
     if (stopped || !agent?.ctx || entries.has(agent)) return
     const entry: Entry = { agent, ctx: undefined, fiber: undefined, dispose: undefined, definition: undefined }
@@ -217,7 +232,7 @@ export function mountSessionBash(ctx: Context, config: Pick<ResolvedConfig, 'pub
     entry.fiber = agent.ctx.plugin(child => {
       child.inject(['tools'], toolsCtx => {
         entry.ctx = toolsCtx
-        reconcile()
+        scheduleReconcile()
       })
     })
   }
@@ -226,27 +241,29 @@ export function mountSessionBash(ctx: Context, config: Pick<ResolvedConfig, 'pub
     if (!entry) return
     entries.delete(agent)
     clear(entry)
-    reconcile()
+    scheduleReconcile()
     return entry.fiber?.dispose()
   }
   ctx.effect(() => async () => {
     stopped = true
+    if (scheduled) clearImmediate(scheduled)
+    scheduled = undefined
     // allSettled: one failing detach must not leave the remaining sessions' bash layers published.
     await Promise.allSettled([...entries.keys()].map(detach))
   }, 'dsh-ops: session bash layers')
   ctx.on('agent/created', ({ agent }) => { attach(agent) })
   ctx.on('agent/disposed', ({ agent }) => detach(agent))
-  ctx.on('session/event', (_session, event) => { if (event.type === 'sandbox/mode') reconcile() })
-  ctx.inject(['sandbox'], () => { reconcile() })
+  ctx.on('session/event', (_session, event) => { if (event.type === 'sandbox/mode') scheduleReconcile() })
+  ctx.inject(['sandbox'], () => { scheduleReconcile() })
   ctx.inject(['jobs'], jobsCtx => {
     jobs = jobsCtx.get('jobs') as ShellJobs | undefined
-    reconcile(true)
-    jobsCtx.effect(() => () => { jobs = undefined; reconcile(true) })
+    scheduleReconcile(true)
+    jobsCtx.effect(() => () => { jobs = undefined; scheduleReconcile(true) })
   })
   ctx.inject(['sandboxPolicy', 'subprocess'], authorityCtx => {
     ready = true
-    reconcile(true)
-    authorityCtx.effect(() => () => { ready = false; reconcile() }, 'dsh-ops: bash authority and executor')
+    scheduleReconcile(true)
+    authorityCtx.effect(() => () => { ready = false; scheduleReconcile() }, 'dsh-ops: bash authority and executor')
   })
   for (const agent of ctx.get('agents')?.list?.() ?? []) attach(agent)
 }
