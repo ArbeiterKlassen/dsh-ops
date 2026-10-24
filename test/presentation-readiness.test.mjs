@@ -46,9 +46,13 @@ for (const official of ['read', 'glob']) for (const hidingFirst of [true, false]
     assert.equal((await request(official)).isError, true, 'selected official dispatch remains blocked')
     ctx.provide('ptcRuntime', { language: 'typescript' })
     const lift = agent.ctx.tools.presentAs('ptc')
-    await assert.rejects(assemble(), /READINESS_BLOCKED/)
+    // A run_code scope cannot own a native counterpart, so it is never masked and
+    // never gated: the model receives the program entry and nothing else.
+    assert.deepEqual((await assemble()).tools.map(tool => tool.name), ['run_code'])
+    assert.ok(scopedToolNames(ctx, agent).includes(official), 'a collapsed scope hides nothing')
+    const direct = await request(official)
+    assert.equal(direct.isError, true, 'a direct official call stays refused in a collapsed scope')
     await waitFor(() => !scopedToolNames(ctx, agent).includes(publicToolName(raw)))
-    assert.equal((await request(publicToolName(raw))).isError, true)
     lift()
     await waitFor(() => scopedToolNames(ctx, agent).includes(publicToolName(raw)))
     assert.ok((await assemble()).tools.some(tool => tool.name === publicToolName(raw)))
@@ -104,7 +108,8 @@ await test('real PTC Native shadows retain exact OPS ownership while PTC definit
     assert.equal(assembled.tools.some(tool => tool.name === 'read'), false)
     const value = await ctx.tools.execute({ name: original.name, arguments: {}, agent: child, callId: 'owned-shadow', signal: new AbortController().signal })
     assert.equal(value.isError, false, JSON.stringify(value))
-    await assert.rejects(ctx.systemPrompt.assemble({ scope: parent }), /READINESS_BLOCKED/)
+    assert.deepEqual((await ctx.systemPrompt.assemble({ scope: parent })).tools.map(tool => tool.name), ['run_code'],
+      'a collapsed scope is not gated')
     removeOwned()
     await assert.rejects(ctx.systemPrompt.assemble({ scope: child }), /READINESS_BLOCKED/)
   } finally { await shutdown(ctx) }
