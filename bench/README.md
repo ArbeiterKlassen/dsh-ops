@@ -45,3 +45,16 @@ node bench/cli.mjs ab
 ```console
 node bench/cli.mjs ab --task csv-sum
 ```
+
+## 任务一览
+
+六个任务各自压一种能力，`ops_*` 工具名来自 `publicToolName()`。每个任务的期望值都由夹具生成器现算（`derive*`），判卷在 `bench/lib/verify.mjs`。
+
+| 任务 | 工作量 | 主要测什么 | 相关工具 |
+| --- | --- | --- | --- |
+| `api-rename` | 12 个模块 + `core.js`（另生成 `check.mjs`），把 `parsePayload` 改名为 `decodePayload` | 符号级改名而非文本替换：定义、import、调用点一个不能漏；诱饵 `parsePayloadLegacy` / `parsePayloadAsync` 和完全不碰该符号的文件必须原样保留；判卷是 `src/` 全部文件的字节级 SHA-256 全等 + `node check.mjs` 退 0 | `ops_grep`（+`ops_glob`）搜调用点；`ops_read_files` 读文件；`ops_edit_file` / `ops_replace` 改名 |
+| `big-file-paging` | 4200 行单文件 `src/pipeline.js` | 分页读取：定位 `auditLimit('staging')` 所在行段，只读需要的两段而不是整读文件；文件里埋了过期注释和被取代的 `LEGACY_LIMIT_TABLE`，grep 一次仍要判断；`answer.txt` 等于该常量的整数 | `ops_grep` 定位；`ops_inspect_local_file`（或 `ops_read_files`）带 `offset`/`limit` 只读两段；`ops_write_file` 写答案 |
+| `config-hunt` | 3 层配置目录 + 12 个 `packages/*/config.json` 诱饵 | 层级查找与优先级判断：先 glob 出配置层，再 grep key，最后按 README 的优先级取 `MAX_UPLOAD_MB` 的有效值；只 grep key 就停下有 1/4 概率拿错答案 | `ops_glob` 找层；`ops_grep` 找 key；`ops_read_files` 读优先级文档与三层配置；`ops_write_file` 写答案 |
+| `csv-sum` | 8000 行 CSV，汇总 EU 区 `amount` 列 | 上下文控制：把聚合交给 shell 而不是把 8000 行读进上下文，`answer.txt` 只写整数和 | `ops_bash` 聚合；`ops_read_files` 只看表头确认列；`ops_write_file` 写答案 |
+| `gate-repair-loop` | 12 个 stage 模块（每个约 70 行）+ `check.js` | 迭代修复循环：门禁停在第一个坏 stage，每个 stage 只错一处绑定常量、契约写在模块自己的注释里，跑→修→再跑直到退 0；`check.js` 字节不变是 invariant | `ops_bash` 跑门禁；`ops_read_files` 读 stage；`ops_edit_file` 按契约修常量；`ops_write_file` 写 `answer.txt` |
+| `noisy-test-triage` | 2400 个测试、恰好一行 `not ok` | 精确提取：跑测试重定向到文件，在日志里只捞那一行失败测试名写入 `failure.txt`（必须精确匹配），且 runner 仍退 1 是 invariant | `ops_bash` 跑并重定向；`ops_grep` 只捞那一行（如 `^not ok`，可配 `outputMode: summary/content`）；必要时 `ops_read_files`；`ops_write_file` 写结果 |
