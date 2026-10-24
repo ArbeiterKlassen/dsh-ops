@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { resolveDiscoveryConfig } from '../config.js'
 import { NativeFileTools } from '../file/runtime.js'
 import { nativeProviders, registerNativeProvider, claimNativeSelection } from '../file/result-provider.js'
+import { toolChangeScopes } from '../tool-changes.js'
 import { ownScopes } from '../scoped-ownership.js'
 import { isNativePresentation, isPresentationProbe } from '../presentation.js'
 import { mountResultLifecycle } from '../kernel/result-lifecycle.js'
@@ -171,7 +172,7 @@ export function apply(root: Context, raw: unknown): void {
       entry.ready = Promise.resolve(entry.fiber).then(async () => { await entry.runtime.start([]); await reconcile() })
       return entry.ready
     }
-    ctx.on('agent/created', async ({ agent }) => { await attach(agent); return undefined })
+    ctx.on('agent/created', async ({ agent }) => { await attach(agent); await drain(); return undefined })
     ctx.on('agent/pre-step', async (payload, next) => {
       await attach(payload.agent)
       const entry = entries.get(payload.agent)
@@ -194,7 +195,14 @@ export function apply(root: Context, raw: unknown): void {
       for (const entry of entries.values()) invalidate(entry)
       void reconcile()
     }
-    ctx.on('tools/change', () => { if (!mutating && !ownership?.publishing()) refresh() })
+    const { scopeChainOf } = await import('@deepseek-ai/dsh-scope')
+    ctx.on('tools/change', () => {
+      if (mutating || ownership?.publishing()) return
+      const scopes = toolChangeScopes()
+      if (!scopes?.length) { refresh(); return }
+      for (const [agent, entry] of entries) if (scopes.some(scope => scopeChainOf(agent).includes(scope))) invalidate(entry)
+      void reconcile()
+    })
     ctx.on('system-prompt/change', refresh)
     // Observe in-place hooks and the default asynchronous Fiber.restart().
     // Await the runtime result even though the pinned next() type says void.
