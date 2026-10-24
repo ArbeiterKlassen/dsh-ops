@@ -114,15 +114,6 @@ await test('a host without a reachable view still names the surface', () => with
 }))
 
 /**
- * Act on the registry from inside a plugin mounted on one scope.
- *
- * A scoped registration or restriction refuses the host's unscoped context, so the call
- * has to arrive through a context carrying the agent's scope tag.
- * @param agent - the scoped context to mount on.
- * @param act - receives that context's scoped registry, returns a disposer.
- * @returns the disposer.
- */
-/**
  * Mount a plugin on the agent's scope and act on the registry from inside it.
  *
  * A scoped registration or restriction refuses the host's unscoped context, and the

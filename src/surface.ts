@@ -58,8 +58,8 @@ const identityOf = (definition: unknown): number => {
  * whole scope view and turns the key into O(names²).
  *
  * The cost is what makes this safe to memoize at all: reading through `schemas()` deep-copies
- * every visible schema — 24.1 ms for 258 tools on the pinned host, 30.9 ms once the per-name
- * `get()` is added — against 0.073 ms here, both including identity. A key that costs more
+ * every visible schema — 34.2 ms for 258 tools at the issue's own surface shape on the
+ * published runtime — against ~0.05 ms here, identity included. A key that costs more
  * than the assembly it skips turns the memo into a slowdown. `schemas()` survives only as
  * the fallback for a host whose view is not reachable, where correctness outranks the cost.
  * @param tools - the tool registry.
@@ -91,3 +91,23 @@ export const surfaceOf = (tools: Pick<ToolRuntime, 'schemas'>, agent: Agent): st
  */
 export const surfaceNames = (surface: string): string[] =>
   surface === '' ? [] : surface.split('\u0000').map(entry => entry.split('\u0001')[0]!)
+
+/**
+ * The visible tool names of one scope, without copying any schema.
+ *
+ * `schemas()` deep-copies every definition's parameters (34.2 ms for 258 tools at the
+ * issue's own surface shape on the official host) just to hand back names; the view
+ * reports the same names, in the same order, for ~0.043 ms. Name-only readers (prompt
+ * sections, restriction planning) pay the copy for nothing. Cost tracks nested schema
+ * nodes rather than payload bytes, so both figures are for the shape the issue measured.
+ * `undefined` reads the global layer on both paths, and a host without a reachable view
+ * falls back to the projection — correctness outranks the cost.
+ * @param tools - the tool registry.
+ * @param scope - the scope to read, or `undefined` for the global layer.
+ * @returns the visible tool names, in view order.
+ */
+export const visibleNames = (tools: Pick<ToolRuntime, 'schemas'>, scope?: object): string[] => {
+  const visible = (tools as unknown as Viewable).view?.(scope)?.visible
+  if (typeof visible?.keys === 'function') return [...visible.keys()]
+  return tools.schemas(scope as Agent).map(schema => schema.name)
+}
