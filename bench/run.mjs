@@ -8,9 +8,11 @@
  * `bench/run/schedule.mjs`. It does not spawn a child, does not aggregate and does not
  * judge: scheduling is `run/schedule.mjs`, one session is `run/session.mjs` (P7),
  * aggregation is `lib/aggregate.mjs` (P6), the verdict is `lib/compare-core.mjs`
- * (P11a), and sealing is the **injected** `io.seal` callback — `bench/run/seal.mjs`
- * (P8a) is not imported here, deliberately, so this slice lands while P8a is still in
- * flight; the wiring supplies it.
+ * (P11a), and sealing is opt-in: `--seal` writes the schema-validated `run.json` through
+ * `bench/run/seal.mjs` (P8a), while every sweep keeps each arm's `results/` and
+ * `summary.json` either way. An injected `io.seal` supplies the document an embedder
+ * wants; the CLI spawns this entry as a child and cannot inject one, so the flag has to
+ * select the real seal rather than a missing slice.
  *
  * Why one process for both arms: the pre-#205 shape spawned one runner per arm, so
  * every baseline run happened before every candidate run and the machine's drift
@@ -26,14 +28,16 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 import { EXIT, UsageError, planAb } from './cli.mjs'
-import { LLM_OVERLAY, REPO_ROOT, resolveDshEntry } from './lib/env.mjs'
+import { LLM_OVERLAY, REPO_ROOT, resolveDshEntry, spawnPlan } from './lib/env.mjs'
 import { TASKS_DIR, loadTasks, selectTasks } from './lib/tasks.mjs'
 import { RUNS_DIR } from './lib/next-folder.mjs'
 import { DEFAULT_REPEAT, armOrder, createInterrupt, planPairs, planSessions, repeatsById, runSweep } from './run/schedule.mjs'
+import { sealRun } from './run/seal.mjs'
 
 /** The runner-only flags that take a value; `--task`/`--repeat`/`--folder`/`--base`/`--cand` are parsed by the CLI. */
 const VALUE_FLAGS = ['--sleep-ms', '--out', '--heartbeat-ms', '--stall-ms', '--timeout', '--dsh', '--llm-patch', '--model']
@@ -73,12 +77,14 @@ export function abUsage() {
     '  --keep               keep each temporary workspace',
     '  --verbose            narrate every event line',
     '  --show               print the pair-by-pair plan and exit without running',
-    '  --no-seal            run without the injected seal callback (no run.json; said out loud)',
+    '  --seal               also seal the sweep into the schema-validated run.json (default:',
+    '                       every arm keeps results/ and summary.json, nothing else)',
+    '  --no-seal            explicit off; this is already the default, kept for old command lines',
     '  -h, --help           this text',
     '',
-    'Exit codes: 0 ok · 1 a failed sweep · 2 usage error · 3 sealing is not wired yet',
-    '(the caller injects P8a\'s sealRun as `io.seal`; without it, and without --no-seal,',
-    'nothing is spawned so no token is spent on an unsealable sweep).',
+    'Exit codes: 0 ok · 1 a failed sweep · 2 usage error',
+    'Sealing is opt-in: without --seal a sweep writes each arm\'s results/ and summary.json,',
+    'and `bench report` renders the report from those summaries.',
   ].join('\n')
 }
 
@@ -109,7 +115,7 @@ export function parseRunArgs(argv, context = {}) {
     aa: false,
     verbose: false,
     keep: false,
-    noSeal: false,
+    seal: false,
     noLlmPatch: false,
     sleepMs: 0,
     out: null,
@@ -125,7 +131,8 @@ export function parseRunArgs(argv, context = {}) {
     if (flag === '--aa') options.aa = true
     else if (flag === '--verbose' || flag === '-v') options.verbose = true
     else if (flag === '--keep') options.keep = true
-    else if (flag === '--no-seal') options.noSeal = true
+    else if (flag === '--seal') options.seal = true
+    else if (flag === '--no-seal') options.seal = false
     else if (flag === '--no-llm-patch') options.noLlmPatch = true
     else if (flag === '--label' || flag === '--profile') {
       throw new UsageError(`${flag} named one arm of a per-process run; \`ab\` runs both arms itself — use --base/--cand`)
@@ -190,6 +197,71 @@ export function resolveLlmPatch(options, context = {}) {
     throw new UsageError(`there is no ${overlay}, so both arms would run on their profiles' own routes — run "node bench/cli.mjs setup" to create it, or pass --no-llm-patch to run that way on purpose`)
   }
   return { path: overlay, implicit: true }
+}
+
+/**
+ * The default profile fingerprint probe: the composed configuration `dsh` reports for one
+ * profile. `setup` reads the same tree back to prove a pin really landed, so hashing it
+ * records what each arm ran rather than what its file was called.
+ * @param {{file: string, kind: 'js'|'exe'}} entry - the resolved dsh launcher.
+ * @param {string} profile - the profile name to dump.
+ * @param {{run?: Function, cwd?: string, env?: Record<string, string|undefined>}} [context] - injectable probe, directory and environment.
+ * @returns {string} the command's stdout and stderr.
+ * @throws {Error} when it cannot start or exits nonzero: an arm with no fingerprint is not evidence.
+ */
+export function dumpProfileConfig(entry, profile, context = {}) {
+  const plan = spawnPlan(entry, ['--profile', profile, '--dump-config'])
+  const result = (context.run ?? spawnSync)(plan.command, plan.args, {
+    cwd: context.cwd ?? REPO_ROOT,
+    env: context.env ?? process.env,
+    encoding: 'utf8',
+    timeout: 60_000,
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  if (result.error) throw new Error(`could not run "dsh --profile ${profile} --dump-config": ${String(result.error.message ?? result.error)}`)
+  if (result.status !== 0) {
+    const detail = String(result.stderr ?? '').trim().split('\n').filter(Boolean).pop() ?? ''
+    throw new Error(`"dsh --profile ${profile} --dump-config" exited ${String(result.status)}${detail === '' ? '' : `: ${detail}`}`)
+  }
+  return `${result.stdout ?? ''}\n${result.stderr ?? ''}`
+}
+
+/**
+ * Fingerprint both arms: the SHA-256 of each profile's dumped configuration, which
+ * `bench/run.schema.json` records in `arms[]` and `sealRun` requires before it will seal.
+ * @param {{side: string, profile: string}[]} arms - the two arms of the sweep.
+ * @param {{entry?: object, dump?: (entry: object, profile: string, context: object) => string, env?: object}} [context] - the launcher and the injectable probe.
+ * @returns {Record<string, string>} the hex digest of each side's composed configuration.
+ * @throws {Error} when a dump prints nothing, naming the arm that has no fingerprint.
+ */
+export function profileFingerprints(arms, context = {}) {
+  const dump = context.dump ?? dumpProfileConfig
+  const hashes = {}
+  for (const arm of arms) {
+    const text = dump(context.entry, arm.profile, context)
+    if (typeof text !== 'string' || text.trim() === '') {
+      throw new Error(`"dsh --profile ${arm.profile} --dump-config" printed nothing, so the ${arm.side} arm has no profile fingerprint`)
+    }
+    hashes[arm.side] = createHash('sha256').update(text).digest('hex')
+  }
+  return hashes
+}
+
+/**
+ * The default seal: adapt the sweep's seal context to {@link sealRun}.
+ *
+ * The callback is handed the two arm directories as a `{base, cand}` map, while `sealRun`
+ * folds a list of sweep directories into one document and places `run.json` in their
+ * common parent (the group folder). Handing the map straight to `sealRun` fails on
+ * `dirs.map` — which no injected double could catch, because a double never inspects it.
+ * @param {{dirs: {base: string, cand: string}|string[], arms: object, meta?: object}} context - the seal context.
+ * @param {(options: object) => object} [seal] - the sealer, injectable so a suite can read what it is handed.
+ * @returns {object} the seal receipt.
+ */
+export function sealSweep(context, seal = sealRun) {
+  const dirs = Array.isArray(context.dirs) ? context.dirs : [context.dirs.base, context.dirs.cand]
+  return seal({ ...context, dirs })
 }
 
 /** The `<UTC stamp>-<label>` run directories, one per arm, under the sweep's group. */
@@ -269,14 +341,15 @@ function printResult(out, err, result, options) {
     : `[ab] noise   : ${noise === null ? 'not measured (no --aa); cost direction withheld' : `±${noise.pct}% (${noise.method})`}`)
   if (result.compare?.gate?.fail === true) err(`[ab] verdict : FAIL — ${result.compare.gate.reasons.join('; ')}`)
   else out('[ab] verdict : pass (pass-rate gate)')
-  out(`[ab] sealed  : ${result.sealed?.path ?? (result.sealError ? `FAILED (${result.sealError})` : 'no — run.json was not written')}`)
+  out(`[ab] sealed  : ${result.sealed?.path ?? (result.sealError ? `FAILED (${result.sealError})` : 'no — not requested (--seal writes run.json)')}`)
 }
 
 /**
  * Run the sweep. Every dependency is injectable through `io` so a test never spawns,
  * never reads `~/.dsh` and never touches a model: `io.seal`, `io.runSession`,
  * `io.sweep`, `io.observe`, `io.resolveEntry`, `io.now`, `io.sleep`, `io.kill`,
- * `io.tasksDir`, `io.runsDir`, `io.env`, `io.interrupt`, `io.profileHashes`.
+ * `io.tasksDir`, `io.runsDir`, `io.env`, `io.interrupt`, `io.profileHashes`,
+ * `io.dumpProfileConfig`.
  * @param {string[]} argv - the arguments after `ab`.
  * @param {object} [io] - the wiring and the sinks (`out`, `err`).
  * @returns {Promise<number>} the exit code.
@@ -300,8 +373,8 @@ export async function main(argv, io = {}) {
     out(abUsage())
     return EXIT.ok
   }
-  // Resolved before the seal guard and before any spawn: both are conditions under which a
-  // sweep would measure, or record, something other than what the operator asked for.
+  // Resolved before any spawn: a contradictory or absent overlay is a condition under which
+  // the sweep would measure something other than what the operator asked for.
   let patch
   try {
     patch = resolveLlmPatch(options, { overlay: io.llmOverlay, exists: io.overlayExists })
@@ -318,11 +391,11 @@ export async function main(argv, io = {}) {
     }
     patch = { path: null, implicit: false, refused: error.message }
   }
-  if (!options.show && options.noSeal !== true && typeof io.seal !== 'function') {
-    err('bench ab: sealing is not wired in this slice yet — P8a\'s bench/run/seal.mjs must be injected as io.seal.')
-    err('Nothing was spawned and no token was spent. Pass --no-seal to run an unsealed sweep (no run.json), or --show to just print the plan.')
-    return EXIT.pending
-  }
+  // Sealing is opt-in: a sweep always writes each arm's `results/` and `summary.json`, and
+  // `--seal` adds the schema-validated `run.json` on top. The CLI spawns this entry as a
+  // child and cannot inject a callback, so "sealed" means the flag plus either the injected
+  // `io.seal` (an embedder's own document) or the real seal in `bench/run/seal.mjs` (P8a).
+  const seal = options.seal !== true ? undefined : (typeof io.seal === 'function' ? io.seal : sealSweep)
 
   let tasks
   try {
@@ -332,8 +405,7 @@ export async function main(argv, io = {}) {
     return EXIT.usage
   }
   const repeats = repeatsById(tasks, { repeat: options.repeat, repeatExplicit: options.repeatExplicit })
-  const hashes = io.profileHashes ?? {}
-  const arms = buildArms(options).map((arm) => ({ ...arm, profileHash: hashes[arm.side] ?? null }))
+  const arms = buildArms(options)
   const { sweepDir, dirs } = prepareDirs(options, arms, io)
   const pairs = planPairs({ tasks, repeats })
   const sessions = planSessions({ tasks, repeats, arms })
@@ -362,6 +434,24 @@ export async function main(argv, io = {}) {
     return EXIT.failure
   }
 
+  // Before any session: an arm whose composed configuration cannot be read has no
+  // fingerprint, and a sweep that cannot be sealed is not evidence. Refusing here costs
+  // nothing; refusing after the sweep would have spent the tokens first.
+  let hashes = io.profileHashes ?? null
+  if (hashes === null && seal !== undefined) {
+    try {
+      hashes = profileFingerprints(arms, { entry, dump: io.dumpProfileConfig, env: io.env })
+    } catch (error) {
+      err(`bench ab: ${String(error?.message ?? error)}`)
+      err('nothing was spawned and no token was spent; run "node bench/cli.mjs setup" if the profiles are not prepared yet, or pass --no-seal to sweep without sealing.')
+      return EXIT.failure
+    }
+  }
+  for (const arm of arms) arm.profileHash = hashes?.[arm.side] ?? null
+  if (seal !== undefined) {
+    out(`[ab] profile : ${arms.map((arm) => `${arm.profile} ${arm.profileHash === null ? 'n/a' : arm.profileHash.slice(0, 12)}`).join('  ')}`)
+  }
+
   const interrupt = io.interrupt ?? createInterrupt()
   const uninstall = (io.installSignals ?? true) === false ? () => {} : installSignals(interrupt, err, io)
   const log = (level, line) => (level === 'warn' ? err : out)(line)
@@ -383,7 +473,7 @@ export async function main(argv, io = {}) {
       model: options.model,
       argv: recordedArgv,
     }, {
-      seal: options.noSeal === true ? undefined : io.seal,
+      seal,
       runSession: io.runSession,
       observe: io.observe,
       now: io.now,

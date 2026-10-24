@@ -450,7 +450,7 @@ export async function runSweep(spec = {}, options = {}) {
       observer.note('warn', `sealing failed: ${result.sealError} — the per-row archives and summary.json are on disk, but run.json was not written`)
     }
   } else {
-    observer.note('warn', 'no seal callback was injected: this sweep has results/ and summary.json, but no run.json')
+    observer.note('info', 'sealing was not requested: this sweep has results/ and summary.json, and no run.json')
   }
   observer.dispose?.()
   return result
