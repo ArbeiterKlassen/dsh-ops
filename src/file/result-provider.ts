@@ -37,7 +37,11 @@ function refresh(owner: State, scope: unknown): void {
 }
 export async function registerNativeProvider(ctx: Host, definitions: ToolDefinition[], register: (tool: ToolDefinition) => (() => void), options: { inheritable?: boolean; priority?: number } = {}): Promise<() => void> {
   const { scopeOf } = await import('@deepseek-ai/dsh-scope')
-  const owner = state(ctx), scope = scopeOf(ctx as Context)
+  return registerNativeProviderAtScope(ctx, scopeOf(ctx as Context), definitions, register, options)
+}
+/** Callers that already resolved the public scope API can commit synchronously. */
+export function registerNativeProviderAtScope(ctx: Host, scope: unknown, definitions: ToolDefinition[], register: (tool: ToolDefinition) => (() => void), options: { inheritable?: boolean; priority?: number } = {}): () => void {
+  const owner = state(ctx)
   const providers = definitions.map(definition => {
     let dispose: (() => void) | undefined
     const provider: Provider = { definition, scope, active: true, inheritable: options.inheritable ?? true, priority: options.priority ?? 0, publish(visible) {

@@ -21,6 +21,7 @@ import { ownPtcScopes } from './ownership.js'
 import { surfaceOf as toolSurface } from '../surface.js'
 import { onToolChange, withToolChange } from '../tool-changes.js'
 import { monitoredInvoke } from './invoke.js'
+import { scopedReconciliation, scopeFamilies } from '../scoped-reconciliation.js'
 export { resolvePtcConfig } from '../config.js'
 export const name = 'dsh-ops-ptc'
 const apiTools = [...FILE_TOOLS, ...PTC_TOOLS]
@@ -61,15 +62,11 @@ export function apply(root: Context, rawConfig: unknown): void {
     if (!tools || !prompt) return
     mountResultLifecycle(ctx)
     const entries = new Map<Agent, Entry>()
+    const retired = new WeakSet<Agent>()
     const active = new Map<AbortController, { owner: Agent; promise: Promise<unknown> }>()
-    let stopped = false, mutating = false, epoch = 0, chain = Promise.resolve(), foreignDuringPublish = false
+    let stopped = false, mutating = false, epoch = 0, foreignDuringPublish = false
     let verifyingForeign = false
-    let settled = chain
-    const drain = async () => {
-      let current: Promise<void>
-      do { current = chain; await current } while (current !== chain)
-      settled = current
-    }
+    const reconciliation = scopedReconciliation<Agent>(error => ctx.logger.warn('dsh-ops: PTC publication failed: ' + String(error)))
     let scopeChainOf: (scope: object) => object[] = scope => [scope]
     const surfaceOf = (agent: Agent): string => toolSurface(tools, agent) + '\u0002' + nativeProviderRevision(ctx, scopeChainOf(agent))
     const clear = (entry: Entry) => {
@@ -85,9 +82,9 @@ export function apply(root: Context, rawConfig: unknown): void {
     }
     let ownership: Awaited<ReturnType<typeof ownPtcScopes>> | undefined
     const execute = (agent: Agent, entry: Entry, tool: ApiName | 'load_sdk'): ToolDefinition['execute'] => async (args, exec) => {
-      await chain
+      await reconciliation.drain(agent)
       const version = entry.published, revision = entry.revision
-      const available = () => !stopped && entries.get(agent) === entry && ownership?.owns(agent) && exec.agent === agent && entry.ptc && entry.owned.has(publicToolName(tool))
+      const available = () => !stopped && !exec.signal?.aborted && entries.get(agent) === entry && ownership?.owns(agent) && exec.agent === agent && entry.ptc && entry.owned.has(publicToolName(tool))
       if (!available() || !await ptcOnly(agent, exec.signal).catch(() => false) || !available() || version !== entry.published || revision !== entry.revision) {
         return failure('POLICY_DENIED', 'The calling scope must own this API in authoritative PTC-only presentation.')
       }
@@ -119,24 +116,24 @@ export function apply(root: Context, rawConfig: unknown): void {
     /** Probe changed scopes, then rebuild only their inheritance dependency family. */
     const queued = new Map<Agent, boolean>()
     const reconcile = (force = false, targets?: ReadonlySet<Agent>): Promise<void> => {
-      if (stopped || mutating) return chain
+      if (stopped || mutating) return Promise.resolve()
       for (const agent of targets ?? entries.keys()) {
         const entry = entries.get(agent)
         if (entry) ++entry.revision
         queued.set(agent, force || queued.get(agent) === true)
       }
-      const changed = new Set<Agent>()
-      const version = ++epoch
-      chain = chain.then(async () => {
-        if (stopped || version !== epoch) return
-        const requests = new Map(queued)
+      const families = scopeFamilies(entries.keys(), targets ?? entries.keys(), scopeChainOf)
+      return Promise.all(families.map(family => reconciliation.run(family, async task => {
+        const changed = new Set<Agent>(), version = ++epoch
+        const requests = new Map([...queued].filter(([agent]) => family.has(agent)))
         const probedBefore = new Set<Agent>()
         const ready = new Set<Agent>()
         // Superseded passes keep their requests queued. Commit surfaces only after
         // publishing the affected family, and retain every unprobed verdict.
         let dirty = false
         for (const [agent, entry] of entries) {
-          if (stopped || version !== epoch) return
+          if (stopped || !task.current()) return
+          if (!family.has(agent)) continue
           if (!entry.ctx || !ownership?.owns(agent)) continue
           if (!requests.has(agent)) { if (entry.ptc) ready.add(agent); continue }
           const surface = surfaceOf(agent)
@@ -144,12 +141,12 @@ export function apply(root: Context, rawConfig: unknown): void {
           if (!fresh && entry.surface === surface) { if (entry.ptc) ready.add(agent); continue }
           if (entry.surface !== surface || fresh) { dirty = true; changed.add(agent) }
           probedBefore.add(agent)
-          const next = await ptcOnly(agent).catch(() => false)
+          const next = await task.wait(ptcOnly(agent, task.signal)).catch(() => false)
           if (next !== entry.ptc) { dirty = true; changed.add(agent) }
           if (next) ready.add(agent)
         }
-        if (stopped || version !== epoch) return
-        queued.clear()
+        if (stopped || !task.current()) return
+        for (const agent of family) queued.delete(agent)
         if (!dirty) return
         const affected = related(changed)
         const publications = [...entries].filter(([agent]) => affected.has(agent))
@@ -215,11 +212,10 @@ export function apply(root: Context, rawConfig: unknown): void {
           }
         }
         ownership?.changedBelow()
-      }).catch(error => ctx.logger.warn('dsh-ops: PTC publication failed: ' + String(error)))
-      return chain
+      }))).then(() => undefined)
     }
     const attach = (agent: Agent): Promise<void> => {
-      if (stopped || entries.has(agent) || !agent.ctx) return entries.get(agent)?.ready ?? Promise.resolve()
+      if (stopped || retired.has(agent) || entries.has(agent) || !agent.ctx) return entries.get(agent)?.ready ?? Promise.resolve()
       const entry: Entry = { agent, revision: 0, disposers: [], selected: new Set(), pending: new Set(), owned: new Map(), ptc: false, ready: Promise.resolve() }
       entries.set(agent, entry); ownership?.track(agent)
       entry.fiber = agent.ctx.plugin({ inject: ['tools'], apply(scoped) { entry.ctx = scoped } })
@@ -233,6 +229,7 @@ export function apply(root: Context, rawConfig: unknown): void {
       if (entry && !signal.aborted) {
         const wasPtc = entry.ptc
         const presentationPtc = await ptcOnly(agent, signal).catch(() => false)
+        if (signal.aborted || entries.get(agent) !== entry || !ownership?.owns(agent)) return next()
         if (presentationPtc) {
           for (const tool of entry.pending) entry.selected.add(tool)
         }
@@ -246,6 +243,7 @@ export function apply(root: Context, rawConfig: unknown): void {
       return next()
     })
     ctx.on('agent/disposed', async ({ agent }) => {
+      retired.add(agent); reconciliation.forget(agent); queued.delete(agent)
       const entry = entries.get(agent); if (!entry) return
       const affected = related(new Set([agent])); affected.delete(agent)
       entries.delete(agent); ownership?.forget(agent); abortOwner(agent, 'Owning agent disposed'); mutating = true
@@ -271,13 +269,13 @@ export function apply(root: Context, rawConfig: unknown): void {
       // The pinned host assembles BEFORE agent/pre-step. Wait for publication
       // queued by the previous committed step, then obtain a fresh public assembly.
       if (!isPresentationProbe(context)) {
-        const entry = entries.get(context.scope as Agent), before = chain, pending = chain !== settled
-        await entry?.ready; await drain()
-        if (pending || before !== chain) return prompt.assemble(context)
+        const agent = context.scope as Agent, entry = entries.get(agent), before = reconciliation.version(agent)
+        await entry?.ready
+        if (await reconciliation.drain(agent) || before !== reconciliation.version(agent)) return prompt.assemble(context)
       }
       const entry = entries.get(context.scope as Agent), heldPtc = Boolean(entry?.ptc && entry.owned.size)
       const result = await next()
-      if (!entry || !heldPtc || isPtcPresentation(result)) return result
+      if (!entry || context.signal?.aborted || entries.get(context.scope as Agent) !== entry || !heldPtc || isPtcPresentation(result)) return result
       mutating = true
       try { entry.ptc = false; entry.surface = undefined; entry.pending.clear(); abortOwner(context.scope as Agent, 'PTC presentation withdrawn'); clear(entry) }
       finally { mutating = false }
@@ -317,12 +315,13 @@ export function apply(root: Context, rawConfig: unknown): void {
         ? 'OPS APIs return typed Outcome values. Inspect status before data; preserve partial coverage and continuation. Use ' + publicToolName('load_sdk') + ' to request advanced APIs by raw name; they become callable on the next model step. Process results locally in run_code and return only needed summaries. References do not grant authority.' : ''
     } }), 'dsh-ops: progressive PTC guidance')
     ctx.effect(() => async () => {
-      stopped = true; ++epoch; mutating = true
+      stopped = true; mutating = true
+      const cancelled = reconciliation.stop()
       for (const controller of active.keys()) controller.abort(new Error('PTC component unloaded'))
       for (const entry of entries.values()) clear(entry)
       await Promise.allSettled([...active.values()].map(work => work.promise))
       await Promise.allSettled([...entries.values()].map(entry => entry.fiber?.dispose()))
-      entries.clear(); ownership?.dispose(); await chain
+      entries.clear(); ownership?.dispose(); await cancelled
     }, 'dsh-ops: PTC lifecycle')
     for (const agent of entries.keys()) ownership.track(agent)
     ownership.refresh()
