@@ -44,6 +44,12 @@ function run(root, name='check-release.mjs', args=[]) {
 await test('all four paired targets and Windows IPC close successfully',async()=>withTempDir('release-all',root=>{
   fixture(root); const result=run(root); assert.equal(result.status,0,result.out); assert.match(result.out,/Release closure OK/)
 }))
+await test('an Intel-only staged closure validates its Mach-O worker and receipt (#371)',async()=>withTempDir('release-intel',root=>{
+  fixture(root,['darwin-x64'])
+  const result=run(root,'native-runtime.mjs',['--platform','darwin-x64'])
+  assert.equal(result.status,0,result.out)
+  assert.match(result.out,/darwin-x64/)
+}))
 await test('each missing target fails strict release while staged source checks remain local',async()=>withTempDir('release-missing',root=>{
   fixture(root,['linux-x64']); assert.equal(run(root,'native-runtime.mjs',['--staged']).status,0)
   const result=run(root); assert.notEqual(result.status,0); assert.match(result.out,/missing win32-x64, darwin-arm64, darwin-x64/)

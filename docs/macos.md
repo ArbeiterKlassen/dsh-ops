@@ -85,7 +85,13 @@ tool.
   non-blocking because the leg measured 318 s > 300 s; see [CI](ci.md)).
 - The Intel leg builds and stages `darwin-x64`, runs all suites, checks the Mach-O x86_64 worker
   and its receipt, and packs/unpacks the artifact.
-- A local Intel macOS 12.7.6 run has 42 Rust unit tests passing and one expected `CLONE_ACL`
-  failure; that is why macOS 12 is a follow-up rather than part of this support claim.
+- The contributor reports an Intel macOS 12.7.6 run with 42 Rust unit tests passing and one
+  expected `CLONE_ACL` failure in [the original PR](https://github.com/OldLigant/dsh-ops/pull/1).
+  This is a reported local result, not a macOS 12 acceptance run for this change.
+- [The contributor's PR-event run](https://github.com/OldLigant/dsh-ops/actions/runs/39772711519)
+  passed the full Intel macOS 15 gate. Its receipt-verified x86_64 Mach-O has a 10.12 load minimum;
+  the macOS 13 floor comes from the required ACL clone capability. macOS 13/14 have not been
+  exercised by that CI run. Apple's [xnu-8792 implementation](https://github.com/apple-oss-distributions/xnu/blob/xnu-8792.61.2/bsd/vfs/vfs_syscalls.c)
+  accepts `CLONE_ACL` and copies the source ACL. Filesystem support is still required.
 - 0.3.1 shipped Apple Silicon only; current support adds Intel on macOS 13+. Desktop GUI sessions
   still require a normal app restart after replacing the package.

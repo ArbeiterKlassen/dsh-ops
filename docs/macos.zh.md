@@ -76,7 +76,12 @@ postinstall 下载器。macOS 的 `ops_bash` 默认开启，按显式 `bashPath`
   超过 300 秒线，见 [CI](ci.md)）上跑完整门禁。
 - Intel leg 会构建并暂存 `darwin-x64`、跑全部套件、校验 Mach-O x86_64 worker 及其收据，并打包/解包
   artifact。
-- 本机 Intel macOS 12.7.6 上 42 个 Rust 单测通过、1 个预期 `CLONE_ACL` 失败；这正是 macOS 12
-  作为后续项、而不并入本次支持声明的原因。
+- 贡献者在[原 PR](https://github.com/OldLigant/dsh-ops/pull/1) 中报告 Intel macOS 12.7.6
+  上 42 个 Rust 单测通过、1 个预期 `CLONE_ACL` 失败。这是其本地报告，不是本次变更的 macOS 12 验收。
+- [贡献者的 PR 事件运行](https://github.com/OldLigant/dsh-ops/actions/runs/39772711519) 通过了
+  Intel macOS 15 完整门禁。收据校验通过的 x86_64 Mach-O 最低加载版本为 10.12；macOS 13 下限
+  来自所需 ACL 克隆能力。该 CI 没有运行 macOS 13/14。苹果的
+  [xnu-8792 实现](https://github.com/apple-oss-distributions/xnu/blob/xnu-8792.61.2/bsd/vfs/vfs_syscalls.c)
+  接受 `CLONE_ACL` 并复制源 ACL，仍需文件系统支持。
 - 0.3.1 只发布 Apple Silicon；当前支持在 macOS 13+ 上增加 Intel。替换包之后，桌面 GUI 会话仍需
   正常重启应用。
