@@ -66,7 +66,7 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 | 子命令 | 目标 | 做什么 |
 | --- | --- | --- |
 | `setup` | `bench/setup.mjs` | 自检 + 幂等准备两侧 profile(`bench-base` / `bench-ops`),打印跑 sweep 的那一条命令 |
-| `ab` | `bench/run.mjs` → `bench/compare.mjs` | 先基线、再候选、再比较,三步共用**一个** `bench/runs/benchmark-test-NN` 组目录 |
+| `ab` | `bench/run.mjs` → `bench/compare.mjs` | 先基线、再候选、再比较,三步共用**一个** `bench/runs/benchmark-YYYY-MM-DD-NN` 组目录(默认按当天日期取下一个空闲编号,从 `-00` 起);跑完自动在组目录写报告 |
 | `report` | `bench/compare.mjs` | 从已封存的 `run.json` 渲染报告(`DSH-OPS Benchmark Report <UTC>.md`) |
 | `panel` | `bench/report/panel.mjs` | 生成/打开一个只读 `run.json` 的 `panel.html` |
 | `tools` | `bench/tools/index.mjs` | 无模型的工具级确定性对比 |
@@ -99,6 +99,10 @@ npm 包发布、不参与构建、不进 `verify:release` / `release.yml`,也从
 
 `--show` 打印将执行的三条命令并立刻退出(纯函数,不写任何东西、不跑任何会话)。组号在这里**只分配一次**:
 如果每侧各自按时间戳分配目录,两侧会落进不同的组,最后什么都配对不上。
+
+sweep 正常跑完会**自动**用自己算出的判决渲染 `DSH-OPS Benchmark Report <UTC>.md` 写进组目录
+(`--no-report` 关闭;被打断的 sweep 不写 —— 部分结果不是比较)。报告写出失败只报错,不改变
+sweep 的退出码;`report` 子命令之后仍可随时从归档重渲染。
 
 ### `report`
 

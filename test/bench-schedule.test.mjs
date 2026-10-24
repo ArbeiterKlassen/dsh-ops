@@ -412,7 +412,7 @@ await test('main: --show prints the flip without running; a requested seal with 
     assert.equal(scripted.calls.length, 0, '--show never spawns')
     assert.equal(out.lines.out.filter((line) => line.includes('base → cand') || line.includes('bench-base → bench-ops')).length, 1)
     assert.equal(out.lines.out.filter((line) => line.includes('bench-ops → bench-base')).length, 1)
-    assert.match(out.text(), /benchmark-test-01/)
+    assert.match(out.text(), /benchmark-\d{4}-\d{2}-\d{2}-\d{2}/)
     assert.match(out.text(), /show only/)
 
     // Sealing is opt-in, so `--seal` is what asks for the fingerprint; a launcher whose dump
@@ -501,6 +501,12 @@ await test('main: Ctrl-C during a session stops the sweep, reports it, and exits
     assert.equal(code, EXIT.failure)
     assert.match(out.text('err'), /interrupted/)
     assert.equal(scripted.calls.length, 1)
+    const group = path.join(root, 'runs', fs.readdirSync(path.join(root, 'runs'))[0])
+    assert.equal(
+      fs.readdirSync(group).filter((name) => name.startsWith('DSH-OPS Benchmark Report')).length, 0,
+      'an interrupted sweep writes no report: a partial run is not a comparison',
+    )
+    assert.match(out.text(), /not written \(a partial sweep is not a comparison\)/)
   })
 })
 
@@ -529,6 +535,12 @@ await test('main: a sweep is unsealed by default and --seal opts in', async () =
     const armDir = fs.readdirSync(group).find((name) => name.endsWith('bench-base'))
     assert.ok(fs.existsSync(path.join(group, armDir, 'summary.json')), 'the per-arm summary is the artifact the report reads')
     assert.equal(fs.existsSync(path.join(group, 'run.json')), false, 'nothing sealed this sweep')
+    const reports = fs.readdirSync(group).filter((name) => name.startsWith('DSH-OPS Benchmark Report') && name.endsWith('.md'))
+    assert.equal(reports.length, 1, 'a finished sweep writes its own report into the group folder')
+    const report = fs.readFileSync(path.join(group, reports[0]), 'utf8')
+    assert.match(report, /^# DSH-OPS Benchmark Report/)
+    assert.match(report, /csv-sum/, 'the rendered table carries the tasks the sweep measured')
+    assert.match(out.text(), /\[ab\] report  : .*DSH-OPS Benchmark Report/)
 
     // `--no-seal` still means off, so an old command line keeps working unchanged.
     const explicit = sink()
@@ -545,6 +557,33 @@ await test('main: a sweep is unsealed by default and --seal opts in', async () =
       seal: () => { throw new Error('--no-seal must never seal') },
     }), EXIT.ok)
     assert.match(explicit.text(), /no — not requested/)
+  })
+})
+
+await test('main: a finished sweep writes the report by default and --no-report skips it', async () => {
+  await withTempDir('bench-main-report', async (root) => {
+    const runsRoot = path.join(root, 'runs')
+    const base = { tasksDir: tasksDir(root, 1), runsDir: runsRoot, llmOverlay: overlayIn(root), resolveEntry: () => ENTRY, installSignals: false, now: NOW }
+    const groups = () => fs.readdirSync(runsRoot)
+
+    const out = sink()
+    const scripted = rig()
+    assert.equal(await main(['--repeat', '1'], { ...base, ...out, runSession: scripted.runSession }), EXIT.ok)
+    const firstName = groups()[0]
+    assert.equal(
+      fs.readdirSync(path.join(runsRoot, firstName)).filter((name) => name.startsWith('DSH-OPS Benchmark Report')).length, 1,
+      'the default sweep leaves its report in the group folder',
+    )
+
+    const off = sink()
+    const again = rig()
+    assert.equal(await main(['--repeat', '1', '--no-report'], { ...base, ...off, runSession: again.runSession }), EXIT.ok)
+    const secondName = groups().find((name) => name !== firstName)
+    assert.equal(
+      fs.readdirSync(path.join(runsRoot, secondName)).filter((name) => name.startsWith('DSH-OPS Benchmark Report')).length, 0,
+      '--no-report keeps the group folder free of reports',
+    )
+    assert.match(off.text(), /not written \(--no-report\)/)
   })
 })
 

@@ -134,16 +134,17 @@ node bench/cli.mjs ab --folder full-sweep-34
 node bench/cli.mjs ab --show
 ```
 
-- 默认语料是 `bench/tasks/*.task.json` 的全部任务；每个任务自带 `repeat` 预算（当前都是 `2`）；
+- 默认语料是 `bench/tasks/*.task.json` 的全部任务；每个任务自带 `repeat` 预算（当前都是 `1`）；
 - 每次 dsh 调用都带 `--patch bench/llm.patch.yml`（除非 `--no-llm-patch`）；
 - 一个进程跑完两臂，奇数轮 base→cand、偶数轮 cand→base，**串行**，一次一个会话；
-- 组目录只分配一次：`bench/runs/<folder>`；不给 `--folder` 时自动取下一个空闲的 `benchmark-test-NN`；
-- 常用附加旗标：`--seal`（额外写 `run.json`）、`--sleep-ms`、`--heartbeat-ms`、`--stall-ms`、`--timeout <ms>`、
+- 组目录只分配一次：`bench/runs/<folder>`；不给 `--folder` 时自动取下一个空闲的 `benchmark-YYYY-MM-DD-NN`（按当天日期编号，从 `-00` 起）；
+- 常用附加旗标：`--seal`（额外写 `run.json`）、`--no-report`（关掉跑完自动写的 md 报告）、`--sleep-ms`、`--heartbeat-ms`、`--stall-ms`、`--timeout <ms>`、
   `--model <id>`、`--verbose`、`--keep`（保留每个临时工作区）、`--dsh <path>`。
   `--label` / `--profile` 属于旧的"每臂一个进程"形态，runner 会直接拒绝。
 
 跑完的屏幕摘要是：会话数/配对数、每侧通过数、两侧 token 与 Δ、配对数、噪声底、门禁结论、seal 结果
-（`--seal` 时写进哪个 `run.json`；没封存就明确说 "not requested"）。
+（`--seal` 时写进哪个 `run.json`；没封存就明确说 "not requested"）、报告落点
+（`DSH-OPS Benchmark Report <UTC>.md` 写进组目录；`--no-report` 或 sweep 被打断时明确说没写）。
 
 真实例子：`bench/runs/full-sweep-33`（2026-10-21）base 臂 13:02:34Z 起跑，组目录里的报告时间戳是
 13:15:32Z，全量约 13 分钟。
@@ -298,12 +299,12 @@ fileLines / countFiles / contentHashes / command`。几个容易写错的语义�
 
 | 用例 | 工作量 | 判卷 | 主要考察的 `ops_*` 工具 |
 | --- | --- | --- | --- |
-| `api-rename` | `src/` 下 60 个模块 + `src/core.js`（另生成 `check.mjs`）；`repeat 2`，30 min | `contentHashes(dir: src)` 全等（61 个直接子项的名字与原字节 SHA-256）+ `node check.mjs` 退 `0` | 搜调用点：`ops_grep`（+`ops_glob`）；读文件：`ops_read_files`；改名：`ops_edit_file` 或 `ops_replace`。诱饵 `parsePayloadLegacy` / `parsePayloadAsync` 与一个完全不碰该符号的文件必须原样保留 |
-| `big-file-paging` | `src/pipeline.js` 4200 行；`repeat 2`，15 min | `answer.txt` 等于 `auditLimit('staging')` 的整数 | 定位：`ops_grep`；只读两段：`ops_inspect_local_file`（或 `ops_read_files`）带 `offset`/`limit`；写答案：`ops_write_file`。文件里还留着过期注释与被取代的 `LEGACY_LIMIT_TABLE`，grep 一次仍要判断 |
-| `config-hunt` | `README.md` + 3 层 JSON + 12 个 `packages/*/config.json` 诱饵；`repeat 2`，15 min | `answer.txt` 等于 `MAX_UPLOAD_MB` 的有效值 | 找层：`ops_glob`；找 key：`ops_grep`；读优先级文档与三层：`ops_read_files`；写答案：`ops_write_file`。只 grep key 就停下会拿到 1/4 概率的错答案 |
-| `csv-sum` | `data.csv` 8000 行；`repeat 2`，15 min | `answer.txt` 等于 EU 金额整数和 | 别把 8000 行进上下文：`ops_bash`（聚合）、`ops_read_files`（只看表头）、`ops_write_file`。语料跑在 Native 面，PTC 是另一套投影，不在本套语料路径上 |
-| `gate-repair-loop` | 24 个 stage 模块（每个约 70 行）+ `check.js`；`repeat 2`，40 min | `node check.js` 退 `0` + `answer.txt` 等于最终值 + `check.js` 字节不变（invariant） | 跑门禁：`ops_bash`；读 stage：`ops_read_files`；按契约修那个常量：`ops_edit_file`；写答案：`ops_write_file`。每个 stage 只错一处绑定常量，契约写在模块自己的注释里 |
-| `noisy-test-triage` | `runner.js` 2400 个测试、恰好一行 `not ok`；`repeat 2`，15 min | `failure.txt` 等于失败测试名 + runner 仍退 `1`（invariant） | 跑并落盘：`ops_bash`（重定向到文件）；在日志里只捞那一行：`ops_grep`（如 `^not ok`、`outputMode: summary/content`）；必要时 `ops_read_files`；写结果：`ops_write_file`。答案必须精确，猜不中 |
+| `api-rename` | `src/` 下 12 个模块 + `src/core.js`（另生成 `check.mjs`）；`repeat 1`，30 min | `contentHashes(dir: src)` 全等（13 个直接子项的名字与原字节 SHA-256）+ `node check.mjs` 退 `0` | 搜调用点：`ops_grep`（+`ops_glob`）；读文件：`ops_read_files`；改名：`ops_edit_file` 或 `ops_replace`。诱饵 `parsePayloadLegacy` / `parsePayloadAsync` 与完全不碰该符号的文件必须原样保留 |
+| `big-file-paging` | `src/pipeline.js` 4200 行；`repeat 1`，15 min | `answer.txt` 等于 `auditLimit('staging')` 的整数 | 定位：`ops_grep`；只读两段：`ops_inspect_local_file`（或 `ops_read_files`）带 `offset`/`limit`；写答案：`ops_write_file`。文件里还留着过期注释与被取代的 `LEGACY_LIMIT_TABLE`，grep 一次仍要判断 |
+| `config-hunt` | `README.md` + 3 层 JSON + 12 个 `packages/*/config.json` 诱饵；`repeat 1`，15 min | `answer.txt` 等于 `MAX_UPLOAD_MB` 的有效值 | 找层：`ops_glob`；找 key：`ops_grep`；读优先级文档与三层：`ops_read_files`；写答案：`ops_write_file`。只 grep key 就停下会拿到 1/4 概率的错答案 |
+| `csv-sum` | `data.csv` 8000 行；`repeat 1`，15 min | `answer.txt` 等于 EU 金额整数和 | 别把 8000 行进上下文：`ops_bash`（聚合）、`ops_read_files`（只看表头）、`ops_write_file`。语料跑在 Native 面，PTC 是另一套投影，不在本套语料路径上 |
+| `gate-repair-loop` | 24 个 stage 模块（每个约 70 行）+ `check.js`；`repeat 1`，40 min | `node check.js` 退 `0` + `answer.txt` 等于最终值 + `check.js` 字节不变（invariant） | 跑门禁：`ops_bash`；读 stage：`ops_read_files`；按契约修那个常量：`ops_edit_file`；写答案：`ops_write_file`。每个 stage 只错一处绑定常量，契约写在模块自己的注释里 |
+| `noisy-test-triage` | `runner.js` 2400 个测试、恰好一行 `not ok`；`repeat 1`，15 min | `failure.txt` 等于失败测试名 + runner 仍退 `1`（invariant） | 跑并落盘：`ops_bash`（重定向到文件）；在日志里只捞那一行：`ops_grep`（如 `^not ok`、`outputMode: summary/content`）；必要时 `ops_read_files`；写结果：`ops_write_file`。答案必须精确，猜不中 |
 
 同一份报告里的 `Tool calls` 表就是这条设计的实测镜像：插件工具接住了 → `ops_*` 计数**上升**是绿；
 候选还在伸手够插件没覆盖的工具 → 其它工具上升是红。

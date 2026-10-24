@@ -78,7 +78,7 @@ await test('ab --show prints the three commands and this suite never starts a sw
   const text = lines.join('\n')
   assert.equal(text.split('\n').filter((line) => line.startsWith('node ')).length, 3, text)
   assert.match(text, /node bench\/run\.mjs --label bench-base --profile bench-base --task csv-sum/)
-  assert.match(text, /node bench\/compare\.mjs bench-base bench-ops --folder benchmark-test-\d+/)
+  assert.match(text, /node bench\/compare\.mjs bench-base bench-ops --folder benchmark-\d{4}-\d{2}-\d{2}-\d{2}/)
   // Only assert the pending path while the runner is genuinely absent: once it lands,
   // `abMain([])` would spawn a real session, and a unit suite must never do that.
   if (!fs.existsSync(path.join(PACKAGE_ROOT, 'bench/run.mjs'))) {
@@ -98,18 +98,20 @@ await test('ab parsing defaults, repeats --task, and rejects malformed flags', (
 })
 await test('next-folder hands one group to both sides and skips anything already named', async () => {
   await withTempDir('bench-runs', (runs) => {
-    assert.equal(nextFolderName(runs), `${FOLDER_PREFIX}01`)
+    const day = new Date(2026, 9, 24, 15, 42) // mid-day local 2026-10-24; the clock must not steer the name
+    const stamp = `${FOLDER_PREFIX}2026-10-24`
+    assert.equal(nextFolderName(runs, day), `${stamp}-00`)
     const explicit = planAb(['--folder', 'ops-1'], { runsDir: runs })
     assert.equal(explicit.folder, 'ops-1')
     assert.equal(explicit.allocated, false)
     assert.deepEqual(explicit.commands.map((command) => command.args.at(-1)), ['ops-1', 'ops-1', 'ops-1'])
-    fs.mkdirSync(path.join(runs, `${FOLDER_PREFIX}01`))
-    fs.mkdirSync(path.join(runs, `${FOLDER_PREFIX}02`))
-    fs.mkdirSync(path.join(runs, `${FOLDER_PREFIX.toUpperCase()}03`)) // Windows would collide with this one
+    fs.mkdirSync(path.join(runs, `${stamp}-00`))
+    fs.mkdirSync(path.join(runs, `${stamp}-01`))
+    fs.mkdirSync(path.join(runs, `${stamp.toUpperCase()}-02`)) // Windows would collide with this one
     fs.writeFileSync(path.join(runs, 'unrelated.txt'), '')
-    assert.equal(nextFolderName(runs), `${FOLDER_PREFIX}04`)
-    assert.ok(takenFolders(runs).has(`${FOLDER_PREFIX}01`))
-    assert.equal(planAb(['--task', 'x'], { runsDir: runs }).folder, `${FOLDER_PREFIX}04`)
+    assert.equal(nextFolderName(runs, day), `${stamp}-03`)
+    assert.ok(takenFolders(runs).has(`${stamp}-00`))
+    assert.equal(planAb(['--task', 'x'], { runsDir: runs, now: day }).folder, `${stamp}-03`)
   })
 })
 await test('a good task validates, gets its timeout defaulted, and round-trips through a directory', async () => {

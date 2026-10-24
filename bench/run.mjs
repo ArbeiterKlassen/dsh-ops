@@ -10,7 +10,10 @@
  * aggregation is `lib/aggregate.mjs` (P6), the verdict is `lib/compare-core.mjs`
  * (P11a), and sealing is opt-in: `--seal` writes the schema-validated `run.json` through
  * `bench/run/seal.mjs` (P8a), while every sweep keeps each arm's `results/` and
- * `summary.json` either way. An injected `io.seal` supplies the document an embedder
+ * `summary.json` either way. A finished sweep also renders the markdown report from its
+ * own verdict (`compare.mjs`'s `renderReport`) into the group folder — `--no-report`
+ * skips it, and an interrupted sweep writes none, because a partial run is not a
+ * comparison. An injected `io.seal` supplies the document an embedder
  * wants; the CLI spawns this entry as a child and cannot inject one, so the flag has to
  * select the real seal rather than a missing slice.
  *
@@ -38,6 +41,7 @@ import { TASKS_DIR, loadTasks, selectTasks } from './lib/tasks.mjs'
 import { RUNS_DIR } from './lib/next-folder.mjs'
 import { DEFAULT_REPEAT, armOrder, createInterrupt, planPairs, planSessions, repeatsById, runSweep } from './run/schedule.mjs'
 import { sealRun } from './run/seal.mjs'
+import { renderReport, reportFileName } from './compare.mjs'
 
 /** The runner-only flags that take a value; `--task`/`--repeat`/`--folder`/`--base`/`--cand` are parsed by the CLI. */
 const VALUE_FLAGS = ['--sleep-ms', '--out', '--heartbeat-ms', '--stall-ms', '--timeout', '--dsh', '--llm-patch', '--model']
@@ -62,7 +66,7 @@ export function abUsage() {
     '  --base <label>       baseline arm label, also its profile name (default bench-base)',
     '  --cand <label>       candidate arm label, also its profile name (default bench-ops)',
     '  --aa                 A/A mode: run the baseline twice and measure the noise floor; --cand is ignored',
-    '  --folder <name>      group directory under bench/runs (default: the next benchmark-test-NN)',
+    '  --folder <name>      group directory under bench/runs (default: the next free benchmark-YYYY-MM-DD-NN)',
     '  --out <dir>          the sweep directory outright; not with --folder',
     '  --sleep-ms N         fixed pause between pairs (default 0)',
     '  --heartbeat-ms N     per-session "still running" line (default 15000; 0 = off)',
@@ -80,11 +84,14 @@ export function abUsage() {
     '  --seal               also seal the sweep into the schema-validated run.json (default:',
     '                       every arm keeps results/ and summary.json, nothing else)',
     '  --no-seal            explicit off; this is already the default, kept for old command lines',
+    '  --no-report          skip the markdown report a finished sweep writes into the group',
+    '                       folder (default: written; an interrupted sweep never writes one)',
     '  -h, --help           this text',
     '',
     'Exit codes: 0 ok · 1 a failed sweep · 2 usage error',
-    'Sealing is opt-in: without --seal a sweep writes each arm\'s results/ and summary.json,',
-    'and `bench report` renders the report from those summaries.',
+    'A finished sweep writes each arm\'s results/ and summary.json, the group folder\'s',
+    '"DSH-OPS Benchmark Report <UTC>.md", and --seal adds the schema-validated run.json',
+    'on top. `bench report` re-renders that report from the archives at any later time.',
   ].join('\n')
 }
 
@@ -116,6 +123,7 @@ export function parseRunArgs(argv, context = {}) {
     verbose: false,
     keep: false,
     seal: false,
+    noReport: false,
     noLlmPatch: false,
     sleepMs: 0,
     out: null,
@@ -133,6 +141,7 @@ export function parseRunArgs(argv, context = {}) {
     else if (flag === '--keep') options.keep = true
     else if (flag === '--seal') options.seal = true
     else if (flag === '--no-seal') options.seal = false
+    else if (flag === '--no-report') options.noReport = true
     else if (flag === '--no-llm-patch') options.noLlmPatch = true
     else if (flag === '--label' || flag === '--profile') {
       throw new UsageError(`${flag} named one arm of a per-process run; \`ab\` runs both arms itself — use --base/--cand`)
@@ -345,6 +354,41 @@ function printResult(out, err, result, options) {
 }
 
 /**
+ * The sweep's own report: the verdict it just computed, rendered through
+ * `compare.mjs`'s `renderReport` and written beside the arm directories — the group
+ * folder, or the `--out` sweep directory a custom one named. This is the `bench report`
+ * artifact produced without a second command; `bench report` still re-renders it later
+ * from the same summaries.
+ *
+ * An interrupted sweep writes none: the comparison of a partial run is not evidence, and
+ * a report-shaped file that looks complete while the sweep says PARTIAL would lie to a
+ * reviewer who opens it without the console.
+ * @param {object} result - the sweep result (`compare`, `arms`, `dirs`, `summaryFiles`,
+ *   `interrupted` as `runSweep` returned them).
+ * @param {{now?: Function, writeFile?: Function, mkdir?: Function}} [context] - the clock
+ *   the file name stamps and injectable sinks; defaults to the wall clock and `fs`.
+ * @returns {{target: string|null, skipped: string|null}} where the report landed, or why
+ *   it was skipped (`target: null`).
+ * @throws {Error} when rendering or writing fails — `main` reports that without turning
+ *   it into a sweep failure.
+ */
+export function sweepReport(result, context = {}) {
+  if (result.compare === null) return { target: null, skipped: 'no comparison ran' }
+  if (result.interrupted) return { target: null, skipped: 'a partial sweep is not a comparison' }
+  const now = context.now ?? Date.now
+  const write = context.writeFile ?? fs.writeFileSync
+  const mkdir = context.mkdir ?? fs.mkdirSync
+  const sources = {
+    base: { spec: result.arms[0].label, file: result.summaryFiles.base, kind: 'summary' },
+    cand: { spec: result.arms[1].label, file: result.summaryFiles.cand, kind: 'summary' },
+  }
+  const target = path.join(path.dirname(result.dirs.base), reportFileName(now()))
+  mkdir(path.dirname(target), { recursive: true })
+  write(target, `${renderReport(result.compare, sources)}\n`, 'utf8')
+  return { target, skipped: null }
+}
+
+/**
  * Run the sweep. Every dependency is injectable through `io` so a test never spawns,
  * never reads `~/.dsh` and never touches a model: `io.seal`, `io.runSession`,
  * `io.sweep`, `io.observe`, `io.resolveEntry`, `io.now`, `io.sleep`, `io.kill`,
@@ -495,6 +539,19 @@ export async function main(argv, io = {}) {
     uninstall()
   }
   printResult(out, err, result, options)
+  let report = { target: null, skipped: '--no-report' }
+  if (options.noReport !== true) {
+    try {
+      report = sweepReport(result, { now: io.now, writeFile: io.writeFile, mkdir: io.mkdir })
+    } catch (error) {
+      // The verdict is already computed and the summaries already written; a report that
+      // could not land is a loud note, not a failed sweep.
+      err(`[ab] report  : FAILED — ${String(error?.message ?? error)}`)
+      report = { target: null, skipped: null }
+    }
+  }
+  if (report.skipped !== null) out(`[ab] report  : not written (${report.skipped})`)
+  else if (report.target !== null) out(`[ab] report  : ${report.target}`)
   return exitFor(result)
 }
 
