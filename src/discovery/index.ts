@@ -6,7 +6,7 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { resolveDiscoveryConfig } from '../config.js'
 import { NativeFileTools } from '../file/runtime.js'
 import { nativeProviders, registerNativeProvider, claimNativeSelection } from '../file/result-provider.js'
-import { toolChangeScopes } from '../tool-changes.js'
+import { onToolChange } from '../tool-changes.js'
 import { ownScopes } from '../scoped-ownership.js'
 import { isNativePresentation, isPresentationProbe } from '../presentation.js'
 import { mountResultLifecycle } from '../kernel/result-lifecycle.js'
@@ -196,9 +196,8 @@ export function apply(root: Context, raw: unknown): void {
       void reconcile()
     }
     const { scopeChainOf } = await import('@deepseek-ai/dsh-scope')
-    ctx.on('tools/change', () => {
+    onToolChange(ctx, scopes => {
       if (mutating || ownership?.publishing()) return
-      const scopes = toolChangeScopes()
       if (!scopes?.length) { refresh(); return }
       for (const [agent, entry] of entries) if (scopes.some(scope => scopeChainOf(agent).includes(scope))) invalidate(entry)
       void reconcile()
