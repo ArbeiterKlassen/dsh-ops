@@ -14,6 +14,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - 将 benchmark 的模型与思考档位选择用于两臂实际路由，归档合成配置并在封存证据中记录条件。重复选项生成独立条件组和分组报告，拒绝跨条件配对；历史运行仍可按未知条件读取（#294）。
 - Make benchmark setup skip Windows-only checks explicitly on POSIX, preserve platform/component configuration in summaries and sealed arms, reject cross-platform comparisons by default, and expand the optional tools smoke to Linux, Windows and macOS (#295).
 - 基准准备在 POSIX 上明确跳过 Windows 专用检查，普通摘要和封存数据保留平台及组件配置，默认拒绝跨平台混配，可选 tools 自检覆盖 Linux、Windows、macOS（#295）。
+- Run CI on every PR target branch, including stacked feature branches; provide a checked ruleset payload and explicit administrator acceptance steps for required checks (#303). Repository enforcement still requires admin application.
+- CI 覆盖所有 PR 目标分支（包括堆叠功能分支），提供校验过的规则 JSON 与管理员验收步骤（#303）；仓库强制保护仍需管理员实际应用。
 
 - Stop `dsh-ops-hide-official` from blocking a `run_code` (PTC) scope when `replaceTools` is set. That scope presents one program entry, and the selected counterparts are SDK functions rather than owned native providers, so readiness could never be proven and every PTC session failed prompt assembly with `READINESS_BLOCKED` as soon as one tool was selected. Readiness is now judged on the assembled surface: a scope that really kept a selected official tool still fails closed, while a collapsed scope's transport is not gated and the selected official names stay refused there.
 - 修复 `dsh-ops-hide-official` 在设置 `replaceTools` 后阻塞 `run_code`（PTC）作用域的问题。该作用域只呈现一个程序入口，所选替代工具是 SDK 函数而非已拥有的 native provider，就绪状态永远无法成立，只要选择了一项工具，每个 PTC 会话的提示词组装都会以 `READINESS_BLOCKED` 失败。现在改以装配出的表面判定：真正保留了所选官方工具的作用域仍然失败闭合；折叠作用域的 transport 不再被门禁阻塞，所选官方工具在该作用域内仍被拒绝。
