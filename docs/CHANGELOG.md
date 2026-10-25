@@ -7,6 +7,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Add macOS Intel (`darwin-x64`) as a first-class native target on macOS 13+: accept it in the resolver and profile commands, declare it in every component row, ship its Mach-O worker with a receipt, and add a non-blocking `macos-15-intel` CI leg plus the fourth release artifact. The Intel leg measured 318 s, so it follows the >300 s non-blocking rule. macOS 12 is not part of this support: its kernel lacks `CLONE_ACL`, so the write path fails closed; that fallback is a separate follow-up. See [macOS](macos.md).
+- 将 macOS Intel（`darwin-x64`）作为 macOS 13+ 的一等原生目标：解析器与 profile 命令接受它，所有组件行声明它，发布其 Mach-O worker 与收据，并新增非阻塞的 `macos-15-intel` CI leg 与第四个发布 artifact。Intel leg 实测 318 秒，因此按 >300 秒规则作为非阻塞信号。macOS 12 不在本次支持范围内：其内核缺少 `CLONE_ACL`，写路径会 fail closed；该回退是独立后续项。说明见 [macOS](macos.zh.md)。
 - Declare DSH 0.2.0-rc.2 and 0.2.1-rc.2 consistently in engines/peers, export every
   component icon, and validate bundle composition with the host patch API (#200).
   中英文兼容范围、组件图标导出与升级检查同步更新；宿主 patch 校验拒绝丢失目标的 override。
