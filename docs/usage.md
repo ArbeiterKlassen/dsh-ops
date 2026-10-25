@@ -143,6 +143,9 @@ the resulting warning fails the gate.
 
 ## Update
 
+For inherited whitelist limits, missing discovery rows and provider tool-change
+errors, see [host integration troubleshooting](host-integration.md).
+
 Repeat the same `npx --yes dsh-ops@latest install --profile ...` command, or use the official CLI's `add dsh-ops@latest`. Reload as requested by the application; restart it when replacing already-loaded code.
 
 ---
