@@ -7,6 +7,8 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Add opt-in `exactTotal: false` to grep for bounded prefix queries. Stop after the requested matching rows, report lower bounds without stable continuation, and preserve exact totals by default and for summaries. Keep invalid encoding as an explicit coverage gap instead of inventing a complete total (#384).
+- grep 新增可选 `exactTotal: false`，按所需匹配行数提前停止，返回下界且不提供稳定续页；默认查询和 summary 保留完整扫描。无效编码仍明确标为覆盖缺口，不伪造完整总数（#384）。
 - Summarize large intact JSON spills for successful Native foreground Bash calls, with bounded samples and a full-output path. Preserve canonical/PTC values, stderr, exit status, host spill ownership and fallback rendering; add no command rewriting or runtime dependency (#297).
 - 成功的 Native 前台 Bash 调用可将大型完整 JSON 溢出输出显示为有限样本和完整输出路径；规范/PTC 数据、stderr、退出状态、宿主溢出存储及降级展示保持不变，不重写命令、不增加运行依赖（#297）。
 
