@@ -41,6 +41,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Reserve the exact `.dsh-ops` component case-insensitively on absolute public file-tool paths as well as relative batch paths. Reads, writes, edits, copy/move sources and destinations, removals, and explicit search/replace paths return `PATH_RESTRICTED` before content access or publication. Preserve ordinary hidden-search exclusions and trusted batch audit/result/cache lifecycle access (#329).
 - 绝对路径公开文件工具与相对 batch 通道统一将完整组件 `.dsh-ops` 视为保留名，忽略大小写。读取、写入、编辑、复制/移动的源与目标、删除及显式搜索/替换路径均在内容访问或发布前返回 `PATH_RESTRICTED`；保留普通隐藏搜索排除规则，以及可信 batch 审计、结果和缓存生命周期访问（#329）。
 
+- Fix independent restricted Windows Bash roots failing to reopen the current user's MSYS shared section while another root is alive (#363). Preserve the original ACL and the existing verified object-directory, pagefile-only and Low restricted-token boundaries; unrelated sections and filesystem permissions are unchanged.
+- 修复 Windows 受限模式中，一个 Bash 根进程仍在运行时，独立根进程无法重新打开当前用户的 MSYS 共享段的问题（#363）。保留原有 ACL，以及经过验证的对象目录、仅分页文件共享段、Low 受限令牌边界；不改变其它共享段和文件系统权限。
+
 ## [0.4.1] — 2026-10-20 — Update locks stop leaving files behind
 
 - Stop the update lock from leaving `.dsh-ops-update-*.lock` sidecars behind (#319). The writer that takes the lock removes it on release, and only after proving the name still leads to the inode it locked, so a waiter that opened the old inode can never publish under it. A published write, a request refused after the lock and a directory-wide `replace` now leave the directory exactly as they found it; a sidecar left by a killed writer is not a stuck lock — the next write of that name binds to it, publishes under it and removes it.
