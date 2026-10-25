@@ -18,6 +18,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { componentChecks, defaultChecks } from './lib/catalogue-checks.mjs'
 import { parse as parseYaml } from 'yaml'
 import {
   IN_PROCESS_TOOLS,
@@ -34,6 +35,8 @@ import { PTC_API_TOOLS, definition } from '../lib/ptc/contract.js'
 import { resolveConfig, resolveDiscoveryConfig } from '../lib/config.js'
 import { COMPONENTS, componentEntry, componentEnabled } from '../lib/components/defaults.js'
 import { resolveHidingConfig } from '../lib/official-tool-hiding.js'
+import { evaluatePluginCompatibility } from '@deepseek-ai/dsh-app-boot'
+import { composeBundle } from './lib/compose-bundle.mjs'
 
 /** The repository root (`scripts/`'s parent). */
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -224,6 +227,10 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
 
   if (document !== undefined) {
     check(Array.isArray(document), 'the bundle patch is a list of loader patch entries')
+    try {
+      const composed = composeBundle([document])
+      check(composed.length === 7, 'the host composes seven rows without skipped patch targets')
+    } catch (error) { check(false, 'the host composes seven rows without skipped patch targets', String(error?.message ?? error)) }
     const rows = Array.isArray(document)
       ? document.flatMap((entry) => (Array.isArray(entry?.insert) ? entry.insert : []))
       : []
@@ -239,7 +246,10 @@ if (typeof patch === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, patch))) 
           : component === 'hide-official' ? resolveHidingConfig
             : component === 'panel' ? resolvePanelConfig
               : resolveConfig
-      try { resolve(row.config); check(true, `${component} config is valid`) }
+      try {
+        resolve(row.config); check(true, `${component} config is valid`)
+        for (const fact of defaultChecks(component, row.config, resolve)) check(...fact)
+      }
       catch (error) { check(false, `${component} config is valid`, String(error?.message ?? error)) }
     }
   }
@@ -485,6 +495,8 @@ if (display !== undefined) {
 
 /** Payload the published package must carry, as `files` entries or paths they cover. */
 const ptc = manifestRaw.contributes?.['x-components']?.find(c => c.id === 'dsh-ops-ptc')
+const components = manifestRaw.contributes?.['x-components'] ?? []
+for (const fact of componentChecks(components)) check(...fact)
 check(ptc?.entry === 'dsh-ops/ptc' && ptc?.defaultEnabled === true, 'native PTC enhancement is enabled by default; presentation stays scoped')
 check(JSON.stringify(ptc?.tools) === JSON.stringify([...PTC_API_TOOLS, 'load_sdk'].map(publicToolName)), 'PTC declaration matches the generated tool contract')
 check(PTC_API_TOOLS.every(t => definition(t, () => {}).parameters.type === 'object'), 'PTC schemas remain structured')
@@ -545,9 +557,17 @@ check(
 )
 
 check(
-  typeof pkg.peerDependencies?.['@deepseek-ai/dsh'] === 'string',
-  'the plugin declares a DSH peer range for the host compatibility gate',
+  typeof pkg.engines?.dsh === 'string' && pkg.engines.dsh === pkg.peerDependencies?.['@deepseek-ai/dsh'],
+  'engines.dsh and the legacy DSH peer declare the same compatibility range',
 )
+for (const version of ['0.2.0-rc.2', '0.2.1-rc.2']) {
+  check(evaluatePluginCompatibility(pkg, {}, version) === undefined, `the declared range accepts DSH ${version}`)
+}
+for (const component of [...COMPONENTS, 'background']) {
+  const resource = pkg.exports?.[`./${component}/icon`]
+  check(typeof resource === 'string' && fs.existsSync(path.join(PACKAGE_ROOT, resource)),
+    `the ${component} icon is exported for subpath metadata readers`)
+}
 
 for (const line of notes) console.log(line)
 if (failures.length > 0) {

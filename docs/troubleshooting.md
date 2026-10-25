@@ -62,6 +62,20 @@ Long scripts, heredocs and multi-layer quotes and backslashes make the model esc
 
 A key the `ops_bash` schema does not declare is refused before execution, and the error names both the unknown keys and the accepted ones. This is deliberate — nothing is silently ignored.
 
+### Bash script files, PATH precedence and empty input
+
+`script_path` always selects a Bash script; the extension does not select an
+interpreter. Run PowerShell scripts through the host's `pwsh` tool instead.
+The private Windows runtime keeps its matching `usr/bin` first in the child
+PATH, then searches the caller's PATH before its optional `ucrt64/bin` and `cmd`
+programs. This retains caller-installed Git/curl versions where the required
+MSYS directory does not provide the same command. The system PATH is unchanged.
+
+Bash receives an immediately closed empty input pipe rather than the Windows
+NUL device. Programs still see EOF, including scripts and commands that read
+stdin; this avoids the reported MSYS fd-0 device initialization condition
+(#372 section 1) without changing sandbox permissions.
+
 ### `ops_bash` cannot run a custom bashPath or Git for Windows in restricted modes
 
 Symptom, in a read-only or workspace-write session: `EXECUTOR_UNAVAILABLE: ops_bash cannot run the configured bashPath … in restricted modes` (0.3.0 printed `This MSYS version has no verified DSH IPC compatibility build. Rebuild the matching proxies`).
@@ -73,6 +87,17 @@ What to do:
 - Remove `bashPath` (and `allowSystemShellFallback`) from the `dsh-ops/shell` row so the bundled pinned bash is used; if that payload is missing, run `npx --yes dsh-ops@latest provision-shells --bash`.
 - Or switch the session to `danger-full-access`, where `bashPath` runs directly.
 - Check with the profile's own copy: `node "<profile>\node_modules\dsh-ops\bin\dsh-ops.mjs" ladder --config <file>` reports `restricted: yes/no` for the resolved bash.
+
+### A second restricted Bash fails while another Bash is still running
+
+The `CreateFileMapping S-<user SID>.<version>, Win32 error 5` failure in #363 came
+from a shared MSYS section missing the current logon SID. The IPC proxy now
+preserves that section's existing ACL and adds the same logon permission already
+used for private MSYS process trackers. This applies only to the current user's
+pagefile-backed section inside the verified MSYS object directory; filesystem
+permissions and sandbox modes are unchanged. Update to a build containing this
+fix and restart DSH after stopping its jobs. A DLL-not-found startup failure or
+an empty false-success result is a separate problem (#374 and #373).
 
 ### Bash approval is rejected or unavailable
 
