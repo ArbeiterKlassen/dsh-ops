@@ -38,8 +38,15 @@ interface Entry {
   published?: number
   revision: number
 }
-const isPtc = (assembly: PromptAssembly): boolean => assembly.tools.length === 1 && assembly.tools[0]?.name === 'run_code'
-  && assembly.sections.some(section => section.name === 'tools:ptc-only' && section.text.trim() !== '')
+type Presentation = Pick<PromptAssembly, 'sections'> & Partial<Pick<PromptAssembly, 'tools'>>
+const hasPtcInstruction = (presentation: Presentation): boolean =>
+  presentation.sections.some(section => section.name === 'tools:ptc-only' && section.text.trim() !== '')
+const isPtc = (assembly: Presentation): boolean => Array.isArray(assembly.tools)
+  && assembly.tools.length === 1 && assembly.tools[0]?.name === 'run_code' && hasPtcInstruction(assembly)
+// rc.3's waterfall owns text only; the host attaches authoritative tools after
+// it returns. Full assemble probes still require the exact run_code surface.
+const isPtcPresentation = (presentation: Presentation): boolean =>
+  Object.hasOwn(presentation, 'tools') ? isPtc(presentation) : hasPtcInstruction(presentation)
 
 export function apply(root: Context, rawConfig: unknown): void {
   const config = resolvePtcConfig(rawConfig)
@@ -270,7 +277,7 @@ export function apply(root: Context, rawConfig: unknown): void {
       }
       const entry = entries.get(context.scope as Agent), heldPtc = Boolean(entry?.ptc && entry.owned.size)
       const result = await next()
-      if (!entry || !heldPtc || isPtc(result)) return result
+      if (!entry || !heldPtc || isPtcPresentation(result)) return result
       mutating = true
       try { entry.ptc = false; entry.surface = undefined; entry.pending.clear(); abortOwner(context.scope as Agent, 'PTC presentation withdrawn'); clear(entry) }
       finally { mutating = false }
