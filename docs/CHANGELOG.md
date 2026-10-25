@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Declare DSH 0.2.0-rc.2 and 0.2.1-rc.2 consistently in engines/peers, export every
+  component icon, and validate bundle composition with the host patch API (#200).
+  中英文兼容范围、组件图标导出与升级检查同步更新；宿主 patch 校验拒绝丢失目标的 override。
 - Derive discovery names, file mutation/rendering classes, retrieval continuations, read observations, PTC residency and browser replacement choices from shared catalogue facts. Check all component declarations and explicit bundle defaults against runtime definitions, cover every worker tool in the Rust dispatch boundary, and expose missing shell/discovery settings fields with explicit compatibility exclusions (#315).
 - 从共享目录定义派生发现工具名、文件变更渲染分类、读取续页、读取观察、PTC 常驻状态及浏览器替换选项。将各组件声明和 bundle 显式默认值与运行时逐项校验，覆盖全部工具的 Rust 分派边界，并补齐 shell/discovery 设置字段、明确兼容字段的排除项（#315）。
 - Add opt-in `exactTotal: false` to grep for bounded prefix queries. Stop after the requested matching rows, report lower bounds without stable continuation, and preserve exact totals by default and for summaries. Keep invalid encoding as an explicit coverage gap instead of inventing a complete total (#384).
