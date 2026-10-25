@@ -17,6 +17,9 @@
         "node": { "description": "Node.js version the runner ran on, e.g. v24.21.0.", "type": "string" },
         "dsh": { "description": "Version of the dsh launcher both arms were measured with, or null when unknown.", "type": ["string", "null"] },
         "model": { "description": "Model id both arms used, or null for the model-free mode.", "type": ["string", "null"] },
+        "condition": { "description": "Explicit shared routing condition; absent/null means unknown for historical or unconfigured runs. Null reasoning effort means the host default was not pinned.", "type": ["object", "null"], "additionalProperties": false, "required": ["provider", "model", "reasoningEffort"], "properties": {
+          "provider": { "description": "Configured provider identifier shared by both arms.", "type": "string" }, "model": { "description": "Configured model identifier shared by both arms.", "type": "string" }, "reasoningEffort": { "description": "Pinned reasoning level, or null when the host default was not explicitly pinned.", "enum": ["off", "low", "high", "max", null] }
+        } },
         "gitSha": { "description": "Commit the checkout was on, or null when it could not be read.", "type": ["string", "null"] },
         "gitBranch": { "description": "Branch the checkout was on, or null when it could not be read.", "type": ["string", "null"] },
         "argv": { "description": "The command line that produced this document, one array element per argv entry.", "type": "array", "items": { "type": "string" } },

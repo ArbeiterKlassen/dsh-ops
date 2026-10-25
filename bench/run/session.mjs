@@ -27,6 +27,7 @@ import { verifyWorkspace } from '../lib/verify.mjs'
 import { createObserver } from '../lib/observe.mjs'
 import { spawnPlan } from '../lib/env.mjs'
 import { DEFAULT_TIMEOUT_MS } from '../lib/tasks.mjs'
+import { patchArgs } from '../lib/condition.mjs'
 
 /** The five token buckets `run.schema.json $defs/usage` requires, in its order. */
 const USAGE_BUCKETS = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'reasoningTokens']
@@ -432,7 +433,7 @@ export async function runSession(spec, options = {}) {
     observer.note('detail', `workspace ${workspace} — ${fixture.files.length} fixture file(s) written`)
 
     const args = ['--profile', options.profile]
-    if (options.llmPatch) args.push('--patch', options.llmPatch)
+    args.push(...patchArgs(options.llmPatch, options.conditionPatch))
     args.push('--json', task.prompt)
     const plan = spawnPlan(entry, args)
     const fold = createFold()

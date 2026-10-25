@@ -57,6 +57,20 @@ node bench/cli.mjs ab --task csv-sum
 - 文件夹名称格式为 `benchmark-YYYY-MM-DD-NN`（按当天日期编号，从 `-00` 起）
 - 跑完自动在组目录写 `DSH-OPS Benchmark Report <UTC>.md`
 
+## 成本 A/B 的条件 / A/B measurement conditions
+
+```console
+node bench/cli.mjs ab --model DeepSeek-V4.1-Flash --reasoning-effort high --seal
+node bench/cli.mjs ab --model model-a --model model-b --reasoning-effort low --reasoning-effort high --seal
+node bench/cli.mjs report --matrix bench/runs/benchmark-YYYY-MM-DD-NN
+```
+
+`--model` 会真实改变两臂路由；`--reasoning-effort` 只接受 `off|low|high|max`。Provider 默认取 LLM overlay 中的字面值，也可用 `--provider` 指定；请先在 overlay/provider 配置中声明要测试的模型。条件补丁作为最后一个 `--patch` 同时传入两臂，不修改原来的 `llm.patch.yml`。每臂保留实际 `dump-config.txt`，`--seal` 将同源 `{provider, model, reasoningEffort}` 写入 `run.json` 的 `meta.condition`。未指定思考等级且 overlay 也没有该值时，记录 `null`（宿主默认值未固定）。
+
+重复的模型与档位形成笛卡尔积，每个条件位于独立的 `condition-NNN` 目录；根目录的 `matrix.json` 指向各组证据。多组报告逐条件展示，**跨条件不可比，不合并 Δ**。不同条件（含已知与未知）交给 compare 会退 `2` 并列出两侧条件。不传这些旗标时仍使用原有 overlay，条件标为 `unknown`；旧 run 缺少该字段仍可读，旧 `meta.model` 标签不作为路由证据。
+
+Model flags set the actual shared route, with the condition patch applied after the provider overlay. Both arms archive their composed configuration. Repeated models and reasoning levels form independent Cartesian groups; `report --matrix` renders one section per condition and never combines deltas. Cross-condition comparisons exit 2, naming both conditions. Without new flags, routing is unchanged and the condition is `unknown`; historical labels do not prove routing. An omitted reasoning level remains `null` unless the overlay pins it. All examples are optional model-driven runs, outside CI.
+
 ## 任务一览
 
 六个任务各自压一种能力，`ops_*` 工具名来自 `publicToolName()`。每个任务的期望值都由夹具生成器现算（`derive*`），判卷在 `bench/lib/verify.mjs`。

@@ -42,10 +42,12 @@ import { RUNS_DIR } from './lib/next-folder.mjs'
 import { DEFAULT_REPEAT, armOrder, createInterrupt, planPairs, planSessions, repeatsById, runSweep } from './run/schedule.mjs'
 import { sealRun } from './run/seal.mjs'
 import { renderReport, reportFileName } from './compare.mjs'
+import { reasoningEffort, planConditions, writeConditionPatch, patchArgs, describeCondition, assertEffectiveCondition } from './lib/condition.mjs'
+import { runMatrix } from './lib/matrix.mjs'
 import { componentFacts } from './lib/environment.mjs'
 
 /** The runner-only flags that take a value; `--task`/`--repeat`/`--folder`/`--base`/`--cand` are parsed by the CLI. */
-const VALUE_FLAGS = ['--sleep-ms', '--out', '--heartbeat-ms', '--stall-ms', '--timeout', '--dsh', '--llm-patch', '--model']
+const VALUE_FLAGS = ['--sleep-ms', '--out', '--heartbeat-ms', '--stall-ms', '--timeout', '--dsh', '--llm-patch', '--model', '--reasoning-effort', '--provider']
 /** The integer-valued flags, by option name. */
 const INTEGER_FLAGS = { '--sleep-ms': 'sleepMs', '--heartbeat-ms': 'heartbeatMs', '--stall-ms': 'stallMs', '--timeout': 'timeoutMs' }
 /** The string-valued flags, by option name. */
@@ -78,7 +80,9 @@ export function abUsage() {
     '                       (default: bench/llm.patch.yml, the file `setup` creates)',
     '  --no-llm-patch       run on the profiles\' own routes instead of the overlay;',
     '                       the two sides then share no route and the sweep says so',
-    '  --model <id>         model id recorded for the run',
+    '  --model <id>         actual model route for both arms (repeatable)',
+    '  --reasoning-effort E off | low | high | max (repeatable; Cartesian model × effort matrix)',
+    '  --provider <id>      override the overlay provider for explicit conditions',
     '  --keep               keep each temporary workspace',
     '  --verbose            narrate every event line',
     '  --show               print the pair-by-pair plan and exit without running',
@@ -98,6 +102,12 @@ export function abUsage() {
 
 /** Apply one runner-only flag with a value to the parsed options. */
 function applyRunFlag(options, flag, value) {
+  if (flag === '--model') { options.models.push(value); options.model = value; return }
+  if (flag === '--reasoning-effort') {
+    try { options.reasoningEfforts.push(reasoningEffort(value)); return }
+    catch (error) { throw new UsageError(error.message) }
+  }
+  if (flag === '--provider') { options.provider = value; return }
   if (Object.hasOwn(INTEGER_FLAGS, flag)) {
     const number = Number(value)
     if (!Number.isInteger(number) || number < 0) throw new UsageError(`${flag} needs a non-negative integer, got ${value}`)
@@ -134,6 +144,7 @@ export function parseRunArgs(argv, context = {}) {
     dsh: null,
     llmPatch: null,
     model: null,
+    models: [], reasoningEfforts: [], provider: null,
   }
   for (let index = 0; index < plan.extra.length; index += 1) {
     const flag = plan.extra[index]
@@ -148,7 +159,7 @@ export function parseRunArgs(argv, context = {}) {
       throw new UsageError(`${flag} named one arm of a per-process run; \`ab\` runs both arms itself — use --base/--cand`)
     } else if (VALUE_FLAGS.includes(flag)) {
       const value = plan.extra[index + 1]
-      if (value === undefined || value === '') throw new UsageError(`this flag needs a value: ${flag}`)
+      if (value === undefined || value === '' || value.startsWith('--')) throw new UsageError(`this flag needs a value: ${flag}`)
       applyRunFlag(options, flag, value)
       index += 1
     } else if (flag.startsWith('-')) {
@@ -220,7 +231,7 @@ export function resolveLlmPatch(options, context = {}) {
  * @throws {Error} when it cannot start or exits nonzero: an arm with no fingerprint is not evidence.
  */
 export function dumpProfileConfig(entry, profile, context = {}) {
-  const plan = spawnPlan(entry, ['--profile', profile, '--dump-config'])
+  const plan = spawnPlan(entry, ['--profile', profile, ...patchArgs(context.llmPatch, context.conditionPatch), '--dump-config'])
   const result = (context.run ?? spawnSync)(plan.command, plan.args, {
     cwd: context.cwd ?? REPO_ROOT,
     env: context.env ?? process.env,
@@ -234,7 +245,7 @@ export function dumpProfileConfig(entry, profile, context = {}) {
     const detail = String(result.stderr ?? '').trim().split('\n').filter(Boolean).pop() ?? ''
     throw new Error(`"dsh --profile ${profile} --dump-config" exited ${String(result.status)}${detail === '' ? '' : `: ${detail}`}`)
   }
-  return result.stdout ?? ''
+  return String(result.stdout ?? '')
 }
 
 /**
@@ -253,7 +264,12 @@ export function profileFingerprints(arms, context = {}) {
     if (typeof text !== 'string' || text.trim() === '') {
       throw new Error(`"dsh --profile ${arm.profile} --dump-config" printed nothing, so the ${arm.side} arm has no profile fingerprint`)
     }
+    assertEffectiveCondition(text, context.condition)
     hashes[arm.side] = createHash('sha256').update(text).digest('hex')
+    if (context.dirs?.[arm.side]) {
+      fs.mkdirSync(context.dirs[arm.side], { recursive: true })
+      fs.writeFileSync(path.join(context.dirs[arm.side], 'dump-config.txt'), text, { mode: 0o600 })
+    }
     arm.components = componentFacts(text)
   }
   return hashes
@@ -415,6 +431,7 @@ export async function main(argv, io = {}) {
     out(abUsage())
     return EXIT.ok
   }
+  if (io.groupOverride) options.out = io.groupOverride
   // Resolved before any spawn: a contradictory or absent overlay is a condition under which
   // the sweep would measure something other than what the operator asked for.
   let patch
@@ -433,6 +450,16 @@ export async function main(argv, io = {}) {
     }
     patch = { path: null, implicit: false, refused: error.message }
   }
+  let conditions
+  try { conditions = Object.hasOwn(io, 'conditionOverride') ? [io.conditionOverride] : planConditions(options, patch.path, io.readOverlay) }
+  catch (error) { err(`bench ab: ${error.message}`); return EXIT.usage }
+  if (conditions.length > 1) {
+    const root = options.out === null ? path.join(io.runsDir ?? RUNS_DIR, options.folder) : path.resolve(options.out)
+    try { return await runMatrix({ conditions, root, argv, options, io: { ...io, interrupt: io.interrupt ?? createInterrupt() }, run: main }) }
+    catch (error) { err(`bench matrix: ${error.message}`); return EXIT.failure }
+  }
+  const condition = conditions[0]
+  options.model = condition?.model ?? null
   // Sealing is opt-in: a sweep always writes each arm's `results/` and `summary.json`, and
   // `--seal` adds the schema-validated `run.json` on top. The CLI spawns this entry as a
   // child and cannot inject a callback, so "sealed" means the flag plus either the injected
@@ -455,6 +482,7 @@ export async function main(argv, io = {}) {
   out(`[ab] base    : ${arms[0].label} (profile ${arms[0].profile})`)
   out(`[ab] cand    : ${arms[1].label} (profile ${arms[1].profile})${options.aa ? '  [A/A: the baseline run twice]' : ''}`)
   out(`[ab] patch   : ${patch.path ?? 'none (--no-llm-patch) — the two sides share no route'}`)
+  out(`[ab] condition: ${describeCondition(condition)}`)
   out(`[ab] pairs   : ${pairs.length} pair(s) = ${sessions.length} session(s), serial, AB/BA-interleaved${options.repeatExplicit ? ` (--repeat ${options.repeat})` : ' (per-task repeat budgets)'}`)
   if (options.out === null) out(`[ab] group   : bench/runs/${options.folder}${options.allocated ? ' [auto]' : ''}`)
   out(`[ab] out     : ${sweepDir}`)
@@ -479,10 +507,12 @@ export async function main(argv, io = {}) {
   // Before any session: an arm whose composed configuration cannot be read has no
   // fingerprint, and a sweep that cannot be sealed is not evidence. Refusing here costs
   // nothing; refusing after the sweep would have spent the tokens first.
-  let hashes = io.profileHashes ?? null
-  if (hashes === null) {
+  let hashes = io.profileHashes ?? null, conditionPatch = null
+  if (condition !== null || hashes === null) {
     try {
-      hashes = profileFingerprints(arms, { entry, dump: io.dumpProfileConfig, env: io.env })
+      conditionPatch = writeConditionPatch(sweepDir, condition)
+      hashes = profileFingerprints(arms, { entry, dump: io.dumpProfileConfig, env: io.env,
+        llmPatch: patch.path, conditionPatch, condition, dirs })
     } catch (error) {
       err(`bench ab: ${String(error?.message ?? error)}`)
       err('nothing was spawned and no token was spent; run "node bench/cli.mjs setup" if the profiles are not prepared yet. Configuration facts are required even without --seal.')
@@ -511,6 +541,7 @@ export async function main(argv, io = {}) {
       folder: options.out === null ? options.folder : null,
       entry,
       llmPatch: patch.path,
+      conditionPatch, condition,
       timeoutMs: options.timeoutMs,
       model: options.model,
       argv: recordedArgv,
@@ -537,6 +568,7 @@ export async function main(argv, io = {}) {
     uninstall()
   }
   printResult(out, err, result, options)
+  io.onResult?.(result)
   let report = { target: null, skipped: '--no-report' }
   if (options.noReport !== true) {
     try {

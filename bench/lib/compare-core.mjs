@@ -33,6 +33,7 @@
  */
 
 import { CORE_BUCKETS, median, minValue, pairMetrics } from './aggregate.mjs'
+import { assertSameCondition } from './condition.mjs'
 import { compareEnvironment } from './environment.mjs'
 
 export { median, minValue }
@@ -482,6 +483,7 @@ export function classifyExcluded(pairs, taskId = null) {
  * @returns {object} the noise-floor document; `pct: null` when nothing could be paired.
  */
 export function noiseFloor(baseA, baseB, options = {}) {
+  assertSameCondition(baseA, baseB)
   compareEnvironment(baseA, baseB, options)
   const aggregate = AGGREGATES.includes(options.aggregate) ? options.aggregate : 'median'
   const merged = pairMetrics(normalizeResults(baseA), normalizeResults(baseB))
@@ -549,6 +551,8 @@ export function resolveNoiseFloor(options = {}, base = null, cand = null) {
   }
   const noise = options.noise
   if (noise && typeof noise === 'object' && !Array.isArray(noise) && (noise.base || noise.cand)) {
+    assertSameCondition(base, noise.base ?? base)
+    assertSameCondition(base, noise.cand ?? base)
     return noiseFloor(noise.base ?? base, noise.cand ?? base, { aggregate: options.aggregate, allowCrossPlatform: options.allowCrossPlatform })
   }
   return {
@@ -704,6 +708,7 @@ export function formatNumber(value) {
  * @returns {object} the comparison structure, including the gate and the verdict.
  */
 export function compareSummaries(base, cand, options = {}) {
+  const condition = assertSameCondition(base, cand)
   const environment = compareEnvironment(base, cand, options)
   if (options.noise) compareEnvironment(base, options.noise.base, options)
   const aggregate = AGGREGATES.includes(options.aggregate) ? options.aggregate : 'median'
@@ -857,6 +862,7 @@ export function compareSummaries(base, cand, options = {}) {
 
   return {
     format: COMPARE_FORMAT,
+    condition,
     environment,
     base: { label: sideLabel(base, 'base'), profile: sideProfile(base, 'base'), model: baseModel, dshVersion: sideDshVersion(base, 'base') },
     cand: { label: sideLabel(cand, 'cand'), profile: sideProfile(cand, 'cand'), model: candModel, dshVersion: sideDshVersion(cand, 'cand') },
