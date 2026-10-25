@@ -42,6 +42,7 @@ import { RUNS_DIR } from './lib/next-folder.mjs'
 import { DEFAULT_REPEAT, armOrder, createInterrupt, planPairs, planSessions, repeatsById, runSweep } from './run/schedule.mjs'
 import { sealRun } from './run/seal.mjs'
 import { renderReport, reportFileName } from './compare.mjs'
+import { componentFacts } from './lib/environment.mjs'
 
 /** The runner-only flags that take a value; `--task`/`--repeat`/`--folder`/`--base`/`--cand` are parsed by the CLI. */
 const VALUE_FLAGS = ['--sleep-ms', '--out', '--heartbeat-ms', '--stall-ms', '--timeout', '--dsh', '--llm-patch', '--model']
@@ -233,7 +234,7 @@ export function dumpProfileConfig(entry, profile, context = {}) {
     const detail = String(result.stderr ?? '').trim().split('\n').filter(Boolean).pop() ?? ''
     throw new Error(`"dsh --profile ${profile} --dump-config" exited ${String(result.status)}${detail === '' ? '' : `: ${detail}`}`)
   }
-  return `${result.stdout ?? ''}\n${result.stderr ?? ''}`
+  return result.stdout ?? ''
 }
 
 /**
@@ -253,6 +254,7 @@ export function profileFingerprints(arms, context = {}) {
       throw new Error(`"dsh --profile ${arm.profile} --dump-config" printed nothing, so the ${arm.side} arm has no profile fingerprint`)
     }
     hashes[arm.side] = createHash('sha256').update(text).digest('hex')
+    arm.components = componentFacts(text)
   }
   return hashes
 }
@@ -478,12 +480,12 @@ export async function main(argv, io = {}) {
   // fingerprint, and a sweep that cannot be sealed is not evidence. Refusing here costs
   // nothing; refusing after the sweep would have spent the tokens first.
   let hashes = io.profileHashes ?? null
-  if (hashes === null && seal !== undefined) {
+  if (hashes === null) {
     try {
       hashes = profileFingerprints(arms, { entry, dump: io.dumpProfileConfig, env: io.env })
     } catch (error) {
       err(`bench ab: ${String(error?.message ?? error)}`)
-      err('nothing was spawned and no token was spent; run "node bench/cli.mjs setup" if the profiles are not prepared yet, or pass --no-seal to sweep without sealing.')
+      err('nothing was spawned and no token was spent; run "node bench/cli.mjs setup" if the profiles are not prepared yet. Configuration facts are required even without --seal.')
       return EXIT.failure
     }
   }

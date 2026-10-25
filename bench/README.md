@@ -2,6 +2,14 @@
 
 ## 测试前的准备
 
+Linux / macOS：使用当前平台构建的 worker；`setup --dry-run` 会说明跳过 Windows PowerShell pin、PSModulePath、Windows Bash IPC 和随包 Windows shell 检查的原因。当前 shell 行已支持各平台，不要再从早期 Windows-only 默认值推断配置。模型 sweep 仍需自己的 OpenAI 兼容服务与凭据；`tools` 自检不调用模型。
+
+Linux / macOS: build the worker for the current host. `setup --dry-run` explains skipped Windows-only checks. `ab`, `compare`/`report`, `panel` and `tools` use the same entry point on every platform. A model sweep needs your own OpenAI-compatible endpoint; the tools self-check needs no model. Every sweep now fingerprints the composed profiles even without `--seal`, recording platform and component configuration in the arm summaries. `enabled` is a configuration fact, not proof of tool readiness; unresolved expressions remain `unknown`.
+
+`compare` 默认拒绝不同平台（或已知/未知平台）混配，退出码为 2；诊断时可加 `--allow-cross-platform`，报告会明确标记差异不是插件效应。旧数据两侧都缺平台时仍可读取，显示 `unknown`，不能据此声称同平台。CI 的可选 tools-only smoke 覆盖 Linux / Windows / macOS，各自上传 artifact；不运行模型 sweep，不产出跨平台结论。
+
+`compare` rejects mismatched platforms with exit 2. `--allow-cross-platform` is an explicit diagnostic override and adds a “not a plugin effect” warning. Both-unknown legacy archives remain readable. The optional, non-blocking tools smoke runs on Linux, Windows and macOS with separate artifacts.
+
 ```console
 npm ci --ignore-scripts
 npm run build && npm run build:ptc     # lib/ + 原生 worker
