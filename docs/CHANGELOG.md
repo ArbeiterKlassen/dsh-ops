@@ -7,6 +7,9 @@ this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- Isolate PTC and discovery presentation probes by inheritance family so an unanswered host hook cannot block unrelated roots. Cancel obsolete probe waits on supersession, disposal and unload; reject late publication while preserving atomic family overlays and live authority checks (#359).
+- PTC 与 discovery 的呈现探测按继承族隔离，宿主 hook 未返回时不阻塞无关根会话；探测被取代、销毁或卸载时取消旧等待并拒绝迟到发布，同时保留继承族原子叠加层与实时权限检查（#359）。
+
 - Defer and coalesce Bash lifecycle publication until session event delivery completes, preserve live authority checks for retained callbacks, and cancel queued publication on unload (#386). Accept text-only prompt presentation hooks without weakening complete PTC assembly checks (#387). Add a delayed-discovery first-prompt regression for the readiness fix already integrated in #366 (#375).
 - Bash 生命周期发布延后到会话事件分发结束后并合并通知，保留旧回调的实时权限校验，卸载时取消待发布任务（#386）；兼容纯文本提示词呈现 hook，同时保留完整 PTC 装配检查（#387）。为 #366 已合入的就绪修复增加延迟 discovery 首轮回归（#375）。
 
