@@ -79,7 +79,7 @@ if (!ci) {
   check(triggers?.pull_request?.paths === undefined && triggers?.pull_request?.['paths-ignore'] === undefined,
     'ci.yml: pull_request has no path filter')
   const jobs = ci.doc.jobs ?? {}
-  checkPluginBuild('ci.yml', jobs, ['validate-posix', 'validate-windows', 'node-floor', 'tools-trial', 'bench-smoke'])
+  checkPluginBuild('ci.yml', jobs, ['validate-posix', 'validate-macos-intel', 'validate-windows', 'node-floor', 'tools-trial', 'bench-smoke'])
   const entry = Object.entries(jobs).find(([, job]) => job?.name === 'CI required')
   check(entry !== undefined, 'ci.yml: exposes one aggregate check named "CI required"')
   if (entry) {
