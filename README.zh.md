@@ -26,14 +26,13 @@ OPS 为 DSH 增加有界文件与文档工具。Native 模式返回紧凑、带�
 支持：Windows x64、Linux x64，以及 macOS 13+ 的 Apple Silicon 与 Intel（`darwin-arm64`、`darwin-x64`）。见 [macOS](docs/macos.zh.md)。
 
 > [!IMPORTANT]
-> 本分支是 **0.4.0 发布候选**，尚未发布。已批准的验收范围为：BM-01 相比 OPS 0.3.x 输出减少至少 40%，官方读取另列对照；BM-03 对文件/发现 schema 执行 400 token 上限，同时保留 Bash 启动常驻并单列完整总数。最终实测证据与功能 CI 缺一不可。
-> 详情见[发布状态与限制](docs/0.4.0发布候选.md)。下方 `@latest` 命令安装已发布版本；评估候选版本需自行构建本检出目录并打包。
+> 本分支是 **0.5.0 未发布候选**：组件 roster 改为预设模式行。下方 `@latest` 命令安装已发布版本；评估候选版本需自行构建本检出目录并打包，变更见[变更日志](docs/CHANGELOG.md)。
 
-- Native 默认提供 `ops_read_files` 与 `ops_discover_tools`；三个平台的默认 profile 都启用 shell 行并提供 `ops_bash`。高级工具在所属 agent 的下一次供应商请求中激活。
+- 默认 profile 启用四个预设模式行：Standard/Cordis 发布常驻 OPS 文件工具，PTC 发布类型化 SDK，Minimal 只替换 Windows shell；discovery 行启用时其会话获得 `ops_discover_tools` 动态加载入口；`ops_bash` 由模式行在 Windows 上替换官方 pwsh。高级工具在所属 agent 的下一次供应商请求中激活。
 - PTC SDK 目录包含 18 个 API：15 个文件/文档工具，加批处理、结果引用和加载器。仅暴露配置为常驻或已选择的 API；Native 与 PTC 分别提供自己的输出形式。
 - 可按需发现有界 CSV/TSV、DOCX 主体段落与受限 PDF 文本层读取。尚不支持二进制 DOC、OCR、通用 PDF 渲染、网页搜索或 HTML 抓取；使用前请查看[文档格式限制](docs/原生内核.md)。
-- 七个组件独立启停，保留已有 profile ID 与配置。逐工具官方替换默认关闭。[设置](docs/配置参考.md)提供严格校验的内置表单；可选浏览器页面需显式执行离线承载行迁移。
-- shell 组件在三个平台默认开启：Windows 使用主包声明的固定 bash 载荷——`optionalDependencies` 中的 `@dsh-ops/bash-win32-x64@0.2.1`，npm 安装时自动拉取 ops 自带的独立 **bash 5.3.15**（PortableGit `v2.56.0.windows.2`），也可用 `bashPath` 把 `ops_bash` 指向 git bash；Linux/macOS 使用发行版自带 bash，可用 `config.bashPath` 覆盖。`dsh-ops bash-runtime install` 保留为安装/修复与选择受管理副本的路径。PowerShell 仍由宿主管理；升级命令先预览标准安装，仅加 `--yes` 才执行。
+- 八个组件独立启停：四个模式行与 discovery 默认开，兼容模式、panel 与 TUI 默认关。启用模式行会自动隐藏被替换的官方工具（read/glob/grep + Windows pwsh），兼容模式开启则保留官方工具。[设置](docs/配置参考.md)提供严格校验的内置表单；可选浏览器页面需显式执行离线承载行迁移。旧 `shell`/`file`/`ptc`/`hide-official` 覆盖需删除。
+- 模式行在三个平台默认开启：Windows 使用主包声明的固定 bash 载荷——`optionalDependencies` 中的 `@dsh-ops/bash-win32-x64@0.2.1`，npm 安装时自动拉取 ops 自带的独立 **bash 5.3.15**（PortableGit `v2.56.0.windows.2`），也可用 `bashPath` 把 `ops_bash` 指向 git bash；Linux/macOS 使用发行版自带 bash，可用 `config.bashPath` 覆盖。`dsh-ops bash-runtime install` 保留为安装/修复与选择受管理副本的路径。PowerShell 仍由宿主管理；升级命令先预览标准安装，仅加 `--yes` 才执行。
 
 OPS 只发布自身作用域内的工具与可选路由提示，不改写共享工具注册表。每次调用均检查权限与取消状态。Windows 受限 Bash 仍存在文档注明的部分约束与运行时兼容性限制。
 

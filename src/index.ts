@@ -15,6 +15,7 @@ import { visibleNames } from './surface.js'
 import { mountWorkspacePreparation } from './workspace-preparation.js'
 import { safeDispose, safeDisposeAll } from './teardown.js'
 import { mountResultLifecycle } from './kernel/result-lifecycle.js'
+import { applyMode } from './modes/apply.js'
 
 export { Config } from './settings/file-config.js'
 export const name = 'dsh-ops'
@@ -136,5 +137,7 @@ export function applyComponent(root: Context, rawConfig: unknown, component: Com
   }
 }
 
-// Backward-compatible module entry. The bundle uses independently toggled rows.
-export function apply(root: Context, rawConfig: unknown): void { return applyComponent(root, rawConfig, 'file') }
+// Package-root entry. The optional `dsh-ops/lib/profiles/client` carrier row names
+// this module instead of `dsh-ops/mode-standard`, so it must publish exactly that
+// mode; the canonical bundle inserts the explicit component rows instead.
+export function apply(root: Context, rawConfig: unknown): void { return applyMode(root, rawConfig, 'standard') }

@@ -5,6 +5,38 @@ All notable changes to this package are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-10-27 — Preset-mode component roster
+
+### Breaking changes
+
+- Replace the seven-row component roster with eight rows: `dsh-ops/mode-minimal`,
+  `dsh-ops/mode-standard`, `dsh-ops/mode-ptc` and `dsh-ops/mode-cordis` for the built-in
+  presets, `dsh-ops/discovery` for dynamic tool loading, `dsh-ops/compat` for Compatibility
+  mode, `dsh-ops/panel` for data inspection and `dsh-ops/tui` for TUI integration. The former
+  `dsh-ops/shell`, `dsh-ops/file`, `dsh-ops/ptc` and `dsh-ops/hide-official` rows are gone
+  from the bundle; their modules remain as unsupported legacy exports for old profiles.
+- A mode row publishes OPS tools only for sessions composed from its preset. Standard and Cordis
+  replace the official `read`, `glob` and `grep`; every enabled mode replaces the official
+  Windows shell (`pwsh`/`pwsh_persistent` with `ops_bash` on Windows). A replaced tool is
+  hidden only while its OPS counterpart is visible in the same scope.
+- `dsh-ops/compat` inverts the removed per-tool `replaceTools` selection: enabling
+  Compatibility mode keeps every official tool visible while OPS tools stay available, and lifts
+  hiding without unloading any row. It is off by default; while it is on, token efficiency and
+  model ability are reduced.
+- Windows sessions route command execution through `ops_bash` instead of the official `pwsh`
+  when a mode row is enabled and the OPS counterpart is visible.
+- Restore the OPS icon on every component row.
+
+### Upgrade
+
+- Delete saved profile patch overrides for `dsh-ops-shell`, `dsh-ops-file`, `dsh-ops-ptc` and
+  `dsh-ops-hide-official`; a leftover override names no row in the new bundle and produces a
+  startup `patch: entry ... not found` warning. Set the mode switches you want afterwards.
+- The optional client carrier migration now only switches the profile bundle name. It preserves
+  every component row, switch and effective configuration; the nested client bundle renames only the
+  standard-mode row to the package root, so a name-qualified `dsh-ops/mode-standard` override is
+  refused for manual review instead of being rewritten.
+
 ## [Unreleased]
 
 - Add candidate-only benchmark component switches with conservative patch editing, composed-config verification and a bounded readiness turn. Archive effective switches, show them in reports, and reject comparisons across different candidate switch sets (#296).

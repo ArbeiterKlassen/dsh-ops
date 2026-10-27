@@ -16,25 +16,26 @@ The fact that the same whitelist hides a globally registered file tool does not
 prove it also hides the session's shell. A read-only sandbox is also a filesystem
 permission mode, not a promise that every command tool is absent.
 
-To stop OPS Bash publication, set `publishBashTool: false` in its owning shell
+To stop OPS Bash publication, set `publishBashTool: false` in the owning mode
 row. Merge this setting into the existing config, preserving other keys:
 
 ```yaml
-- id: dsh-ops-shell
-  name: dsh-ops/shell
+- id: dsh-ops-mode-standard
+  name: dsh-ops/mode-standard
   config:
     publishBashTool: false
 ```
 
-Check every `dsh-ops/shell` row in the effective configuration: another enabled
-row can still publish its own tool. Apply the change through the host settings
-or profile lifecycle, then verify a new session's tool list. This switch controls
-OPS Bash; it does not disable independently installed command tools.
+Check every enabled mode row in the effective configuration: another row can
+still publish its own tool for sessions of its preset. Apply the change through
+the host settings or profile lifecycle, then verify a new session's tool list.
+This switch controls OPS Bash; it does not disable independently installed
+command tools.
 
 Per-preset command denial requires a host execution policy that covers owned
-tools, or a verified scoped mounting arrangement. Merely moving a shell row into
-a preset is not established as an isolation guarantee: the component also
-enumerates already live agents when mounted. Before relying on such an arrangement,
+tools, or a verified scoped mounting arrangement. Merely enabling a mode
+row is not established as an isolation guarantee: the row also enumerates
+already live agents when mounted. Before relying on such an arrangement,
 verify both allowed and disallowed presets, existing and newly created sessions,
 and actual invocation rejection. OPS does not rewrite the shared tool registry
 to make inherited restrictions act on owned tools.

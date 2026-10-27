@@ -10,7 +10,7 @@ import { toOutcome } from '../modes/ptc/outcome.js'
 import { WORKER_TIMEOUT_MS } from '../worker-protocol.js'
 export { PTC_TOOLS, PARAMETERS, DESCRIPTIONS, OUTPUT }
 export const PTC_API_TOOLS = Object.freeze([...FILE_TOOLS, ...PTC_TOOLS])
-export const PTC_SECTION = 'dsh-ops:repository-tooling:ptc'
+export const PTC_SECTION = 'dsh-ops:repository-tooling:mode-ptc'
 export function definition(tool: FileToolName | PtcToolName, execute: ToolDefinition['execute']): ToolDefinition {
   const entry = capability(tool)
   if (!entry || !('parameters' in entry)) throw new Error(`Missing PTC capability: ${tool}`)
