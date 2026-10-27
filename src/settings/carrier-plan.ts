@@ -7,14 +7,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import type * as Boot from '@deepseek-ai/dsh-app-boot'
+import type { AtomicApi, BootApi, ProfileContext } from '../adapter/dsh/types.js'
 import type * as Yaml from 'yaml'
-import type * as Atomic from '@deepseek-ai/dsh-atomic-write'
-import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import type { EntryOptions } from '../adapter/dsh/types.js'
 import { COMPONENTS } from '../components/defaults.js'
 
 export const CLIENT_BUNDLE = 'dsh-ops/lib/profiles/client'
-export interface CarrierHost { boot: typeof Boot; yaml: typeof Yaml; atomic: typeof Atomic }
+export interface CarrierHost { boot: BootApi; yaml: typeof Yaml; atomic: AtomicApi }
 export interface CarrierLocation { dir: string; home: string; installAnchor: string }
 export interface FileChange { path: string; before?: string; after: string; mode: number }
 export interface CarrierPlan { files: FileChange[]; beforeRows: EntryOptions[]; afterRows: EntryOptions[]; location: CarrierLocation }
@@ -33,7 +32,7 @@ function read(file: string, optional = false): { text?: string; mode: number } {
   }
 }
 const flatten = (rows: EntryOptions[]): EntryOptions[] => rows.flatMap(row => [row, ...row.group && Array.isArray(row.config) ? flatten(row.config as EntryOptions[]) : []])
-export function profileContext(location: CarrierLocation): Boot.ProfileContext {
+export function profileContext(location: CarrierLocation): ProfileContext {
   return { ...location, name: path.basename(location.dir), cwd: location.dir, patchPath: path.join(location.dir, 'cordis.patch.yml'), startedBundles: [], overlays: [], telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED }
 }
 export function prepareCarrier(host: CarrierHost, location: CarrierLocation): CarrierPlan {

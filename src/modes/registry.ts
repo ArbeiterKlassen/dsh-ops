@@ -5,7 +5,7 @@
  * Loader rows; they share one small registry keyed by the Cordis root so each
  * row can see which modes are on without importing another row's module state.
  */
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context } from '../adapter/dsh/types.js'
 import type { ModeConfig } from './config.js'
 import type { ModeId } from './types.js'
 

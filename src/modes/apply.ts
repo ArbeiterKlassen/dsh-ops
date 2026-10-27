@@ -8,8 +8,8 @@
  * whose OPS counterpart is visible. Compatibility mode is a runtime switch that
  * lifts those hides without unloading any row.
  */
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Context } from '../adapter/dsh/types.js'
+import type { Agent } from '../adapter/dsh/types.js'
 import { apply as mountPtc } from '../ptc/index.js'
 import { mountSessionBash, type BashGate } from '../session-shells.js'
 import { resolveShells } from '../shells.js'

@@ -1,5 +1,5 @@
-import type { Context } from '@deepseek-ai/cordis'
-import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { Context } from '../adapter/dsh/types.js'
+import type { ToolDefinition } from '../adapter/dsh/types.js'
 import type { FileToolName } from '../capabilities/registry.js'
 import { WORKER_TIMEOUT_MS } from '../worker-protocol.js'
 import { publicToolName } from '../policy.js'

@@ -7,9 +7,9 @@
  * when the registry reports a change, which is the only way a blank session can
  * move between modes.
  */
-import type { Context, Fiber } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { Context, Fiber } from '../adapter/dsh/types.js'
+import type { Agent } from '../adapter/dsh/types.js'
+import type {} from '../adapter/dsh/types.js'
 import { NativeFileTools } from '../file/runtime.js'
 import { registerNativeProviderAtScope } from '../file/result-provider.js'
 import { resolveWorker } from '../file/worker.js'

@@ -9,8 +9,8 @@
  * deployment (headless/SDK), which this plugin treats as the built-in Standard
  * composition so OPS keeps working there.
  */
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Context } from '../adapter/dsh/types.js'
+import type { Agent } from '../adapter/dsh/types.js'
 import { MODE_IDS, MODE_PRESET, type ModeId } from './types.js'
 
 interface PresetRegistry { composedPreset(ctx: Context): string | undefined }

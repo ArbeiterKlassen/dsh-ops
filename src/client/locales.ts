@@ -1,4 +1,4 @@
-import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { TranslateNS } from '../adapter/dsh/types.js'
 export const en = {
   replacements: 'Choose which official tools OPS replaces.', discovery: 'Choose discoverable and always-loaded capabilities.', shell: 'Manage Bash and the standard host PowerShell installation.',
   modeMinimal: 'Preset enhancement: adds OPS tools to Minimal sessions and replaces the official Windows shell.', modeStandard: 'Preset enhancement: replaces the official read, glob and grep tools and the Windows shell for Standard sessions.',

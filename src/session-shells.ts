@@ -1,7 +1,7 @@
 /** Plugin-owned bash layers; permission changes never mutate the shared registry. */
 import path from 'node:path'
-import type { Context, Fiber } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Context, Fiber } from './adapter/dsh/types.js'
+import type { Agent } from './adapter/dsh/types.js'
 import type { ResolvedConfig } from './config.js'
 import type { ShellResolution } from './shells/paths.js'
 import type { HostShellDefinition, ShellJobs, ShellResult } from './shells/types.js'
