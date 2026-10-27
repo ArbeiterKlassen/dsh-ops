@@ -5,7 +5,7 @@ The complete install, update and remove flow, plus every option of the command-l
 Before replacing a running installation, read [Upgrade and uninstall safely](upgrading.md)
 for stopping the host, registry-policy failures and the 0.4.x-to-0.5.x migration checklist.
 
-## 0.5.0 candidate and component defaults
+## 0.4.3 local candidate and component defaults
 
 This checkout is an unreleased candidate. The bundle declares eight component rows: four enhanced
 built-in preset modes (`dsh-ops/mode-minimal`, `dsh-ops/mode-standard`, `dsh-ops/mode-ptc`,
