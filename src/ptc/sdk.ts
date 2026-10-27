@@ -1,4 +1,4 @@
-import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition } from '../adapter/dsh/types.js'
 import { SDK_CAPABILITIES } from '../capabilities/sdk.js'
 import { publicToolName } from '../policy.js'
 import { migrateRawNames } from '../compat/alias.js'

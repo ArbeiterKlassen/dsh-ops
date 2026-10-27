@@ -1,7 +1,7 @@
 /** Operator runtime plans: fixed actions, one-use previews, serialized execution. */
 import { randomUUID, createHash } from 'node:crypto'
 import path from 'node:path'
-import type { TypertGatewayBinding } from '@deepseek-ai/dsh-typert-protocol'
+import type { TypertGatewayBinding } from '../adapter/dsh/types.js'
 import { PACKAGE_ROOT } from '../paths.js'
 import { gitBashCandidates, managedBashInventory, removeManagedBash, selectBashRuntime } from '../shells/manager.js'
 import { shellUpstreamPin, provisionedShellVersionDir } from '../shells/pins.js'

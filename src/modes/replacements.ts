@@ -6,10 +6,10 @@
  * when the counterpart is missing: a session keeps the official workflow rather
  * than losing a capability to an unfinished publication.
  */
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ToolGuard } from '@deepseek-ai/dsh-tools'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { Context } from '../adapter/dsh/types.js'
+import type { Agent } from '../adapter/dsh/types.js'
+import type { ToolGuard } from '../adapter/dsh/types.js'
+import type {} from '../adapter/dsh/types.js'
 import { OFFICIAL_REPLACEMENTS } from '../official-tool-catalog.js'
 import { BASH_TOOL } from '../policy.js'
 import { visibleNames } from '../surface.js'

@@ -1,6 +1,6 @@
 /** Native page/release adapter over the same result kernel bridge used by PTC. */
 import path from 'node:path'
-import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition } from '../adapter/dsh/types.js'
 import { capability } from '../capabilities/registry.js'
 import { publicToolName } from '../policy.js'
 import { OUTPUT } from '../capabilities/ptc.js'

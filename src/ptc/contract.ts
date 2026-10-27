@@ -1,5 +1,5 @@
 /** PTC-only typed projection over the shared capability catalogue and canonical worker. */
-import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition } from '../adapter/dsh/types.js'
 import { publicToolName } from '../policy.js'
 import { capability, FILE_TOOLS, PTC_TOOLS } from '../capabilities/registry.js'
 import type { FileToolName, PtcToolName } from '../capabilities/registry.js'

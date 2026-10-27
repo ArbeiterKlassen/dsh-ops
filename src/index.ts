@@ -1,8 +1,8 @@
 /** dsh-ops host half. Own registrations only; no @deepseek-ai value imports. */
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-tools'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { Context } from './adapter/dsh/types.js'
+import type { Agent } from './adapter/dsh/types.js'
+import type {} from './adapter/dsh/types.js'
+import type {} from './adapter/dsh/types.js'
 import { resolveConfig } from './config.js'
 import { mountConfigUpdates, updatedConfig } from './config-updates.js'
 import { SECTION_ORDERS, TOOLING_SECTION, BASH_TOOL, publicToolName, hostShellRefusal, renderToolingPolicy } from './policy.js'

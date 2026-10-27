@@ -87,13 +87,7 @@ use the PTC SDK loader under the host's `run_code` presentation. Check the scope
 assembled tools and presentation, not just a global registry or a prompt section
 name. An empty discovery section alone does not identify the cause.
 
-Host support declarations and component resource exports are addressed in
-[PR #395](https://github.com/T-Auto/dsh-ops/pull/395), with explicit 0.2.0-rc.2 and
-0.2.1-rc.2 coverage. The text-only PTC hook adaptation in
-[PR #390](https://github.com/T-Auto/dsh-ops/pull/390) is not full 0.2.1-rc.3 support.
-[PR #383](https://github.com/T-Auto/dsh-ops/pull/383) and #390 address unnecessary
-session work and append-time Bash publication. Check whether the installed version
-actually contains these changes before attributing its behavior to them.
+Host support declarations and component resource exports are covered by the current adapter boundary. The package declares and tests the bounded range `>=0.2.0-rc.2 <0.2.2-0`, including rc2, rc3, rc4 and the 0.2.1 stable line; the isolated host matrix compares the rc4 graph against the locked rc2 control. The text-only PTC hook adaptation is not used as the sole compatibility proof.
 
 The original #346 report also describes an enabled row and a stalled publication
 chain. The profile checks above do not prove that failure fixed. If the row is

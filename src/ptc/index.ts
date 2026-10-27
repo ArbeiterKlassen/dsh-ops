@@ -1,9 +1,10 @@
 /** Independent PTC SDK: scoped publication through public host APIs only. */
-import type { Context, Fiber } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
-import type {} from '@deepseek-ai/dsh-sandbox-policy'
-import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
+import type { Context, Fiber } from '../adapter/dsh/types.js'
+import type { Agent } from '../adapter/dsh/types.js'
+import type { ToolDefinition, ToolRunContext } from '../adapter/dsh/types.js'
+import type {} from '../adapter/dsh/types.js'
+import type { PromptAssembly } from '../adapter/dsh/types.js'
+import { loadScopes } from '../adapter/dsh/host.js'
 import { inspectPresentation, isPresentationProbe } from '../presentation.js'
 import { WORKER_TIMEOUT_MS } from '../worker-protocol.js'
 import { FILE_TOOLS, PTC_TOOLS } from '../capabilities/registry.js'
@@ -308,7 +309,7 @@ export function apply(root: Context, rawConfig: unknown, gate: PtcGate = { allow
       // An unknown session keeps the unqualified (whole-fleet) pass.
       void reconcile(true, affected.size ? affected : undefined)
     })
-    ;({ scopeChainOf } = await import('@deepseek-ai/dsh-scope'))
+    ;({ scopeChainOf } = await loadScopes())
     if (gate.watch) ctx.effect(() => gate.watch!(() => { void reconcile(true) }), 'dsh-ops: PTC mode observer')
     ownership = await ownPtcScopes(ctx, () => {
       mutating = true

@@ -121,11 +121,7 @@ The ordinary DSH CLI cannot manage the reserved `desktop` profile; do not confus
 
 ### Host compatibility and display metadata
 
-The package declares **DSH 0.2.0-rc.2 and 0.2.1-rc.2** explicitly in both `engines.dsh`
-and the legacy DSH peer dependency. DSH 0.2.1 uses `engines.dsh` in preference to peers.
-Other prereleases, including 0.2.1-rc.3, are outside this declaration: accepting its
-text-only prompt hook does not establish compatibility with all presentation and
-official-tool replacement APIs.
+The package declares the bounded DSH compatibility range `>=0.2.0-rc.2 <0.2.2-0` in both `engines.dsh` and the legacy DSH peer dependency. This includes `0.2.0-rc.2`, `0.2.1-rc.2`, `0.2.1-rc.3`, `0.2.1-rc.4` and the `0.2.1` stable line, while rejecting `0.2.0-rc.1`, `0.2.2` prereleases and `0.3.0`. The rc4 host graph is validated separately in the isolated host matrix; the plugin's native adapter preserves the existing Cordis tool, prompt, policy, subprocess, PTC and UI behavior.
 
 The bundle icon comes from the root manifest. Each component exports its own
 `dsh-ops/<component>/icon` and `locale/*.json`; DSH 0.2.1 does not use a component's

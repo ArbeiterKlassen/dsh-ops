@@ -122,6 +122,9 @@
     "./compat/package.json": "./lib/components/compat/package.json",
     "./compat/locale/*.json": "./lib/components/compat/locale/*.json",
     "./compat/icon": "./lib/components/compat/icon.png",
+    "./adapter/dsh": {
+      "default": "./lib/adapter/dsh/host.js"
+    },
     "./client": {
       "default": "./lib/client.js"
     }
@@ -193,7 +196,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh": "0.2.0-rc.2 || 0.2.1-rc.2"
+    "@deepseek-ai/dsh": ">=0.2.0-rc.2 <0.2.2-0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -253,6 +256,6 @@
   },
   "engines": {
     "node": "^22.19 || >=24",
-    "dsh": "0.2.0-rc.2 || 0.2.1-rc.2"
+    "dsh": ">=0.2.0-rc.2 <0.2.2-0"
   }
 }

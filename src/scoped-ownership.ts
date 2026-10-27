@@ -1,11 +1,11 @@
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Context, Agent } from './adapter/dsh/types.js'
+import { loadScopes } from './adapter/dsh/host.js'
 interface Row { scope?: object; changed(): void }
 interface State { rows: Row[]; agents: Set<Agent>; publishing: number; sequence: number }
 const roots = new WeakMap<object, Map<string, State>>()
 /** The nearest plugin row owns the SDK; overlapping rows never double-register one layer. */
 export async function ownScopes(ctx: Context, family: string, changed: () => void) {
-  const { scopeOf, scopeChainOf } = await import('@deepseek-ai/dsh-scope')
+  const { scopeOf, scopeChainOf } = await loadScopes()
   const key = ctx.root ?? ctx
   let families = roots.get(key)
   if (!families) { families = new Map(); roots.set(key, families) }

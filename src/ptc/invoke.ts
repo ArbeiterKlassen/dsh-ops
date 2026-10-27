@@ -1,5 +1,5 @@
-import type { Context } from '@deepseek-ai/cordis'
-import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { Context } from '../adapter/dsh/types.js'
+import type { ToolRunContext } from '../adapter/dsh/types.js'
 import { FILE_TOOLS } from '../capabilities/registry.js'
 import { invoke as fileInvoke } from '../file/worker.js'
 import { invoke } from './worker.js'

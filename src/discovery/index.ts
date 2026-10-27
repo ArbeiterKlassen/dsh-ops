@@ -1,11 +1,12 @@
-import type { Context, Fiber } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
-import type {} from '@deepseek-ai/dsh-sandbox-policy'
+import type { Context, Fiber } from '../adapter/dsh/types.js'
+import type { Agent } from '../adapter/dsh/types.js'
+import type { ToolDefinition } from '../adapter/dsh/types.js'
+import type { PromptAssembly } from '../adapter/dsh/types.js'
+import type {} from '../adapter/dsh/types.js'
 import { resolveDiscoveryConfig } from '../config.js'
 import { NativeFileTools } from '../file/runtime.js'
 import { nativeProviders, registerNativeProviderAtScope, claimNativeSelection } from '../file/result-provider.js'
+import { loadScopes } from '../adapter/dsh/host.js'
 import { onToolChange } from '../tool-changes.js'
 import { ownScopes } from '../scoped-ownership.js'
 import { isNativePresentation, isPresentationProbe } from '../presentation.js'
@@ -232,7 +233,7 @@ export function apply(root: Context, raw: unknown): void {
       for (const entry of entries.values()) invalidate(entry)
       void reconcile()
     }
-    ;({ scopeChainOf } = await import('@deepseek-ai/dsh-scope'))
+    ;({ scopeChainOf } = await loadScopes())
     onToolChange(ctx, scopes => {
       if (mutating || ownership?.publishing()) return
       if (!scopes?.length) { refresh(); return }

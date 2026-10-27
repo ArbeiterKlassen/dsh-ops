@@ -1,4 +1,4 @@
-import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition } from '../adapter/dsh/types.js'
 import { publicToolName } from '../policy.js'
 import { capability } from '../capabilities/registry.js'
 import type { FileToolName } from '../capabilities/registry.js'
