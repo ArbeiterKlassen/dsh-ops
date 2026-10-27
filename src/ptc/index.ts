@@ -49,7 +49,15 @@ const isPtc = (assembly: Presentation): boolean => Array.isArray(assembly.tools)
 const isPtcPresentation = (presentation: Presentation): boolean =>
   Object.hasOwn(presentation, 'tools') ? isPtc(presentation) : hasPtcInstruction(presentation)
 
-export function apply(root: Context, rawConfig: unknown): void {
+/** A mode row's per-Agent permission to publish the PTC surface. */
+export interface PtcGate {
+  /** Whether the row owns this Agent's mode. */
+  allows(agent: Agent): boolean
+  /** Subscribe to gate changes; the callback runs a full reconcile. */
+  watch?(notify: () => void): () => void
+}
+
+export function apply(root: Context, rawConfig: unknown, gate: PtcGate = { allows: () => true }): void {
   const config = resolvePtcConfig(rawConfig)
   mountWorkspacePreparation(root)
   let file: string
@@ -141,7 +149,7 @@ export function apply(root: Context, rawConfig: unknown): void {
           if (!fresh && entry.surface === surface) { if (entry.ptc) ready.add(agent); continue }
           if (entry.surface !== surface || fresh) { dirty = true; changed.add(agent) }
           probedBefore.add(agent)
-          const next = await task.wait(ptcOnly(agent, task.signal)).catch(() => false)
+          const next = gate.allows(agent) && await task.wait(ptcOnly(agent, task.signal)).catch(() => false)
           if (next !== entry.ptc) { dirty = true; changed.add(agent) }
           if (next) ready.add(agent)
         }
@@ -283,6 +291,7 @@ export function apply(root: Context, rawConfig: unknown): void {
       return prompt.assemble(context)
     })
     ctx.on('session/event', (session, event) => {
+      if ((event as { type: string }).type === 'agent-preset/selected') { void reconcile(true); return }
       if (event.type === 'step/end') {
         let changed = false
         const affected = new Set<Agent>()
@@ -300,6 +309,7 @@ export function apply(root: Context, rawConfig: unknown): void {
       void reconcile(true, affected.size ? affected : undefined)
     })
     ;({ scopeChainOf } = await import('@deepseek-ai/dsh-scope'))
+    if (gate.watch) ctx.effect(() => gate.watch!(() => { void reconcile(true) }), 'dsh-ops: PTC mode observer')
     ownership = await ownPtcScopes(ctx, () => {
       mutating = true
       try {

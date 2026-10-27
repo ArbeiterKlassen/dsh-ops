@@ -15,7 +15,12 @@ await test('npm pack includes compiled host code and native sources, never host 
   const files = JSON.parse(result.stdout)[0].files.map(file => file.path)
   const required = ['lib/ptc/sdk.d.ts', 'lib/index.js', 'lib/policy.js', 'lib/components/panel/index.js',
     'lib/components/panel/package.json', 'lib/components/panel/icon.png', 'lib/panel/panel.html',
-    'lib/components/tui/dsh-plugin.json', 'native/Cargo.toml', 'native/Cargo.lock', 'native/src/lib.rs',
+    'lib/components/tui/dsh-plugin.json',
+    'lib/components/mode-minimal/index.js', 'lib/components/mode-minimal/package.json', 'lib/components/mode-minimal/icon.png',
+    'lib/components/mode-standard/index.js', 'lib/components/mode-standard/locale/en.json', 'lib/components/mode-standard/locale/zh.json',
+    'lib/components/mode-ptc/index.js', 'lib/components/mode-cordis/index.js', 'lib/components/compat/index.js',
+    'lib/modes/plan.js', 'lib/modes/apply.js', 'lib/modes/detect.js', 'lib/modes/replacements.js',
+    'native/Cargo.toml', 'native/Cargo.lock', 'native/src/lib.rs',
     'native/windows-metadata/Cargo.toml', 'native/windows-metadata/src/lib.rs',
     'native/darwin-metadata/Cargo.toml', 'native/darwin-metadata/src/lib.rs',
     'native/crates/ops-documents/Cargo.toml', 'native/crates/ops-documents/src/lib.rs',

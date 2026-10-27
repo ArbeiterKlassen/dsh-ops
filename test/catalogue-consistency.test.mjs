@@ -53,8 +53,8 @@ await test('component declaration checks reject entry, target, tool, default and
   const failed = values => componentChecks(values).filter(([okay]) => !okay)
   assert.deepEqual(failed(rows), [])
   for (const [id, key, value] of [
-    ['shell', 'entry', 'wrong'], ['file', 'targets', []], ['discovery', 'tools', []],
-    ['panel', 'tools', ['rogue']], ['tui', 'defaultEnabled', true], ['hide-official', 'retainedOfficialCommand', { win32: 'bash' }],
+    ['mode-minimal', 'entry', 'wrong'], ['mode-ptc', 'targets', []], ['discovery', 'tools', []],
+    ['panel', 'tools', ['rogue']], ['tui', 'defaultEnabled', true], ['compat', 'retainedOfficialCommand', { win32: 'bash' }],
   ]) {
     const changed = structuredClone(rows)
     changed.find(row => row.id === `dsh-ops-${id}`)[key] = value

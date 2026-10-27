@@ -18,6 +18,9 @@ import { DISCOVERABLE_TOOLS } from './config.js'
 import type { DiscoverableName } from './config.js'
 import { parseRequest, search } from './search.js'
 import { scopedReconciliation, scopeFamilies } from '../scoped-reconciliation.js'
+import { modeOf } from '../modes/detect.js'
+import { residentTools } from '../modes/plan.js'
+import { enabledModes, onModesChange } from '../modes/registry.js'
 
 interface Entry {
   ctx?: Context
@@ -61,6 +64,16 @@ export function apply(root: Context, raw: unknown): void {
         try { dispose() } catch { ctx.logger.warn('dsh-ops: discovery registration cleanup failed.') }
       }
     }
+    // Dynamic loading is its own switch: it serves every native session, independent
+    // of the mode rows. Only capabilities a running mode already publishes resident
+    // are excluded from the discovery pool.
+    const residentSet = (agent: Agent): ReadonlySet<string> => {
+      const mode = modeOf(ctx, agent)
+      // A mode row that is off publishes nothing resident, so its names stay in the
+      // discovery pool even though the preset matches.
+      if (mode === undefined || !enabledModes(ctx).has(mode)) return new Set()
+      return new Set(residentTools(mode))
+    }
     const permitted = (agent: Agent, rawName?: DiscoverableName): boolean => {
       try {
         const policy = policyService.resolve({ session: agent.session })
@@ -68,6 +81,9 @@ export function apply(root: Context, raw: unknown): void {
           && (!rawName || rawName === 'result' || !capability(rawName)?.mutates || policy.mode !== 'read-only')
       } catch { return false }
     }
+    // A tool the mode already publishes resident is not a discovery choice.
+    const selectable = (agent: Agent, rawName: DiscoverableName): boolean =>
+      !residentSet(agent).has(publicToolName(rawName)) && permitted(agent, rawName)
     const ptcOnly = (assembly: PromptAssembly): boolean => assembly.sections.some(section => section.name === 'tools:ptc-only' && Boolean(section.text.trim()))
     const invalidate = (entry: Entry) => { ++entry.revision; entry.presentation = undefined }
     const inputs = (agent: Agent): unknown[] => {
@@ -106,8 +122,17 @@ export function apply(root: Context, raw: unknown): void {
       entry.disposers.push(dispose)
       entry.owned.add(tool.name)
     }
-    const inheritedNative = (agent: Agent, entry: Entry): string[] => nativeProviders(ctx, agent)
-      .map(provider => provider.definition.name).filter(name => (advanced.includes(name) || name === DISCOVER) && !entry.owned.has(name))
+    // Resident mode tools are published by the mode row itself; they are neither
+    // discovery choices nor inherited duplicates to hide.
+    const foreignAdvanced = (agent: Agent): string[] => {
+      const resident = residentSet(agent)
+      return advanced.filter(name => !resident.has(name))
+    }
+    const inheritedNative = (agent: Agent, entry: Entry): string[] => {
+      const foreign = new Set(foreignAdvanced(agent))
+      return nativeProviders(ctx, agent).map(provider => provider.definition.name)
+        .filter(name => (foreign.has(name) || name === DISCOVER) && !entry.owned.has(name))
+    }
     const reconcile = (targets: Iterable<Agent> = entries.keys()): Promise<void> => {
       if (stopped) return Promise.resolve()
       const families = scopeFamilies(entries.keys(), targets, scopeChainOf)
@@ -124,9 +149,9 @@ export function apply(root: Context, raw: unknown): void {
           for (const [agent, entry] of entries) {
             if (!family.has(agent)) continue
             if (!ownership?.owns(agent)) { clear(entry); entry.releaseSelection?.(); entry.releaseSelection = undefined; continue }
-            entry.releaseSelection ??= claimNativeSelection(ctx, agent, new Set(advanced))
+            entry.releaseSelection ??= claimNativeSelection(ctx, agent, new Set(foreignAdvanced(agent)))
             const isReady = ready.has(agent)
-            const wanted = isReady ? [...new Set([...config.alwaysLoaded, ...entry.selected])].filter(tool => permitted(agent, tool)) : []
+            const wanted = isReady ? [...new Set([...config.alwaysLoaded, ...entry.selected])].filter(tool => selectable(agent, tool)) : []
             const desired = new Set([...(isReady && config.enabled ? [DISCOVER] : []), ...wanted.map(publicToolName)])
             const inherited = inheritedNative(agent, entry)
             // Registry changes from other components must not republish an unchanged
@@ -139,7 +164,7 @@ export function apply(root: Context, raw: unknown): void {
               execute: async args => {
                 const request = parseRequest(args)
                 if (typeof request === 'string') return failure('INVALID_ARGUMENT', request)
-                const matches = search(request.query, config.allowedTools.filter(tool => permitted(agent, tool)), Math.min(request.maxResults, config.maxResults))
+                const matches = search(request.query, config.allowedTools.filter(tool => selectable(agent, tool)), Math.min(request.maxResults, config.maxResults))
                 const activated = matches.filter(tool => !entry.selected.has(tool) && !config.alwaysLoaded.includes(tool))
                 for (const tool of activated) entry.pending.add(tool)
                 return { status: 'completed', activated: activated.map(publicToolName),
@@ -216,6 +241,9 @@ export function apply(root: Context, raw: unknown): void {
       void reconcile(affected)
     })
     ctx.on('system-prompt/change', refresh)
+    // A mode row toggling changes which capabilities stay resident and therefore
+    // must leave the discovery pool.
+    ctx.effect(() => onModesChange(ctx, refresh), 'dsh-ops: discovery mode observer')
     // Observe in-place hooks and the default asynchronous Fiber.restart().
     // Await the runtime result even though the pinned next() type says void.
     ctx.on('internal/update', async (_config, _noSave, next) => {
