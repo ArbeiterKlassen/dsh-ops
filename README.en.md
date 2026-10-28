@@ -29,9 +29,9 @@ Supported: Windows x64, Linux x64, and macOS 13+ on Apple Silicon or Intel
 (`darwin-arm64`, `darwin-x64`). See [macOS](docs/macos.md).
 
 > [!IMPORTANT]
-> This branch is the **0.4.3 local candidate**, not a published release: the component roster moved to
-> preset-mode rows. Commands using `@latest` below select the published package; build and pack this
-> checkout to evaluate the candidate. See the [changelog](docs/CHANGELOG.md).
+> Version **0.4.4** repairs Linux and macOS runtime packaging from npm 0.4.3. Use 0.4.4 or
+> newer on those platforms. The preset-mode component roster is unchanged; see the
+> [changelog](docs/CHANGELOG.md).
 
 - The default profile enables the four preset-mode rows: Standard and Cordis publish the resident
   OPS file tools, PTC publishes its typed SDK, and Minimal replaces only the Windows shell;
