@@ -59,16 +59,21 @@ Stdout carries MCP JSON only. Diagnostics go to stderr.
 
 ## Tool surface
 
-The adapter exposes 16 native tools:
+The adapter exposes 17 native tools:
 
 ```text
-inspect_local_file grep glob replace write_file edit_file diff stat
+inspect_local_file json_query grep glob replace write_file edit_file diff stat
 copy move remove read_files read_table read_docx read_pdf result
 ```
 
 Mutation tools retain the worker's revision checks. `replace` can be previewed
 with `dryRun`. `write_file` uses `expectedRevision: "absent"` for create-only
 operation.
+
+`json_query` parses a JSON file inside the adapter and returns only a selected,
+projected and size-bounded slice. `read_files` and `inspect_local_file` reject
+JSON files over 64 KiB or detected as minified with `JSON_QUERY_REQUIRED`. This
+is a hard context-budget guard, not only a prompt instruction.
 
 The PTC execution lane is not bridged. PTC is a DSH agent-loop feature with
 progressive tool loading and confined code execution. Reproducing that inside

@@ -10,8 +10,8 @@ x64 worker. It does not use FastCtx and does not require bash.
 
 The MCP server exposes:
 
-- Read and search: `inspect_local_file`, `read_files`, `glob`, `grep`, `stat`,
-  `diff`
+- Read and search: `inspect_local_file`, `json_query`, `read_files`, `glob`,
+  `grep`, `stat`, `diff`
 - Revision-checked mutations: `replace`, `write_file`, `edit_file`, `copy`,
   `move`, `remove`
 - Documents: `read_table`, `read_docx`, `read_pdf`
@@ -21,6 +21,13 @@ The document readers are bounded. `read_table` handles CSV/TSV only,
 `read_docx` reads main-body paragraphs, and `read_pdf` supports classic xref,
 xref streams, object streams, incremental revisions, and a restricted
 standard-font text layer. These are not general Office or OCR converters.
+
+`json_query` is the bounded entry point for large/minified JSON. It selects a
+property/index path, optionally filters array objects by field, projects named
+fields, and returns only a limited context window. The file is parsed in the
+adapter memory; the complete JSON is never returned to model context.
+`read_files` and `inspect_local_file` reject JSON files over 64 KiB or detected
+as minified, returning `JSON_QUERY_REQUIRED`.
 
 ## Verify
 
@@ -32,8 +39,9 @@ node scripts/smoke-mcp.mjs
 ```
 
 The first command verifies the bundled worker's SHA-256 provenance receipt and
-version. The second starts the real MCP server, lists all 16 tools, and calls
-`glob` plus `stat`.
+version. The second starts the real MCP server, lists all 17 tools, and calls
+`glob` plus `stat`. `node scripts/smoke-json-query.mjs` verifies the bounded
+JSON selector/filter/context path.
 
 ## Direct MCP configuration
 
@@ -66,6 +74,8 @@ The bundled copy makes a normal Codex plugin installation self-contained.
 - Set `DSH_OPS_READ_ONLY=1` to reject every mutation.
 - Credential directories and private-key paths are denied by the adapter and
   worker.
+- Large/minified JSON paths are denied to line-oriented readers and must use
+  `json_query`.
 - Codex approval policy remains authoritative. Use the mutation approval
   entries in `config.example.toml`.
 

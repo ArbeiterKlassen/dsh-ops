@@ -10,6 +10,7 @@ tool_timeout_sec = 300
 default_tools_approval_mode = "prompt"
 enabled_tools = [
   "inspect_local_file",
+  "json_query",
   "grep",
   "glob",
   "replace",

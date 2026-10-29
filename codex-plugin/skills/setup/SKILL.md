@@ -5,7 +5,7 @@ description: Verify and diagnose the packaged dsh-ops 0.4.1 native worker used b
 
 # Verify dsh-ops for Codex
 
-The 0.4.1 adapter is self-contained. It no longer downloads or starts FastCtx.
+The 0.4.2 adapter is self-contained. It no longer downloads or starts FastCtx.
 
 1. Locate the plugin root containing `plugin.json` and
    `.codex-plugin/plugin.json`.

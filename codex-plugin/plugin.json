@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "dsh-ops-codex",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Codex adapter for the dsh-ops 0.4.1 native file and document worker.",
   "author": {
     "name": "ArbeiterKlassen"
@@ -23,11 +23,12 @@
       "interface": {
         "displayName": "dsh-ops for Codex",
         "shortDescription": "Native file, search, edit, and document tools",
-        "longDescription": "Bridges the packaged dsh-ops 0.4.1 one-shot Rust worker to Codex through MCP. It exposes bounded search, reads, edits, file operations, CSV/TSV, DOCX, PDF, and result pagination without FastCtx or a system bash.",
+        "longDescription": "Bridges the packaged dsh-ops 0.4.1 one-shot Rust worker to Codex through MCP. It exposes bounded search, reads, large-JSON field queries, edits, file operations, CSV/TSV, DOCX, PDF, and result pagination without FastCtx or a system bash.",
         "developerName": "ArbeiterKlassen",
         "category": "Productivity",
         "capabilities": [
           "Read files",
+          "Query large JSON",
           "Search files",
           "Edit files",
           "Read documents"
@@ -35,6 +36,7 @@
         "websiteURL": "https://github.com/ArbeiterKlassen/dsh-ops",
         "defaultPrompt": [
           "Search this repository with the dsh-ops native worker.",
+          "Inspect only selected JSON fields with bounded context.",
           "Inspect these large files with bounded dsh-ops reads.",
           "Verify the dsh-ops Codex worker installation."
         ]

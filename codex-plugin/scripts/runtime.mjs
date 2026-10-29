@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const ADAPTER_VERSION = '0.4.1'
+export const ADAPTER_VERSION = '0.4.2'
 export const WORKER_VERSION = '0.4.1'
 export const WORKER_EXECUTABLE = process.platform === 'win32'
   ? 'dsh-ops-worker.exe'

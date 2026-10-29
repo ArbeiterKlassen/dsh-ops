@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
-import { credentialRoots } from '../vendor/credential-policy.js'
+import {
+  credentialPath,
+  credentialRefusal,
+  credentialRoots,
+} from '../vendor/credential-policy.js'
 import {
   DESCRIPTIONS,
   PARAMETERS,
@@ -31,8 +36,12 @@ const MUTATIONS = new Set([
   'remove',
 ])
 
+const LARGE_JSON_BYTES = 64 * 1024
+const MINIFIED_JSON_PROBE_BYTES = 8192
+
 const TOOL_ORDER = [
   'inspect_local_file',
+  'json_query',
   'grep',
   'glob',
   'replace',
@@ -230,6 +239,349 @@ function invokeWorker(tool, args) {
   })
 }
 
+function parseSelector(selector) {
+  const source = String(selector ?? '').trim()
+  if (source === '') return []
+  if (source.startsWith('/')) {
+    return source.slice(1).split('/').filter(Boolean).map(part =>
+      part.replace(/~1/g, '/').replace(/~0/g, '~')
+    )
+  }
+  const tokens = []
+  let index = 0
+  while (index < source.length) {
+    if (source[index] === '.') {
+      index++
+      continue
+    }
+    if (source[index] === '[') {
+      const end = source.indexOf(']', index + 1)
+      if (end < 0) throw new Error(`unclosed selector bracket at ${index}`)
+      let inner = source.slice(index + 1, end).trim()
+      if ((inner.startsWith('"') && inner.endsWith('"'))
+        || (inner.startsWith("'") && inner.endsWith("'"))) {
+        inner = inner.slice(1, -1)
+      }
+      tokens.push(/^\d+$/.test(inner) ? Number(inner) : inner)
+      index = end + 1
+      continue
+    }
+    const start = index
+    while (index < source.length && source[index] !== '.' && source[index] !== '[') {
+      index++
+    }
+    const token = source.slice(start, index).trim()
+    if (token !== '') tokens.push(token)
+  }
+  return tokens
+}
+
+function selectorResult(root, selector) {
+  let value = root
+  const used = []
+  for (const token of parseSelector(selector)) {
+    if (value === null || value === undefined) {
+      return { found: false, value: undefined, used }
+    }
+    if (typeof token === 'number') {
+      if (!Array.isArray(value) || token < 0 || token >= value.length) {
+        return { found: false, value: undefined, used }
+      }
+      value = value[token]
+    } else {
+      if (typeof value !== 'object' || !(token in value)) {
+        return { found: false, value: undefined, used }
+      }
+      value = value[token]
+    }
+    used.push(token)
+  }
+  return { found: true, value, used }
+}
+
+function deepEqual(a, b) {
+  if (Object.is(a, b)) return true
+  try {
+    return JSON.stringify(a) === JSON.stringify(b)
+  } catch {
+    return false
+  }
+}
+
+function matchesWhere(value, where) {
+  if (!where || typeof where !== 'object' || Array.isArray(where)) return true
+  for (const [field, expected] of Object.entries(where)) {
+    const selected = selectorResult(value, field)
+    if (!selected.found || !deepEqual(selected.value, expected)) return false
+  }
+  return true
+}
+
+function projectFields(value, fields) {
+  if (!Array.isArray(fields) || fields.length === 0) return value
+  if (value && typeof value === 'object'
+    && Array.isArray(value.window) && 'matchIndex' in value) {
+    return {
+      ...value,
+      window: value.window.map(item => projectFields(item, fields)),
+    }
+  }
+  if (value === null || typeof value !== 'object') return value
+  const projected = {}
+  for (const field of fields) {
+    if (typeof field !== 'string' || field.trim() === '') continue
+    const selected = selectorResult(value, field)
+    if (selected.found) projected[field] = selected.value
+  }
+  return projected
+}
+
+function summarizeJson(value) {
+  if (Array.isArray(value)) {
+    return {
+      type: 'array',
+      length: value.length,
+      firstIndexes: value.slice(0, 10).map((_, index) => index),
+    }
+  }
+  if (value !== null && typeof value === 'object') {
+    return {
+      type: 'object',
+      keys: Object.keys(value).slice(0, 100),
+      keyCount: Object.keys(value).length,
+    }
+  }
+  return { type: value === null ? 'null' : typeof value, value }
+}
+
+function boundedJsonPreview(value, cap) {
+  const text = JSON.stringify(value, null, 2)
+  if (text.length <= cap) return { text, truncated: false, chars: text.length }
+  return {
+    text: text.slice(0, Math.max(0, cap - 80))
+      + '\n... [json_query preview truncated]',
+    truncated: true,
+    chars: text.length,
+  }
+}
+
+function jsonReadRisk(file) {
+  let stat
+  try {
+    stat = fs.statSync(file)
+  } catch {
+    return null
+  }
+  if (!stat.isFile() || path.extname(file).toLowerCase() !== '.json') return null
+  if (stat.size > LARGE_JSON_BYTES) {
+    return { bytes: stat.size, reason: 'the JSON file exceeds 64 KiB' }
+  }
+  if (stat.size <= 4096) return null
+  const length = Math.min(stat.size, MINIFIED_JSON_PROBE_BYTES)
+  const buffer = Buffer.alloc(length)
+  let fd
+  try {
+    fd = fs.openSync(file, 'r')
+    const read = fs.readSync(fd, buffer, 0, length, 0)
+    if (!buffer.subarray(0, read).includes(0x0a)) {
+      return { bytes: stat.size, reason: 'the JSON file is minified onto one line' }
+    }
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
+  }
+  return null
+}
+
+function largeJsonReadRefusal(name, file, risk) {
+  return {
+    status: 'rejected',
+    phase: 'preflight',
+    changed: 0,
+    failed: 1,
+    complete: false,
+    error: {
+      code: 'JSON_QUERY_REQUIRED',
+      effectState: 'none',
+      message: `${name} refused ${file}: ${risk.reason} (${risk.bytes} bytes).`,
+      nextAction:
+        'Use json_query with selector/where/fields/context/limit/maxChars. '
+        + 'Do not dump the whole JSON file into model context or a PowerShell/Python diagnostic command.',
+    },
+  }
+}
+
+function guardLargeJsonRead(name, args) {
+  const root = requestRoot(args)
+  const paths = name === 'read_files' && Array.isArray(args?.files)
+    ? args.files
+      .map(item => item && typeof item.path === 'string' ? item.path : undefined)
+      .filter(Boolean)
+    : name === 'inspect_local_file' && typeof args?.path === 'string'
+      ? [args.path]
+      : []
+  for (const requested of paths) {
+    const file = path.isAbsolute(requested)
+      ? path.resolve(requested)
+      : path.resolve(root, requested)
+    const risk = jsonReadRisk(file)
+    if (risk !== null) return largeJsonReadRefusal(name, file, risk)
+  }
+  return undefined
+}
+
+function jsonQuery(args) {
+  const requested = typeof args?.path === 'string' ? args.path : ''
+  if (requested.trim() === '') throw new Error('json_query requires path')
+  const root = requestRoot(args)
+  const file = path.isAbsolute(requested)
+    ? path.resolve(requested)
+    : path.resolve(root, requested)
+  const denied = credentialPath(file, { env: process.env })
+  if (denied.denied) {
+    const refusal = credentialRefusal(file, denied.matched)
+    return {
+      status: 'rejected',
+      phase: 'preflight',
+      changed: 0,
+      failed: 1,
+      complete: false,
+      error: refusal,
+    }
+  }
+  const stat = fs.statSync(file)
+  if (!stat.isFile()) throw new Error('json_query path is not a regular file')
+  if (stat.size > 256 * 1024 * 1024) {
+    return {
+      status: 'error',
+      phase: 'preflight',
+      changed: 0,
+      failed: 1,
+      complete: false,
+      error: {
+        code: 'JSON_TOO_LARGE',
+        message: 'json_query refuses files larger than 256 MiB.',
+      },
+    }
+  }
+  const bytes = fs.readFileSync(file)
+  const source = bytes.toString('utf8').replace(/^\uFEFF/, '')
+  let document
+  try {
+    document = JSON.parse(source)
+  } catch (error) {
+    return {
+      status: 'error',
+      phase: 'parse',
+      changed: 0,
+      failed: 1,
+      complete: false,
+      path: file,
+      bytes: bytes.length,
+      revision: createHash('sha256').update(bytes).digest('hex'),
+      error: {
+        code: 'INVALID_JSON',
+        message: String(error?.message ?? error),
+      },
+    }
+  }
+
+  const selector = typeof args.selector === 'string' ? args.selector : ''
+  const selected = selectorResult(document, selector)
+  if (!selected.found) {
+    return {
+      status: 'error',
+      phase: 'select',
+      changed: 0,
+      failed: 1,
+      complete: false,
+      path: file,
+      bytes: bytes.length,
+      selector,
+      revision: createHash('sha256').update(bytes).digest('hex'),
+      error: {
+        code: 'SELECTOR_NOT_FOUND',
+        message: `Selector not found: ${selector || '<root>'}`,
+      },
+    }
+  }
+
+  const limit = Math.max(1, Math.min(500, Number(args.limit) || 50))
+  const offset = Math.max(0, Number(args.offset) || 0)
+  const context = Math.max(0, Math.min(10, Number(args.context) || 0))
+  const maxChars = Math.max(1000, Math.min(60000, Number(args.maxChars) || 20000))
+  const fields = Array.isArray(args.fields) ? args.fields : []
+  const where = args.where && typeof args.where === 'object' ? args.where : null
+  const contains = typeof args.contains === 'string' && args.contains !== ''
+    ? args.contains
+    : null
+
+  let candidates = []
+  const rootSummaryOnly = selector === '' && !where && !contains
+  if (!rootSummaryOnly && Array.isArray(selected.value)) {
+    candidates = selected.value
+      .map((value, index) => ({ value, index }))
+      .filter(item => matchesWhere(item.value, where))
+      .filter(item => !contains || JSON.stringify(item.value).includes(contains))
+  } else if (!rootSummaryOnly) {
+    if (matchesWhere(selected.value, where)
+      && (!contains || JSON.stringify(selected.value).includes(contains))) {
+      candidates = [{ value: selected.value, index: null }]
+    }
+  }
+
+  const total = candidates.length
+  const page = candidates.slice(offset, offset + limit)
+  const perItemBudget = Math.max(256, Math.floor(maxChars / Math.max(1, page.length)))
+  const items = []
+  let usedChars = 0
+  for (const item of page) {
+    let value = item.value
+    if (context > 0 && Array.isArray(selected.value) && item.index !== null) {
+      const from = Math.max(0, item.index - context)
+      const to = Math.min(selected.value.length, item.index + context + 1)
+      value = {
+        matchIndex: item.index,
+        windowStart: from,
+        window: selected.value.slice(from, to),
+      }
+    }
+    const projected = projectFields(value, fields)
+    const preview = boundedJsonPreview(projected, Math.max(256, perItemBudget - 120))
+    if (usedChars + preview.text.length > maxChars && items.length > 0) break
+    usedChars += preview.text.length
+    items.push({
+      index: item.index,
+      preview: preview.text,
+      truncated: preview.truncated,
+      chars: preview.chars,
+    })
+  }
+
+  const summary = selector === '' ? summarizeJson(selected.value) : null
+  return {
+    status: 'completed',
+    phase: 'read',
+    changed: 0,
+    failed: 0,
+    complete: true,
+    path: file,
+    bytes: bytes.length,
+    revision: createHash('sha256').update(bytes).digest('hex'),
+    selector,
+    matched: total,
+    returned: items.length,
+    offset,
+    limit,
+    context,
+    nextOffset: offset + items.length < total ? offset + items.length : null,
+    truncated: offset + items.length < total
+      || items.some(item => item.truncated),
+    maxChars,
+    summary,
+    items,
+  }
+}
+
 function toolCall(name, args) {
   if (!toolMap.has(name)) {
     throw new Error(`unknown tool: ${name}`)
@@ -238,6 +590,9 @@ function toolCall(name, args) {
     && (typeof args !== 'object' || Array.isArray(args))) {
     throw new Error('tool arguments must be an object')
   }
+  const guard = guardLargeJsonRead(name, args ?? {})
+  if (guard !== undefined) return Promise.resolve(guard)
+  if (name === 'json_query') return Promise.resolve(jsonQuery(args ?? {}))
   return invokeWorker(name, args ?? {})
 }
 
@@ -257,6 +612,7 @@ async function handle(message) {
       },
       instructions:
         'dsh-ops native file tools. Pass absolute local paths. '
+        + 'Use json_query for large or minified JSON; read_files and inspect_local_file reject it. '
         + 'Failures are returned as structured values and may set isError. '
         + 'Mutation tools use content revisions and Codex approval prompts.',
     })

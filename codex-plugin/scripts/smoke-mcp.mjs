@@ -56,7 +56,7 @@ try {
   const init = await request('initialize', {
     protocolVersion: '2025-06-18',
     capabilities: {},
-    clientInfo: { name: 'dsh-ops-codex-smoke', version: '0.4.1' },
+    clientInfo: { name: 'dsh-ops-codex-smoke', version: '0.4.2' },
   })
   child.stdin.write(
     `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })}\n`,
@@ -102,8 +102,8 @@ try {
     name: 'replace',
     arguments: {
       path: root,
-      pattern: '"version": "0.4.1"',
-      replacement: '"version": "0.4.1"',
+      pattern: '"version": "0.4.2"',
+      replacement: '"version": "0.4.2"',
       glob: ['plugin.json'],
       maxReplacements: 1,
       dryRun: true,

@@ -19,6 +19,22 @@ Use `inspect_local_file` for bounded UTF-8 line ranges or hex views.
 
 Use `read_files` for up to 32 independent file ranges in one call.
 
+Use `json_query` for any large or minified JSON file. It accepts:
+
+- `path`: JSON file.
+- `selector`: property/index path such as `[1522].list` or `events[196].pages[0].list`.
+- `where`: equality filter for array objects, e.g. `{"code":401}`.
+- `contains`: substring filter over compact item JSON.
+- `fields`: optional field projection.
+- `offset`, `limit`, `context`, `maxChars`: bounded paging/window/output.
+
+Examples:
+
+```json
+{"path":"D:/game/www/data/CommonEvents.json","selector":"[1522].list","where":{"code":117},"context":2,"limit":10}
+{"path":"D:/game/www/data/Map178.json","selector":"events[196]","fields":["id","name","x","y","pages"],"maxChars":12000}
+```
+
 Use `replace` for deliberate literal replacement across files. Run it with
 `dryRun: true` first when the match set is uncertain.
 
@@ -49,6 +65,15 @@ bounded output is returned inline and no new reference is normally created.
   results.
 - Check `effectState` before retrying a mutation. Never blindly repeat a
   mutation after a transport or cancellation error.
+- **Do not use `read_files` or `inspect_local_file` to read a minified JSON
+  file larger than 64 KiB.** Their line-oriented output can otherwise place the
+  entire file in model context. Use `json_query`; if the needed contract cannot
+  be expressed with selector/where/fields, narrow the request instead of
+  dumping the file.
+- **Do not use PowerShell/Python to dump large JSON for diagnosis.** Scripts may
+  parse JSON to perform a write, but exploration must go through `json_query`.
+- Start with a root summary (omit `selector`), then select one object/array and
+  request at most 50 items. Prefer `fields` and `context` over full objects.
 - Compare `revision` values when combining pages from repeated reads.
 - Prefer Codex's normal patch tool for a small exact edit when no revision
   workflow is needed. Use dsh-ops when its bounded read or revision-checked

@@ -1,6 +1,6 @@
 {
   "name": "dsh-ops-codex",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Codex adapter for the dsh-ops 0.4.1 native file and document worker.",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
