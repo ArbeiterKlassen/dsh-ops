@@ -1,0 +1,3 @@
+interface:
+  display_name: "dsh Repo Scan"
+  short_description: "Bounded repository inventory and file facts"

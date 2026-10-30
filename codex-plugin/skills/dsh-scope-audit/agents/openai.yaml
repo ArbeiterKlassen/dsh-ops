@@ -1,0 +1,4 @@
+interface:
+  display_name: "dsh-ops Scope Audit"
+  short_description: "Read-only path and network allowlist verification"
+  default_prompt: "Audit these paths and URLs against the explicit scope allowlists."

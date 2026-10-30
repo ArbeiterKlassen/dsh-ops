@@ -1,0 +1,3 @@
+interface:
+  display_name: "dsh Document Extract"
+  short_description: "Bounded table, DOCX, and PDF extraction"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "REA Artifact Analysis"
+  short_description: "Grounded shipped-artifact inspection with pinned REA"
+  default_prompt: "Analyze this artifact with the bounded REA 6.8.0 gateway."

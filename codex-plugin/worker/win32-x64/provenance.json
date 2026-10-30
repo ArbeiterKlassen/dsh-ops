@@ -1,0 +1,7 @@
+{
+  "version": "0.4.4",
+  "target": "win32-x64",
+  "executable": "dsh-ops-worker.exe",
+  "sha256": "607e97c2ff79e0593b6ef28989b724b79d92a2af82eeb7fd02e6f0a2e1d23f0f",
+  "source": "T-Auto/dsh-ops v0.4.4 release (npm dsh-ops@0.4.4 runtime/win32-x64)"
+}

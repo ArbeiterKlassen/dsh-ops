@@ -1,0 +1,3 @@
+interface:
+  display_name: "dsh Task Run"
+  short_description: "Compact build, test, and script output"

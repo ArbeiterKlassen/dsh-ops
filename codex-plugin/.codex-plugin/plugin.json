@@ -1,0 +1,31 @@
+{
+  "name": "dsh-ops-codex",
+  "version": "0.4.7",
+  "description": "Bounded dsh-ops files, REA artifacts, and Codex maintenance workflows with a 20k output ceiling.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "onboardingSkill": "./skills/setup/SKILL.md",
+  "interface": {
+    "displayName": "dsh-ops for Codex",
+    "shortDescription": "Bounded files, REA artifacts, and maintenance",
+    "longDescription": "Bridges the dsh-ops 0.4.4 native worker and a pinned REA 6.8.0 gateway to Codex. It exposes bounded file and document operations, nine REA entry operations through a compact fixed gateway, read-only scope auditing, and maintenance workflows. Large downstream results are saved locally and returned as bounded previews; Codex approvals remain authoritative.",
+    "developerName": "ArbeiterKlassen",
+    "category": "Productivity",
+    "capabilities": [
+      "Read files",
+      "Search files",
+      "Edit files",
+      "Read documents",
+      "Analyze artifacts",
+      "Audit scope",
+      "Run compact workflows"
+    ],
+    "defaultPrompt": [
+      "Map this repository with bounded dsh-ops file facts.",
+      "Find these symbols with summary-first dsh-ops search.",
+      "Inspect this shipped artifact with the bounded REA gateway.",
+      "Audit this Codex installation without bypassing approvals.",
+      "Inspect or edit this large project without flooding context."
+    ]
+  }
+}

@@ -1,0 +1,3 @@
+interface:
+  display_name: "dsh Bounded Read"
+  short_description: "Small slices for text, JSON, and documents"

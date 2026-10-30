@@ -1,0 +1,4 @@
+interface:
+  display_name: "dsh-ops Maintenance"
+  short_description: "Bounded Codex cache, thread, plugin, and scope diagnostics"
+  default_prompt: "Diagnose this Codex maintenance problem without expanding scope or bypassing approvals."

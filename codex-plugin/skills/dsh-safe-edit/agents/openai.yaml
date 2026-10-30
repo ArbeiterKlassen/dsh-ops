@@ -1,0 +1,3 @@
+interface:
+  display_name: "dsh Safe Edit"
+  short_description: "Revision-safe edits with preview and verification"

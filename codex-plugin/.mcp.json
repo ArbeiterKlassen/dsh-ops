@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "dsh-ops": {
+      "command": "node",
+      "args": [
+        "./scripts/native-mcp.mjs"
+      ]
+    },
+    "rea": {
+      "command": "node",
+      "args": [
+        "./scripts/rea-mcp.mjs"
+      ]
+    }
+  }
+}
