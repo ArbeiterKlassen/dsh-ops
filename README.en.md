@@ -39,7 +39,8 @@ Supported: Windows x64, Linux x64, and macOS 13+ on Apple Silicon or Intel
   Windows shell with `ops_bash`. Advanced tools activate in the owning agent's next provider request.
 - The PTC SDK catalogue has 18 APIs: 15 file/document tools, batch, result references and its loader.
   Only the configured resident or selected APIs are exposed. Native and PTC use separate outputs.
-- Discover bounded CSV/TSV, DOCX main-body paragraphs and a restricted PDF text layer. Binary DOC,
+- Discover bounded CSV/TSV, DOCX main-body paragraphs and a restricted PDF text layer. PDF
+  containers support classic xref, xref streams, object streams and incremental `Prev` chains. Binary DOC,
   OCR, general PDF rendering, web search and HTML crawling are not implemented. Read the
   [document-format limits](docs/native-kernel.md) before choosing a reader.
 - Eight independently toggled rows: the four mode rows and discovery start on; Compatibility,
